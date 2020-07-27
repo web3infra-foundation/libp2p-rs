@@ -12,7 +12,7 @@ use tokio::{
 use tokio_util::codec::length_delimited::Builder;
 
 use crate::{
-    codec::{secure_stream::SecureStream, stream_handle::StreamHandle, Hmac},
+    codec::{secure_stream::SecureStream, Hmac},
     crypto::{cipher::CipherType, new_stream, BoxStreamCipher, CryptoMode},
     error::SecioError,
     exchange,
@@ -37,7 +37,7 @@ use bytes::{Buf, BytesMut};
 pub(in crate::handshake) async fn handshake<T>(
     socket: T,
     config: Config,
-) -> Result<(StreamHandle, PublicKey, EphemeralPublicKey), SecioError>
+) -> Result<(SecureStream<T>, PublicKey, EphemeralPublicKey), SecioError>
 where
     T: AsyncRead + AsyncWrite + Send + 'static + Unpin,
 {
@@ -254,28 +254,15 @@ where
         pub_ephemeral_context.state.remote.local.nonce.to_vec(),
     );
 
-    let mut handle = secure_stream.create_handle().unwrap();
-
-    tokio::spawn(async move {
-        loop {
-            match secure_stream.next().await {
-                Some(Err(err)) => {
-                    debug!("Abnormal disconnection: {:?}", err);
-                    break;
-                }
-                None => break,
-                _ => (),
-            }
-        }
-    });
-
     // We send back their nonce to check if the connection works.
     trace!("checking encryption by sending back remote's nonce");
-    handle
+    secure_stream
         .write_all(&pub_ephemeral_context.state.remote.nonce)
         .await?;
+    secure_stream.verify_nonce().await?;
+
     Ok((
-        handle,
+        secure_stream,
         pub_ephemeral_context.state.remote.public_key,
         pub_ephemeral_context.state.local_tmp_pub_key,
     ))
