@@ -1,5 +1,8 @@
-use async_std::{net::{TcpStream, TcpListener}, task};
-use futures::{prelude::*};
+use async_std::{
+    net::{TcpListener, TcpStream},
+    task,
+};
+use futures::prelude::*;
 use log::info;
 
 use yamux::{Config, Connection, Mode};

@@ -9,18 +9,27 @@
 // at https://opensource.org/licenses/MIT.
 
 use crate::{
-    Config,
-    WindowUpdateMode,
     chunks::Chunks,
     connection::{self, StreamCommand},
     frame::{
+        header::{Data, Header, StreamId, WindowUpdate},
         Frame,
-        header::{Header, StreamId, Data, WindowUpdate}
-    }
+    },
+    Config, WindowUpdateMode,
 };
-use futures::{future::Either, ready, channel::mpsc, io::{AsyncRead, AsyncWrite}};
+use futures::{
+    channel::mpsc,
+    future::Either,
+    io::{AsyncRead, AsyncWrite},
+    ready,
+};
 use parking_lot::{Mutex, MutexGuard};
-use std::{fmt, io, pin::Pin, sync::Arc, task::{Context, Poll, Waker}};
+use std::{
+    fmt, io,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll, Waker},
+};
 
 /// The state of a Yamux stream.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -32,7 +41,7 @@ pub enum State {
     /// Open for outgoing messages.
     RecvClosed,
     /// Closed (terminal state).
-    Closed
+    Closed,
 }
 
 impl State {
@@ -63,7 +72,7 @@ pub(crate) enum Flag {
     /// The stream was opened lazily, so set the initial SYN flag.
     Syn,
     /// The stream still needs acknowledgement, so set the ACK flag.
-    Ack
+    Ack,
 }
 
 /// A multiplexed Yamux stream.
@@ -80,7 +89,7 @@ pub struct Stream {
     sender: mpsc::Sender<StreamCommand>,
     pending: Option<Frame<WindowUpdate>>,
     flag: Flag,
-    shared: Arc<Mutex<Shared>>
+    shared: Arc<Mutex<Shared>>,
 }
 
 impl fmt::Debug for Stream {
@@ -100,15 +109,14 @@ impl fmt::Display for Stream {
 }
 
 impl Stream {
-    pub(crate) fn new
-        ( id: StreamId
-        , conn: connection::Id
-        , config: Arc<Config>
-        , window: u32
-        , credit: u32
-        , sender: mpsc::Sender<StreamCommand>
-        ) -> Self
-    {
+    pub(crate) fn new(
+        id: StreamId,
+        conn: connection::Id,
+        config: Arc<Config>,
+        window: u32,
+        credit: u32,
+        sender: mpsc::Sender<StreamCommand>,
+    ) -> Self {
         Stream {
             id,
             conn,
@@ -151,7 +159,7 @@ impl Stream {
             sender: self.sender.clone(),
             pending: None,
             flag: self.flag,
-            shared: self.shared.clone()
+            shared: self.shared.clone(),
         }
     }
 
@@ -191,16 +199,21 @@ impl futures::stream::Stream for Stream {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         if !self.config.read_after_close && self.sender.is_closed() {
-            return Poll::Ready(None)
+            return Poll::Ready(None);
         }
 
         // Try to deliver any pending window updates first.
         if self.pending.is_some() {
-            ready!(self.sender.poll_ready(cx).map_err(|_| self.write_zero_err())?);
+            ready!(self
+                .sender
+                .poll_ready(cx)
+                .map_err(|_| self.write_zero_err())?);
             let mut frame = self.pending.take().expect("pending.is_some()").right();
             self.add_flag(frame.header_mut());
             let cmd = StreamCommand::SendFrame(frame);
-            self.sender.start_send(cmd).map_err(|_| self.write_zero_err())?
+            self.sender
+                .start_send(cmd)
+                .map_err(|_| self.write_zero_err())?
         }
 
         // We need to limit the `shared` `MutexGuard` scope, or else we run into
@@ -216,16 +229,20 @@ impl futures::stream::Stream for Stream {
                     // a `futures::stream::Stream` since the whole point of this impl is
                     // to consume chunks atomically. It may perhaps happen when mixing
                     // this impl and the `AsyncRead` one.
-                    log::debug!("{}/{}: chunk has been partially consumed", self.conn, self.id);
+                    log::debug!(
+                        "{}/{}: chunk has been partially consumed",
+                        self.conn,
+                        self.id
+                    );
                     vec = vec.split_off(off)
                 }
-                return Poll::Ready(Some(Ok(Packet(vec))))
+                return Poll::Ready(Some(Ok(Packet(vec))));
             }
 
             // Buffer is empty, let's check if we can expect to read more data.
             if !shared.state().can_read() {
                 log::debug!("{}/{}: eof", self.conn, self.id);
-                return Poll::Ready(None) // stream has been reset
+                return Poll::Ready(None); // stream has been reset
             }
 
             // Since we have no more data at this point, we want to be woken up
@@ -235,7 +252,7 @@ impl futures::stream::Stream for Stream {
             // Finally, let's see if we need to send a window update to the remote.
             if self.config.window_update_mode != WindowUpdateMode::OnRead || shared.window > 0 {
                 // No, time to go.
-                return Poll::Pending
+                return Poll::Pending;
             }
 
             shared.window = self.config.receive_window
@@ -243,14 +260,20 @@ impl futures::stream::Stream for Stream {
 
         // At this point we know we have to send a window update to the remote.
         let frame = Frame::window_update(self.id, self.config.receive_window);
-        match self.sender.poll_ready(cx).map_err(|_| self.write_zero_err())? {
+        match self
+            .sender
+            .poll_ready(cx)
+            .map_err(|_| self.write_zero_err())?
+        {
             Poll::Ready(()) => {
                 let mut frame = frame.right();
                 self.add_flag(frame.header_mut());
                 let cmd = StreamCommand::SendFrame(frame);
-                self.sender.start_send(cmd).map_err(|_| self.write_zero_err())?
+                self.sender
+                    .start_send(cmd)
+                    .map_err(|_| self.write_zero_err())?
             }
-            Poll::Pending => self.pending = Some(frame)
+            Poll::Pending => self.pending = Some(frame),
         }
 
         Poll::Pending
@@ -260,18 +283,27 @@ impl futures::stream::Stream for Stream {
 // Like the `futures::stream::Stream` impl above, but copies bytes into the
 // provided mutable slice.
 impl AsyncRead for Stream {
-    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context, buf: &mut [u8]) -> Poll<io::Result<usize>> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
         if !self.config.read_after_close && self.sender.is_closed() {
-            return Poll::Ready(Ok(0))
+            return Poll::Ready(Ok(0));
         }
 
         // Try to deliver any pending window updates first.
         if self.pending.is_some() {
-            ready!(self.sender.poll_ready(cx).map_err(|_| self.write_zero_err())?);
+            ready!(self
+                .sender
+                .poll_ready(cx)
+                .map_err(|_| self.write_zero_err())?);
             let mut frame = self.pending.take().expect("pending.is_some()").right();
             self.add_flag(frame.header_mut());
             let cmd = StreamCommand::SendFrame(frame);
-            self.sender.start_send(cmd).map_err(|_| self.write_zero_err())?
+            self.sender
+                .start_send(cmd)
+                .map_err(|_| self.write_zero_err())?
         }
 
         // We need to limit the `shared` `MutexGuard` scope, or else we run into
@@ -283,26 +315,26 @@ impl AsyncRead for Stream {
             while let Some(chunk) = shared.buffer.front_mut() {
                 if chunk.is_empty() {
                     shared.buffer.pop();
-                    continue
+                    continue;
                 }
                 let k = std::cmp::min(chunk.len(), buf.len() - n);
-                (&mut buf[n .. n + k]).copy_from_slice(&chunk.as_ref()[.. k]);
+                (&mut buf[n..n + k]).copy_from_slice(&chunk.as_ref()[..k]);
                 n += k;
                 chunk.advance(k);
                 if n == buf.len() {
-                    break
+                    break;
                 }
             }
 
             if n > 0 {
                 log::trace!("{}/{}: read {} bytes", self.conn, self.id, n);
-                return Poll::Ready(Ok(n))
+                return Poll::Ready(Ok(n));
             }
 
             // Buffer is empty, let's check if we can expect to read more data.
             if !shared.state().can_read() {
                 log::debug!("{}/{}: eof", self.conn, self.id);
-                return Poll::Ready(Ok(0)) // stream has been reset
+                return Poll::Ready(Ok(0)); // stream has been reset
             }
 
             // Since we have no more data at this point, we want to be woken up
@@ -312,7 +344,7 @@ impl AsyncRead for Stream {
             // Finally, let's see if we need to send a window update to the remote.
             if self.config.window_update_mode != WindowUpdateMode::OnRead || shared.window > 0 {
                 // No, time to go.
-                return Poll::Pending
+                return Poll::Pending;
             }
 
             shared.window = self.config.receive_window
@@ -320,14 +352,20 @@ impl AsyncRead for Stream {
 
         // At this point we know we have to send a window update to the remote.
         let frame = Frame::window_update(self.id, self.config.receive_window);
-        match self.sender.poll_ready(cx).map_err(|_| self.write_zero_err())? {
+        match self
+            .sender
+            .poll_ready(cx)
+            .map_err(|_| self.write_zero_err())?
+        {
             Poll::Ready(()) => {
                 let mut frame = frame.right();
                 self.add_flag(frame.header_mut());
                 let cmd = StreamCommand::SendFrame(frame);
-                self.sender.start_send(cmd).map_err(|_| self.write_zero_err())?
+                self.sender
+                    .start_send(cmd)
+                    .map_err(|_| self.write_zero_err())?
             }
-            Poll::Pending => self.pending = Some(frame)
+            Poll::Pending => self.pending = Some(frame),
         }
 
         Poll::Pending
@@ -335,29 +373,38 @@ impl AsyncRead for Stream {
 }
 
 impl AsyncWrite for Stream {
-    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context, buf: &[u8]) -> Poll<io::Result<usize>> {
-        ready!(self.sender.poll_ready(cx).map_err(|_| self.write_zero_err())?);
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        ready!(self
+            .sender
+            .poll_ready(cx)
+            .map_err(|_| self.write_zero_err())?);
         let body = {
             let mut shared = self.shared();
             if !shared.state().can_write() {
                 log::debug!("{}/{}: can no longer write", self.conn, self.id);
-                return Poll::Ready(Err(self.write_zero_err()))
+                return Poll::Ready(Err(self.write_zero_err()));
             }
             if shared.credit == 0 {
                 log::trace!("{}/{}: no more credit left", self.conn, self.id);
                 shared.writer = Some(cx.waker().clone());
-                return Poll::Pending
+                return Poll::Pending;
             }
             let k = std::cmp::min(shared.credit as usize, buf.len());
             shared.credit = shared.credit.saturating_sub(k as u32);
-            Vec::from(&buf[.. k])
+            Vec::from(&buf[..k])
         };
         let n = body.len();
         let mut frame = Frame::data(self.id, body).expect("body <= u32::MAX").left();
         self.add_flag(frame.header_mut());
         log::trace!("{}/{}: write {} bytes", self.conn, self.id, n);
         let cmd = StreamCommand::SendFrame(frame);
-        self.sender.start_send(cmd).map_err(|_| self.write_zero_err())?;
+        self.sender
+            .start_send(cmd)
+            .map_err(|_| self.write_zero_err())?;
         Poll::Ready(Ok(n))
     }
 
@@ -367,10 +414,13 @@ impl AsyncWrite for Stream {
 
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
         if self.state() == State::Closed {
-            return Poll::Ready(Ok(()))
+            return Poll::Ready(Ok(()));
         }
         log::trace!("{}/{}: close", self.conn, self.id);
-        ready!(self.sender.poll_ready(cx).map_err(|_| self.write_zero_err())?);
+        ready!(self
+            .sender
+            .poll_ready(cx)
+            .map_err(|_| self.write_zero_err())?);
         let ack = if self.flag == Flag::Ack {
             self.flag = Flag::None;
             true
@@ -378,8 +428,11 @@ impl AsyncWrite for Stream {
             false
         };
         let cmd = StreamCommand::CloseStream { id: self.id, ack };
-        self.sender.start_send(cmd).map_err(|_| self.write_zero_err())?;
-        self.shared().update_state(self.conn, self.id, State::SendClosed);
+        self.sender
+            .start_send(cmd)
+            .map_err(|_| self.write_zero_err())?;
+        self.shared()
+            .update_state(self.conn, self.id, State::SendClosed);
         Poll::Ready(Ok(()))
     }
 }
@@ -391,7 +444,7 @@ pub(crate) struct Shared {
     pub(crate) credit: u32,
     pub(crate) buffer: Chunks,
     pub(crate) reader: Option<Waker>,
-    pub(crate) writer: Option<Waker>
+    pub(crate) writer: Option<Waker>,
 }
 
 impl Shared {
@@ -402,7 +455,7 @@ impl Shared {
             credit,
             buffer: Chunks::new(),
             reader: None,
-            writer: None
+            writer: None,
         }
     }
 
@@ -411,27 +464,38 @@ impl Shared {
     }
 
     /// Update the stream state and return the state before it was updated.
-    pub(crate) fn update_state(&mut self, cid: connection::Id, sid: StreamId, next: State) -> State {
+    pub(crate) fn update_state(
+        &mut self,
+        cid: connection::Id,
+        sid: StreamId,
+        next: State,
+    ) -> State {
         use self::State::*;
 
         let current = self.state;
 
         match (current, next) {
-            (Closed,              _) => {}
-            (Open,                _) => self.state = next,
-            (RecvClosed,     Closed) => self.state = Closed,
-            (RecvClosed,       Open) => {}
+            (Closed, _) => {}
+            (Open, _) => self.state = next,
+            (RecvClosed, Closed) => self.state = Closed,
+            (RecvClosed, Open) => {}
             (RecvClosed, RecvClosed) => {}
             (RecvClosed, SendClosed) => self.state = Closed,
-            (SendClosed,     Closed) => self.state = Closed,
-            (SendClosed,       Open) => {}
+            (SendClosed, Closed) => self.state = Closed,
+            (SendClosed, Open) => {}
             (SendClosed, RecvClosed) => self.state = Closed,
             (SendClosed, SendClosed) => {}
         }
 
-        log::trace!("{}/{}: update state: ({:?} {:?} {:?})", cid, sid, current, next, self.state);
+        log::trace!(
+            "{}/{}: update state: ({:?} {:?} {:?})",
+            cid,
+            sid,
+            current,
+            next,
+            self.state
+        );
 
         current // Return the previous stream state for informational purposes.
     }
 }
-

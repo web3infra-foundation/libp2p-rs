@@ -8,18 +8,25 @@
 // at https://www.apache.org/licenses/LICENSE-2.0 and a copy of the MIT license
 // at https://opensource.org/licenses/MIT.
 
-use async_std::{net::{TcpStream, TcpListener}, task};
-use crate::{Config, Connection, ConnectionError, Mode, Control, connection::State};
+use crate::{connection::State, Config, Connection, ConnectionError, Control, Mode};
+use async_std::{
+    net::{TcpListener, TcpStream},
+    task,
+};
 use futures::{future, prelude::*};
 use quickcheck::{Arbitrary, Gen, QuickCheck, TestResult};
 use rand::Rng;
-use std::{fmt::Debug, io, net::{Ipv4Addr, SocketAddr, SocketAddrV4}};
+use std::{
+    fmt::Debug,
+    io,
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+};
 
 #[test]
 fn prop_send_recv() {
     fn prop(msgs: Vec<Msg>) -> TestResult {
         if msgs.is_empty() {
-            return TestResult::discard()
+            return TestResult::discard();
         }
         task::block_on(async move {
             let num_requests = msgs.len();
@@ -72,7 +79,7 @@ fn prop_max_streams() {
             let mut control = connection.control();
             task::spawn(crate::into_stream(connection).for_each(|_| future::ready(())));
             let mut v = Vec::new();
-            for _ in 0 .. max_streams {
+            for _ in 0..max_streams {
                 v.push(control.open_stream().await.expect("open_stream"))
             }
             if let Err(ConnectionError::TooManyStreams) = control.open_stream().await {
@@ -96,7 +103,9 @@ fn prop_send_recv_half_closed() {
             let server = async {
                 let socket = listener.accept().await.expect("accept").0;
                 let mut connection = Connection::new(socket, Config::default(), Mode::Server);
-                let mut stream = connection.next_stream().await
+                let mut stream = connection
+                    .next_stream()
+                    .await
                     .expect("S: next_stream")
                     .expect("S: some stream");
                 task::spawn(crate::into_stream(connection).for_each(|_| future::ready(())));
@@ -167,7 +176,7 @@ async fn repeat_echo(c: Connection<TcpStream>) -> Result<(), ConnectionError> {
 /// collect the response. The sequence of responses will be returned.
 async fn send_recv<I>(mut control: Control, iter: I) -> Result<Vec<Vec<u8>>, ConnectionError>
 where
-    I: Iterator<Item = Vec<u8>>
+    I: Iterator<Item = Vec<u8>>,
 {
     let mut result = Vec::new();
     for msg in iter {
@@ -187,4 +196,3 @@ where
     control.close().await?;
     Ok(result)
 }
-

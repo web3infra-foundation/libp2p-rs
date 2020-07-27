@@ -17,13 +17,15 @@ use std::{collections::VecDeque, io};
 /// [`Chunk`] elements.
 #[derive(Debug)]
 pub(crate) struct Chunks {
-    seq: VecDeque<Chunk>
+    seq: VecDeque<Chunk>,
 }
 
 impl Chunks {
     /// A new empty chunk list.
     pub(crate) fn new() -> Self {
-        Chunks { seq: VecDeque::new() }
+        Chunks {
+            seq: VecDeque::new(),
+        }
     }
 
     /// Does this chunk list contain any bytes?
@@ -41,7 +43,9 @@ impl Chunks {
     /// Add another chunk of bytes to the end.
     pub(crate) fn push(&mut self, x: Vec<u8>) {
         if !x.is_empty() {
-            self.seq.push_back(Chunk { cursor: io::Cursor::new(x) })
+            self.seq.push_back(Chunk {
+                cursor: io::Cursor::new(x),
+            })
         }
     }
 
@@ -62,7 +66,7 @@ impl Chunks {
 /// vector can be consumed in steps.
 #[derive(Debug)]
 pub(crate) struct Chunk {
-    cursor: io::Cursor<Vec<u8>>
+    cursor: io::Cursor<Vec<u8>>,
 }
 
 impl Chunk {
@@ -86,13 +90,15 @@ impl Chunk {
     /// The `AsRef<[u8]>` impl of `Chunk` provides a byte-slice view
     /// from the current position to the end.
     pub(crate) fn advance(&mut self, amount: usize) {
-        assert!({ // the new position must not exceed the vector's length
+        assert!({
+            // the new position must not exceed the vector's length
             let pos = self.offset().checked_add(amount);
             let max = self.cursor.get_ref().len();
             pos.is_some() && pos <= Some(max)
         });
 
-        self.cursor.set_position(self.cursor.position() + amount as u64);
+        self.cursor
+            .set_position(self.cursor.position() + amount as u64);
     }
 
     /// Consume `self` and return the inner vector.
@@ -103,7 +109,6 @@ impl Chunk {
 
 impl AsRef<[u8]> for Chunk {
     fn as_ref(&self) -> &[u8] {
-        &self.cursor.get_ref()[self.offset() ..]
+        &self.cursor.get_ref()[self.offset()..]
     }
 }
-
