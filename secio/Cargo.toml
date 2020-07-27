@@ -1,0 +1,44 @@
+[package]
+name = "secio"
+version = "0.1.0"
+license = "MIT"
+description = "Secio encryption protocol for p2p"
+authors = ["kingwel-xie <kingwel.xie@139.com>"]
+repository = "https://github.com/pld/libp2p-rs"
+include = ["Cargo.toml", "src/*", "README.md", "LICENSE"]
+readme = "README.md"
+keywords = ["network", "peer-to-peer", "security"]
+categories = ["network-programming", "asynchronous"]
+edition = "2018"
+
+[package.metadata.docs.rs]
+features = [ "molc" ]
+all-features = false
+no-default-features = true
+
+[dependencies]
+bytes = "0.5"
+futures = { version = "0.3.0" }
+tokio = { version = "0.2.0", features = ["time", "io-util", "tcp", "dns"] }
+tokio-util = { version = "0.3.0", features = ["codec"] }
+log = "0.4.1"
+
+molecule = { version = "0.6.0" }
+
+secp256k1 = "0.17"
+rand = "0.7"
+ring = "0.16.5"
+unsigned-varint = "0.3"
+bs58 = "0.3.0"
+
+[target.'cfg(unix)'.dependencies]
+openssl = "0.10.25"
+openssl-sys = "0.9"
+
+[dev-dependencies]
+env_logger = "0.6"
+criterion = "0.3"
+
+[[bench]]
+name = "bench"
+harness = false
