@@ -8,10 +8,17 @@
 // at https://www.apache.org/licenses/LICENSE-2.0 and a copy of the MIT license
 // at https://opensource.org/licenses/MIT.
 
+use super::{
+    header::{self, HeaderDecodeError},
+    Frame,
+};
 use crate::connection::Id;
 use futures::{prelude::*, ready};
-use std::{fmt, io, pin::Pin, task::{Context, Poll}};
-use super::{Frame, header::{self, HeaderDecodeError}};
+use std::{
+    fmt, io,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 /// A [`Stream`] and writer of [`Frame`] values.
 #[derive(Debug)]
@@ -19,7 +26,7 @@ pub(crate) struct Io<T> {
     id: Id,
     io: T,
     state: ReadState,
-    max_body_len: usize
+    max_body_len: usize,
 }
 
 impl<T: AsyncRead + AsyncWrite + Unpin> Io<T> {
@@ -28,7 +35,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Io<T> {
             id,
             io,
             state: ReadState::Init,
-            max_body_len: max_frame_body_len
+            max_body_len: max_frame_body_len,
         }
     }
 
@@ -54,14 +61,14 @@ enum ReadState {
     /// Reading the frame header.
     Header {
         offset: usize,
-        buffer: [u8; header::HEADER_SIZE]
+        buffer: [u8; header::HEADER_SIZE],
     },
     /// Reading the frame body.
     Body {
         header: header::Header<()>,
         offset: usize,
-        buffer: Vec<u8>
-    }
+        buffer: Vec<u8>,
+    },
 }
 
 impl<T: AsyncRead + AsyncWrite + Unpin> Stream for Io<T> {
@@ -75,68 +82,76 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Stream for Io<T> {
                 ReadState::Init => {
                     this.state = ReadState::Header {
                         offset: 0,
-                        buffer: [0; header::HEADER_SIZE]
+                        buffer: [0; header::HEADER_SIZE],
                     };
                 }
-                ReadState::Header { ref mut offset, ref mut buffer } => {
+                ReadState::Header {
+                    ref mut offset,
+                    ref mut buffer,
+                } => {
                     if *offset == header::HEADER_SIZE {
-                        let header =
-                            match header::decode(&buffer) {
-                                Ok(hd) => hd,
-                                Err(e) => return Poll::Ready(Some(Err(e.into())))
-                            };
+                        let header = match header::decode(&buffer) {
+                            Ok(hd) => hd,
+                            Err(e) => return Poll::Ready(Some(Err(e.into()))),
+                        };
 
                         log::trace!("{}: read: {}", this.id, header);
 
                         if header.tag() != header::Tag::Data {
                             this.state = ReadState::Init;
-                            return Poll::Ready(Some(Ok(Frame::new(header))))
+                            return Poll::Ready(Some(Ok(Frame::new(header))));
                         }
 
                         let body_len = header.len().val() as usize;
 
                         if body_len > this.max_body_len {
-                            return Poll::Ready(Some(Err(FrameDecodeError::FrameTooLarge(body_len))))
+                            return Poll::Ready(Some(Err(FrameDecodeError::FrameTooLarge(
+                                body_len,
+                            ))));
                         }
 
                         this.state = ReadState::Body {
                             header,
                             offset: 0,
-                            buffer: vec![0; body_len]
+                            buffer: vec![0; body_len],
                         };
 
-                        continue
+                        continue;
                     }
 
-                    let buf = &mut buffer[*offset .. header::HEADER_SIZE];
+                    let buf = &mut buffer[*offset..header::HEADER_SIZE];
                     match ready!(Pin::new(&mut this.io).poll_read(cx, buf))? {
                         0 => {
                             if *offset == 0 {
-                                return Poll::Ready(None)
+                                return Poll::Ready(None);
                             }
                             let e = FrameDecodeError::Io(io::ErrorKind::UnexpectedEof.into());
-                            return Poll::Ready(Some(Err(e)))
+                            return Poll::Ready(Some(Err(e)));
                         }
-                        n => *offset += n
+                        n => *offset += n,
                     }
                 }
-                ReadState::Body { ref header, ref mut offset, ref mut buffer } => {
+                ReadState::Body {
+                    ref header,
+                    ref mut offset,
+                    ref mut buffer,
+                } => {
                     let body_len = header.len().val() as usize;
 
                     if *offset == body_len {
                         let h = header.clone();
                         let v = std::mem::take(buffer);
                         this.state = ReadState::Init;
-                        return Poll::Ready(Some(Ok(Frame { header: h, body: v })))
+                        return Poll::Ready(Some(Ok(Frame { header: h, body: v })));
                     }
 
-                    let buf = &mut buffer[*offset .. body_len];
+                    let buf = &mut buffer[*offset..body_len];
                     match ready!(Pin::new(&mut this.io).poll_read(cx, buf))? {
                         0 => {
                             let e = FrameDecodeError::Io(io::ErrorKind::UnexpectedEof.into());
-                            return Poll::Ready(Some(Err(e)))
+                            return Poll::Ready(Some(Err(e)));
                         }
-                        n => *offset += n
+                        n => *offset += n,
                     }
                 }
             }
@@ -147,18 +162,19 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Stream for Io<T> {
 impl fmt::Debug for ReadState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ReadState::Init => {
-                f.write_str("(ReadState::Init)")
-            }
-            ReadState::Header { offset, .. } => {
-                write!(f, "(ReadState::Header {})", offset)
-            }
-            ReadState::Body { header, offset, buffer } => {
-                write!(f, "(ReadState::Body (header {}) (offset {}) (buffer-len {}))",
-                    header,
-                    offset,
-                    buffer.len())
-            }
+            ReadState::Init => f.write_str("(ReadState::Init)"),
+            ReadState::Header { offset, .. } => write!(f, "(ReadState::Header {})", offset),
+            ReadState::Body {
+                header,
+                offset,
+                buffer,
+            } => write!(
+                f,
+                "(ReadState::Body (header {}) (offset {}) (buffer-len {}))",
+                header,
+                offset,
+                buffer.len()
+            ),
         }
     }
 }
@@ -172,7 +188,7 @@ pub enum FrameDecodeError {
     /// Decoding the frame header failed.
     Header(HeaderDecodeError),
     /// A data frame body length is larger than the configured maximum.
-    FrameTooLarge(usize)
+    FrameTooLarge(usize),
 }
 
 impl std::fmt::Display for FrameDecodeError {
@@ -180,7 +196,7 @@ impl std::fmt::Display for FrameDecodeError {
         match self {
             FrameDecodeError::Io(e) => write!(f, "i/o error: {}", e),
             FrameDecodeError::Header(e) => write!(f, "decode error: {}", e),
-            FrameDecodeError::FrameTooLarge(n) => write!(f, "frame body is too large ({})", n)
+            FrameDecodeError::FrameTooLarge(n) => write!(f, "frame body is too large ({})", n),
         }
     }
 }
@@ -190,7 +206,7 @@ impl std::error::Error for FrameDecodeError {
         match self {
             FrameDecodeError::Io(e) => Some(e),
             FrameDecodeError::Header(e) => Some(e),
-            FrameDecodeError::FrameTooLarge(_) => None
+            FrameDecodeError::FrameTooLarge(_) => None,
         }
     }
 }
@@ -209,22 +225,21 @@ impl From<HeaderDecodeError> for FrameDecodeError {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use quickcheck::{Arbitrary, Gen, QuickCheck};
     use rand::RngCore;
-    use super::*;
 
     impl Arbitrary for Frame<()> {
         fn arbitrary<G: Gen>(g: &mut G) -> Self {
             let mut header: header::Header<()> = Arbitrary::arbitrary(g);
-            let body =
-                if header.tag() == header::Tag::Data {
-                    header.set_len(header.len().val() % 4096);
-                    let mut b = vec![0; header.len().val() as usize];
-                    rand::thread_rng().fill_bytes(&mut b);
-                    b
-                } else {
-                    Vec::new()
-                };
+            let body = if header.tag() == header::Tag::Data {
+                header.set_len(header.len().val() % 4096);
+                let mut b = vec![0; header.len().val() as usize];
+                rand::thread_rng().fill_bytes(&mut b);
+                b
+            } else {
+                Vec::new()
+            };
             Frame { header, body }
         }
     }
@@ -236,10 +251,10 @@ mod tests {
                 let id = crate::connection::Id::random();
                 let mut io = Io::new(id, futures::io::Cursor::new(Vec::new()), f.body.len());
                 if io.send(&f).await.is_err() {
-                    return false
+                    return false;
                 }
                 if io.flush().await.is_err() {
-                    return false
+                    return false;
                 }
                 io.io.set_position(0);
                 if let Ok(Some(x)) = io.try_next().await {
@@ -255,4 +270,3 @@ mod tests {
             .quickcheck(property as fn(Frame<()>) -> bool)
     }
 }
-

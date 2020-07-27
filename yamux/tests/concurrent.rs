@@ -8,9 +8,15 @@
 // at https://www.apache.org/licenses/LICENSE-2.0 and a copy of the MIT license
 // at https://opensource.org/licenses/MIT.
 
-use async_std::{net::{TcpStream, TcpListener}, task};
+use async_std::{
+    net::{TcpListener, TcpStream},
+    task,
+};
 use futures::{channel::mpsc, prelude::*};
-use std::{net::{Ipv4Addr, SocketAddr, SocketAddrV4}, sync::Arc};
+use std::{
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    sync::Arc,
+};
 use yamux::{Config, Connection, Mode};
 
 async fn roundtrip(address: SocketAddr, nstreams: usize, data: Arc<Vec<u8>>) {
@@ -41,14 +47,16 @@ async fn roundtrip(address: SocketAddr, nstreams: usize, data: Arc<Vec<u8>>) {
     let conn = Connection::new(socket, Config::default(), Mode::Client);
     let mut ctrl = conn.control();
     task::spawn(yamux::into_stream(conn).for_each(|_| future::ready(())));
-    for _ in 0 .. nstreams {
+    for _ in 0..nstreams {
         let data = data.clone();
         let tx = tx.clone();
         let mut ctrl = ctrl.clone();
         task::spawn(async move {
             let mut stream = ctrl.open_stream().await?;
             log::debug!("C: opened new stream {}", stream.id());
-            stream.write_all(&(data.len() as u32).to_be_bytes()[..]).await?;
+            stream
+                .write_all(&(data.len() as u32).to_be_bytes()[..])
+                .await?;
             stream.write_all(&data).await?;
             stream.close().await?;
             log::debug!("C: {}: wrote {} bytes", stream.id(), data.len());
@@ -60,7 +68,10 @@ async fn roundtrip(address: SocketAddr, nstreams: usize, data: Arc<Vec<u8>>) {
             Ok::<(), yamux::ConnectionError>(())
         });
     }
-    let n = rx.take(nstreams).fold(0, |acc, n| future::ready(acc + n)).await;
+    let n = rx
+        .take(nstreams)
+        .fold(0, |acc, n| future::ready(acc + n))
+        .await;
     ctrl.close().await.expect("close connection");
     assert_eq!(nstreams, n)
 }

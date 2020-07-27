@@ -19,16 +19,19 @@ pub struct Header<T> {
     flags: Flags,
     stream_id: StreamId,
     length: Len,
-    _marker: std::marker::PhantomData<T>
+    _marker: std::marker::PhantomData<T>,
 }
 
 impl<T> fmt::Display for Header<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "(Header {:?} {} (len {}) (flags {:?}))",
+        write!(
+            f,
+            "(Header {:?} {} (len {}) (flags {:?}))",
             self.tag,
             self.stream_id,
             self.length.val(),
-            self.flags.val())
+            self.flags.val()
+        )
     }
 }
 
@@ -62,7 +65,7 @@ impl<T> Header<T> {
             flags: self.flags,
             stream_id: self.stream_id,
             length: self.length,
-            _marker: std::marker::PhantomData
+            _marker: std::marker::PhantomData,
         }
     }
 
@@ -131,7 +134,7 @@ impl Header<Data> {
             flags: Flags(0),
             stream_id: id,
             length: Len(len),
-            _marker: std::marker::PhantomData
+            _marker: std::marker::PhantomData,
         }
     }
 }
@@ -145,7 +148,7 @@ impl Header<WindowUpdate> {
             flags: Flags(0),
             stream_id: id,
             length: Len(credit),
-            _marker: std::marker::PhantomData
+            _marker: std::marker::PhantomData,
         }
     }
 
@@ -164,7 +167,7 @@ impl Header<Ping> {
             flags: Flags(0),
             stream_id: StreamId(0),
             length: Len(nonce),
-            _marker: std::marker::PhantomData
+            _marker: std::marker::PhantomData,
         }
     }
 
@@ -197,7 +200,7 @@ impl Header<GoAway> {
             flags: Flags(0),
             stream_id: StreamId(0),
             length: Len(code),
-            _marker: std::marker::PhantomData
+            _marker: std::marker::PhantomData,
         }
     }
 }
@@ -257,7 +260,7 @@ pub enum Tag {
     Data,
     WindowUpdate,
     Ping,
-    GoAway
+    GoAway,
 }
 
 /// The protocol version a message corresponds to.
@@ -354,16 +357,16 @@ pub fn encode<T>(hdr: &Header<T>) -> [u8; HEADER_SIZE] {
     let mut buf = [0; HEADER_SIZE];
     buf[0] = hdr.version.0;
     buf[1] = hdr.tag as u8;
-    buf[2 .. 4].copy_from_slice(&hdr.flags.0.to_be_bytes());
-    buf[4 .. 8].copy_from_slice(&hdr.stream_id.0.to_be_bytes());
-    buf[8 .. HEADER_SIZE].copy_from_slice(&hdr.length.0.to_be_bytes());
+    buf[2..4].copy_from_slice(&hdr.flags.0.to_be_bytes());
+    buf[4..8].copy_from_slice(&hdr.stream_id.0.to_be_bytes());
+    buf[8..HEADER_SIZE].copy_from_slice(&hdr.length.0.to_be_bytes());
     buf
 }
 
 /// Decode a [`Header`] value.
 pub fn decode(buf: &[u8; HEADER_SIZE]) -> Result<Header<()>, HeaderDecodeError> {
     if buf[0] != 0 {
-        return Err(HeaderDecodeError::Version(buf[0]))
+        return Err(HeaderDecodeError::Version(buf[0]));
     }
 
     let hdr = Header {
@@ -373,16 +376,16 @@ pub fn decode(buf: &[u8; HEADER_SIZE]) -> Result<Header<()>, HeaderDecodeError> 
             1 => Tag::WindowUpdate,
             2 => Tag::Ping,
             3 => Tag::GoAway,
-            t => return Err(HeaderDecodeError::Type(t))
+            t => return Err(HeaderDecodeError::Type(t)),
         },
         flags: Flags(u16::from_be_bytes([buf[2], buf[3]])),
         stream_id: StreamId(u32::from_be_bytes([buf[4], buf[5], buf[6], buf[7]])),
         length: Len(u32::from_be_bytes([buf[8], buf[9], buf[10], buf[11]])),
-        _marker: std::marker::PhantomData
+        _marker: std::marker::PhantomData,
     };
 
     if hdr.flags.0 > MAX_FLAG_VAL {
-        return Err(HeaderDecodeError::Flags(hdr.flags.0))
+        return Err(HeaderDecodeError::Flags(hdr.flags.0));
     }
 
     Ok(hdr)
@@ -397,7 +400,7 @@ pub enum HeaderDecodeError {
     /// An unknown frame type.
     Type(u8),
     /// Unknown flags.
-    Flags(u16)
+    Flags(u16),
 }
 
 impl std::fmt::Display for HeaderDecodeError {
@@ -405,7 +408,7 @@ impl std::fmt::Display for HeaderDecodeError {
         match self {
             HeaderDecodeError::Version(v) => write!(f, "unknown version: {}", v),
             HeaderDecodeError::Type(t) => write!(f, "unknown frame type: {}", t),
-            HeaderDecodeError::Flags(x) => write!(f, "unknown flags type: {}", x)
+            HeaderDecodeError::Flags(x) => write!(f, "unknown flags type: {}", x),
         }
     }
 }
@@ -414,9 +417,9 @@ impl std::error::Error for HeaderDecodeError {}
 
 #[cfg(test)]
 mod tests {
-    use quickcheck::{Arbitrary, Gen, QuickCheck};
-    use rand::{Rng, seq::SliceRandom};
     use super::*;
+    use quickcheck::{Arbitrary, Gen, QuickCheck};
+    use rand::{seq::SliceRandom, Rng};
 
     impl Arbitrary for Header<()> {
         fn arbitrary<G: Gen>(g: &mut G) -> Self {
@@ -431,7 +434,7 @@ mod tests {
                 flags: Flags(std::cmp::min(g.gen(), MAX_FLAG_VAL)),
                 stream_id: StreamId(g.gen()),
                 length: Len(g.gen()),
-                _marker: std::marker::PhantomData
+                _marker: std::marker::PhantomData,
             }
         }
     }
