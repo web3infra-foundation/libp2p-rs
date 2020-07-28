@@ -184,102 +184,6 @@ impl Stream {
     }
 }
 
-/// Byte data produced by the [`futures::stream::Stream`] impl of [`Stream`].
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Packet(Vec<u8>);
-
-impl AsRef<[u8]> for Packet {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_ref()
-    }
-}
-
-impl futures::stream::Stream for Stream {
-    type Item = io::Result<Packet>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        if !self.config.read_after_close && self.sender.is_closed() {
-            return Poll::Ready(None);
-        }
-
-        // Try to deliver any pending window updates first.
-        if self.pending.is_some() {
-            ready!(self
-                .sender
-                .poll_ready(cx)
-                .map_err(|_| self.write_zero_err())?);
-            let mut frame = self.pending.take().expect("pending.is_some()").right();
-            self.add_flag(frame.header_mut());
-            let cmd = StreamCommand::SendFrame(frame);
-            self.sender
-                .start_send(cmd)
-                .map_err(|_| self.write_zero_err())?
-        }
-
-        // We need to limit the `shared` `MutexGuard` scope, or else we run into
-        // borrow check troubles further down.
-        {
-            let mut shared = self.shared();
-
-            if let Some(bytes) = shared.buffer.pop() {
-                let off = bytes.offset();
-                let mut vec = bytes.into_vec();
-                if off != 0 {
-                    // This should generally not happen when the stream is used only as
-                    // a `futures::stream::Stream` since the whole point of this impl is
-                    // to consume chunks atomically. It may perhaps happen when mixing
-                    // this impl and the `AsyncRead` one.
-                    log::debug!(
-                        "{}/{}: chunk has been partially consumed",
-                        self.conn,
-                        self.id
-                    );
-                    vec = vec.split_off(off)
-                }
-                return Poll::Ready(Some(Ok(Packet(vec))));
-            }
-
-            // Buffer is empty, let's check if we can expect to read more data.
-            if !shared.state().can_read() {
-                log::debug!("{}/{}: eof", self.conn, self.id);
-                return Poll::Ready(None); // stream has been reset
-            }
-
-            // Since we have no more data at this point, we want to be woken up
-            // by the connection when more becomes available for us.
-            shared.reader = Some(cx.waker().clone());
-
-            // Finally, let's see if we need to send a window update to the remote.
-            if self.config.window_update_mode != WindowUpdateMode::OnRead || shared.window > 0 {
-                // No, time to go.
-                return Poll::Pending;
-            }
-
-            shared.window = self.config.receive_window
-        }
-
-        // At this point we know we have to send a window update to the remote.
-        let frame = Frame::window_update(self.id, self.config.receive_window);
-        match self
-            .sender
-            .poll_ready(cx)
-            .map_err(|_| self.write_zero_err())?
-        {
-            Poll::Ready(()) => {
-                let mut frame = frame.right();
-                self.add_flag(frame.header_mut());
-                let cmd = StreamCommand::SendFrame(frame);
-                self.sender
-                    .start_send(cmd)
-                    .map_err(|_| self.write_zero_err())?
-            }
-            Poll::Pending => self.pending = Some(frame),
-        }
-
-        Poll::Pending
-    }
-}
-
 // Like the `futures::stream::Stream` impl above, but copies bytes into the
 // provided mutable slice.
 impl AsyncRead for Stream {
@@ -333,8 +237,8 @@ impl AsyncRead for Stream {
 
             // Buffer is empty, let's check if we can expect to read more data.
             if !shared.state().can_read() {
-                log::debug!("{}/{}: eof", self.conn, self.id);
-                return Poll::Ready(Ok(0)); // stream has been reset
+                log::info!("{}/{}: eof", self.conn, self.id);
+                return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into())); // stream has been reset
             }
 
             // Since we have no more data at this point, we want to be woken up

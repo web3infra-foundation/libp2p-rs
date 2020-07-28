@@ -111,7 +111,7 @@ use std::{
 };
 
 pub use control::Control;
-pub use stream::{Packet, State, Stream};
+pub use stream::{State, Stream};
 
 /// Arbitrary limit of our internal command channels.
 ///

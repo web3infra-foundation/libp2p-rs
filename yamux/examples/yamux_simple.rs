@@ -24,7 +24,7 @@ fn run_server() {
 
         while let Ok((socket, _)) = listener.accept().await {
             info!("accepted a socket: {:?}", socket.peer_addr());
-            yamux::into_stream(Connection::new(socket, Config::default(), Mode::Server))
+            let _ = yamux::into_stream(Connection::new(socket, Config::default(), Mode::Server))
                 .try_for_each_concurrent(None, |mut stream| async move {
                     info!("S: accepted new stream");
 
@@ -49,16 +49,16 @@ fn run_client() {
 
         task::spawn(yamux::into_stream(conn).for_each(|_| future::ready(())));
 
-        let mut stream = ctrl.open_stream().await?;
+        let mut stream = ctrl.open_stream().await.unwrap();
         info!("C: opened new stream {}", stream.id());
 
         let data = b"hello world";
 
-        stream.write_all(data).await?;
+        stream.write_all(data).await.unwrap();
         info!("C: {}: wrote {} bytes", stream.id(), data.len());
 
         let mut frame = vec![0; data.len()];
-        stream.read_exact(&mut frame).await?;
+        stream.read_exact(&mut frame).await.unwrap();
 
         info!("C: {}: read {} bytes", stream.id(), frame.len());
 
@@ -66,6 +66,6 @@ fn run_client() {
 
         ctrl.close().await.expect("close connection");
 
-        Ok::<(), yamux::ConnectionError>(())
+        //Ok::<(), yamux::ConnectionError>(())
     });
 }
