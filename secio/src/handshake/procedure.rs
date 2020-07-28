@@ -4,7 +4,7 @@
 ///
 use futures::prelude::*;
 use log::{debug, trace};
-use std::{cmp::Ordering, io};
+use std::cmp::Ordering;
 
 use crate::{
     codec::{len_prefix::LengthPrefixSocket, secure_stream::SecureStream, Hmac},
@@ -47,18 +47,12 @@ where
 
     trace!("sending proposition to remote");
     socket
-        .send(local_context.state.proposition_bytes.clone())
+        .write_msg(local_context.state.proposition_bytes.clone())
         .await?;
 
     // Receive the remote's proposition.
-    let remote_context = match socket.next().await {
-        Some(p) => local_context.with_remote(p?)?,
-        None => {
-            let err = io::Error::new(io::ErrorKind::UnexpectedEof, "unexpected eof");
-            debug!("unexpected eof while waiting for remote's proposition");
-            return Err(err.into());
-        }
-    };
+    let remote_proposition = socket.read_msg().await?;
+    let remote_context = local_context.with_remote(remote_proposition)?;
 
     trace!(
         "received proposition from remote; pubkey = {:?}; nonce = {:?}",
@@ -113,18 +107,10 @@ where
     // Send our local `Exchange`.
     trace!("sending exchange to remote");
 
-    socket.send(local_exchanges).await?;
+    socket.write_msg(local_exchanges).await?;
 
     // Receive the remote's `Exchange`.
-    let raw_exchanges = match socket.next().await {
-        Some(raw) => raw?,
-        None => {
-            let err = io::Error::new(io::ErrorKind::UnexpectedEof, "unexpected eof");
-            debug!("unexpected eof while waiting for remote's proposition");
-            return Err(err.into());
-        }
-    };
-
+    let raw_exchanges = socket.read_msg().await?;
     let remote_exchanges = match Exchange::decode(&raw_exchanges) {
         Some(e) => e,
         None => {
