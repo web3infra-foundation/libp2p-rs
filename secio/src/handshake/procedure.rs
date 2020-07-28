@@ -2,17 +2,12 @@
 ///
 /// Some panic logic has been removed, some error handling has been removed, and an error has been added.
 ///
-use futures::{SinkExt, StreamExt};
+use futures::prelude::*;
 use log::{debug, trace};
 use std::{cmp::Ordering, io};
-use tokio::{
-    io::AsyncWriteExt,
-    prelude::{AsyncRead, AsyncWrite},
-};
-use tokio_util::codec::length_delimited::Builder;
 
 use crate::{
-    codec::{secure_stream::SecureStream, Hmac},
+    codec::{len_prefix::LengthPrefixSocket, secure_stream::SecureStream, Hmac},
     crypto::{cipher::CipherType, new_stream, BoxStreamCipher, CryptoMode},
     error::SecioError,
     exchange,
@@ -23,7 +18,6 @@ use crate::{
     },
     Digest, EphemeralPublicKey, KeyPairInner,
 };
-use bytes::{Buf, BytesMut};
 
 /// Performs a handshake on the given socket.
 ///
@@ -42,11 +36,7 @@ where
     T: AsyncRead + AsyncWrite + Send + 'static + Unpin,
 {
     // The handshake messages all start with a 4-bytes message length prefix.
-    let mut socket = Builder::new()
-        .big_endian()
-        .length_field_length(4)
-        .max_frame_length(config.max_frame_length)
-        .new_framed(socket);
+    let mut socket = LengthPrefixSocket::new(socket, config.max_frame_length);
 
     // Generate our nonce.
     let local_context = HandshakeContext::new(config).with_local();
@@ -87,14 +77,13 @@ where
     let exchanges = {
         let mut exchanges = Exchange::new();
 
-        let mut data_to_sign = BytesMut::from(
-            ephemeral_context
-                .state
-                .remote
-                .local
-                .proposition_bytes
-                .bytes(),
-        );
+        let mut data_to_sign = ephemeral_context
+            .state
+            .remote
+            .local
+            .proposition_bytes
+            .clone();
+
         data_to_sign.extend_from_slice(&ephemeral_context.state.remote.proposition_bytes);
         data_to_sign.extend_from_slice(&tmp_pub_key);
 
@@ -119,7 +108,7 @@ where
         exchanges.signature = signature.to_vec();
         exchanges
     };
-    let local_exchanges = exchanges.encode();
+    let local_exchanges = exchanges.encode().to_vec();
 
     // Send our local `Exchange`.
     trace!("sending exchange to remote");
@@ -320,20 +309,20 @@ mod tests {
     use super::stretch_key;
     use crate::{codec::Hmac, handshake::Config, Digest, SecioKeyPair};
 
+    use async_std::{
+        net::{TcpListener, TcpStream},
+        task,
+    };
     use bytes::BytesMut;
     use futures::channel;
-    use tokio::{
-        io::{AsyncReadExt, AsyncWriteExt},
-        net::{TcpListener, TcpStream},
-    };
+    use futures::prelude::*;
 
     fn handshake_with_self_success(config_1: Config, config_2: Config, data: &'static [u8]) {
-        let mut rt = tokio::runtime::Runtime::new().unwrap();
         let (sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();
         let (addr_sender, addr_receiver) = channel::oneshot::channel::<::std::net::SocketAddr>();
 
-        rt.spawn(async move {
-            let mut listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        task::spawn(async move {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let listener_addr = listener.local_addr().unwrap();
             let _res = addr_sender.send(listener_addr);
             let (connect, _) = listener.accept().await.unwrap();
@@ -343,7 +332,7 @@ mod tests {
             handle.write_all(&data).await.unwrap();
         });
 
-        rt.spawn(async move {
+        task::spawn(async move {
             let listener_addr = addr_receiver.await.unwrap();
             let connect = TcpStream::connect(&listener_addr).await.unwrap();
             let (mut handle, _, _) = config_2.handshake(connect).await.unwrap();
@@ -353,7 +342,7 @@ mod tests {
             let _res = sender.send(BytesMut::from(&data[..]));
         });
 
-        rt.block_on(async move {
+        task::block_on(async move {
             let received = receiver.await.unwrap();
             assert_eq!(received.to_vec(), data);
         });
