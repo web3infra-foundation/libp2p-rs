@@ -1,8 +1,5 @@
-use bytes::{Bytes, BytesMut};
-use futures::{SinkExt, StreamExt};
+use futures::prelude::*;
 use log::{debug, trace};
-use tokio::prelude::{AsyncRead, AsyncWrite};
-use tokio_util::codec::{length_delimited::LengthDelimitedCodec, Framed};
 
 use std::{
     cmp::min,
@@ -11,13 +8,14 @@ use std::{
     task::{Context, Poll},
 };
 
-use crate::{codec::Hmac, crypto::BoxStreamCipher, error::SecioError};
+use crate::{
+    codec::len_prefix::LengthPrefixSocket, codec::Hmac, crypto::BoxStreamCipher, error::SecioError,
+};
 use std::future::Future;
-use tokio::io::AsyncReadExt;
 
 /// Encrypted stream
 pub struct SecureStream<T> {
-    socket: Framed<T, LengthDelimitedCodec>,
+    socket: LengthPrefixSocket<T>,
     decode_cipher: BoxStreamCipher,
     decode_hmac: Option<Hmac>,
     encode_cipher: BoxStreamCipher,
@@ -37,11 +35,11 @@ pub struct SecureStream<T> {
 
 impl<T> SecureStream<T>
 where
-    T: AsyncRead + AsyncWrite + Unpin,
+    T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     /// New a secure stream
     pub(crate) fn new(
-        socket: Framed<T, LengthDelimitedCodec>,
+        socket: LengthPrefixSocket<T>,
         decode_cipher: BoxStreamCipher,
         decode_hmac: Option<Hmac>,
         encode_cipher: BoxStreamCipher,
@@ -61,7 +59,7 @@ where
 
     /// Decoding data
     #[inline]
-    fn decode_buffer(&mut self, mut frame: BytesMut) -> Result<Vec<u8>, SecioError> {
+    fn decode_buffer(&mut self, mut frame: Vec<u8>) -> Result<Vec<u8>, SecioError> {
         if let Some(ref mut hmac) = self.decode_hmac {
             if frame.len() < hmac.num_bytes() {
                 debug!("frame too short when decoding secio frame");
@@ -164,13 +162,13 @@ where
     }
 
     #[inline]
-    fn encode_buffer(&mut self, buf: &[u8]) -> Bytes {
+    fn encode_buffer(&mut self, buf: &[u8]) -> Vec<u8> {
         let mut out = self.encode_cipher.encrypt(buf).unwrap();
         if let Some(ref mut hmac) = self.encode_hmac {
             let signature = hmac.sign(&out[..]);
             out.extend_from_slice(signature.as_ref());
         }
-        Bytes::from(out)
+        out
     }
 
     async fn write_socket(&mut self, buf: &[u8]) -> io::Result<usize> {
@@ -187,7 +185,7 @@ where
 
 impl<T> AsyncRead for SecureStream<T>
 where
-    T: AsyncRead + AsyncWrite + Unpin,
+    T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     fn poll_read(
         mut self: Pin<&mut Self>,
@@ -200,7 +198,7 @@ where
 
 impl<T> AsyncWrite for SecureStream<T>
 where
-    T: AsyncRead + AsyncWrite + Unpin,
+    T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     fn poll_write(
         mut self: Pin<&mut Self>,
@@ -214,7 +212,7 @@ where
         poll_future(cx, self.socket.flush())
     }
 
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
         poll_future(cx, self.socket.close())
     }
 }
@@ -228,16 +226,16 @@ fn poll_future<T>(cx: &mut Context<'_>, fut: impl Future<Output = T>) -> Poll<T>
 #[cfg(test)]
 mod tests {
     use super::{Hmac, SecureStream};
+    use crate::codec::len_prefix::LengthPrefixSocket;
     use crate::crypto::{cipher::CipherType, new_stream, CryptoMode};
     #[cfg(unix)]
     use crate::Digest;
-    use bytes::BytesMut;
-    use futures::channel;
-    use tokio::{
-        io::{AsyncReadExt, AsyncWriteExt},
+    use async_std::{
         net::{TcpListener, TcpStream},
+        task,
     };
-    use tokio_util::codec::{length_delimited::LengthDelimitedCodec, Framed};
+    use bytes::BytesMut;
+    use futures::{channel, AsyncReadExt, AsyncWriteExt};
 
     fn test_decode_encode(cipher: CipherType) {
         let cipher_key = (0..cipher.key_size())
@@ -305,10 +303,9 @@ mod tests {
 
         let (sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();
         let (addr_sender, addr_receiver) = channel::oneshot::channel::<::std::net::SocketAddr>();
-        let mut rt = tokio::runtime::Runtime::new().unwrap();
 
-        rt.spawn(async move {
-            let mut listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        task::spawn(async move {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let listener_addr = listener.local_addr().unwrap();
             let _res = addr_sender.send(listener_addr);
             let (socket, _) = listener.accept().await.unwrap();
@@ -324,7 +321,7 @@ mod tests {
                 ),
             };
             let mut handle = SecureStream::new(
-                Framed::new(socket, LengthDelimitedCodec::new()),
+                LengthPrefixSocket::new(socket, 4096),
                 new_stream(
                     cipher,
                     &cipher_key_clone[..key_size],
@@ -347,7 +344,7 @@ mod tests {
             let _res = sender.send(BytesMut::from(&data[..]));
         });
 
-        rt.spawn(async move {
+        task::spawn(async move {
             let listener_addr = addr_receiver.await.unwrap();
             let stream = TcpStream::connect(&listener_addr).await.unwrap();
             let (decode_hmac, encode_hmac) = match cipher {
@@ -361,7 +358,7 @@ mod tests {
                 ),
             };
             let mut handle = SecureStream::new(
-                Framed::new(stream, LengthDelimitedCodec::new()),
+                LengthPrefixSocket::new(stream, 4096),
                 new_stream(
                     cipher,
                     &cipher_key_clone[..key_size],
@@ -382,7 +379,7 @@ mod tests {
             let _res = handle.write_all(&data_clone[..]).await;
         });
 
-        rt.block_on(async move {
+        task::block_on(async move {
             let received = receiver.await.unwrap();
             assert_eq!(received.to_vec(), data);
         });

@@ -12,7 +12,6 @@ use crate::{
     support, Digest,
 };
 
-use bytes::{Bytes, BytesMut};
 use log::{debug, trace};
 use ring::agreement;
 
@@ -32,14 +31,14 @@ pub struct Local {
     // Our local public key bytes:
     pub(crate) public_key: Vec<u8>,
     // Our local proposition's raw bytes:
-    pub(crate) proposition_bytes: Bytes,
+    pub(crate) proposition_bytes: Vec<u8>,
 }
 
 // HandshakeContext<Local> --with_remote-> HandshakeContext<Remote>
 pub struct Remote {
     pub(crate) local: Local,
     // The remote's proposition's raw bytes:
-    pub(crate) proposition_bytes: BytesMut,
+    pub(crate) proposition_bytes: Vec<u8>,
     // The remote's public key:
     pub(crate) public_key: PublicKey,
     // The remote's `nonce`.
@@ -112,7 +111,7 @@ impl HandshakeContext<()> {
             .unwrap_or_else(|| support::DEFAULT_DIGESTS_PROPOSITION.into());
         trace!("digests proposition: {}", proposition.hashes);
 
-        let proposition_bytes = proposition.encode();
+        let proposition_bytes = proposition.encode().to_vec();
 
         HandshakeContext {
             config: self.config,
@@ -129,7 +128,7 @@ impl HandshakeContext<Local> {
     // Process remote proposition.
     pub fn with_remote(
         self,
-        remote_bytes: BytesMut,
+        remote_bytes: Vec<u8>,
     ) -> Result<HandshakeContext<Remote>, SecioError> {
         let propose = match Propose::decode(&remote_bytes) {
             Some(prop) => prop,

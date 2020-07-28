@@ -27,52 +27,6 @@ impl Propose {
         Default::default()
     }
 
-    /// Encode with flatbuffer
-    #[cfg(feature = "flatc")]
-    pub fn encode(&self) -> Bytes {
-        let mut fbb = flatbuffers::FlatBufferBuilder::new();
-        let rand = fbb.create_vector(&self.rand);
-        let pub_key = fbb.create_vector(&self.pubkey);
-        let exchange = fbb.create_string(&self.exchange);
-        let ciphers = fbb.create_string(&self.ciphers);
-        let hashes = fbb.create_string(&self.hashes);
-
-        let mut builder = ProposeBuilder::new(&mut fbb);
-        builder.add_rand(rand);
-        builder.add_pubkey(pub_key);
-        builder.add_exchanges(exchange);
-        builder.add_ciphers(ciphers);
-        builder.add_hashes(hashes);
-        let data = builder.finish();
-
-        fbb.finish(data, None);
-        Bytes::from(fbb.finished_data().to_owned())
-    }
-
-    /// Decode with Flatbuffer
-    #[cfg(feature = "flatc")]
-    pub fn decode(data: &[u8]) -> Option<Self> {
-        let fbs_propose = flatbuffers_verifier::get_root::<FBSPropose>(data).ok()?;
-        match (
-            fbs_propose.rand(),
-            fbs_propose.pubkey(),
-            fbs_propose.exchanges(),
-            fbs_propose.ciphers(),
-            fbs_propose.hashes(),
-        ) {
-            (Some(rand), Some(pubkey), Some(exchange), Some(ciphers), Some(hashes)) => {
-                Some(Propose {
-                    rand: rand.to_owned(),
-                    pubkey: Bytes::from(pubkey.to_owned()),
-                    exchange: exchange.to_owned(),
-                    ciphers: ciphers.to_owned(),
-                    hashes: hashes.to_owned(),
-                })
-            }
-            _ => None,
-        }
-    }
-
     /// Encode with molecule
     pub fn encode(self) -> Bytes {
         let rand = handshake_mol::Bytes::new_builder()
