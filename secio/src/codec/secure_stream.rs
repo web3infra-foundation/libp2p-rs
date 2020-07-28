@@ -117,11 +117,13 @@ where
         // calculate number of bytes that we can copy
         let n = ::std::cmp::min(buf.len(), self.recv_buf.len());
 
+        let remained = self.recv_buf.split_off(n);
+
         // Copy data to the output buffer
-        buf[..n].copy_from_slice(self.recv_buf[..n].as_ref());
+        buf[..n].copy_from_slice(self.recv_buf.as_ref());
 
         // drain n bytes of recv_buf
-        self.recv_buf = self.recv_buf.split_off(n);
+        self.recv_buf = remained;
 
         n
     }
