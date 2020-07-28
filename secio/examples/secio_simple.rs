@@ -5,7 +5,7 @@ use async_std::{
 use bytes::BytesMut;
 use env_logger;
 use futures::prelude::*;
-use log::info;
+use log::{error, info};
 use secio::{handshake::Config, SecioKeyPair};
 
 fn main() {
@@ -32,7 +32,14 @@ fn server() {
             task::spawn(async move {
                 let (handle, _, _) = config.handshake(socket).await.unwrap();
                 let (h1, h2) = handle.split();
-                async_std::io::copy(h1, h2).await
+                match async_std::io::copy(h1, h2).await {
+                    Ok(n) => {
+                        error!("io-copy exited @len={}", n);
+                    }
+                    Err(err) => {
+                        error!("io-copy exited @{:?}", err);
+                    }
+                }
             });
         }
     });

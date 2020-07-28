@@ -1,5 +1,5 @@
 use futures::prelude::*;
-use log::{debug, trace};
+use log::{debug, info, trace};
 
 use std::{
     cmp::min,
@@ -133,8 +133,8 @@ where
             return Ok(copied);
         }
 
-        match self.socket.next().await {
-            Some(Ok(t)) => {
+        match self.socket.read_msg().await {
+            Ok(t) => {
                 debug!("receive encrypted data size: {:?}", t.len());
                 let decoded = self
                     .decode_buffer(t)
@@ -153,10 +153,12 @@ where
                     Ok(copied)
                 }
             }
-            Some(Err(err)) => Err(err),
-            None => {
-                debug!("connection shutting down");
-                Err(io::ErrorKind::BrokenPipe.into())
+            Err(err) => {
+                info!(
+                    "error when reading from underlying socket: {}",
+                    err.to_string()
+                );
+                Err(err)
             }
         }
     }
@@ -176,9 +178,15 @@ where
 
         let frame = self.encode_buffer(buf);
         trace!("start sending encrypted data size: {:?}", frame.len());
-        match self.socket.send(frame).await {
+        match self.socket.write_msg(frame).await {
             Ok(()) => Ok(buf.len()),
-            Err(err) => Err(err),
+            Err(err) => {
+                info!(
+                    "error when writing to underlying socket: {}",
+                    err.to_string()
+                );
+                Err(err)
+            }
         }
     }
 }
