@@ -8,24 +8,21 @@
 // at https://www.apache.org/licenses/LICENSE-2.0 and a copy of the MIT license
 // at https://opensource.org/licenses/MIT.
 
+use std::io;
+use futures::prelude::*;
+
 use super::{
     header::{self, HeaderDecodeError},
     Frame,
 };
 use crate::connection::Id;
-use futures::{prelude::*, ready};
-use std::{
-    fmt, io,
-    pin::Pin,
-    task::{Context, Poll},
-};
+use crate::frame::header::HEADER_SIZE;
 
 /// A [`Stream`] and writer of [`Frame`] values.
 #[derive(Debug)]
 pub(crate) struct Io<T> {
     id: Id,
     io: T,
-    state: ReadState,
     max_body_len: usize,
 }
 
@@ -34,12 +31,11 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Io<T> {
         Io {
             id,
             io,
-            state: ReadState::Init,
             max_body_len: max_frame_body_len,
         }
     }
 
-    pub(crate) async fn send<A>(&mut self, frame: &Frame<A>) -> io::Result<()> {
+    pub(crate) async fn send_frame<A>(&mut self, frame: &Frame<A>) -> io::Result<()> {
         let header = header::encode(&frame.header);
         self.io.write_all(&header).await?;
         self.io.write_all(&frame.body).await
@@ -52,25 +48,32 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Io<T> {
     pub(crate) async fn close(&mut self) -> io::Result<()> {
         self.io.close().await
     }
+
+    pub(crate) async fn recv_frame(&mut self) -> Result<Frame<()>, FrameDecodeError> {
+        let mut header_data = [0; HEADER_SIZE];
+        self.io.read_exact(&mut header_data).await?;
+
+        let header = header::decode(&header_data)?;
+
+        log::trace!("{}: read stream header: {}", self.id, header);
+
+        if header.tag() != header::Tag::Data {
+            return Ok(Frame::new(header));
+        }
+
+        let body_len = header.len().val() as usize;
+        if body_len > self.max_body_len {
+            return Err(FrameDecodeError::FrameTooLarge(body_len));
+        }
+
+        let mut body = vec![0; body_len];
+        self.io.read_exact(&mut body).await?;
+
+        Ok(Frame { header, body })
+    }
 }
 
-/// The stages of reading a new `Frame`.
-enum ReadState {
-    /// Initial reading state.
-    Init,
-    /// Reading the frame header.
-    Header {
-        offset: usize,
-        buffer: [u8; header::HEADER_SIZE],
-    },
-    /// Reading the frame body.
-    Body {
-        header: header::Header<()>,
-        offset: usize,
-        buffer: Vec<u8>,
-    },
-}
-
+/*
 impl<T: AsyncRead + AsyncWrite + Unpin> Stream for Io<T> {
     type Item = Result<Frame<()>, FrameDecodeError>;
 
@@ -158,26 +161,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Stream for Io<T> {
         }
     }
 }
+*/
 
-impl fmt::Debug for ReadState {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ReadState::Init => f.write_str("(ReadState::Init)"),
-            ReadState::Header { offset, .. } => write!(f, "(ReadState::Header {})", offset),
-            ReadState::Body {
-                header,
-                offset,
-                buffer,
-            } => write!(
-                f,
-                "(ReadState::Body (header {}) (offset {}) (buffer-len {}))",
-                header,
-                offset,
-                buffer.len()
-            ),
-        }
-    }
-}
 
 /// Possible errors while decoding a message frame.
 #[non_exhaustive]
@@ -250,7 +235,7 @@ mod tests {
             async_std::task::block_on(async move {
                 let id = crate::connection::Id::random();
                 let mut io = Io::new(id, futures::io::Cursor::new(Vec::new()), f.body.len());
-                if io.send(&f).await.is_err() {
+                if io.send_frame(f.clone()).await.is_err() {
                     return false;
                 }
                 if io.flush().await.is_err() {
