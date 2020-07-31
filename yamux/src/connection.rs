@@ -675,6 +675,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Connection<T> {
     fn on_data(&mut self, frame: Frame<Data>) -> Action {
         let stream_id = frame.header().stream_id();
 
+        log::trace!("{}/{}: received {:?}", self.id, stream_id, frame);
+
         if frame.header().flags().contains(header::RST) {
             // stream reset
             if let Some(s) = self.streams.get_mut(&stream_id) {
