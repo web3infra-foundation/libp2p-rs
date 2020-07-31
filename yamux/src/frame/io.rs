@@ -8,8 +8,8 @@
 // at https://www.apache.org/licenses/LICENSE-2.0 and a copy of the MIT license
 // at https://opensource.org/licenses/MIT.
 
-use std::io;
 use futures::prelude::*;
+use std::io;
 
 use super::{
     header::{self, HeaderDecodeError},
@@ -162,7 +162,6 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Stream for Io<T> {
     }
 }
 */
-
 
 /// Possible errors while decoding a message frame.
 #[non_exhaustive]
