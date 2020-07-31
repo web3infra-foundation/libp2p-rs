@@ -17,14 +17,9 @@ use crate::{
     },
     Config, WindowUpdateMode,
 };
-use futures::{
-    channel::mpsc,
-    future,
-    future::Either,
-    io::{AsyncRead, AsyncWrite},
-    ready, Future, SinkExt,
-};
-use parking_lot::{Mutex, MutexGuard};
+use futures::lock::{Mutex, MutexGuard};
+use futures::prelude::*;
+use futures::{channel::mpsc, future::Either};
 use std::{
     fmt, io,
     pin::Pin,
@@ -140,16 +135,16 @@ impl Stream {
     }
 
     /// Get this stream's state.
-    pub(crate) fn state(&self) -> State {
-        self.shared().state()
+    pub(crate) async fn state(&self) -> State {
+        self.shared().await.state()
     }
 
     pub(crate) fn strong_count(&self) -> usize {
         Arc::strong_count(&self.shared)
     }
 
-    pub(crate) fn shared(&self) -> MutexGuard<'_, Shared> {
-        self.shared.lock()
+    pub(crate) async fn shared(&self) -> MutexGuard<'_, Shared> {
+        self.shared.lock().await
     }
 
     pub(crate) fn clone(&self) -> Self {
@@ -171,7 +166,7 @@ impl Stream {
         }
 
         // Copy data from stream buffer.
-        let mut shared = self.shared();
+        let mut shared = self.shared().await;
 
         // Buffer is empty, let's check if we can expect to read more data.
         if !shared.state().can_read() {
@@ -196,7 +191,7 @@ impl Stream {
             .await;
 
             // again, get the shared lock
-            shared = self.shared();
+            shared = self.shared().await;
         }
 
         let mut n = 0;
@@ -250,7 +245,7 @@ impl Stream {
 
     async fn write_stream(&mut self, buf: &[u8]) -> io::Result<usize> {
         let body = {
-            let mut shared = self.shared();
+            let mut shared = self.shared().await;
             if !shared.state().can_write() {
                 log::debug!("{}/{}: can no longer write", self.conn, self.id);
                 return Err(self.write_zero_err());
@@ -269,7 +264,7 @@ impl Stream {
                 .await;
 
                 // again, get the shared lock
-                shared = self.shared();
+                shared = self.shared().await;
             }
 
             let k = std::cmp::min(shared.credit as usize, buf.len());
@@ -291,7 +286,7 @@ impl Stream {
     }
 
     async fn close_stream(&mut self) -> io::Result<()> {
-        if self.state() == State::Closed {
+        if self.state().await == State::Closed {
             return Ok(());
         }
         log::trace!("{}/{}: close", self.conn, self.id);
@@ -310,6 +305,7 @@ impl Stream {
             .map_err(|_| self.write_zero_err())?;
 
         self.shared()
+            .await
             .update_state(self.conn, self.id, State::SendClosed);
         Ok(())
     }
@@ -332,6 +328,14 @@ impl Stream {
                 self.flag = Flag::None
             }
         }
+    }
+}
+
+impl Drop for Stream {
+    fn drop(&mut self) {
+        log::info!("drop stream {}", self.id);
+        // uncomment it when we have async destructor support
+        //self.close().await;
     }
 }
 

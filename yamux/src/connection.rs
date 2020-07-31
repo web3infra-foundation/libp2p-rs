@@ -102,14 +102,11 @@ use futures::{
     channel::{mpsc, oneshot},
     future::Either,
     prelude::*,
-    stream::{FusedStream},
+    stream::FusedStream,
 };
 
 use nohash_hasher::IntMap;
-use std::{
-    fmt,
-    sync::Arc,
-};
+use std::{fmt, sync::Arc};
 
 pub use control::Control;
 pub use stream::{State, Stream};
@@ -353,7 +350,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Connection<T> {
             }
         }
 
-        self.drop_all_streams();
+        self.drop_all_streams().await;
 
         // Close and drain the stream command receiver.
         if !self.stream_receiver.is_terminated() {
@@ -402,7 +399,6 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Connection<T> {
             };
 
             /*
-
                         let mut num_terminated = 0;
 
                         let mut next_inbound_frame = if self.socket.is_terminated() {
@@ -462,11 +458,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Connection<T> {
                         }
             */
 
-            self.socket
-                //.get_mut()
-                .flush()
-                .await
-                .or(Err(ConnectionError::Closed))?
+            self.socket.flush().await.or(Err(ConnectionError::Closed))?
         }
     }
 
@@ -615,8 +607,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Connection<T> {
             Ok(Some(frame)) => {
                 log::trace!("{}: received: {}", self.id, frame.header());
                 let action = match frame.header().tag() {
-                    Tag::Data => self.on_data(frame.into_data()),
-                    Tag::WindowUpdate => self.on_window_update(&frame.into_window_update()),
+                    Tag::Data => self.on_data(frame.into_data()).await,
+                    Tag::WindowUpdate => self.on_window_update(&frame.into_window_update()).await,
                     Tag::Ping => self.on_ping(&frame.into_ping()),
                     Tag::GoAway => return Err(ConnectionError::Closed),
                 };
@@ -672,7 +664,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Connection<T> {
         }
     }
 
-    fn on_data(&mut self, frame: Frame<Data>) -> Action {
+    async fn on_data(&mut self, frame: Frame<Data>) -> Action {
         let stream_id = frame.header().stream_id();
 
         log::trace!("{}/{}: received {:?}", self.id, stream_id, frame);
@@ -680,7 +672,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Connection<T> {
         if frame.header().flags().contains(header::RST) {
             // stream reset
             if let Some(s) = self.streams.get_mut(&stream_id) {
-                let mut shared = s.shared();
+                let mut shared = s.shared().await;
                 shared.update_state(self.id, stream_id, State::Closed);
                 if let Some(w) = shared.reader.take() {
                     w.wake()
@@ -725,7 +717,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Connection<T> {
                 stream
             };
             {
-                let mut shared = stream.shared();
+                let mut shared = stream.shared().await;
                 if is_finish {
                     shared.update_state(self.id, stream_id, State::RecvClosed);
                 }
@@ -737,7 +729,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Connection<T> {
         }
 
         if let Some(stream) = self.streams.get_mut(&stream_id) {
-            let mut shared = stream.shared();
+            let mut shared = stream.shared().await;
             if frame.body().len() > shared.window as usize {
                 log::error!(
                     "{}/{}: frame body larger than window of stream",
@@ -788,13 +780,13 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Connection<T> {
         Action::None
     }
 
-    fn on_window_update(&mut self, frame: &Frame<WindowUpdate>) -> Action {
+    async fn on_window_update(&mut self, frame: &Frame<WindowUpdate>) -> Action {
         let stream_id = frame.header().stream_id();
 
         if frame.header().flags().contains(header::RST) {
             // stream reset
             if let Some(s) = self.streams.get_mut(&stream_id) {
-                let mut shared = s.shared();
+                let mut shared = s.shared().await;
                 shared.update_state(self.id, stream_id, State::Closed);
                 if let Some(w) = shared.reader.take() {
                     w.wake()
@@ -834,6 +826,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Connection<T> {
             if is_finish {
                 stream
                     .shared()
+                    .await
                     .update_state(self.id, stream_id, State::RecvClosed);
             }
             self.streams.insert(stream_id, stream.clone());
@@ -841,7 +834,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Connection<T> {
         }
 
         if let Some(stream) = self.streams.get_mut(&stream_id) {
-            let mut shared = stream.shared();
+            let mut shared = stream.shared().await;
             shared.credit += frame.header().credit();
             if is_finish {
                 shared.update_state(self.id, stream_id, State::RecvClosed);
@@ -918,7 +911,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Connection<T> {
             log::trace!("{}: removing dropped {}", conn_id, stream);
             let stream_id = stream.id();
             let frame = {
-                let mut shared = stream.shared();
+                let mut shared = stream.shared().await;
                 let frame = match shared.update_state(conn_id, stream_id, State::Closed) {
                     // The stream was dropped without calling `poll_close`.
                     // We reset the stream to inform the remote of the closure.
@@ -987,9 +980,13 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Connection<T> {
 
 impl<T> Connection<T> {
     /// Close and drop all `Stream`s and wake any pending `Waker`s.
-    fn drop_all_streams(&mut self) {
+    async fn drop_all_streams(&mut self) {
+        log::info!(
+            "Drop all Streams and wake any pending Wakers, count={}",
+            self.streams.len()
+        );
         for (id, s) in self.streams.drain() {
-            let mut shared = s.shared();
+            let mut shared = s.shared().await;
             shared.update_state(self.id, id, State::Closed);
             if let Some(w) = shared.reader.take() {
                 w.wake()
@@ -1003,7 +1000,10 @@ impl<T> Connection<T> {
 
 impl<T> Drop for Connection<T> {
     fn drop(&mut self) {
-        self.drop_all_streams()
+        log::info!("connection dropped");
+        // probably we don't have to call drop_all_... , since all streams will be
+        // cleaned up when the underlying socket is down
+        //self.drop_all_streams();
     }
 }
 
