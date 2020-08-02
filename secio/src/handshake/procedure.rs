@@ -7,7 +7,7 @@ use log::{debug, trace};
 use std::cmp::Ordering;
 
 use crate::{
-    codec::{len_prefix::LengthPrefixSocket, secure_stream::SecureStream, Hmac},
+    codec::{len_prefix::LenPrefixCodec, secure_stream::SecureStream, Hmac},
     crypto::{cipher::CipherType, new_stream, BoxStreamCipher, CryptoMode},
     error::SecioError,
     exchange,
@@ -18,6 +18,7 @@ use crate::{
     },
     Digest, EphemeralPublicKey, KeyPairInner,
 };
+use std::io;
 
 /// Performs a handshake on the given socket.
 ///
@@ -36,7 +37,7 @@ where
     T: AsyncRead + AsyncWrite + Send + 'static + Unpin,
 {
     // The handshake messages all start with a 4-bytes message length prefix.
-    let mut socket = LengthPrefixSocket::new(socket, config.max_frame_length);
+    let mut socket = LenPrefixCodec::new(socket, config.max_frame_length);
 
     // Generate our nonce.
     let local_context = HandshakeContext::new(config).with_local();
@@ -47,12 +48,18 @@ where
 
     trace!("sending proposition to remote");
     socket
-        .write_msg(local_context.state.proposition_bytes.clone())
+        .send(local_context.state.proposition_bytes.clone())
         .await?;
 
     // Receive the remote's proposition.
-    let remote_proposition = socket.read_msg().await?;
-    let remote_context = local_context.with_remote(remote_proposition)?;
+    let remote_context = match socket.next().await {
+        Some(p) => local_context.with_remote(p?)?,
+        None => {
+            let err = io::Error::new(io::ErrorKind::UnexpectedEof, "unexpected eof");
+            debug!("unexpected eof while waiting for remote's proposition");
+            return Err(err.into());
+        }
+    };
 
     trace!(
         "received proposition from remote; pubkey = {:?}; nonce = {:?}",
@@ -106,11 +113,18 @@ where
 
     // Send our local `Exchange`.
     trace!("sending exchange to remote");
-
-    socket.write_msg(local_exchanges).await?;
+    socket.send(local_exchanges).await?;
 
     // Receive the remote's `Exchange`.
-    let raw_exchanges = socket.read_msg().await?;
+    let raw_exchanges = match socket.next().await {
+        Some(raw) => raw?,
+        None => {
+            let err = io::Error::new(io::ErrorKind::UnexpectedEof, "unexpected eof");
+            debug!("unexpected eof while waiting for remote's proposition");
+            return Err(err.into());
+        }
+    };
+
     let remote_exchanges = match Exchange::decode(&raw_exchanges) {
         Some(e) => e,
         None => {
