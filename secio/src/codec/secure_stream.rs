@@ -11,7 +11,7 @@ use crate::{
 };
 
 use async_trait::async_trait;
-use crate::{Read, Write};
+use libp2p_traits::{Read, Write};
 
 
 /// Encrypted stream

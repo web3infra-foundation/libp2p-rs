@@ -7,7 +7,7 @@ use env_logger;
 use log::info;
 use secio::{handshake::Config, SecioKeyPair};
 
-use secio::{Read, Write};
+use libp2p_traits::{Read, Write};
 
 fn main() {
     env_logger::init();

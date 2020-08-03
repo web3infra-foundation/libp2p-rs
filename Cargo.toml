@@ -16,6 +16,7 @@ all-features = false
 no-default-features = true
 
 [dependencies]
+libp2p-traits = { path = "traits", version = "0.1.0", package = "libp2p-traits" }
 yamux = { path = "yamux", version = "0.1.0", package = "yamux" }
 secio = { path = "secio", version = "0.1.0", package = "secio" }
 multiaddr = { path = "multiaddr", package = "multiaddr", version = "0.1.0" }
@@ -50,6 +51,7 @@ nix = "0.13.0"
 
 [workspace]
 members = [
+  "traits",
   "yamux",
   "secio",
 #  "multiaddr",

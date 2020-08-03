@@ -2,7 +2,7 @@ use futures::prelude::*;
 use std::{fmt, io};
 use futures::{AsyncReadExt, AsyncWriteExt};
 use async_trait::async_trait;
-use crate::{Read, Write};
+use libp2p_traits::{Read, Write};
 
 
 /// `Stream` & `Sink` that reads and writes a length prefix in front of the actual data.
