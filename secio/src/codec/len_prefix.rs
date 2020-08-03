@@ -1,5 +1,9 @@
 use futures::prelude::*;
 use std::{fmt, io};
+use futures::{AsyncReadExt, AsyncWriteExt};
+use async_trait::async_trait;
+use crate::{Read, Write};
+
 
 /// `Stream` & `Sink` that reads and writes a length prefix in front of the actual data.
 pub struct LengthPrefixSocket<T> {
@@ -24,8 +28,14 @@ where
             max_frame_len: max_len,
         }
     }
+}
 
-    pub(crate) async fn read_msg(&mut self) -> io::Result<Vec<u8>> {
+#[async_trait]
+impl<T> Read for LengthPrefixSocket<T>
+    where
+        T: AsyncRead + AsyncWrite + Unpin + Send + 'static
+{
+    async fn read(&mut self) -> io::Result<Vec<u8>> {
         let mut len = [0; 4];
         let _ = self.inner.read_exact(&mut len).await?;
 
@@ -43,19 +53,25 @@ where
 
         Ok(v)
     }
+}
 
-    pub(crate) async fn write_msg(&mut self, msg: Vec<u8>) -> io::Result<()> {
+#[async_trait]
+impl<T> Write for LengthPrefixSocket<T>
+    where
+        T: AsyncRead + AsyncWrite + Unpin + Send + 'static
+{
+    async fn write(&mut self, buf: &Vec<u8>) -> io::Result<()> {
         self.inner
-            .write_all(&(msg.len() as u32).to_be_bytes())
+            .write_all(&(buf.len() as u32).to_be_bytes())
             .await?;
-        self.inner.write_all(&msg).await
+        self.inner.write_all(&buf).await
     }
 
-    pub(crate) async fn flush(&mut self) -> io::Result<()> {
+    async fn flush(&mut self) -> io::Result<()> {
         self.inner.flush().await
     }
 
-    pub(crate) async fn close(&mut self) -> io::Result<()> {
+    async fn close(&mut self) -> io::Result<()> {
         self.inner.close().await
     }
 }

@@ -26,6 +26,8 @@ pub use multiaddr;
 pub use secio;
 /// Re-pub yamux crate
 pub use yamux;
+/// Traits
+pub use traits;
 /*
 /// Some gadgets that help create a service
 pub mod builder;
