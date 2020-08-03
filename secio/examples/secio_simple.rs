@@ -4,9 +4,10 @@ use async_std::{
 };
 use bytes::BytesMut;
 use env_logger;
-use futures::prelude::*;
-use log::{error, info};
+use log::info;
 use secio::{handshake::Config, SecioKeyPair};
+
+use secio::{Read, Write};
 
 fn main() {
     env_logger::init();
@@ -30,16 +31,22 @@ fn server() {
         while let Ok((socket, _)) = listener.accept().await {
             let config = config.clone();
             task::spawn(async move {
-                let (handle, _, _) = config.handshake(socket).await.unwrap();
-                let (h1, h2) = handle.split();
-                match async_std::io::copy(h1, h2).await {
-                    Ok(n) => {
-                        error!("io-copy exited @len={}", n);
-                    }
-                    Err(err) => {
-                        error!("io-copy exited @{:?}", err);
-                    }
+                let (mut handle, _, _) = config.handshake(socket).await.unwrap();
+
+                loop {
+                    let buf = handle.read().await.unwrap();
+                    let _ = handle.write(buf.as_ref()).await.unwrap();
                 }
+
+                // let (h1, h2) = handle.split();
+                // match async_std::io::copy(h1, h2).await {
+                //     Ok(n) => {
+                //         error!("io-copy exited @len={}", n);
+                //     }
+                //     Err(err) => {
+                //         error!("io-copy exited @{:?}", err);
+                //     }
+                // }
             });
         }
     });
@@ -54,12 +61,11 @@ fn client() {
     task::block_on(async move {
         let stream = TcpStream::connect("127.0.0.1:1337").await.unwrap();
         let (mut handle, _, _) = config.handshake(stream).await.unwrap();
-        match handle.write_all(data).await {
+        match handle.write(data.to_vec().as_ref()).await {
             Ok(_) => info!("send all"),
             Err(e) => info!("err: {:?}", e),
         }
-        let mut data = [0u8; 11];
-        handle.read_exact(&mut data).await.unwrap();
+        let data = handle.read().await.unwrap();
         info!("receive: {:?}", BytesMut::from(&data[..]));
     });
 }

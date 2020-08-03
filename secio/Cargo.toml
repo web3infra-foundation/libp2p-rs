@@ -17,11 +17,10 @@ all-features = false
 no-default-features = true
 
 [dependencies]
-async-std = { version = "1.6.2", features = ["attributes"] }
 bytes = "0.5"
-futures = { version = "0.3.0" }
+futures = "0.3.0"
 log = "0.4.1"
-
+async-trait = "0.1"
 molecule = { version = "0.6.0" }
 
 secp256k1 = "0.17"
@@ -37,6 +36,7 @@ openssl-sys = "0.9"
 [dev-dependencies]
 env_logger = "0.6"
 criterion = "0.3"
+async-std = "1.6"
 
 [[bench]]
 name = "bench"

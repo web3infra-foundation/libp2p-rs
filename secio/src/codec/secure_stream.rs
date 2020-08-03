@@ -1,17 +1,18 @@
 use futures::prelude::*;
-use log::{debug, info, trace};
+use log::{debug, trace};
 
 use std::{
     cmp::min,
     io,
-    pin::Pin,
-    task::{Context, Poll},
 };
 
 use crate::{
     codec::len_prefix::LengthPrefixSocket, codec::Hmac, crypto::BoxStreamCipher, error::SecioError,
 };
-use std::future::Future;
+
+use async_trait::async_trait;
+use crate::{Read, Write};
+
 
 /// Encrypted stream
 pub struct SecureStream<T> {
@@ -23,14 +24,6 @@ pub struct SecureStream<T> {
     /// denotes a sequence of bytes which are expected to be
     /// found at the beginning of the stream and are checked for equality
     nonce: Vec<u8>,
-    /// recv buffer
-    /// internal buffer for 'message too big'
-    ///
-    /// when the input buffer is not big enough to hold the entire
-    /// frame from the underlying Framed<>, the frame will be filled
-    /// into this buffer so that multiple following 'read' will eventually
-    /// get the message correctly
-    recv_buf: Vec<u8>,
 }
 
 impl<T> SecureStream<T>
@@ -53,7 +46,6 @@ where
             encode_cipher,
             encode_hmac,
             nonce,
-            recv_buf: Vec::default(),
         }
     }
 
@@ -87,8 +79,7 @@ where
 
     pub(crate) async fn verify_nonce(&mut self) -> Result<(), SecioError> {
         if !self.nonce.is_empty() {
-            let mut nonce = self.nonce.clone();
-            self.read(&mut nonce).await?;
+            let nonce = self.read().await?;
 
             trace!(
                 "received nonce={}, my_nonce={}",
@@ -108,64 +99,6 @@ where
     }
 
     #[inline]
-    fn drain(&mut self, buf: &mut [u8]) -> usize {
-        // Return zero if there is no data remaining in the internal buffer.
-        if self.recv_buf.is_empty() {
-            return 0;
-        }
-
-        // calculate number of bytes that we can copy
-        let n = ::std::cmp::min(buf.len(), self.recv_buf.len());
-
-        let remained = self.recv_buf.split_off(n);
-
-        // Copy data to the output buffer
-        buf[..n].copy_from_slice(self.recv_buf.as_ref());
-
-        // drain n bytes of recv_buf
-        self.recv_buf = remained;
-
-        n
-    }
-
-    async fn read_socket(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        // when there is somthing in recv_buffer
-        let copied = self.drain(buf);
-        if copied > 0 {
-            return Ok(copied);
-        }
-
-        match self.socket.read_msg().await {
-            Ok(t) => {
-                debug!("receive encrypted data size: {:?}", t.len());
-                let decoded = self
-                    .decode_buffer(t)
-                    .map_err::<io::Error, _>(|err| err.into())?;
-
-                // when input buffer is big enough
-                let n = decoded.len();
-                if buf.len() >= n {
-                    buf[..n].copy_from_slice(decoded.as_ref());
-                    Ok(n)
-                } else {
-                    // fill internal recv buffer
-                    self.recv_buf = decoded;
-                    // drain for input buffer
-                    let copied = self.drain(buf);
-                    Ok(copied)
-                }
-            }
-            Err(err) => {
-                info!(
-                    "error when reading from underlying socket: {}",
-                    err.to_string()
-                );
-                Err(err)
-            }
-        }
-    }
-
-    #[inline]
     fn encode_buffer(&mut self, buf: &[u8]) -> Vec<u8> {
         let mut out = self.encode_cipher.encrypt(buf).unwrap();
         if let Some(ref mut hmac) = self.encode_hmac {
@@ -174,64 +107,84 @@ where
         }
         out
     }
+}
+//
+// impl<T> AsyncRead for SecureStream<T>
+// where
+//     T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+// {
+//     fn poll_read(
+//         mut self: Pin<&mut Self>,
+//         cx: &mut Context<'_>,
+//         buf: &mut [u8],
+//     ) -> Poll<io::Result<usize>> {
+//         poll_future(cx, self.read_socket(buf))
+//     }
+// }
+//
+// impl<T> AsyncWrite for SecureStream<T>
+// where
+//     T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+// {
+//     fn poll_write(
+//         mut self: Pin<&mut Self>,
+//         cx: &mut Context<'_>,
+//         buf: &[u8],
+//     ) -> Poll<io::Result<usize>> {
+//         poll_future(cx, self.write_socket(buf))
+//     }
+//
+//     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
+//         poll_future(cx, self.socket.flush())
+//     }
+//
+//     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
+//         poll_future(cx, self.socket.close())
+//     }
+// }
+//
 
-    async fn write_socket(&mut self, buf: &[u8]) -> io::Result<usize> {
+
+#[async_trait]
+impl<T> Read for SecureStream<T>
+    where
+        T: AsyncRead + AsyncWrite + Unpin + Send + 'static
+{
+    async fn read(&mut self) -> io::Result<Vec<u8>> {
+        let buf = self.socket.read().await?;
+        debug!("receive encrypted data size: {:?}", buf.len());
+
+        let decoded = self
+            .decode_buffer(buf)
+            .map_err::<io::Error, _>(|err| err.into())?;
+
+        Ok(decoded)
+    }
+}
+
+#[async_trait]
+impl<T> Write for SecureStream<T>
+    where
+        T: AsyncRead + AsyncWrite + Unpin + Send + 'static
+{
+    async fn write(&mut self, buf: &Vec<u8>) -> io::Result<()> {
         debug!("start sending plain data: {:?}", buf);
 
         let frame = self.encode_buffer(buf);
         trace!("start sending encrypted data size: {:?}", frame.len());
-        match self.socket.write_msg(frame).await {
-            Ok(()) => Ok(buf.len()),
-            Err(err) => {
-                info!(
-                    "error when writing to underlying socket: {}",
-                    err.to_string()
-                );
-                Err(err)
-            }
-        }
+        self.socket.write(frame.as_ref()).await
+    }
+
+    async fn flush(&mut self) -> io::Result<()> {
+        self.socket.flush().await
+    }
+
+    async fn close(&mut self) -> io::Result<()> {
+        self.socket.close().await
     }
 }
 
-impl<T> AsyncRead for SecureStream<T>
-where
-    T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-{
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
-        poll_future(cx, self.read_socket(buf))
-    }
-}
 
-impl<T> AsyncWrite for SecureStream<T>
-where
-    T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-{
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        poll_future(cx, self.write_socket(buf))
-    }
-
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        poll_future(cx, self.socket.flush())
-    }
-
-    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        poll_future(cx, self.socket.close())
-    }
-}
-
-/// Pins a future and then polls it.
-fn poll_future<T>(cx: &mut Context<'_>, fut: impl Future<Output = T>) -> Poll<T> {
-    futures::pin_mut!(fut);
-    fut.poll(cx)
-}
 
 #[cfg(test)]
 mod tests {

@@ -18,6 +18,8 @@ use crate::{
     },
     Digest, EphemeralPublicKey, KeyPairInner,
 };
+use crate::{Read, Write};
+
 
 /// Performs a handshake on the given socket.
 ///
@@ -47,11 +49,11 @@ where
 
     trace!("sending proposition to remote");
     socket
-        .write_msg(local_context.state.proposition_bytes.clone())
+        .write(local_context.state.proposition_bytes.as_ref())
         .await?;
 
     // Receive the remote's proposition.
-    let remote_proposition = socket.read_msg().await?;
+    let remote_proposition = socket.read().await?;
     let remote_context = local_context.with_remote(remote_proposition)?;
 
     trace!(
@@ -107,10 +109,10 @@ where
     // Send our local `Exchange`.
     trace!("sending exchange to remote");
 
-    socket.write_msg(local_exchanges).await?;
+    socket.write(local_exchanges.as_ref()).await?;
 
     // Receive the remote's `Exchange`.
-    let raw_exchanges = socket.read_msg().await?;
+    let raw_exchanges = socket.read().await?;
     let remote_exchanges = match Exchange::decode(&raw_exchanges) {
         Some(e) => e,
         None => {
@@ -232,7 +234,7 @@ where
     // We send back their nonce to check if the connection works.
     trace!("checking encryption by sending back remote's nonce");
     secure_stream
-        .write_all(&pub_ephemeral_context.state.remote.nonce)
+        .write(&pub_ephemeral_context.state.remote.nonce)
         .await?;
     secure_stream.verify_nonce().await?;
 
