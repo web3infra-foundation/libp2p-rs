@@ -27,7 +27,8 @@ pub use secio;
 /// Re-pub yamux crate
 pub use yamux;
 /// Traits
-pub use traits;
+pub use libp2p_traits;
+
 /*
 /// Some gadgets that help create a service
 pub mod builder;

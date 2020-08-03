@@ -18,7 +18,7 @@ use crate::{
     },
     Digest, EphemeralPublicKey, KeyPairInner,
 };
-use crate::{Read, Write};
+use libp2p_traits::{Read, Write};
 
 
 /// Performs a handshake on the given socket.
