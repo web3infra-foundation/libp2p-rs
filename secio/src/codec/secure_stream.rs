@@ -9,14 +9,13 @@ use std::{
 };
 
 use crate::{
-    codec::len_prefix::LenPrefixCodec, codec::Hmac, crypto::BoxStreamCipher, error::SecioError,
+    codec::len_prefix::LengthPrefixSocket, codec::Hmac, crypto::BoxStreamCipher, error::SecioError,
 };
-use futures::{FutureExt, SinkExt, StreamExt};
 use std::future::Future;
 
 /// Encrypted stream
 pub struct SecureStream<T> {
-    socket: LenPrefixCodec<T>,
+    socket: LengthPrefixSocket<T>,
     decode_cipher: BoxStreamCipher,
     decode_hmac: Option<Hmac>,
     encode_cipher: BoxStreamCipher,
@@ -40,7 +39,7 @@ where
 {
     /// New a secure stream
     pub(crate) fn new(
-        socket: LenPrefixCodec<T>,
+        socket: LengthPrefixSocket<T>,
         decode_cipher: BoxStreamCipher,
         decode_hmac: Option<Hmac>,
         encode_cipher: BoxStreamCipher,
@@ -128,44 +127,43 @@ where
 
         n
     }
-    //
-    // async fn read_socket(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-    //     // when there is somthing in recv_buffer
-    //     let copied = self.drain(buf);
-    //     if copied > 0 {
-    //         return Ok(copied);
-    //     }
-    //
-    //     match self.socket.next().await {
-    //         Some(Ok(t)) => {
-    //             debug!("receive encrypted data size: {:?}", t.len());
-    //             let decoded = self
-    //                 .decode_buffer(t)
-    //                 .map_err::<io::Error, _>(|err| err.into())?;
-    //
-    //             // when input buffer is big enough
-    //             let n = decoded.len();
-    //             if buf.len() >= n {
-    //                 buf[..n].copy_from_slice(decoded.as_ref());
-    //                 Ok(n)
-    //             } else {
-    //                 // fill internal recv buffer
-    //                 self.recv_buf = decoded;
-    //                 // drain for input buffer
-    //                 let copied = self.drain(buf);
-    //                 Ok(copied)
-    //             }
-    //         }
-    //         Some(Err(err)) => {
-    //             info!(
-    //                 "error when reading from underlying socket: {}",
-    //                 err.to_string()
-    //             );
-    //             Err(err)
-    //         }
-    //         None => {},
-    //     }
-    // }
+
+    async fn read_socket(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        // when there is somthing in recv_buffer
+        let copied = self.drain(buf);
+        if copied > 0 {
+            return Ok(copied);
+        }
+
+        match self.socket.read_msg().await {
+            Ok(t) => {
+                debug!("receive encrypted data size: {:?}", t.len());
+                let decoded = self
+                    .decode_buffer(t)
+                    .map_err::<io::Error, _>(|err| err.into())?;
+
+                // when input buffer is big enough
+                let n = decoded.len();
+                if buf.len() >= n {
+                    buf[..n].copy_from_slice(decoded.as_ref());
+                    Ok(n)
+                } else {
+                    // fill internal recv buffer
+                    self.recv_buf = decoded;
+                    // drain for input buffer
+                    let copied = self.drain(buf);
+                    Ok(copied)
+                }
+            }
+            Err(err) => {
+                info!(
+                    "error when reading from underlying socket: {}",
+                    err.to_string()
+                );
+                Err(err)
+            }
+        }
+    }
 
     #[inline]
     fn encode_buffer(&mut self, buf: &[u8]) -> Vec<u8> {
@@ -176,23 +174,23 @@ where
         }
         out
     }
-    //
-    // async fn write_socket(&mut self, buf: &[u8]) -> io::Result<usize> {
-    //     debug!("start sending plain data: {:?}", buf);
-    //
-    //     let frame = self.encode_buffer(buf);
-    //     trace!("start sending encrypted data size: {:?}", frame.len());
-    //     match self.socket.write_msg(frame).await {
-    //         Ok(()) => Ok(buf.len()),
-    //         Err(err) => {
-    //             info!(
-    //                 "error when writing to underlying socket: {}",
-    //                 err.to_string()
-    //             );
-    //             Err(err)
-    //         }
-    //     }
-    // }
+
+    async fn write_socket(&mut self, buf: &[u8]) -> io::Result<usize> {
+        debug!("start sending plain data: {:?}", buf);
+
+        let frame = self.encode_buffer(buf);
+        trace!("start sending encrypted data size: {:?}", frame.len());
+        match self.socket.write_msg(frame).await {
+            Ok(()) => Ok(buf.len()),
+            Err(err) => {
+                info!(
+                    "error when writing to underlying socket: {}",
+                    err.to_string()
+                );
+                Err(err)
+            }
+        }
+    }
 }
 
 impl<T> AsyncRead for SecureStream<T>
@@ -204,40 +202,7 @@ where
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
-        match self.socket.poll_next_unpin(cx) {
-            Poll::Ready(Some(t)) => {
-                match t {
-                    Ok(t) => {
-                        debug!("receive encrypted data size: {:?}", t.len());
-                        let decoded = self
-                            .decode_buffer(t)
-                            .map_err::<io::Error, _>(|err| err.into())?;
-
-                        // when input buffer is big enough
-                        let n = decoded.len();
-                        if buf.len() >= n {
-                            buf[..n].copy_from_slice(decoded.as_ref());
-                            Poll::Ready(Ok(n))
-                        } else {
-                            // fill internal recv buffer
-                            self.recv_buf = decoded;
-                            // drain for input buffer
-                            let copied = self.drain(buf);
-                            Poll::Ready(Ok(copied))
-                        }
-                    }
-                    Err(err) => Poll::Ready(Err(err)),
-                }
-            }
-            Poll::Ready(None) => {
-                info!("error EOF when reading from underlying socket");
-                Poll::Ready(Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "unexpected eof",
-                )))
-            }
-            Poll::Pending => Poll::Pending,
-        }
+        poll_future(cx, self.read_socket(buf))
     }
 }
 
@@ -250,35 +215,28 @@ where
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        //poll_future(cx, self.write_socket(buf))
-
-        debug!("start sending plain data: {:?}", buf);
-
-        let mut frame = self.encode_buffer(buf);
-        trace!("start sending encrypted data size: {:?}", frame.len());
-
-        match self.socket.send(frame).poll_unpin(cx) {
-            Poll::Ready(Ok(())) => Poll::Ready(Ok(buf.len())),
-            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
-            Poll::Pending => Poll::Pending,
-        }
+        poll_future(cx, self.write_socket(buf))
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        //Sink::poll_flush(self.socket, cx)
-        self.socket.poll_flush_unpin(cx)
+        poll_future(cx, self.socket.flush())
     }
 
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        //poll_future(cx, self.socket.close())
-        self.socket.poll_close_unpin(cx)
+        poll_future(cx, self.socket.close())
     }
+}
+
+/// Pins a future and then polls it.
+fn poll_future<T>(cx: &mut Context<'_>, fut: impl Future<Output = T>) -> Poll<T> {
+    futures::pin_mut!(fut);
+    fut.poll(cx)
 }
 
 #[cfg(test)]
 mod tests {
     use super::{Hmac, SecureStream};
-    use crate::codec::len_prefix::LenPrefixCodec;
+    use crate::codec::len_prefix::LengthPrefixSocket;
     use crate::crypto::{cipher::CipherType, new_stream, CryptoMode};
     #[cfg(unix)]
     use crate::Digest;
@@ -373,7 +331,7 @@ mod tests {
                 ),
             };
             let mut handle = SecureStream::new(
-                LenPrefixCodec::new(socket, 4096),
+                LengthPrefixSocket::new(socket, 4096),
                 new_stream(
                     cipher,
                     &cipher_key_clone[..key_size],
@@ -410,7 +368,7 @@ mod tests {
                 ),
             };
             let mut handle = SecureStream::new(
-                LenPrefixCodec::new(stream, 4096),
+                LengthPrefixSocket::new(stream, 4096),
                 new_stream(
                     cipher,
                     &cipher_key_clone[..key_size],
