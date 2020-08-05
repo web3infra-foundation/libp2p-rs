@@ -29,13 +29,10 @@ fn run_server() {
                 .try_for_each_concurrent(None, |mut stream| async move {
                     info!("S: accepted new stream");
 
-                    let data = b"hello world";
-                    stream.write2(data.as_ref()).await?;
-
                     let mut buf = [0; 4096];
                     loop {
                         let n = stream.read2(&mut buf).await?;
-                        stream.write2(buf[..n].as_ref()).await?;
+                        stream.write_all2(buf[..n].as_ref()).await?;
                     }
                 })
                 .await;
@@ -58,7 +55,7 @@ fn run_client() {
 
         let data = b"hello world";
 
-        stream.write2(data).await.unwrap();
+        stream.write_all2(data).await.unwrap();
         info!("C: {}: wrote {} bytes", stream.id(), data.len());
 
         let mut frame = vec![0; data.len()];

@@ -424,15 +424,15 @@ impl Shared {
 
 #[async_trait]
 impl Read2 for Stream {
-    async fn read2<'a>(&'a mut self, buf: &'a mut [u8]) -> io::Result<usize> {
+    async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.read_stream(buf).await
     }
 }
 
 #[async_trait]
 impl Write2 for Stream {
-    async fn write2(&mut self, buf: &[u8]) -> io::Result<()> {
-        self.write_stream(buf).await.map(|_|())
+    async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.write_stream(buf).await
     }
 
     async fn flush2(&mut self) -> io::Result<()> {

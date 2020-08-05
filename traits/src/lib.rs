@@ -40,7 +40,7 @@ pub trait Read2 {
     ///
     /// On success, returns `Ok(Vec<u8>)`.
     /// Otherwise, returns io::Error
-    async fn read2<'a>(&'a mut self, buf: &'a mut [u8]) -> io::Result<usize>;
+    async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize>;
 
     /// Reads the exact number of bytes requested.
     ///
@@ -82,7 +82,25 @@ pub trait Write2 {
     ///
     /// On success, returns `Ok(num_bytes_written)`.
     /// Otherwise, returns io::Error
-    async fn write2(&mut self, buf: &[u8]) -> io::Result<()>;
+    async fn write2(&mut self, buf: &[u8]) -> io::Result<usize>;
+    /// Attempt to write the entire contents of data into object.
+    ///
+    /// The operation will not complete until all the data has been written.
+    ///
+    async fn write_all2(&mut self, buf: &[u8]) -> io::Result<()> {
+        let mut buf_piece = buf;
+        while !buf_piece.is_empty() {
+            let n = self.write2(buf).await?;
+            if n == 0 {
+                return Err(io::ErrorKind::WriteZero.into());
+            }
+
+            let (_, rest) = buf_piece.split_at(n);
+            buf_piece = rest;
+        }
+        Ok(())
+    }
+
     /// Attempt to flush the object, ensuring that any buffered data reach
     /// their destination.
     ///
@@ -109,7 +127,7 @@ pub trait Write2 {
 
 #[async_trait]
 impl<T: AsyncRead + Unpin + Send> Read2 for T {
-    async fn read2<'a>(&'a mut self, buf: &'a mut [u8]) -> io::Result<usize> {
+    async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = AsyncReadExt::read(self, buf).await?;
         Ok(n)
     }
@@ -117,8 +135,8 @@ impl<T: AsyncRead + Unpin + Send> Read2 for T {
 
 #[async_trait]
 impl<T: AsyncWrite + Unpin + Send> Write2 for T {
-    async fn write2(&mut self, buf: &[u8]) -> io::Result<()> {
-        AsyncWriteExt::write_all(self, buf).await
+    async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
+        AsyncWriteExt::write(self, buf).await
     }
 
     async fn flush2(&mut self) -> io::Result<()> {
