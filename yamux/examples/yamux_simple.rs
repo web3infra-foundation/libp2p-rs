@@ -29,6 +29,9 @@ fn run_server() {
                 .try_for_each_concurrent(None, |mut stream| async move {
                     info!("S: accepted new stream");
 
+                    let data = b"hello world";
+                    stream.write2(data.as_ref()).await?;
+
                     let mut buf = [0; 4096];
                     loop {
                         let n = stream.read2(&mut buf).await?;

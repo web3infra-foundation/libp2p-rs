@@ -111,6 +111,8 @@ use std::{fmt, sync::Arc};
 pub use control::Control;
 pub use stream::{State, Stream};
 
+use libp2p_traits::{Read2, Write2};
+
 /// Arbitrary limit of our internal command channels.
 ///
 /// Since each `mpsc::Sender` gets a guaranteed slot in a channel the
@@ -271,7 +273,7 @@ impl<T> fmt::Display for Connection<T> {
     }
 }
 
-impl<T: AsyncRead + AsyncWrite + Unpin> Connection<T> {
+impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
     /// Create a new `Connection` from the given I/O resource.
     pub fn new(socket: T, cfg: Config, mode: Mode) -> Self {
         let id = Id::random();
@@ -383,7 +385,6 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Connection<T> {
                     let frame = frame?;
                     if let Some(stream) = self.on_frame(Ok(Some(frame))).await? {
                         self.socket
-                            //.get_mut()
                             .flush()
                             .await
                             .or(Err(ConnectionError::Closed))?;
@@ -536,11 +537,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Connection<T> {
                 // No further processing of commands of any kind or incoming frames
                 // will happen.
                 debug_assert!(self.shutdown.is_complete());
-                self.socket
-                    //.get_mut()
-                    .close()
-                    .await
-                    .or(Err(ConnectionError::Closed))?;
+                self.socket.close().await.or(Err(ConnectionError::Closed))?;
                 return Err(ConnectionError::Closed);
             }
         }
@@ -761,12 +758,6 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Connection<T> {
             shared.buffer.push(frame.into_body());
 
             log::info!("wake up reader");
-
-            {
-                let (lock, cvar) = &*stream.reader_cond;
-                let _ = lock.lock().await;
-                cvar.notify_one();
-            }
 
             stream.reader.wake();
             if let Some(w) = shared.reader.take() {
@@ -1020,7 +1011,7 @@ impl<T> Drop for Connection<T> {
 /// Turn a Yamux [`Connection`] into a [`futures::Stream`].
 pub fn into_stream<T>(c: Connection<T>) -> impl futures::stream::Stream<Item = Result<Stream>>
 where
-    T: AsyncRead + AsyncWrite + Unpin,
+    T: Read2 + Write2 + Unpin + Send,
 {
     futures::stream::unfold(c, |mut c| async {
         match c.next_stream().await {

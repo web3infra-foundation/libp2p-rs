@@ -29,16 +29,13 @@ harness = false
 [dependencies]
 libp2p-traits = { path = "../traits", version = "0.1.0", package = "libp2p-traits" }
 async-trait = "0.1"
+log = "0.4.8"
 async-std = "1.6"
-
 
 [dependencies.futures]
 version = "0.3.4"
 features = ["std"]
 default-features = false
-
-[dependencies.log]
-version = "0.4.8"
 
 [dependencies.nohash-hasher]
 version = "0.2"
