@@ -41,8 +41,8 @@ impl<T: Read2 + Write2 + Unpin + Send> Io<T> {
 
         let header = header::encode(&frame.header);
 
-        self.io.write2(header.to_vec().as_ref()).await?;
-        self.io.write2(&frame.body).await
+        self.io.write_all2(header.to_vec().as_ref()).await?;
+        self.io.write_all2(&frame.body).await
     }
 
     pub(crate) async fn flush(&mut self) -> io::Result<()> {

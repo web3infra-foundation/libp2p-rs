@@ -173,7 +173,7 @@ impl<T> Read2 for SecureStream<T>
 where
     T: Read2 + Write2 + Unpin + Send + 'static,
 {
-    async fn read2<'a>(&'a mut self, buf: &'a mut [u8]) -> io::Result<usize> {
+    async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         // when there is somthing in recv_buffer
         let copied = self.drain(buf);
         if copied > 0 {
@@ -208,12 +208,13 @@ impl<T> Write2 for SecureStream<T>
 where
     T: Read2 + Write2 + Unpin + Send + 'static,
 {
-    async fn write2(&mut self, buf: &[u8]) -> io::Result<()> {
+    async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
         debug!("start sending plain data: {:?}", buf);
 
         let frame = self.encode_buffer(buf);
         trace!("start sending encrypted data size: {:?}", frame.len());
-        self.socket.send_frame(frame.as_ref()).await
+        self.socket.send_frame(frame.as_ref()).await?;
+        Ok(buf.len())
     }
 
     async fn flush2(&mut self) -> io::Result<()> {

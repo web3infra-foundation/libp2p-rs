@@ -48,9 +48,9 @@ where
     /// sending a length delimited frame
     pub async fn send_frame(&mut self, frame: &Vec<u8>) -> io::Result<()> {
         self.inner
-            .write2(&(frame.len() as u32).to_be_bytes())
+            .write_all2(&(frame.len() as u32).to_be_bytes())
             .await?;
-        self.inner.write2(&frame).await
+        self.inner.write_all2(&frame).await
     }
 
     pub(crate) async fn flush(&mut self) -> io::Result<()> {

@@ -38,7 +38,7 @@ fn server() {
 
                 loop {
                     if let Ok(n) = handle.read2(&mut buf).await {
-                        if handle.write2(&buf[..n]).await.is_err() {
+                        if handle.write_all2(&buf[..n]).await.is_err() {
                             break;
                         }
                     } else {
@@ -72,7 +72,7 @@ fn client() {
     task::block_on(async move {
         let stream = TcpStream::connect("127.0.0.1:1337").await.unwrap();
         let (mut handle, _, _) = config.handshake(stream).await.unwrap();
-        match handle.write2(data.as_ref()).await {
+        match handle.write_all2(data.as_ref()).await {
             Ok(_) => info!("send all"),
             Err(e) => info!("err: {:?}", e),
         }
