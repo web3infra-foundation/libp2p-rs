@@ -18,8 +18,7 @@ use crate::{
     },
     Digest, EphemeralPublicKey, KeyPairInner,
 };
-use libp2p_traits::{Read, Write};
-
+use libp2p_traits::Write2;
 
 /// Performs a handshake on the given socket.
 ///
@@ -49,11 +48,11 @@ where
 
     trace!("sending proposition to remote");
     socket
-        .write(local_context.state.proposition_bytes.as_ref())
+        .send_frame(&local_context.state.proposition_bytes)
         .await?;
 
     // Receive the remote's proposition.
-    let remote_proposition = socket.read().await?;
+    let remote_proposition = socket.recv_frame().await?;
     let remote_context = local_context.with_remote(remote_proposition)?;
 
     trace!(
@@ -109,10 +108,10 @@ where
     // Send our local `Exchange`.
     trace!("sending exchange to remote");
 
-    socket.write(local_exchanges.as_ref()).await?;
+    socket.send_frame(&local_exchanges).await?;
 
     // Receive the remote's `Exchange`.
-    let raw_exchanges = socket.read().await?;
+    let raw_exchanges = socket.recv_frame().await?;
     let remote_exchanges = match Exchange::decode(&raw_exchanges) {
         Some(e) => e,
         None => {
@@ -234,7 +233,7 @@ where
     // We send back their nonce to check if the connection works.
     trace!("checking encryption by sending back remote's nonce");
     secure_stream
-        .write(&pub_ephemeral_context.state.remote.nonce)
+        .write2(&pub_ephemeral_context.state.remote.nonce)
         .await?;
     secure_stream.verify_nonce().await?;
 
