@@ -2,12 +2,11 @@ use async_std::{
     net::{TcpListener, TcpStream},
     task,
 };
-use bytes::BytesMut;
 use env_logger;
 use log::info;
 use secio::{handshake::Config, SecioKeyPair};
 
-use libp2p_traits::{Read, Write};
+use libp2p_traits::{Read2, Write2};
 
 fn main() {
     env_logger::init();
@@ -33,10 +32,22 @@ fn server() {
             task::spawn(async move {
                 let (mut handle, _, _) = config.handshake(socket).await.unwrap();
 
+                info!("session started!");
+
+                let mut buf = [0; 100];
+
                 loop {
-                    let buf = handle.read().await.unwrap();
-                    let _ = handle.write(buf.as_ref()).await.unwrap();
+                    if let Ok(n) = handle.read2(&mut buf).await {
+                        if handle.write2(&buf[..n]).await.is_err() {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
                 }
+
+                info!("session closed!");
+                let _ = handle.close2().await;
 
                 // let (h1, h2) = handle.split();
                 // match async_std::io::copy(h1, h2).await {
@@ -61,11 +72,13 @@ fn client() {
     task::block_on(async move {
         let stream = TcpStream::connect("127.0.0.1:1337").await.unwrap();
         let (mut handle, _, _) = config.handshake(stream).await.unwrap();
-        match handle.write(data.to_vec().as_ref()).await {
+        match handle.write2(data.as_ref()).await {
             Ok(_) => info!("send all"),
             Err(e) => info!("err: {:?}", e),
         }
-        let data = handle.read().await.unwrap();
-        info!("receive: {:?}", BytesMut::from(&data[..]));
+
+        let mut buf = [0; 100];
+        let n = handle.read2(&mut buf).await.unwrap();
+        info!("receive: {:?}", &buf[..n]);
     });
 }

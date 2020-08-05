@@ -1,18 +1,13 @@
-use futures::prelude::*;
 use log::{debug, trace};
 
-use std::{
-    cmp::min,
-    io,
-};
+use std::{cmp::min, io};
 
 use crate::{
     codec::len_prefix::LengthPrefixSocket, codec::Hmac, crypto::BoxStreamCipher, error::SecioError,
 };
 
 use async_trait::async_trait;
-use libp2p_traits::{Read, Write};
-
+use libp2p_traits::{Read2, Write2};
 
 /// Encrypted stream
 pub struct SecureStream<T> {
@@ -24,11 +19,19 @@ pub struct SecureStream<T> {
     /// denotes a sequence of bytes which are expected to be
     /// found at the beginning of the stream and are checked for equality
     nonce: Vec<u8>,
+    /// recv buffer
+    /// internal buffer for 'message too big'
+    ///
+    /// when the input buffer is not big enough to hold the entire
+    /// frame from the underlying Framed<>, the frame will be filled
+    /// into this buffer so that multiple following 'read' will eventually
+    /// get the message correctly
+    recv_buf: Vec<u8>,
 }
 
 impl<T> SecureStream<T>
 where
-    T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    T: Read2 + Write2 + Unpin + Send + 'static,
 {
     /// New a secure stream
     pub(crate) fn new(
@@ -46,6 +49,7 @@ where
             encode_cipher,
             encode_hmac,
             nonce,
+            recv_buf: Vec::default(),
         }
     }
 
@@ -79,11 +83,12 @@ where
 
     pub(crate) async fn verify_nonce(&mut self) -> Result<(), SecioError> {
         if !self.nonce.is_empty() {
-            let nonce = self.read().await?;
+            let mut nonce = self.nonce.clone();
+            let nonce_len = self.read2(&mut nonce).await?;
 
             trace!(
                 "received nonce={}, my_nonce={}",
-                nonce.len(),
+                nonce_len,
                 self.nonce.len()
             );
 
@@ -106,6 +111,25 @@ where
             out.extend_from_slice(signature.as_ref());
         }
         out
+    }
+
+    #[inline]
+    fn drain(&mut self, buf: &mut [u8]) -> usize {
+        // Return zero if there is no data remaining in the internal buffer.
+        if self.recv_buf.is_empty() {
+            return 0;
+        }
+
+        // calculate number of bytes that we can copy
+        let n = ::std::cmp::min(buf.len(), self.recv_buf.len());
+
+        // Copy data to the output buffer
+        buf[..n].copy_from_slice(self.recv_buf[..n].as_ref());
+
+        // drain n bytes of recv_buf
+        self.recv_buf = self.recv_buf.split_off(n);
+
+        n
     }
 }
 //
@@ -144,47 +168,61 @@ where
 // }
 //
 
-
 #[async_trait]
-impl<T> Read for SecureStream<T>
-    where
-        T: AsyncRead + AsyncWrite + Unpin + Send + 'static
+impl<T> Read2 for SecureStream<T>
+where
+    T: Read2 + Write2 + Unpin + Send + 'static,
 {
-    async fn read(&mut self) -> io::Result<Vec<u8>> {
-        let buf = self.socket.read().await?;
-        debug!("receive encrypted data size: {:?}", buf.len());
+    async fn read2<'a>(&'a mut self, buf: &'a mut [u8]) -> io::Result<usize> {
+        // when there is somthing in recv_buffer
+        let copied = self.drain(buf);
+        if copied > 0 {
+            debug!("drain recv buffer data size: {:?}", copied);
+            return Ok(copied);
+        }
+
+        let t = self.socket.recv_frame().await?;
+        debug!("receive encrypted data size: {:?}", t.len());
 
         let decoded = self
-            .decode_buffer(buf)
+            .decode_buffer(t)
             .map_err::<io::Error, _>(|err| err.into())?;
 
-        Ok(decoded)
+        // when input buffer is big enough
+        let n = decoded.len();
+        if buf.len() >= n {
+            buf[..n].copy_from_slice(decoded.as_ref());
+            Ok(n)
+        } else {
+            // fill internal recv buffer
+            self.recv_buf = decoded;
+            // drain for input buffer
+            let copied = self.drain(buf);
+            Ok(copied)
+        }
     }
 }
 
 #[async_trait]
-impl<T> Write for SecureStream<T>
-    where
-        T: AsyncRead + AsyncWrite + Unpin + Send + 'static
+impl<T> Write2 for SecureStream<T>
+where
+    T: Read2 + Write2 + Unpin + Send + 'static,
 {
-    async fn write(&mut self, buf: &Vec<u8>) -> io::Result<()> {
+    async fn write2(&mut self, buf: &[u8]) -> io::Result<()> {
         debug!("start sending plain data: {:?}", buf);
 
         let frame = self.encode_buffer(buf);
         trace!("start sending encrypted data size: {:?}", frame.len());
-        self.socket.write(frame.as_ref()).await
+        self.socket.send_frame(frame.as_ref()).await
     }
 
-    async fn flush(&mut self) -> io::Result<()> {
+    async fn flush2(&mut self) -> io::Result<()> {
         self.socket.flush().await
     }
-
-    async fn close(&mut self) -> io::Result<()> {
+    async fn close2(&mut self) -> io::Result<()> {
         self.socket.close().await
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {

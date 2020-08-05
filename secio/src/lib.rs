@@ -24,7 +24,6 @@ mod support;
 /// Public key generated temporarily during the handshake
 pub type EphemeralPublicKey = Vec<u8>;
 
-
 /// Key pair of asymmetric encryption algorithm
 #[derive(Clone, Debug)]
 pub struct SecioKeyPair {
