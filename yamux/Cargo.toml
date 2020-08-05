@@ -25,6 +25,13 @@ repository = "https://github.com/paritytech/yamux"
 [[bench]]
 name = "concurrent"
 harness = false
+
+[dependencies]
+libp2p-traits = { path = "../traits", version = "0.1.0", package = "libp2p-traits" }
+async-trait = "0.1"
+async-std = "1.6"
+
+
 [dependencies.futures]
 version = "0.3.4"
 features = ["std"]

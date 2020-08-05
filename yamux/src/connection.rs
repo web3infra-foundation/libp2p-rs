@@ -759,6 +759,16 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Connection<T> {
             }
             shared.window = shared.window.saturating_sub(frame.body_len());
             shared.buffer.push(frame.into_body());
+
+            log::info!("wake up reader");
+
+            {
+                let (lock, cvar) = &*stream.reader_cond;
+                let _ = lock.lock().await;
+                cvar.notify_one();
+            }
+
+            stream.reader.wake();
             if let Some(w) = shared.reader.take() {
                 w.wake()
             }

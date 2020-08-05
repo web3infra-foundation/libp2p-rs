@@ -17,7 +17,7 @@ use crate::{
     },
     Config, WindowUpdateMode,
 };
-use futures::lock::{Mutex, MutexGuard};
+//use futures::lock::{Mutex, MutexGuard};
 use futures::prelude::*;
 use futures::{channel::mpsc, future::Either};
 use std::{
@@ -26,6 +26,13 @@ use std::{
     sync::Arc,
     task::{Context, Poll, Waker},
 };
+use futures::task::AtomicWaker;
+
+use async_trait::async_trait;
+use libp2p_traits::{Read2, Write2};
+
+use async_std::sync::{Mutex, MutexGuard, Condvar};
+use async_std::task;
 
 /// The state of a Yamux stream.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -86,6 +93,14 @@ pub struct Stream {
     pending: Option<Frame<WindowUpdate>>,
     flag: Flag,
     shared: Arc<Mutex<Shared>>,
+
+    pub(crate) reader: Arc<AtomicWaker>,
+
+    pub(crate) reader_cond: Arc<(Mutex<()>, Condvar)>,
+
+
+
+
 }
 
 impl fmt::Debug for Stream {
@@ -121,6 +136,8 @@ impl Stream {
             pending: None,
             flag: Flag::None,
             shared: Arc::new(Mutex::new(Shared::new(window, credit))),
+            reader: Arc::new(Default::default()),
+            reader_cond: Arc::new((Default::default(), Default::default()))
         }
     }
 
@@ -156,6 +173,8 @@ impl Stream {
             pending: None,
             flag: self.flag,
             shared: self.shared.clone(),
+            reader: self.reader.clone(),
+            reader_cond: self.reader_cond.clone(),
         }
     }
 
@@ -179,16 +198,28 @@ impl Stream {
         if shared.buffer.len().unwrap() == 0 {
             log::debug!("{}/{}: empty buffer, go pending", self.conn, self.id);
 
-            // n == 0, meaning we got nothing from recv buffer, go pending
-            future::poll_fn::<(), _>(move |cx| {
+            drop(shared);
+
+            {
+                let (lock, cvar) = &*self.reader_cond;
+                let mut guard= lock.lock().await;
+                guard = cvar.wait(guard).await;
+            }
+
+/*            // n == 0, meaning we got nothing from recv buffer, go pending
+            future::poll_fn::<(), _>(|cx| {
                 // Since we have no more data at this point, we want to be woken up
                 // by the connection when more becomes available for us.
                 // Note: we move shared into this closure, therefore it will be dropped
                 // when it is out of scope
-                shared.reader = Some(cx.waker().clone());
+                //shared.reader = Some(cx.waker().clone());
+
+                self.reader.register(cx.waker());
                 Poll::Pending
             })
-            .await;
+            .await;*/
+
+            log::info!("woken up...");
 
             // again, get the shared lock
             shared = self.shared().await;
@@ -338,7 +369,7 @@ impl Drop for Stream {
         //self.close().await;
     }
 }
-
+/*
 // Like the `futures::stream::Stream` impl above, but copies bytes into the
 // provided mutable slice.
 impl AsyncRead for Stream {
@@ -502,7 +533,7 @@ impl AsyncWrite for Stream {
         // Poll::Ready(Ok(()))
     }
 }
-
+*/
 #[derive(Debug)]
 pub(crate) struct Shared {
     state: State,
@@ -570,4 +601,26 @@ impl Shared {
 fn poll_future<T>(cx: &mut Context<'_>, fut: impl Future<Output = T>) -> Poll<T> {
     futures::pin_mut!(fut);
     fut.poll(cx)
+}
+
+#[async_trait]
+impl Read2 for Stream {
+    async fn read2<'a>(&'a mut self, buf: &'a mut [u8]) -> io::Result<usize> {
+        self.read_stream(buf).await
+    }
+}
+
+#[async_trait]
+impl Write2 for Stream {
+    async fn write2(&mut self, buf: &[u8]) -> io::Result<()> {
+        self.write_stream(buf).await.map(|_|())
+    }
+
+    async fn flush2(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+
+    async fn close2(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
