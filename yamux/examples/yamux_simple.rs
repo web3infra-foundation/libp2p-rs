@@ -6,6 +6,7 @@ use futures::prelude::*;
 use log::info;
 
 use yamux::{Config, Connection, Mode};
+use libp2p_traits::{Read2, Write2};
 
 fn main() {
     env_logger::init();
@@ -30,8 +31,8 @@ fn run_server() {
 
                     let mut buf = [0; 4096];
                     loop {
-                        let n = stream.read(&mut buf).await?;
-                        stream.write_all(buf[..n].as_ref()).await?;
+                        let n = stream.read2(&mut buf).await?;
+                        stream.write2(buf[..n].as_ref()).await?;
                     }
                 })
                 .await;
@@ -54,11 +55,11 @@ fn run_client() {
 
         let data = b"hello world";
 
-        stream.write_all(data).await.unwrap();
+        stream.write2(data).await.unwrap();
         info!("C: {}: wrote {} bytes", stream.id(), data.len());
 
         let mut frame = vec![0; data.len()];
-        stream.read_exact(&mut frame).await.unwrap();
+        stream.read_exact2(&mut frame).await.unwrap();
 
         info!("C: {}: read {} bytes", stream.id(), frame.len());
 
