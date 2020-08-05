@@ -19,20 +19,18 @@ use crate::{
 };
 //use futures::lock::{Mutex, MutexGuard};
 use futures::prelude::*;
-use futures::{channel::mpsc, future::Either};
+use futures::{channel::mpsc, future::Either, SinkExt};
 use std::{
     fmt, io,
-    pin::Pin,
     sync::Arc,
-    task::{Context, Poll, Waker},
+    task::{Poll, Waker},
 };
-use futures::task::AtomicWaker;
 
 use async_trait::async_trait;
-use libp2p_traits::{Read2, Write2};
+use futures::task::AtomicWaker;
+use futures::lock::{Mutex, MutexGuard};
 
-use async_std::sync::{Mutex, MutexGuard, Condvar};
-use async_std::task;
+use libp2p_traits::{Read2, Write2};
 
 /// The state of a Yamux stream.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -95,12 +93,7 @@ pub struct Stream {
     shared: Arc<Mutex<Shared>>,
 
     pub(crate) reader: Arc<AtomicWaker>,
-
-    pub(crate) reader_cond: Arc<(Mutex<()>, Condvar)>,
-
-
-
-
+    //pub(crate) writer: AtomicWaker,
 }
 
 impl fmt::Debug for Stream {
@@ -137,7 +130,6 @@ impl Stream {
             flag: Flag::None,
             shared: Arc::new(Mutex::new(Shared::new(window, credit))),
             reader: Arc::new(Default::default()),
-            reader_cond: Arc::new((Default::default(), Default::default()))
         }
     }
 
@@ -174,7 +166,7 @@ impl Stream {
             flag: self.flag,
             shared: self.shared.clone(),
             reader: self.reader.clone(),
-            reader_cond: self.reader_cond.clone(),
+            //writer: None
         }
     }
 
@@ -192,38 +184,29 @@ impl Stream {
             log::info!("{}/{}: eof", self.conn, self.id);
             return Err(io::ErrorKind::BrokenPipe.into()); // stream has been reset
         }
+        drop(shared);
 
         log::debug!("{}/{}: reading", self.conn, self.id);
 
-        if shared.buffer.len().unwrap() == 0 {
-            log::debug!("{}/{}: empty buffer, go pending", self.conn, self.id);
+        future::poll_fn::<(), _>(|cx| {
+            let fut = self.shared();
+            futures::pin_mut!(fut);
+            let mut shared = futures::ready!(fut.poll(cx));
 
-            drop(shared);
-
-            {
-                let (lock, cvar) = &*self.reader_cond;
-                let mut guard= lock.lock().await;
-                guard = cvar.wait(guard).await;
-            }
-
-/*            // n == 0, meaning we got nothing from recv buffer, go pending
-            future::poll_fn::<(), _>(|cx| {
-                // Since we have no more data at this point, we want to be woken up
-                // by the connection when more becomes available for us.
-                // Note: we move shared into this closure, therefore it will be dropped
-                // when it is out of scope
-                //shared.reader = Some(cx.waker().clone());
-
-                self.reader.register(cx.waker());
+            // Since we have no more data at this point, we want to be woken up
+            // by the connection when more becomes available for us.
+            // Note: shared will be dropped when it is out of scope
+            if shared.buffer.len().unwrap() == 0 {
+                log::debug!("{}/{}: empty buffer, go pending", self.conn, self.id);
+                shared.reader = Some(cx.waker().clone());
                 Poll::Pending
-            })
-            .await;*/
+            } else {
+                Poll::Ready(())
+            }
+        })
+        .await;
 
-            log::info!("woken up...");
-
-            // again, get the shared lock
-            shared = self.shared().await;
-        }
+        shared = self.shared().await;
 
         let mut n = 0;
         while let Some(chunk) = shared.buffer.front_mut() {
@@ -281,23 +264,28 @@ impl Stream {
                 log::debug!("{}/{}: can no longer write", self.conn, self.id);
                 return Err(self.write_zero_err());
             }
+            drop(shared);
 
-            if shared.credit == 0 {
-                log::debug!("{}/{}: no more credit left", self.conn, self.id);
+            future::poll_fn::<(), _>(|cx| {
+                let fut = self.shared();
+                futures::pin_mut!(fut);
+                let mut shared = futures::ready!(fut.poll(cx));
 
-                // no credit, go pending
-                future::poll_fn::<(), _>(move |cx| {
-                    // Since we have no more data at this point, we want to be woken up
-                    // by the connection when more becomes available for us.
+                // No credit here, we want to be woken up
+                // by the connection when more becomes available for us.
+                // Note: shared will be dropped when it is out of scope
+                if shared.credit == 0 {
+                    log::debug!("{}/{}: no more credit left", self.conn, self.id);
                     shared.writer = Some(cx.waker().clone());
                     Poll::Pending
-                })
-                .await;
+                } else {
+                    Poll::Ready(())
+                }
+            })
+            .await;
 
-                // again, get the shared lock
-                shared = self.shared().await;
-            }
-
+            // re-gain the shared data
+            shared = self.shared().await;
             let k = std::cmp::min(shared.credit as usize, buf.len());
             shared.credit = shared.credit.saturating_sub(k as u32);
             Vec::from(&buf[..k])
@@ -369,171 +357,8 @@ impl Drop for Stream {
         //self.close().await;
     }
 }
-/*
-// Like the `futures::stream::Stream` impl above, but copies bytes into the
-// provided mutable slice.
-impl AsyncRead for Stream {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context,
-        buf: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
-        poll_future(cx, self.read_stream(buf))
 
-        // if !self.config.read_after_close && self.sender.is_closed() {
-        //     return Poll::Ready(Ok(0));
-        // }
-        //
-        // // Try to deliver any pending window updates first.
-        // if self.pending.is_some() {
-        //     ready!(self
-        //         .sender
-        //         .poll_ready(cx)
-        //         .map_err(|_| self.write_zero_err())?);
-        //     let mut frame = self.pending.take().expect("pending.is_some()").right();
-        //     self.add_flag(frame.header_mut());
-        //     let cmd = StreamCommand::SendFrame(frame);
-        //     self.sender
-        //         .start_send(cmd)
-        //         .map_err(|_| self.write_zero_err())?
-        // }
-        //
-        // // We need to limit the `shared` `MutexGuard` scope, or else we run into
-        // // borrow check troubles further down.
-        // {
-        //     // Copy data from stream buffer.
-        //     let mut shared = self.shared();
-        //     let mut n = 0;
-        //     while let Some(chunk) = shared.buffer.front_mut() {
-        //         if chunk.is_empty() {
-        //             shared.buffer.pop();
-        //             continue;
-        //         }
-        //         let k = std::cmp::min(chunk.len(), buf.len() - n);
-        //         (&mut buf[n..n + k]).copy_from_slice(&chunk.as_ref()[..k]);
-        //         n += k;
-        //         chunk.advance(k);
-        //         if n == buf.len() {
-        //             break;
-        //         }
-        //     }
-        //
-        //     if n > 0 {
-        //         log::trace!("{}/{}: read {} bytes", self.conn, self.id, n);
-        //         return Poll::Ready(Ok(n));
-        //     }
-        //
-        //     // Buffer is empty, let's check if we can expect to read more data.
-        //     if !shared.state().can_read() {
-        //         log::info!("{}/{}: eof", self.conn, self.id);
-        //         return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into())); // stream has been reset
-        //     }
-        //
-        //     // Since we have no more data at this point, we want to be woken up
-        //     // by the connection when more becomes available for us.
-        //     shared.reader = Some(cx.waker().clone());
-        //
-        //     // Finally, let's see if we need to send a window update to the remote.
-        //     if self.config.window_update_mode != WindowUpdateMode::OnRead || shared.window > 0 {
-        //         // No, time to go.
-        //         return Poll::Pending;
-        //     }
-        //
-        //     shared.window = self.config.receive_window
-        // }
-        //
-        // // At this point we know we have to send a window update to the remote.
-        // let frame = Frame::window_update(self.id, self.config.receive_window);
-        // match self
-        //     .sender
-        //     .poll_ready(cx)
-        //     .map_err(|_| self.write_zero_err())?
-        // {
-        //     Poll::Ready(()) => {
-        //         let mut frame = frame.right();
-        //         self.add_flag(frame.header_mut());
-        //         let cmd = StreamCommand::SendFrame(frame);
-        //         self.sender
-        //             .start_send(cmd)
-        //             .map_err(|_| self.write_zero_err())?
-        //     }
-        //     Poll::Pending => self.pending = Some(frame),
-        // }
-        //
-        // Poll::Pending
-    }
-}
 
-impl AsyncWrite for Stream {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        poll_future(cx, self.write_stream(buf))
-
-        // ready!(self
-        //     .sender
-        //     .poll_ready(cx)
-        //     .map_err(|_| self.write_zero_err())?);
-        // let body = {
-        //     let mut shared = self.shared();
-        //     if !shared.state().can_write() {
-        //         log::debug!("{}/{}: can no longer write", self.conn, self.id);
-        //         return Poll::Ready(Err(self.write_zero_err()));
-        //     }
-        //     if shared.credit == 0 {
-        //         log::trace!("{}/{}: no more credit left", self.conn, self.id);
-        //         shared.writer = Some(cx.waker().clone());
-        //         return Poll::Pending;
-        //     }
-        //     let k = std::cmp::min(shared.credit as usize, buf.len());
-        //     shared.credit = shared.credit.saturating_sub(k as u32);
-        //     Vec::from(&buf[..k])
-        // };
-        // let n = body.len();
-        // let mut frame = Frame::data(self.id, body).expect("body <= u32::MAX").left();
-        // self.add_flag(frame.header_mut());
-        // log::trace!("{}/{}: write {} bytes", self.conn, self.id, n);
-        // let cmd = StreamCommand::SendFrame(frame);
-        // self.sender
-        //     .start_send(cmd)
-        //     .map_err(|_| self.write_zero_err())?;
-        // Poll::Ready(Ok(n))
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, _: &mut Context) -> Poll<io::Result<()>> {
-        //poll_future(cx, self.sender.flush());
-        Poll::Ready(Ok(()))
-    }
-
-    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        poll_future(cx, self.close_stream())
-
-        // if self.state() == State::Closed {
-        //     return Poll::Ready(Ok(()));
-        // }
-        // log::trace!("{}/{}: close", self.conn, self.id);
-        // ready!(self
-        //     .sender
-        //     .poll_ready(cx)
-        //     .map_err(|_| self.write_zero_err())?);
-        // let ack = if self.flag == Flag::Ack {
-        //     self.flag = Flag::None;
-        //     true
-        // } else {
-        //     false
-        // };
-        // let cmd = StreamCommand::CloseStream { id: self.id, ack };
-        // self.sender
-        //     .start_send(cmd)
-        //     .map_err(|_| self.write_zero_err())?;
-        // self.shared()
-        //     .update_state(self.conn, self.id, State::SendClosed);
-        // Poll::Ready(Ok(()))
-    }
-}
-*/
 #[derive(Debug)]
 pub(crate) struct Shared {
     state: State,
@@ -597,12 +422,6 @@ impl Shared {
     }
 }
 
-/// Pins a future and then polls it.
-fn poll_future<T>(cx: &mut Context<'_>, fut: impl Future<Output = T>) -> Poll<T> {
-    futures::pin_mut!(fut);
-    fut.poll(cx)
-}
-
 #[async_trait]
 impl Read2 for Stream {
     async fn read2<'a>(&'a mut self, buf: &'a mut [u8]) -> io::Result<usize> {
@@ -621,6 +440,6 @@ impl Write2 for Stream {
     }
 
     async fn close2(&mut self) -> io::Result<()> {
-        Ok(())
+        self.close_stream().await
     }
 }

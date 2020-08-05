@@ -8,7 +8,6 @@
 // at https://www.apache.org/licenses/LICENSE-2.0 and a copy of the MIT license
 // at https://opensource.org/licenses/MIT.
 
-use futures::prelude::*;
 use std::io;
 
 use super::{
@@ -18,6 +17,8 @@ use super::{
 use crate::connection::Id;
 use crate::frame::header::HEADER_SIZE;
 
+use libp2p_traits::{Read2, Write2};
+
 /// A [`Stream`] and writer of [`Frame`] values.
 #[derive(Debug)]
 pub(crate) struct Io<T> {
@@ -26,7 +27,7 @@ pub(crate) struct Io<T> {
     max_body_len: usize,
 }
 
-impl<T: AsyncRead + AsyncWrite + Unpin> Io<T> {
+impl<T: Read2 + Write2 + Unpin + Send> Io<T> {
     pub(crate) fn new(id: Id, io: T, max_frame_body_len: usize) -> Self {
         Io {
             id,
@@ -36,23 +37,25 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Io<T> {
     }
 
     pub(crate) async fn send_frame<A>(&mut self, frame: &Frame<A>) -> io::Result<()> {
+        log::trace!("{}: write stream, header: {}", self.id, frame.header);
+
         let header = header::encode(&frame.header);
-        self.io.write_all(&header).await?;
-        self.io.write_all(&frame.body).await
+
+        self.io.write2(header.to_vec().as_ref()).await?;
+        self.io.write2(&frame.body).await
     }
 
     pub(crate) async fn flush(&mut self) -> io::Result<()> {
-        self.io.flush().await
+        self.io.flush2().await
     }
-
     pub(crate) async fn close(&mut self) -> io::Result<()> {
-        self.io.close().await
+        self.io.close2().await
     }
 
     pub(crate) async fn recv_frame(&mut self) -> Result<Frame<()>, FrameDecodeError> {
         let mut header_data = [0; HEADER_SIZE];
-        self.io.read_exact(&mut header_data).await?;
 
+        self.io.read_exact2(&mut header_data).await?;
         let header = header::decode(&header_data)?;
 
         log::trace!("{}: read stream header: {}", self.id, header);
@@ -67,101 +70,11 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Io<T> {
         }
 
         let mut body = vec![0; body_len];
-        self.io.read_exact(&mut body).await?;
+        self.io.read_exact2(&mut body).await?;
 
         Ok(Frame { header, body })
     }
 }
-
-/*
-impl<T: AsyncRead + AsyncWrite + Unpin> Stream for Io<T> {
-    type Item = Result<Frame<()>, FrameDecodeError>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        let mut this = &mut *self;
-        loop {
-            log::trace!("{}: read: {:?}", this.id, this.state);
-            match this.state {
-                ReadState::Init => {
-                    this.state = ReadState::Header {
-                        offset: 0,
-                        buffer: [0; header::HEADER_SIZE],
-                    };
-                }
-                ReadState::Header {
-                    ref mut offset,
-                    ref mut buffer,
-                } => {
-                    if *offset == header::HEADER_SIZE {
-                        let header = match header::decode(&buffer) {
-                            Ok(hd) => hd,
-                            Err(e) => return Poll::Ready(Some(Err(e.into()))),
-                        };
-
-                        log::trace!("{}: read: {}", this.id, header);
-
-                        if header.tag() != header::Tag::Data {
-                            this.state = ReadState::Init;
-                            return Poll::Ready(Some(Ok(Frame::new(header))));
-                        }
-
-                        let body_len = header.len().val() as usize;
-
-                        if body_len > this.max_body_len {
-                            return Poll::Ready(Some(Err(FrameDecodeError::FrameTooLarge(
-                                body_len,
-                            ))));
-                        }
-
-                        this.state = ReadState::Body {
-                            header,
-                            offset: 0,
-                            buffer: vec![0; body_len],
-                        };
-
-                        continue;
-                    }
-
-                    let buf = &mut buffer[*offset..header::HEADER_SIZE];
-                    match ready!(Pin::new(&mut this.io).poll_read(cx, buf))? {
-                        0 => {
-                            if *offset == 0 {
-                                return Poll::Ready(None);
-                            }
-                            let e = FrameDecodeError::Io(io::ErrorKind::UnexpectedEof.into());
-                            return Poll::Ready(Some(Err(e)));
-                        }
-                        n => *offset += n,
-                    }
-                }
-                ReadState::Body {
-                    ref header,
-                    ref mut offset,
-                    ref mut buffer,
-                } => {
-                    let body_len = header.len().val() as usize;
-
-                    if *offset == body_len {
-                        let h = header.clone();
-                        let v = std::mem::take(buffer);
-                        this.state = ReadState::Init;
-                        return Poll::Ready(Some(Ok(Frame { header: h, body: v })));
-                    }
-
-                    let buf = &mut buffer[*offset..body_len];
-                    match ready!(Pin::new(&mut this.io).poll_read(cx, buf))? {
-                        0 => {
-                            let e = FrameDecodeError::Io(io::ErrorKind::UnexpectedEof.into());
-                            return Poll::Ready(Some(Err(e)));
-                        }
-                        n => *offset += n,
-                    }
-                }
-            }
-        }
-    }
-}
-*/
 
 /// Possible errors while decoding a message frame.
 #[non_exhaustive]
