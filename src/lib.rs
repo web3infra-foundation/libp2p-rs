@@ -20,14 +20,14 @@
 
 /// Re-pub bytes crate
 pub use bytes;
+/// Traits
+pub use libp2p_traits;
 /// Re-pub multiaddr crate
 pub use multiaddr;
 /// Re-pub secio crate
 pub use secio;
 /// Re-pub yamux crate
 pub use yamux;
-/// Traits
-pub use libp2p_traits;
 
 /*
 /// Some gadgets that help create a service
