@@ -101,10 +101,10 @@ impl Chunk {
             .set_position(self.cursor.position() + amount as u64);
     }
 
-    /// Consume `self` and return the inner vector.
-    pub(crate) fn into_vec(self) -> Vec<u8> {
-        self.cursor.into_inner()
-    }
+    // Consume `self` and return the inner vector.
+    // pub(crate) fn into_vec(self) -> Vec<u8> {
+    //     self.cursor.into_inner()
+    // }
 }
 
 impl AsRef<[u8]> for Chunk {
