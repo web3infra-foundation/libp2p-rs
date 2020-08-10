@@ -1,13 +1,12 @@
 //! Ed25519 keys.
 
-use ed25519_dalek as ed25519;
-use rand::RngCore;
 use super::error::DecodingError;
-use zeroize::Zeroize;
-use std::fmt;
-use ed25519_dalek::{Signer,Signature,Verifier};
+use ed25519_dalek as ed25519;
+use ed25519_dalek::{Signature, Signer, Verifier};
+use rand::RngCore;
 use std::convert::TryFrom;
-
+use std::fmt;
+use zeroize::Zeroize;
 
 /// An Ed25519 keypair.
 pub struct Keypair(ed25519::Keypair);
@@ -29,7 +28,10 @@ impl Keypair {
     /// zeroing the input on success.
     pub fn decode(kp: &mut [u8]) -> Result<Keypair, DecodingError> {
         ed25519::Keypair::from_bytes(kp)
-            .map(|k| { kp.zeroize(); Keypair(k) })
+            .map(|k| {
+                kp.zeroize();
+                Keypair(k)
+            })
             .map_err(|e| DecodingError::new("Ed25519 keypair").source(e))
     }
 
@@ -52,7 +54,9 @@ impl Keypair {
 
 impl fmt::Debug for Keypair {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Keypair").field("public", &self.0.public).finish()
+        f.debug_struct("Keypair")
+            .field("public", &self.0.public)
+            .finish()
     }
 }
 
@@ -60,7 +64,8 @@ impl Clone for Keypair {
     fn clone(&self) -> Keypair {
         let mut sk_bytes = self.0.secret.to_bytes();
         let secret = SecretKey::from_bytes(&mut sk_bytes)
-            .expect("ed25519::SecretKey::from_bytes(to_bytes(k)) != k").0;
+            .expect("ed25519::SecretKey::from_bytes(to_bytes(k)) != k")
+            .0;
         let public = ed25519::PublicKey::from_bytes(&self.0.public.to_bytes())
             .expect("ed25519::PublicKey::from_bytes(to_bytes(k)) != k");
         Keypair(ed25519::Keypair { secret, public })
@@ -79,7 +84,10 @@ impl From<SecretKey> for Keypair {
     fn from(sk: SecretKey) -> Keypair {
         let secret: ed25519::ExpandedSecretKey = (&sk.0).into();
         let public = ed25519::PublicKey::from(&secret);
-        Keypair(ed25519::Keypair { secret: sk.0, public })
+        Keypair(ed25519::Keypair {
+            secret: sk.0,
+            public,
+        })
     }
 }
 
@@ -89,10 +97,10 @@ pub struct PublicKey(ed25519::PublicKey);
 
 impl PublicKey {
     /// Verify the Ed25519 signature on a message using the public key.
-    pub fn verify(&self, msg: &[u8], sig: &[u8]) -> bool {  
-        Signature::try_from(&sig[..]).and_then(
-            |s| self.0.verify(msg, &s)
-        ).is_ok()
+    pub fn verify(&self, msg: &[u8], sig: &[u8]) -> bool {
+        Signature::try_from(&sig[..])
+            .and_then(|s| self.0.verify(msg, &s))
+            .is_ok()
     }
 
     /// Encode the public key into a byte array in compressed form, i.e.
@@ -122,8 +130,7 @@ impl AsRef<[u8]> for SecretKey {
 impl Clone for SecretKey {
     fn clone(&self) -> SecretKey {
         let mut sk_bytes = self.0.to_bytes();
-        Self::from_bytes(&mut sk_bytes)
-            .expect("ed25519::SecretKey::from_bytes(to_bytes(k)) != k")
+        Self::from_bytes(&mut sk_bytes).expect("ed25519::SecretKey::from_bytes(to_bytes(k)) != k")
     }
 }
 
@@ -138,8 +145,11 @@ impl SecretKey {
     pub fn generate() -> SecretKey {
         let mut bytes = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut bytes);
-        SecretKey(ed25519::SecretKey::from_bytes(&bytes)
-            .expect("this returns `Err` only if the length is wrong; the length is correct; qed"))
+        SecretKey(
+            ed25519::SecretKey::from_bytes(&bytes).expect(
+                "this returns `Err` only if the length is wrong; the length is correct; qed",
+            ),
+        )
     }
 
     /// Create an Ed25519 secret key from a byte slice, zeroing the input on success.
@@ -160,9 +170,7 @@ mod tests {
     use quickcheck::*;
 
     fn eq_keypairs(kp1: &Keypair, kp2: &Keypair) -> bool {
-        kp1.public() == kp2.public()
-            &&
-        kp1.0.secret.as_bytes() == kp2.0.secret.as_bytes()
+        kp1.public() == kp2.public() && kp1.0.secret.as_bytes() == kp2.0.secret.as_bytes()
     }
 
     #[test]
@@ -171,9 +179,7 @@ mod tests {
             let kp1 = Keypair::generate();
             let mut kp1_enc = kp1.encode();
             let kp2 = Keypair::decode(&mut kp1_enc).unwrap();
-            eq_keypairs(&kp1, &kp2)
-                &&
-            kp1_enc.iter().all(|b| *b == 0)
+            eq_keypairs(&kp1, &kp2) && kp1_enc.iter().all(|b| *b == 0)
         }
         QuickCheck::new().tests(10).quickcheck(prop as fn() -> _);
     }
@@ -184,9 +190,7 @@ mod tests {
             let kp1 = Keypair::generate();
             let mut sk = kp1.0.secret.to_bytes();
             let kp2 = Keypair::from(SecretKey::from_bytes(&mut sk).unwrap());
-            eq_keypairs(&kp1, &kp2)
-                &&
-            sk == [0u8; 32]
+            eq_keypairs(&kp1, &kp2) && sk == [0u8; 32]
         }
         QuickCheck::new().tests(10).quickcheck(prop as fn() -> _);
     }
