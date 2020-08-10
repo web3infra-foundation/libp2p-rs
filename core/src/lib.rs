@@ -11,10 +11,8 @@ mod keys_proto {
     include!(concat!(env!("OUT_DIR"), "/keys_proto.rs"));
 }
 
-
-mod peer_id;
 pub mod identity;
+mod peer_id;
 
-pub use peer_id::PeerId;
 pub use identity::PublicKey;
-
+pub use peer_id::PeerId;
