@@ -6,11 +6,14 @@ use crate::{
     error::SecioError,
     exchange::KeyAgreement,
     handshake::{
-        handshake_struct::{Propose, PublicKey},
+        handshake_struct::PublicKey,
         Config,
     },
+    handshake_proto::Propose,
     support, Digest,
 };
+
+use prost::Message;
 
 use log::{debug, trace};
 use ring::agreement;
@@ -85,39 +88,41 @@ impl HandshakeContext<()> {
 
         let public_key = self.config.key.public_key();
 
-        // Send our proposition with our nonce, public key and supported protocols.
-        let mut proposition = Propose::new();
-        proposition.rand = nonce.to_vec();
-        proposition.pubkey = public_key.clone().encode();
+        let local_proposition = Propose {
+            rand: nonce.to_vec(),
+            pubkey: public_key.clone().into_protobuf_encoding(),
+            exchanges: self
+                .config
+                .agreements_proposal
+                .clone()
+                .unwrap_or_else(|| support::DEFAULT_AGREEMENTS_PROPOSITION.into()),
+            ciphers: self
+                .config
+                .ciphers_proposal
+                .clone()
+                .unwrap_or_else(|| support::DEFAULT_CIPHERS_PROPOSITION.into()),
+            hashes: self
+                .config
+                .digests_proposal
+                .clone()
+                .unwrap_or_else(|| support::DEFAULT_DIGESTS_PROPOSITION.into()),
+        };
 
-        proposition.exchange = self
-            .config
-            .agreements_proposal
-            .clone()
-            .unwrap_or_else(|| support::DEFAULT_AGREEMENTS_PROPOSITION.into());
-        trace!("agreements proposition: {}", proposition.exchange);
+        // let proposition_bytes = local_proposition.encode().to_vec();
 
-        proposition.ciphers = self
-            .config
-            .ciphers_proposal
-            .clone()
-            .unwrap_or_else(|| support::DEFAULT_CIPHERS_PROPOSITION.into());
-        trace!("ciphers proposition: {}", proposition.ciphers);
+        let proposition_bytes = {
+            let mut buf = Vec::with_capacity(local_proposition.encoded_len());
+            local_proposition.encode(&mut buf).expect("Vec<u8> provides capacity as needed");
+            buf
+        };
 
-        proposition.hashes = self
-            .config
-            .digests_proposal
-            .clone()
-            .unwrap_or_else(|| support::DEFAULT_DIGESTS_PROPOSITION.into());
-        trace!("digests proposition: {}", proposition.hashes);
-
-        let proposition_bytes = proposition.encode().to_vec();
+        // trace!("public_key: {:?}", &public_key.inner_ref());
 
         HandshakeContext {
             config: self.config,
             state: Local {
                 nonce,
-                public_key: public_key.inner(),
+                public_key: public_key.into_protobuf_encoding(),
                 proposition_bytes,
             },
         }
@@ -130,10 +135,11 @@ impl HandshakeContext<Local> {
         self,
         remote_bytes: Vec<u8>,
     ) -> Result<HandshakeContext<Remote>, SecioError> {
-        let propose = match Propose::decode(&remote_bytes) {
-            Some(prop) => prop,
-            None => {
-                debug!("failed to parse remote's proposition flatbuffer message");
+
+        let propose = match Propose::decode(&remote_bytes[..]) {
+            Ok(prop) => prop,
+            Err(_) => {
+                debug!("failed to parse remote's proposition protobuf message");
                 return Err(SecioError::HandshakeParsingFailure);
             }
         };
@@ -141,15 +147,10 @@ impl HandshakeContext<Local> {
         // NOTE: Libp2p uses protobuf bytes to calculate order, but here we only use the original pubkey and nonce
         let nonce = propose.rand;
 
-        let public_key = match PublicKey::decode(&propose.pubkey) {
-            Some(pubkey) => pubkey,
-            None => {
-                debug!("failed to parse remote's public key flatbuffer message");
-                return Err(SecioError::HandshakeParsingFailure);
-            }
-        };
+        let public_key = propose.pubkey;
+        trace!("remote public_key: {:?}", &public_key);
 
-        if public_key.inner_ref() == &self.state.public_key {
+        if &public_key == &self.state.public_key {
             return Err(SecioError::ConnectSelf);
         }
 
@@ -158,7 +159,7 @@ impl HandshakeContext<Local> {
         let hashes_ordering = {
             let oh1 = {
                 let mut ctx = ring::digest::Context::new(&ring::digest::SHA256);
-                ctx.update(public_key.inner_ref());
+                ctx.update(public_key.as_ref());
                 ctx.update(&self.state.nonce);
                 ctx.finish()
             };
@@ -180,7 +181,7 @@ impl HandshakeContext<Local> {
                 .as_ref()
                 .map(AsRef::as_ref)
                 .unwrap_or(support::DEFAULT_AGREEMENTS_PROPOSITION);
-            let theirs = &propose.exchange;
+            let theirs = &propose.exchanges;
             match support::select_agreement(hashes_ordering, ours, theirs) {
                 Ok(a) => a,
                 Err(err) => {
@@ -235,7 +236,7 @@ impl HandshakeContext<Local> {
             state: Remote {
                 local: self.state,
                 proposition_bytes: remote_bytes,
-                public_key,
+                public_key: PublicKey::Secp256k1(public_key),
                 nonce,
                 hashes_ordering,
                 chosen_exchange,

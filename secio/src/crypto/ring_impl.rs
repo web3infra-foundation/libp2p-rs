@@ -13,6 +13,7 @@ use crate::{
     crypto::{cipher::CipherType, nonce_advance, CryptoMode, StreamCipher},
     error::SecioError,
 };
+use log::trace;
 
 struct RingNonce(BytesMut);
 
@@ -35,6 +36,7 @@ pub(crate) struct RingAeadCipher {
 
 impl RingAeadCipher {
     pub fn new(cipher_type: CipherType, key: &[u8], mode: CryptoMode) -> Self {
+        trace!("New RingAeadCipher");
         let nonce_size = cipher_type.iv_size();
         let mut nonce = BytesMut::with_capacity(nonce_size);
         unsafe {
@@ -46,7 +48,6 @@ impl RingAeadCipher {
             CipherType::Aes128Gcm => &AES_128_GCM,
             CipherType::Aes256Gcm => &AES_256_GCM,
             CipherType::ChaCha20Poly1305 => &CHACHA20_POLY1305,
-            #[cfg(unix)]
             _ => panic!(
                 "Cipher type {:?} does not supported by RingAead yet",
                 cipher_type
