@@ -1,4 +1,3 @@
-use crate::crypto::cipher::CipherType;
 use crate::crypto::StreamCipher;
 
 use crate::error::SecioError;
