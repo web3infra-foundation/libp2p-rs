@@ -5,10 +5,7 @@ use crate::{
     crypto::cipher::CipherType,
     error::SecioError,
     exchange::KeyAgreement,
-    handshake::{
-        handshake_struct::PublicKey,
-        Config,
-    },
+    handshake::{handshake_struct::PublicKey, Config},
     handshake_proto::Propose,
     support, Digest,
 };
@@ -112,7 +109,9 @@ impl HandshakeContext<()> {
 
         let proposition_bytes = {
             let mut buf = Vec::with_capacity(local_proposition.encoded_len());
-            local_proposition.encode(&mut buf).expect("Vec<u8> provides capacity as needed");
+            local_proposition
+                .encode(&mut buf)
+                .expect("Vec<u8> provides capacity as needed");
             buf
         };
 
@@ -135,7 +134,6 @@ impl HandshakeContext<Local> {
         self,
         remote_bytes: Vec<u8>,
     ) -> Result<HandshakeContext<Remote>, SecioError> {
-
         let propose = match Propose::decode(&remote_bytes[..]) {
             Ok(prop) => prop,
             Err(_) => {
@@ -150,7 +148,7 @@ impl HandshakeContext<Local> {
         let public_key = propose.pubkey;
         trace!("remote public_key: {:?}", &public_key);
 
-        if &public_key == &self.state.public_key {
+        if public_key == self.state.public_key {
             return Err(SecioError::ConnectSelf);
         }
 

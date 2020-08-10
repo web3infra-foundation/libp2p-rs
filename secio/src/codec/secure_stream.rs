@@ -197,6 +197,7 @@ mod tests {
     use super::{Hmac, SecureStream};
     use crate::codec::len_prefix::LengthPrefixSocket;
     use crate::crypto::{cipher::CipherType, new_stream, CryptoMode};
+    use crate::Digest;
     use async_std::{
         net::{TcpListener, TcpStream},
         task,
@@ -204,7 +205,6 @@ mod tests {
     use bytes::BytesMut;
     use futures::{channel, AsyncReadExt, AsyncWriteExt, SinkExt};
     use libp2p_traits::{Read2, Write2};
-    use crate::Digest;
 
     fn test_decode_encode(cipher: CipherType) {
         let cipher_key = (0..cipher.key_size())
@@ -270,7 +270,8 @@ mod tests {
         let nonce = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
         let (mut sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();
-        let (mut addr_sender, addr_receiver) = channel::oneshot::channel::<::std::net::SocketAddr>();
+        let (mut addr_sender, addr_receiver) =
+            channel::oneshot::channel::<::std::net::SocketAddr>();
 
         task::spawn(async move {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -281,7 +282,7 @@ mod tests {
             let (decode_hmac, encode_hmac) = match cipher {
                 CipherType::ChaCha20Poly1305 | CipherType::Aes128Gcm | CipherType::Aes256Gcm => {
                     (None, None)
-                },
+                }
                 _ => (
                     Some(Hmac::from_key(Digest::Sha256, &_hmac_key_clone)),
                     Some(Hmac::from_key(Digest::Sha256, &_hmac_key_clone)),

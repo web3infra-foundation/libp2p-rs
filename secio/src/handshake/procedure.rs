@@ -12,16 +12,13 @@ use crate::{
     error::SecioError,
     exchange,
     handshake::Config,
-    handshake::{
-        handshake_context::HandshakeContext,
-        handshake_struct::PublicKey,
-    },
+    handshake::{handshake_context::HandshakeContext, handshake_struct::PublicKey},
     handshake_proto::Exchange,
     Digest, EphemeralPublicKey, KeyPairInner,
 };
 
-use prost::Message;
 use libp2p_traits::Write2;
+use prost::Message;
 
 /// Performs a handshake on the given socket.
 ///
@@ -36,8 +33,8 @@ pub(in crate::handshake) async fn handshake<T>(
     socket: T,
     config: Config,
 ) -> Result<(SecureStream<T>, PublicKey, EphemeralPublicKey), SecioError>
-    where
-        T: AsyncRead + AsyncWrite + Send + 'static + Unpin,
+where
+    T: AsyncRead + AsyncWrite + Send + 'static + Unpin,
 {
     // The handshake messages all start with a 4-bytes message length prefix.
     let mut socket = LengthPrefixSocket::new(socket, config.max_frame_length);
@@ -106,7 +103,9 @@ pub(in crate::handshake) async fn handshake<T>(
     };
     let local_exchanges = {
         let mut buf = Vec::with_capacity(exchanges.encoded_len());
-        exchanges.encode(&mut buf).expect("Vec<u8> provides capacity as needed");
+        exchanges
+            .encode(&mut buf)
+            .expect("Vec<u8> provides capacity as needed");
         buf
     };
 
@@ -118,9 +117,7 @@ pub(in crate::handshake) async fn handshake<T>(
     // Receive the remote's `Exchange`.
     let raw_exchanges = socket.recv_frame().await?;
     let remote_exchanges = match Exchange::decode(&raw_exchanges[..]) {
-        Ok(e) => {
-            e
-        }
+        Ok(e) => e,
         Err(err) => {
             debug!("failed to parse remote's exchange protobuf; {:?}", err);
             return Err(SecioError::HandshakeParsingFailure);
@@ -317,7 +314,8 @@ mod tests {
 
     fn handshake_with_self_success(config_1: Config, config_2: Config, data: &'static [u8]) {
         let (mut sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();
-        let (mut addr_sender, addr_receiver) = channel::oneshot::channel::<::std::net::SocketAddr>();
+        let (mut addr_sender, addr_receiver) =
+            channel::oneshot::channel::<::std::net::SocketAddr>();
 
         task::spawn(async move {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
