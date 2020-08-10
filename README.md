@@ -1,7 +1,6 @@
 # libp2p-rs
 
 [![Build Status](https://travis-ci.com/pldteam/libp2p-rs.svg?token=tEt4wqXiQg5sktaf43jn&branch=master)](https://travis-ci.com/pldteam/libp2p-rs)
-![image](https://img.shields.io/badge/rustc-1.42-blue.svg)
 
 ## Overview
 
