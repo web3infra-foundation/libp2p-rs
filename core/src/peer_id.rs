@@ -1,5 +1,4 @@
 use crate::PublicKey;
-use bs58;
 use multihash::{self, Code, Sha2_256};
 use rand::Rng;
 use std::{borrow::Borrow, cmp, convert::TryFrom, fmt, hash, str::FromStr};
