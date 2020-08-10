@@ -1,31 +1,27 @@
-use crate::crypto::StreamCipher;
 use crate::crypto::cipher::CipherType;
+use crate::crypto::StreamCipher;
 
 use crate::error::SecioError;
 
 use aes_ctr::stream_cipher::generic_array::*;
-use aes_ctr::Aes128Ctr;
 use aes_ctr::stream_cipher::{NewStreamCipher, SyncStreamCipher};
+use aes_ctr::Aes128Ctr;
 use log::trace;
 
 pub static CTR128LEN: usize = 16;
 
 pub(crate) struct CTRCipher {
-    cipher_type: CipherType,
     cipher: Aes128Ctr,
 }
 
 impl CTRCipher {
     /// Create a CTRCipher
-    pub fn new(cipher_type: CipherType, key: &[u8], iv: &[u8]) -> Self {
+    pub fn new(key: &[u8], iv: &[u8]) -> Self {
         trace!("new CTRCipher");
         let iv = GenericArray::from_slice(iv);
         let key = GenericArray::from_slice(key);
         let cipher = Aes128Ctr::new(key, iv);
-        CTRCipher {
-            cipher_type,
-            cipher,
-        }
+        CTRCipher { cipher }
     }
 
     /// Encrypt `input` to `temp`, tag.len() in ctr mode is zero.
@@ -66,8 +62,8 @@ mod test {
             .map(|_| rand::random::<u8>())
             .collect::<Vec<_>>();
 
-        let mut encryptor = CTRCipher::new(mode, key.as_ref(), iv.as_ref());
-        let mut decryptor = CTRCipher::new(mode, key.as_ref(), iv.as_ref());
+        let mut encryptor = CTRCipher::new(key.as_ref(), iv.as_ref());
+        let mut decryptor = CTRCipher::new(key.as_ref(), iv.as_ref());
 
         let message = b"HELLO WORLD";
         let encrypted_msg = encryptor.encrypt(message).unwrap();

@@ -1,5 +1,5 @@
-use ring::aead;
 use crate::crypto::ctr_impl::CTR128LEN;
+use ring::aead;
 
 /// Possible encryption ciphers.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

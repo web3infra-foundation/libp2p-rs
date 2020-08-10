@@ -39,10 +39,10 @@ pub fn new_stream(
     mode: CryptoMode,
 ) -> BoxStreamCipher {
     match t {
-        cipher::CipherType::Aes128Ctr => {
-            Box::new(ctr_impl::CTRCipher::new(t, key, iv))
-        }
-        cipher::CipherType::Aes128Gcm | cipher::CipherType::Aes256Gcm | cipher::CipherType::ChaCha20Poly1305 => {
+        cipher::CipherType::Aes128Ctr => Box::new(ctr_impl::CTRCipher::new(key, iv)),
+        cipher::CipherType::Aes128Gcm
+        | cipher::CipherType::Aes256Gcm
+        | cipher::CipherType::ChaCha20Poly1305 => {
             Box::new(ring_impl::RingAeadCipher::new(t, key, mode))
         }
     }

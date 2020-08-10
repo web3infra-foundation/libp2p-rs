@@ -10,7 +10,6 @@ use std::cmp::Ordering;
 const ECDH_P256: &str = "P-256";
 const ECDH_P384: &str = "P-384";
 
-
 const AES_128: &str = "AES-128";
 const AES_128_CTR: &str = "AES-128-CTR";
 
@@ -23,7 +22,8 @@ const SHA_256: &str = "SHA256";
 const SHA_512: &str = "SHA512";
 
 pub(crate) const DEFAULT_AGREEMENTS_PROPOSITION: &str = "P-256,P-384";
-pub(crate) const DEFAULT_CIPHERS_PROPOSITION: &str = "AES-128,AES-128-CTR,AES-128-GCM,AES-256-GCM,CHACHA20_POLY1305";
+pub(crate) const DEFAULT_CIPHERS_PROPOSITION: &str =
+    "AES-128,AES-128-CTR,AES-128-GCM,AES-256-GCM,CHACHA20_POLY1305";
 pub(crate) const DEFAULT_DIGESTS_PROPOSITION: &str = "SHA256,SHA512";
 
 /// Return a proposition string from the given sequence of `KeyAgreement` values.

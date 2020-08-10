@@ -25,7 +25,7 @@ mod handshake_proto {
     include!(concat!(env!("OUT_DIR"), "/handshake_proto.rs"));
 }
 
-mod key_proto{
+mod key_proto {
     include!(concat!(env!("OUT_DIR"), "/keys_proto.rs"));
 }
 
