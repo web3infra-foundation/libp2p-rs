@@ -28,6 +28,7 @@ use crate::{keys_proto, PeerId};
 /// let keypair = Keypair::rsa_from_pkcs8(&mut bytes);
 /// ```
 ///
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone)]
 pub enum Keypair {
     /// An Ed25519 keypair.
