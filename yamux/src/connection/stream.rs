@@ -27,8 +27,8 @@ use std::{
 };
 
 use async_trait::async_trait;
-use futures::task::AtomicWaker;
 use futures::lock::{Mutex, MutexGuard};
+use futures::task::AtomicWaker;
 
 use libp2p_traits::{Read2, Write2};
 
@@ -357,7 +357,6 @@ impl Drop for Stream {
         //self.close().await;
     }
 }
-
 
 #[derive(Debug)]
 pub(crate) struct Shared {

@@ -5,8 +5,8 @@ use async_std::{
 use futures::prelude::*;
 use log::info;
 
-use yamux::{Config, Connection, Mode};
 use libp2p_traits::{Read2, Write2};
+use yamux::{Config, Connection, Mode};
 
 fn main() {
     env_logger::init();
