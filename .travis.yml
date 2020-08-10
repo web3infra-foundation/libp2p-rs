@@ -1,6 +1,6 @@
 language: rust
 env:
-  - RUSTFLAGS='-F warnings'
+  - RUSTFLAGS='-F warnings -A dead_code'
 rust:
   - stable
   - nightly
