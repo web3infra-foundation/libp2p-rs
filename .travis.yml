@@ -1,16 +1,30 @@
 language: rust
+env:
+  - RUSTFLAGS='-F warnings'
 rust:
   - stable
+  - nightly
+  - beta
+os:
+  - linux
+  - osx
+  - windows
+services:
+  - docker
 before_script:
   - rustup component add rustfmt
   - rustup component add clippy
 script:
-  - RUSTFLAGS='-F warnings' cargo build --all
-  - cargo build --examples --all
+  - cargo build --verbose  --all
+  - cargo build --verbose  --example secio_simple
 stages:
   - Check
   - Test
-jobs:
+cache: cargo
+matrix:
+  allow_failures:
+    - rust: nightly
+  fast_finish: true
   include:
     - stage: Check
       name: Format
@@ -19,22 +33,25 @@ jobs:
     - stage: Check
       name: Clippy
       script:
-        - make clippy
+        -  RUSTFLAGS='-F warnings' cargo clippy --all  -- -A clippy::let_underscore_must_use  -A clippy::derive_hash_xor_eq --verbose
     - stage: Test
-      name: Unitest(molc)
+      name: Secio simple
+      rust: nightly
+      os: linux
       script:
-        - RUSTFLAGS='-F warnings' RUST_BACKTRACE=full cargo test --all --features molc
-    - stage: Test
-      name: Bench(molc)
-      script:
-        - cd bench
-        - cargo run --release --features molc
-    - stage: Test
-      name: Unitest(flatc)
-      script:
-        - RUSTFLAGS='-F warnings' RUST_BACKTRACE=full cargo test --all --features flatc
-    - stage: Test
-      name: Bench(flatc)
-      script:
-        - cd bench
-        - cargo run --release --features flatc
+        - cd secio/examples/go && docker build -t libp2p-rs/go-secio-server:latest  .
+        - cd ../../../
+        - echo "$DOCKER_PASSWORD" | docker login --username "$DOCKER_USERNAME" --password-stdin registry.paradeum.com
+        - docker tag libp2p-rs/go-secio-server:latest registry.paradeum.com/libp2p-rs/go-secio-server:latest 
+        - docker push registry.paradeum.com/libp2p-rs/go-secio-server:latest
+        - docker run -d  -p 1337:1337 libp2p-rs/go-secio-server:latest
+        - docker ps -a
+        - pwd
+        - cargo run --example secio_simple
+
+branches:
+  only: master
+
+notifications:
+  email:
+    on_success: never
