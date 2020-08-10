@@ -1,6 +1,6 @@
 language: rust
 env:
-  - RUSTFLAGS='-F warnings -A dead_code'
+  - RUSTFLAGS='-F warnings'
 rust:
   - stable
   - nightly
@@ -33,7 +33,7 @@ matrix:
     - stage: Check
       name: Clippy
       script:
-        -  RUSTFLAGS='-F warnings' cargo clippy --all  -- -A clippy::let_underscore_must_use  -A clippy::derive_hash_xor_eq -A clippy::let-unit-value -A dead_code --verbose
+        -  RUSTFLAGS='-F warnings' cargo clippy --all  -- -A clippy::let_underscore_must_use  -A clippy::derive_hash_xor_eq -A clippy::let-unit-value --verbose
     - stage: Test
       name: Secio simple
       rust: nightly
