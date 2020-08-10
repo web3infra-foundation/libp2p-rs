@@ -9,4 +9,6 @@ fn main() {
             println!("cargo:rustc-cfg=ossl110");
         }
     }
+    prost_build::compile_protos(&["src/crypto/keys.proto"], &["src/crypto"]).unwrap();
+    prost_build::compile_protos(&["src/handshake/structs.proto"], &["src/handshake"]).unwrap();
 }
