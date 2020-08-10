@@ -33,7 +33,7 @@ matrix:
     - stage: Check
       name: Clippy
       script:
-        -  RUSTFLAGS='-F warnings' cargo clippy --all  -- -A clippy::let_underscore_must_use  -A clippy::derive_hash_xor_eq --verbose
+        -  RUSTFLAGS='-F warnings' cargo clippy --all  -- -A clippy::let_underscore_must_use  -A clippy::derive_hash_xor_eq -A clippy::let-unit-value --verbose
     - stage: Test
       name: Secio simple
       rust: nightly

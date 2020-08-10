@@ -62,3 +62,7 @@ exclude = [
   "protocols/identify",
   "protocols/ping",
 ]
+
+[[example]]
+name = "secio_simple"
+path = "secio/examples/secio_simple.rs"
