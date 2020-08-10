@@ -59,8 +59,8 @@ pub(crate) mod upnp;
 */
 use std::{fmt, ops::AddAssign};
 
-/// Index of sub/protocol stream
-type StreamId = usize;
+// Index of sub/protocol stream
+//type StreamId = usize;
 /// Protocol id
 #[derive(Debug, Clone, Copy, Hash, Ord, PartialOrd, Eq, PartialEq, Default)]
 pub struct ProtocolId(usize);
@@ -104,9 +104,9 @@ impl SessionId {
         self.0
     }
 
-    pub(crate) const fn wrapping_add(self, rhs: usize) -> SessionId {
-        SessionId(self.0.wrapping_add(rhs))
-    }
+    // pub(crate) const fn wrapping_add(self, rhs: usize) -> SessionId {
+    //     SessionId(self.0.wrapping_add(rhs))
+    // }
 }
 
 impl fmt::Display for SessionId {
