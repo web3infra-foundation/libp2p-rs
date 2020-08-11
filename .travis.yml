@@ -39,13 +39,14 @@ matrix:
       os: linux
       script:
         - cargo test -p secio
-        - cargo test -p bench
+        - cargo bench -p secio
     - stage: Test
       name: Secio simple that rust client connect  go server
       rust: nightly
       os: linux
       script:
-        - docker build -t libp2p-rs/go-secio-server:latest -f secio/examples/go/Dockerfile  .
+        - cd secio/examples/go && docker build -t libp2p-rs/go-secio-server:latest  .
+        - cd ../../../
         - echo "$DOCKER_PASSWORD" | docker login --username "$DOCKER_USERNAME" --password-stdin registry.paradeum.com
         - docker tag libp2p-rs/go-secio-server:latest registry.paradeum.com/libp2p-rs/go-secio-server:latest 
         - docker push registry.paradeum.com/libp2p-rs/go-secio-server:latest
