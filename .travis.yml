@@ -47,9 +47,9 @@ matrix:
       script:
         - cd secio/examples/go && docker build -t libp2p-rs/go-secio-server:latest  .
         - cd ../../../
-        - echo "$DOCKER_PASSWORD" | docker login --username "$DOCKER_USERNAME" --password-stdin registry.paradeum.com
-        - docker tag libp2p-rs/go-secio-server:latest registry.paradeum.com/libp2p-rs/go-secio-server:latest 
-        - docker push registry.paradeum.com/libp2p-rs/go-secio-server:latest
+        #- echo "$DOCKER_PASSWORD" | docker login --username "$DOCKER_USERNAME" --password-stdin registry.paradeum.com
+        #- docker tag libp2p-rs/go-secio-server:latest registry.paradeum.com/libp2p-rs/go-secio-server:latest 
+        #- docker push registry.paradeum.com/libp2p-rs/go-secio-server:latest
         - docker run -d  -p 1337:1337 libp2p-rs/go-secio-server:latest
         - docker ps -a
         - pwd

@@ -57,6 +57,7 @@
 		fmt.Println("got", n, "bytes.")
 		fmt.Println("buf:", buf)
 		fmt.Println("rev msg:", string(buf[:n]))
+		conn.Write(buf[:n])
 
 	}
 }
