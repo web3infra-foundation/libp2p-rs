@@ -26,6 +26,7 @@ where
     }
 
     /// convenient method for reading a whole frame
+    #[allow(clippy::let_unit_value)]
     pub async fn recv_frame(&mut self) -> io::Result<Vec<u8>> {
         let mut len = [0; 4];
         let _ = self.inner.read_exact2(&mut len).await?;

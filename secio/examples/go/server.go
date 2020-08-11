@@ -55,8 +55,8 @@
             break
         }
 		fmt.Println("got", n, "bytes.")
-		fmt.Println("buf", buf)
-		fmt.Println("buf sub", buf[:n])
+		fmt.Println("buf:", buf)
+		fmt.Println("rev msg:", string(buf[:n]))
 
 	}
 }
