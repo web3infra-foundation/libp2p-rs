@@ -3,11 +3,11 @@ env:
   - RUSTFLAGS='-F warnings'
 rust:
   - stable
-  - nightly
-  - beta
+#  - nightly
+#  - beta
 os:
   - linux
-  - osx
+#  - osx
   - windows
 services:
   - docker
@@ -33,14 +33,18 @@ matrix:
     - stage: Check
       name: Clippy
       script:
-        -  RUSTFLAGS='-F warnings' cargo clippy --all  -- -A clippy::let_underscore_must_use  -A clippy::derive_hash_xor_eq -A clippy::let-unit-value --verbose
+        -  RUSTFLAGS='-F warnings' cargo clippy --all  -- -A clippy::derive_hash_xor_eq --verbose
     - stage: Test
-      name: Secio simple
-      rust: nightly
+      name: Secio test
       os: linux
       script:
-        - cd secio/examples/go && docker build -t libp2p-rs/go-secio-server:latest  .
-        - cd ../../../
+        - cargo test -p secio
+        - cargo test -p bench
+    - stage: Test
+      name: Secio simple that rust client connect  go server
+      os: linux
+      script:
+        - docker build -t libp2p-rs/go-secio-server:latest -f secio/examples/go/Dockerfile  .
         - echo "$DOCKER_PASSWORD" | docker login --username "$DOCKER_USERNAME" --password-stdin registry.paradeum.com
         - docker tag libp2p-rs/go-secio-server:latest registry.paradeum.com/libp2p-rs/go-secio-server:latest 
         - docker push registry.paradeum.com/libp2p-rs/go-secio-server:latest
