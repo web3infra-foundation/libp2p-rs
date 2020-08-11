@@ -3,7 +3,7 @@ env:
   - RUSTFLAGS='-F warnings'
 rust:
   - stable
-#  - nightly
+  - nightly
 #  - beta
 os:
   - linux
@@ -42,6 +42,7 @@ matrix:
         - cargo test -p bench
     - stage: Test
       name: Secio simple that rust client connect  go server
+      rust: nightly
       os: linux
       script:
         - docker build -t libp2p-rs/go-secio-server:latest -f secio/examples/go/Dockerfile  .
@@ -51,7 +52,7 @@ matrix:
         - docker run -d  -p 1337:1337 libp2p-rs/go-secio-server:latest
         - docker ps -a
         - pwd
-        - cargo run --example secio_simple
+        - RUST_LOG=debug cargo run --example secio_simple
 
 branches:
   only: master
