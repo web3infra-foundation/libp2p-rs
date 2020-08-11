@@ -314,8 +314,7 @@ mod tests {
 
     fn handshake_with_self_success(config_1: Config, config_2: Config, data: &'static [u8]) {
         let (sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();
-        let (addr_sender, addr_receiver) =
-            channel::oneshot::channel::<::std::net::SocketAddr>();
+        let (addr_sender, addr_receiver) = channel::oneshot::channel::<::std::net::SocketAddr>();
 
         task::spawn(async move {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
