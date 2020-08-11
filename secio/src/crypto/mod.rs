@@ -2,7 +2,7 @@ use crate::error::SecioError;
 
 /// Define cipher
 pub mod cipher;
-#[cfg(any(not(ossl110), test, not(unix)))]
+#[cfg(any(not(ossl110), test))]
 mod ring_impl;
 
 mod ctr_impl;
