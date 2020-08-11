@@ -43,25 +43,25 @@ libp2p-rs = { version = "0.1", features = ["default"] }
 1. Clone
 
 ```bash
-$ git clone https://github.com/nervosnetwork/tentacle.git
+$ git clone https://github.com/pldteam/libp2p-rs.git
 ```
 
 2. On one terminal:
 
 Listen on 127.0.0.1:1337
 ```bash
-$ RUST_LOG=simple=info,tentacle=debug cargo run --example simple --features molc -- server
+$ RUST_LOG=debug cargo run --example secio_simple -- server
 ```
 
 3. On another terminal:
 
 ```bash
-$ RUST_LOG=simple=info,tentacle=debug cargo run --example simple --features molc
+$ RUST_LOG=debug cargo run --example secio_simple
 ```
 
 4. Now you can see some data interaction information on the terminal.
 
-You can see more detailed example in these two repos: [ckb](https://github.com/nervosnetwork/ckb)/[cita](https://github.com/cryptape/cita).
+
 
 ## Why?
 
