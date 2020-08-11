@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Bencher, Criterion};
-use tentacle_secio::{
+use secio::{
     codec::Hmac,
     crypto::{cipher::CipherType, new_stream, CryptoMode},
 };
@@ -21,7 +21,7 @@ fn decode_encode(data: &[u8], cipher: CipherType) {
         }
         #[cfg(unix)]
         _ => {
-            use tentacle_secio::Digest;
+            use secio::Digest;
             let encode_hmac = Hmac::from_key(Digest::Sha256, &_hmac_key);
             let decode_hmac = encode_hmac.clone();
             (Some(decode_hmac), Some(encode_hmac))
@@ -67,11 +67,11 @@ fn criterion_benchmark(bench: &mut Criterion) {
         let data = data.clone();
         move |b| bench_test(b, CipherType::Aes128Ctr, &data)
     });
-    #[cfg(unix)]
-    bench.bench_function("1kb_aes256ctr", {
-        let data = data.clone();
-        move |b| bench_test(b, CipherType::Aes256Ctr, &data)
-    });
+    // #[cfg(unix)]
+    // bench.bench_function("1kb_aes256ctr", {
+    //     let data = data.clone();
+    //     move |b| bench_test(b, CipherType::Aes256Ctr, &data)
+    // });
     bench.bench_function("1kb_aes128gcm", {
         let data = data.clone();
         move |b| bench_test(b, CipherType::Aes128Gcm, &data)
@@ -92,11 +92,11 @@ fn criterion_benchmark(bench: &mut Criterion) {
         let data = data.clone();
         move |b| bench_test(b, CipherType::Aes128Ctr, &data)
     });
-    #[cfg(unix)]
-    bench.bench_function("1mb_aes256ctr", {
-        let data = data.clone();
-        move |b| bench_test(b, CipherType::Aes256Ctr, &data)
-    });
+    // #[cfg(unix)]
+    // bench.bench_function("1mb_aes256ctr", {
+    //     let data = data.clone();
+    //     move |b| bench_test(b, CipherType::Aes256Ctr, &data)
+    // });
     bench.bench_function("1mb_aes128gcm", {
         let data = data.clone();
         move |b| bench_test(b, CipherType::Aes128Gcm, &data)
