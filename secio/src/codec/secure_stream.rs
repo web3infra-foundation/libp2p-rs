@@ -81,6 +81,7 @@ where
         Ok(out)
     }
 
+    /// Verify nonce between local and remote
     pub(crate) async fn verify_nonce(&mut self) -> Result<(), SecioError> {
         if !self.nonce.is_empty() {
             let mut nonce = self.nonce.clone();
@@ -103,6 +104,7 @@ where
         Ok(())
     }
 
+    /// Encoding buffer
     #[inline]
     fn encode_buffer(&mut self, buf: &[u8]) -> Vec<u8> {
         let mut out = self.encode_cipher.encrypt(buf).unwrap();
@@ -132,41 +134,6 @@ where
         n
     }
 }
-//
-// impl<T> AsyncRead for SecureStream<T>
-// where
-//     T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-// {
-//     fn poll_read(
-//         mut self: Pin<&mut Self>,
-//         cx: &mut Context<'_>,
-//         buf: &mut [u8],
-//     ) -> Poll<io::Result<usize>> {
-//         poll_future(cx, self.read_socket(buf))
-//     }
-// }
-//
-// impl<T> AsyncWrite for SecureStream<T>
-// where
-//     T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-// {
-//     fn poll_write(
-//         mut self: Pin<&mut Self>,
-//         cx: &mut Context<'_>,
-//         buf: &[u8],
-//     ) -> Poll<io::Result<usize>> {
-//         poll_future(cx, self.write_socket(buf))
-//     }
-//
-//     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-//         poll_future(cx, self.socket.flush())
-//     }
-//
-//     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-//         poll_future(cx, self.socket.close())
-//     }
-// }
-//
 
 #[async_trait]
 impl<T> Read2 for SecureStream<T>
@@ -230,14 +197,14 @@ mod tests {
     use super::{Hmac, SecureStream};
     use crate::codec::len_prefix::LengthPrefixSocket;
     use crate::crypto::{cipher::CipherType, new_stream, CryptoMode};
-    #[cfg(unix)]
     use crate::Digest;
     use async_std::{
         net::{TcpListener, TcpStream},
         task,
     };
     use bytes::BytesMut;
-    use futures::{channel, AsyncReadExt, AsyncWriteExt};
+    use futures::{channel, AsyncReadExt, AsyncWriteExt, SinkExt};
+    use libp2p_traits::{Read2, Write2};
 
     fn test_decode_encode(cipher: CipherType) {
         let cipher_key = (0..cipher.key_size())
@@ -257,7 +224,6 @@ mod tests {
             CipherType::ChaCha20Poly1305 | CipherType::Aes128Gcm | CipherType::Aes256Gcm => {
                 (None, None)
             }
-            #[cfg(unix)]
             _ => {
                 let encode_hmac = Hmac::from_key(Digest::Sha256, &_hmac_key);
                 let decode_hmac = encode_hmac.clone();
@@ -303,8 +269,9 @@ mod tests {
         let data_clone = &*data;
         let nonce = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-        let (sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();
-        let (addr_sender, addr_receiver) = channel::oneshot::channel::<::std::net::SocketAddr>();
+        let (mut sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();
+        let (mut addr_sender, addr_receiver) =
+            channel::oneshot::channel::<::std::net::SocketAddr>();
 
         task::spawn(async move {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -316,7 +283,6 @@ mod tests {
                 CipherType::ChaCha20Poly1305 | CipherType::Aes128Gcm | CipherType::Aes256Gcm => {
                     (None, None)
                 }
-                #[cfg(unix)]
                 _ => (
                     Some(Hmac::from_key(Digest::Sha256, &_hmac_key_clone)),
                     Some(Hmac::from_key(Digest::Sha256, &_hmac_key_clone)),
@@ -342,7 +308,7 @@ mod tests {
             );
 
             let mut data = [0u8; 11];
-            handle.read_exact(&mut data).await.unwrap();
+            handle.read2(&mut data).await.unwrap();
             let _res = sender.send(BytesMut::from(&data[..]));
         });
 
@@ -353,7 +319,6 @@ mod tests {
                 CipherType::ChaCha20Poly1305 | CipherType::Aes128Gcm | CipherType::Aes256Gcm => {
                     (None, None)
                 }
-                #[cfg(unix)]
                 _ => (
                     Some(Hmac::from_key(Digest::Sha256, &_hmac_key_clone)),
                     Some(Hmac::from_key(Digest::Sha256, &_hmac_key_clone)),
@@ -378,7 +343,7 @@ mod tests {
                 Vec::new(),
             );
 
-            let _res = handle.write_all(&data_clone[..]).await;
+            let _res = handle.write2(&data_clone[..]).await;
         });
 
         task::block_on(async move {
@@ -387,16 +352,9 @@ mod tests {
         });
     }
 
-    #[cfg(unix)]
     #[test]
     fn test_encode_decode_aes128ctr() {
         test_decode_encode(CipherType::Aes128Ctr);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn test_encode_decode_aes256ctr() {
-        test_decode_encode(CipherType::Aes256Ctr);
     }
 
     #[test]
@@ -412,18 +370,6 @@ mod tests {
     #[test]
     fn test_encode_decode_chacha20poly1305() {
         test_decode_encode(CipherType::ChaCha20Poly1305);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn secure_codec_encode_then_decode_aes128ctr() {
-        secure_codec_encode_then_decode(CipherType::Aes128Ctr);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn secure_codec_encode_then_decode_aes256ctr() {
-        secure_codec_encode_then_decode(CipherType::Aes256Ctr);
     }
 
     #[test]

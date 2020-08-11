@@ -84,13 +84,6 @@ impl Into<io::Error> for SecioError {
     }
 }
 
-#[cfg(unix)]
-impl From<openssl::error::ErrorStack> for SecioError {
-    fn from(err: openssl::error::ErrorStack) -> SecioError {
-        SecioError::Openssl(err)
-    }
-}
-
 impl From<ring::error::Unspecified> for SecioError {
     fn from(_err: ring::error::Unspecified) -> SecioError {
         SecioError::RingCryptoError

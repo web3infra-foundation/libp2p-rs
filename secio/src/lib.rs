@@ -21,6 +21,14 @@ pub mod peer_id;
 /// Supported algorithms
 mod support;
 
+mod handshake_proto {
+    include!(concat!(env!("OUT_DIR"), "/handshake_proto.rs"));
+}
+
+mod key_proto {
+    include!(concat!(env!("OUT_DIR"), "/keys_proto.rs"));
+}
+
 /// Public key generated temporarily during the handshake
 pub type EphemeralPublicKey = Vec<u8>;
 

@@ -12,13 +12,13 @@ use crate::{
     error::SecioError,
     exchange,
     handshake::Config,
-    handshake::{
-        handshake_context::HandshakeContext,
-        handshake_struct::{Exchange, PublicKey},
-    },
+    handshake::{handshake_context::HandshakeContext, handshake_struct::PublicKey},
+    handshake_proto::Exchange,
     Digest, EphemeralPublicKey, KeyPairInner,
 };
+
 use libp2p_traits::Write2;
+use prost::Message;
 
 /// Performs a handshake on the given socket.
 ///
@@ -70,8 +70,6 @@ where
     let ephemeral_context = remote_context.with_ephemeral(tmp_priv_key, tmp_pub_key.clone());
 
     let exchanges = {
-        let mut exchanges = Exchange::new();
-
         let mut data_to_sign = ephemeral_context
             .state
             .remote
@@ -81,8 +79,6 @@ where
 
         data_to_sign.extend_from_slice(&ephemeral_context.state.remote.proposition_bytes);
         data_to_sign.extend_from_slice(&tmp_pub_key);
-
-        exchanges.epubkey = tmp_pub_key;
 
         let data_to_sign = ring::digest::digest(&ring::digest::SHA256, &data_to_sign);
         let message = match secp256k1::Message::from_slice(data_to_sign.as_ref()) {
@@ -100,10 +96,18 @@ where
             }
         };
 
-        exchanges.signature = signature.to_vec();
-        exchanges
+        Exchange {
+            epubkey: tmp_pub_key.clone(),
+            signature: signature.to_vec(),
+        }
     };
-    let local_exchanges = exchanges.encode().to_vec();
+    let local_exchanges = {
+        let mut buf = Vec::with_capacity(exchanges.encoded_len());
+        exchanges
+            .encode(&mut buf)
+            .expect("Vec<u8> provides capacity as needed");
+        buf
+    };
 
     // Send our local `Exchange`.
     trace!("sending exchange to remote");
@@ -112,10 +116,10 @@ where
 
     // Receive the remote's `Exchange`.
     let raw_exchanges = socket.recv_frame().await?;
-    let remote_exchanges = match Exchange::decode(&raw_exchanges) {
-        Some(e) => e,
-        None => {
-            debug!("failed to parse remote's exchange");
+    let remote_exchanges = match Exchange::decode(&raw_exchanges[..]) {
+        Ok(e) => e,
+        Err(err) => {
+            debug!("failed to parse remote's exchange protobuf; {:?}", err);
             return Err(SecioError::HandshakeParsingFailure);
         }
     };
@@ -143,7 +147,11 @@ where
     let secp256k1 = secp256k1::Secp256k1::verification_only();
     let signature = secp256k1::Signature::from_der(&remote_exchanges.signature);
     let remote_public_key = match ephemeral_context.state.remote.public_key {
-        PublicKey::Secp256k1(ref key) => secp256k1::key::PublicKey::from_slice(key),
+        PublicKey::Secp256k1(ref key) => {
+            let nkey = key.clone();
+            // key[0..3] is type, [4..] is truly public key
+            secp256k1::key::PublicKey::from_slice(nkey[4..].as_ref())
+        }
     };
 
     if let (Ok(signature), Ok(remote_public_key)) = (signature, remote_public_key) {
@@ -284,7 +292,6 @@ fn generate_stream_cipher_and_hmac(
     let (cipher_key, _mac_key) = rest.split_at(key_size);
     let hmac = match t {
         CipherType::ChaCha20Poly1305 | CipherType::Aes128Gcm | CipherType::Aes256Gcm => None,
-        #[cfg(unix)]
         _ => Some(Hmac::from_key(_digest, _mac_key)),
     };
     let cipher = new_stream(t, cipher_key, iv, mode);
@@ -303,10 +310,12 @@ mod tests {
     use bytes::BytesMut;
     use futures::channel;
     use futures::prelude::*;
+    use libp2p_traits::{Read2, Write2};
 
     fn handshake_with_self_success(config_1: Config, config_2: Config, data: &'static [u8]) {
-        let (sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();
-        let (addr_sender, addr_receiver) = channel::oneshot::channel::<::std::net::SocketAddr>();
+        let (mut sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();
+        let (mut addr_sender, addr_receiver) =
+            channel::oneshot::channel::<::std::net::SocketAddr>();
 
         task::spawn(async move {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -315,17 +324,17 @@ mod tests {
             let (connect, _) = listener.accept().await.unwrap();
             let (mut handle, _, _) = config_1.handshake(connect).await.unwrap();
             let mut data = [0u8; 11];
-            handle.read_exact(&mut data).await.unwrap();
-            handle.write_all(&data).await.unwrap();
+            handle.read2(&mut data).await.unwrap();
+            handle.write2(&data).await.unwrap();
         });
 
         task::spawn(async move {
             let listener_addr = addr_receiver.await.unwrap();
             let connect = TcpStream::connect(&listener_addr).await.unwrap();
             let (mut handle, _, _) = config_2.handshake(connect).await.unwrap();
-            handle.write_all(data).await.unwrap();
+            handle.write2(data).await.unwrap();
             let mut data = [0u8; 11];
-            handle.read_exact(&mut data).await.unwrap();
+            handle.read2(&mut data).await.unwrap();
             let _res = sender.send(BytesMut::from(&data[..]));
         });
 

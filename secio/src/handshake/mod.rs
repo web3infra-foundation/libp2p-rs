@@ -7,11 +7,6 @@ use crate::{
 use crate::codec::secure_stream::SecureStream;
 use futures::{AsyncRead, AsyncWrite};
 
-#[rustfmt::skip]
-#[allow(clippy::all)]
-#[allow(dead_code)]
-mod handshake_mol;
-
 mod handshake_context;
 pub(crate) mod handshake_struct;
 mod procedure;

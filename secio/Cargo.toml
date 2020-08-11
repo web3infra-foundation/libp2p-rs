@@ -29,6 +29,12 @@ rand = "0.7"
 ring = "0.16.5"
 unsigned-varint = "0.3"
 bs58 = "0.3.0"
+prost = "0.6.1"
+aes-ctr = "0.4.0"
+stream-cipher = "0.4.1"
+
+[build-dependencies]
+prost-build = "0.6.1"
 
 [target.'cfg(unix)'.dependencies]
 openssl = "0.10.25"
