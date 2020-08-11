@@ -309,12 +309,12 @@ mod tests {
     };
     use bytes::BytesMut;
     use futures::channel;
-    use futures::prelude::*;
+    //use futures::prelude::*;
     use libp2p_traits::{Read2, Write2};
 
     fn handshake_with_self_success(config_1: Config, config_2: Config, data: &'static [u8]) {
-        let (mut sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();
-        let (mut addr_sender, addr_receiver) =
+        let (sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();
+        let (addr_sender, addr_receiver) =
             channel::oneshot::channel::<::std::net::SocketAddr>();
 
         task::spawn(async move {
