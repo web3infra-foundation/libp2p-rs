@@ -1,6 +1,6 @@
 # libp2p-rs
 
-[![Build Status](https://travis-ci.com/pldteam/libp2p-rs.svg?token=tEt4wqXiQg5sktaf43jn&branch=master)](https://travis-ci.com/pldteam/libp2p-rs)
+[![Build Status](https://travis-ci.com/netwarps/libp2p-rs.svg?token=tEt4wqXiQg5sktaf43jn&branch=master)](https://travis-ci.com/netwarps/libp2p-rs)
 
 ## Overview
 
