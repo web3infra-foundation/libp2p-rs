@@ -42,7 +42,7 @@ matrix:
         - cargo bench -p secio
     - stage: Test
       name: Secio simple that rust client connect  go server
-      rust: nightly
+      #rust: nightly
       os: linux
       script:
         - cd secio/examples/go && docker build -t libp2p-rs/go-secio-server:latest  .
