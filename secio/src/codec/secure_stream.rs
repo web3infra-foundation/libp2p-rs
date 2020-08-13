@@ -266,8 +266,8 @@ mod tests {
         let data_clone = &*data;
         let nonce = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-        let (mut sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();
-        let (mut addr_sender, addr_receiver) =
+        let (sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();
+        let (addr_sender, addr_receiver) =
             channel::oneshot::channel::<::std::net::SocketAddr>();
 
         task::spawn(async move {
