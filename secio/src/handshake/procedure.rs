@@ -11,11 +11,14 @@ use crate::{
     crypto::{cipher::CipherType, new_stream, BoxStreamCipher, CryptoMode},
     error::SecioError,
     exchange,
+    handshake::handshake_context::HandshakeContext,
     handshake::Config,
-    handshake::{handshake_context::HandshakeContext, handshake_struct::PublicKey},
     handshake_proto::Exchange,
-    Digest, EphemeralPublicKey, KeyPairInner,
+    Digest, EphemeralPublicKey,
 };
+
+use libp2p_core::identity::*;
+use libp2p_core::PublicKey;
 
 use libp2p_traits::Write2;
 use prost::Message;
@@ -80,25 +83,19 @@ where
         data_to_sign.extend_from_slice(&ephemeral_context.state.remote.proposition_bytes);
         data_to_sign.extend_from_slice(&tmp_pub_key);
 
-        let data_to_sign = ring::digest::digest(&ring::digest::SHA256, &data_to_sign);
-        let message = match secp256k1::Message::from_slice(data_to_sign.as_ref()) {
-            Ok(msg) => msg,
-            Err(_) => {
-                debug!("message has wrong format");
-                return Err(SecioError::InvalidMessage);
-            }
-        };
+        // let data_to_sign = ring::digest::digest(&ring::digest::SHA256, &data_to_sign);
 
-        let secp256k1_key = secp256k1::Secp256k1::signing_only();
-        let signature = match ephemeral_context.config.key.inner {
-            KeyPairInner::Secp256k1 { ref private } => {
-                secp256k1_key.sign(&message, private).serialize_der()
+        let kpair: Keypair = ephemeral_context.config.key.clone();
+        let signature = match kpair.sign(data_to_sign.as_ref()) {
+            Ok(signature) => signature,
+            Err(_e) => {
+                return Err(SecioError::HandshakeParsingFailure);
             }
         };
 
         Exchange {
             epubkey: tmp_pub_key.clone(),
-            signature: signature.to_vec(),
+            signature,
         }
     };
     let local_exchanges = {
@@ -134,36 +131,10 @@ where
     data_to_verify.extend_from_slice(&ephemeral_context.state.remote.local.proposition_bytes);
     data_to_verify.extend_from_slice(&remote_exchanges.epubkey);
 
-    let data_to_verify = ring::digest::digest(&ring::digest::SHA256, &data_to_verify);
+    let remote_public_key = ephemeral_context.state.remote.public_key.clone();
 
-    let message = match secp256k1::Message::from_slice(data_to_verify.as_ref()) {
-        Ok(msg) => msg,
-        Err(_) => {
-            debug!("remote's message has wrong format");
-            return Err(SecioError::InvalidMessage);
-        }
-    };
-
-    let secp256k1 = secp256k1::Secp256k1::verification_only();
-    let signature = secp256k1::Signature::from_der(&remote_exchanges.signature);
-    let remote_public_key = match ephemeral_context.state.remote.public_key {
-        PublicKey::Secp256k1(ref key) => {
-            let nkey = key.clone();
-            // key[0..3] is type, [4..] is truly public key
-            secp256k1::key::PublicKey::from_slice(nkey[4..].as_ref())
-        }
-    };
-
-    if let (Ok(signature), Ok(remote_public_key)) = (signature, remote_public_key) {
-        match secp256k1.verify(&message, &signature, &remote_public_key) {
-            Ok(()) => (),
-            Err(_) => {
-                debug!("failed to verify the remote's signature");
-                return Err(SecioError::SignatureVerificationFailed);
-            }
-        }
-    } else {
-        debug!("remote's secp256k1 signature has wrong format");
+    if !remote_public_key.verify(data_to_verify.as_ref(), remote_exchanges.signature.as_ref()) {
+        debug!("failed to verify the remote's signature");
         return Err(SecioError::SignatureVerificationFailed);
     }
 
@@ -303,21 +274,22 @@ mod tests {
     use super::stretch_key;
     use crate::{codec::Hmac, handshake::Config, Digest, SecioKeyPair};
 
-    use async_std::{
-        net::{TcpListener, TcpStream},
-        task,
-    };
+    use async_std::task;
     use bytes::BytesMut;
-    use futures::channel;
+    use futures::{channel, SinkExt};
     //use futures::prelude::*;
+    use libp2p_core::identity::Keypair;
     use libp2p_traits::{Read2, Write2};
 
     fn handshake_with_self_success(config_1: Config, config_2: Config, data: &'static [u8]) {
-        let (sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();
-        let (addr_sender, addr_receiver) = channel::oneshot::channel::<::std::net::SocketAddr>();
+        let (mut sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();
+        let (mut addr_sender, addr_receiver) =
+            channel::oneshot::channel::<::std::net::SocketAddr>();
 
         task::spawn(async move {
-            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let listener = async_std::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .unwrap();
             let listener_addr = listener.local_addr().unwrap();
             let _res = addr_sender.send(listener_addr);
             let (connect, _) = listener.accept().await.unwrap();
@@ -329,7 +301,9 @@ mod tests {
 
         task::spawn(async move {
             let listener_addr = addr_receiver.await.unwrap();
-            let connect = TcpStream::connect(&listener_addr).await.unwrap();
+            let connect = async_std::net::TcpStream::connect(&listener_addr)
+                .await
+                .unwrap();
             let (mut handle, _, _) = config_2.handshake(connect).await.unwrap();
             handle.write2(data).await.unwrap();
             let mut data = [0u8; 11];
@@ -345,8 +319,8 @@ mod tests {
 
     #[test]
     fn handshake_with_self_success_secp256k1_small_data() {
-        let key_1 = SecioKeyPair::secp256k1_generated();
-        let key_2 = SecioKeyPair::secp256k1_generated();
+        let key_1 = Keypair::generate_secp256k1();
+        let key_2 = Keypair::generate_secp256k1();
         handshake_with_self_success(Config::new(key_1), Config::new(key_2), b"hello world")
     }
 

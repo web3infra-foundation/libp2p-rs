@@ -203,7 +203,7 @@ mod tests {
         task,
     };
     use bytes::BytesMut;
-    use futures::channel;
+    use futures::{channel, SinkExt};
     use libp2p_traits::{Read2, Write2};
 
     fn test_decode_encode(cipher: CipherType) {
@@ -269,11 +269,14 @@ mod tests {
         let data_clone = &*data;
         let nonce = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-        let (sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();
-        let (addr_sender, addr_receiver) = channel::oneshot::channel::<::std::net::SocketAddr>();
+        let (mut sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();
+        let (mut addr_sender, addr_receiver) =
+            channel::oneshot::channel::<::std::net::SocketAddr>();
 
         task::spawn(async move {
-            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let listener = async_std::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .unwrap();
             let listener_addr = listener.local_addr().unwrap();
             let _res = addr_sender.send(listener_addr);
             let (socket, _) = listener.accept().await.unwrap();
@@ -313,7 +316,9 @@ mod tests {
 
         task::spawn(async move {
             let listener_addr = addr_receiver.await.unwrap();
-            let stream = TcpStream::connect(&listener_addr).await.unwrap();
+            let stream = async_std::net::TcpStream::connect(&listener_addr)
+                .await
+                .unwrap();
             let (decode_hmac, encode_hmac) = match cipher {
                 CipherType::ChaCha20Poly1305 | CipherType::Aes128Gcm | CipherType::Aes256Gcm => {
                     (None, None)

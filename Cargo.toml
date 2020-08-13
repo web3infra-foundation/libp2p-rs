@@ -20,7 +20,7 @@ libp2p-traits = { path = "traits", version = "0.1.0", package = "libp2p-traits" 
 yamux = { path = "yamux", version = "0.1.0", package = "yamux" }
 secio = { path = "secio", version = "0.1.0", package = "secio" }
 multiaddr = { path = "multiaddr", package = "multiaddr", version = "0.1.0" }
-core = { path = "core", version = "0.1.0", package = "core" }
+libp2p-core = { path = "core", version = "0.1.0", package = "libp2p-core" }
 
 
 async-std = { version = "1.6.2", features = ["attributes", "unstable"] }

@@ -7,7 +7,7 @@
 //!   hash of the public key used to negotiate encryption on the
 //!   communication channel, thereby guaranteeing that they cannot be spoofed.
 
-mod keys_proto {
+pub mod keys_proto {
     include!(concat!(env!("OUT_DIR"), "/keys_proto.rs"));
 }
 
