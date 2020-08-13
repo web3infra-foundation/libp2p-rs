@@ -272,11 +272,11 @@ fn generate_stream_cipher_and_hmac(
 #[cfg(test)]
 mod tests {
     use super::stretch_key;
-    use crate::{codec::Hmac, handshake::Config, Digest, SecioKeyPair};
+    use crate::{codec::Hmac, handshake::Config, Digest};
 
     use async_std::task;
     use bytes::BytesMut;
-    use futures::{channel, SinkExt};
+    use futures::channel;
     //use futures::prelude::*;
     use libp2p_core::identity::Keypair;
     use libp2p_traits::{Read2, Write2};
