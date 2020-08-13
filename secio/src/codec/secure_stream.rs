@@ -198,12 +198,9 @@ mod tests {
     use crate::codec::len_prefix::LengthPrefixSocket;
     use crate::crypto::{cipher::CipherType, new_stream, CryptoMode};
     use crate::Digest;
-    use async_std::{
-        net::{TcpListener, TcpStream},
-        task,
-    };
+    use async_std::task;
     use bytes::BytesMut;
-    use futures::{channel, SinkExt};
+    use futures::channel;
     use libp2p_traits::{Read2, Write2};
 
     fn test_decode_encode(cipher: CipherType) {
