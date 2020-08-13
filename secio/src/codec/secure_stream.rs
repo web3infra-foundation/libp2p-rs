@@ -198,10 +198,7 @@ mod tests {
     use crate::codec::len_prefix::LengthPrefixSocket;
     use crate::crypto::{cipher::CipherType, new_stream, CryptoMode};
     use crate::Digest;
-    use async_std::{
-        net::{TcpListener, TcpStream},
-        task,
-    };
+    use async_std::task;
     use bytes::BytesMut;
     use futures::channel;
     use libp2p_traits::{Read2, Write2};
@@ -273,7 +270,9 @@ mod tests {
         let (addr_sender, addr_receiver) = channel::oneshot::channel::<::std::net::SocketAddr>();
 
         task::spawn(async move {
-            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let listener = async_std::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .unwrap();
             let listener_addr = listener.local_addr().unwrap();
             let _res = addr_sender.send(listener_addr);
             let (socket, _) = listener.accept().await.unwrap();
@@ -313,7 +312,9 @@ mod tests {
 
         task::spawn(async move {
             let listener_addr = addr_receiver.await.unwrap();
-            let stream = TcpStream::connect(&listener_addr).await.unwrap();
+            let stream = async_std::net::TcpStream::connect(&listener_addr)
+                .await
+                .unwrap();
             let (decode_hmac, encode_hmac) = match cipher {
                 CipherType::ChaCha20Poly1305 | CipherType::Aes128Gcm | CipherType::Aes256Gcm => {
                     (None, None)

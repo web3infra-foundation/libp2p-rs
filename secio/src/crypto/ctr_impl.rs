@@ -5,7 +5,6 @@ use crate::error::SecioError;
 use aes_ctr::stream_cipher::generic_array::*;
 use aes_ctr::stream_cipher::{NewStreamCipher, SyncStreamCipher};
 use aes_ctr::Aes128Ctr;
-use log::trace;
 
 pub static CTR128LEN: usize = 16;
 
@@ -16,7 +15,6 @@ pub(crate) struct CTRCipher {
 impl CTRCipher {
     /// Create a CTRCipher
     pub fn new(key: &[u8], iv: &[u8]) -> Self {
-        trace!("new CTRCipher");
         let iv = GenericArray::from_slice(iv);
         let key = GenericArray::from_slice(key);
         let cipher = Aes128Ctr::new(key, iv);

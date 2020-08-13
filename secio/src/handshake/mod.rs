@@ -1,22 +1,24 @@
 /// Most of the code for this module comes from `rust-libp2p`, but modified some logic(struct).
 use crate::{
     crypto::cipher::CipherType, error::SecioError, exchange::KeyAgreement,
-    handshake::procedure::handshake, support, Digest, EphemeralPublicKey, PublicKey, SecioKeyPair,
+    handshake::procedure::handshake, support, Digest, EphemeralPublicKey,
 };
+
+use libp2p_core::identity::Keypair;
+use libp2p_core::PublicKey;
 
 use crate::codec::secure_stream::SecureStream;
 use futures::{AsyncRead, AsyncWrite};
 
 mod handshake_context;
-pub(crate) mod handshake_struct;
 mod procedure;
 
 const MAX_FRAME_SIZE: usize = 1024 * 1024 * 8;
 
 /// Config for Secio
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Config {
-    pub(crate) key: SecioKeyPair,
+    pub(crate) key: Keypair,
     pub(crate) agreements_proposal: Option<String>,
     pub(crate) ciphers_proposal: Option<String>,
     pub(crate) digests_proposal: Option<String>,
@@ -25,7 +27,7 @@ pub struct Config {
 
 impl Config {
     /// Create config
-    pub fn new(key_pair: SecioKeyPair) -> Self {
+    pub fn new(key_pair: Keypair) -> Self {
         Config {
             key: key_pair,
             agreements_proposal: None,
