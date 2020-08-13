@@ -16,7 +16,6 @@ pub(crate) struct CTRCipher {
 impl CTRCipher {
     /// Create a CTRCipher
     pub fn new(key: &[u8], iv: &[u8]) -> Self {
-        trace!("new CTRCipher");
         let iv = GenericArray::from_slice(iv);
         let key = GenericArray::from_slice(key);
         let cipher = Aes128Ctr::new(key, iv);
