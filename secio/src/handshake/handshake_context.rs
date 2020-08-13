@@ -2,13 +2,11 @@
 /// It does not use protobuf. It uses flatbuffers as the basis for serialization and deserialization.
 /// It does not use protobuf bytes when determining the order of the order. But the original public key bytes
 use crate::{
-    crypto::cipher::CipherType,
-    error::SecioError,
-    exchange::KeyAgreement,
-    handshake::{handshake_struct::PublicKey, Config},
-    handshake_proto::Propose,
-    support, Digest,
+    crypto::cipher::CipherType, error::SecioError, exchange::KeyAgreement, handshake::Config,
+    handshake_proto::Propose, support, Digest,
 };
+
+use libp2p_core::PublicKey;
 
 use prost::Message;
 
@@ -83,7 +81,7 @@ impl HandshakeContext<()> {
     pub fn with_local(self) -> HandshakeContext<Local> {
         let nonce: [u8; 16] = rand::random();
 
-        let public_key = self.config.key.public_key();
+        let public_key = self.config.key.public();
 
         let local_proposition = Propose {
             rand: nonce.to_vec(),
@@ -229,12 +227,19 @@ impl HandshakeContext<Local> {
             }
         };
 
+        let public_key = match PublicKey::from_protobuf_encoding(public_key.as_ref()) {
+            Ok(key) => key,
+            Err(_e) => {
+                return Err(SecioError::HandshakeParsingFailure);
+            }
+        };
+
         Ok(HandshakeContext {
             config: self.config,
             state: Remote {
                 local: self.state,
                 proposition_bytes: remote_bytes,
-                public_key: PublicKey::Secp256k1(public_key),
+                public_key,
                 nonce,
                 hashes_ordering,
                 chosen_exchange,

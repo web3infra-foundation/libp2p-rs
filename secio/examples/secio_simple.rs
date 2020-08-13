@@ -1,10 +1,8 @@
-use async_std::{
-    net::{TcpListener, TcpStream},
-    task,
-};
+use async_std::task;
 use env_logger;
+use libp2p_core::identity::Keypair;
 use log::info;
-use secio::{handshake::Config, SecioKeyPair};
+use secio::handshake::Config;
 
 use libp2p_traits::{Read2, Write2};
 
@@ -21,11 +19,13 @@ fn main() {
 }
 
 fn server() {
-    let key = SecioKeyPair::secp256k1_generated();
+    let key = Keypair::generate_secp256k1();
     let config = Config::new(key);
 
     task::block_on(async move {
-        let listener = TcpListener::bind("127.0.0.1:1337").await.unwrap();
+        let listener = async_std::net::TcpListener::bind("127.0.0.1:1337")
+            .await
+            .unwrap();
 
         while let Ok((socket, _)) = listener.accept().await {
             let config = config.clone();
@@ -64,13 +64,15 @@ fn server() {
 }
 
 fn client() {
-    let key = SecioKeyPair::secp256k1_generated();
+    let key = Keypair::generate_secp256k1();
     let config = Config::new(key);
 
     let data = b"hello world";
 
     task::block_on(async move {
-        let stream = TcpStream::connect("127.0.0.1:1337").await.unwrap();
+        let stream = async_std::net::TcpStream::connect("127.0.0.1:1337")
+            .await
+            .unwrap();
         let (mut handle, _, _) = config.handshake(stream).await.unwrap();
         match handle.write_all2(data.as_ref()).await {
             Ok(_) => info!("send all"),
