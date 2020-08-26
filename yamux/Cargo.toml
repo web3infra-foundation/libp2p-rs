@@ -63,3 +63,11 @@ version = "0.6"
 
 [dev-dependencies.quickcheck]
 version = "0.9"
+
+[dev-dependencies.secio]
+path = "../secio"
+
+[dev-dependencies.libp2p-core]
+path = "../core"
+version = "0.1.0"
+package = "libp2p-core"

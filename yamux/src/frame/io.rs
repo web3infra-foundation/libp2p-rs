@@ -145,16 +145,16 @@ mod tests {
     fn encode_decode_identity() {
         fn property(f: Frame<()>) -> bool {
             async_std::task::block_on(async move {
-                let id = crate::connection::Id::random();
+                let id = crate::connection::Id::random(crate::connection::Mode::Server);
                 let mut io = Io::new(id, futures::io::Cursor::new(Vec::new()), f.body.len());
-                if io.send_frame(f.clone()).await.is_err() {
+                if io.send_frame(&f).await.is_err() {
                     return false;
                 }
                 if io.flush().await.is_err() {
                     return false;
                 }
                 io.io.set_position(0);
-                if let Ok(Some(x)) = io.try_next().await {
+                if let Ok(x) = io.recv_frame().await {
                     x == f
                 } else {
                     false
