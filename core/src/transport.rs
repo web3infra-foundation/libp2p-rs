@@ -29,15 +29,16 @@
 use async_trait::async_trait;
 use multiaddr::Multiaddr;
 use std::{error::Error, fmt};
+use std::time::Duration;
 
 // pub mod and_then;
 // pub mod boxed;
 // pub mod choice;
-// pub mod dummy;
+pub mod dummy;
 // pub mod map;
 // pub mod map_err;
 // pub mod memory;
-// pub mod timeout;
+pub mod timeout;
 // pub mod upgrade;
 //
 // mod optional;
@@ -124,6 +125,33 @@ pub trait Transport {
     where
         Self: Sized;
 
+    /// Adds a timeout to the connection setup (including upgrades) for all
+    /// inbound and outbound connections established through the transport.
+    fn timeout(self, timeout: Duration) -> timeout::TransportTimeout<Self>
+        where
+            Self: Sized
+    {
+        timeout::TransportTimeout::new(self, timeout)
+    }
+
+    /// Adds a timeout to the connection setup (including upgrades) for all outbound
+    /// connections established through the transport.
+    fn outbound_timeout(self, timeout: Duration) -> timeout::TransportTimeout<Self>
+        where
+            Self: Sized
+    {
+        timeout::TransportTimeout::with_outgoing_timeout(self, timeout)
+    }
+
+    /// Adds a timeout to the connection setup (including upgrades) for all inbound
+    /// connections established through the transport.
+    fn inbound_timeout(self, timeout: Duration) -> timeout::TransportTimeout<Self>
+        where
+            Self: Sized
+    {
+        timeout::TransportTimeout::with_ingoing_timeout(self, timeout)
+    }
+
     /*
     /// Turns the transport into an abstract boxed (i.e. heap-allocated) transport.
     fn boxed(self) -> boxed::Boxed<Self::Output, Self::Error>
@@ -182,33 +210,6 @@ pub trait Transport {
         <F as TryFuture>::Error: Error + 'static
     {
         and_then::AndThen::new(self, f)
-    }
-
-    /// Adds a timeout to the connection setup (including upgrades) for all
-    /// inbound and outbound connections established through the transport.
-    fn timeout(self, timeout: Duration) -> timeout::TransportTimeout<Self>
-    where
-        Self: Sized
-    {
-        timeout::TransportTimeout::new(self, timeout)
-    }
-
-    /// Adds a timeout to the connection setup (including upgrades) for all outbound
-    /// connections established through the transport.
-    fn outbound_timeout(self, timeout: Duration) -> timeout::TransportTimeout<Self>
-    where
-        Self: Sized
-    {
-        timeout::TransportTimeout::with_outgoing_timeout(self, timeout)
-    }
-
-    /// Adds a timeout to the connection setup (including upgrades) for all inbound
-    /// connections established through the transport.
-    fn inbound_timeout(self, timeout: Duration) -> timeout::TransportTimeout<Self>
-    where
-        Self: Sized
-    {
-        timeout::TransportTimeout::with_ingoing_timeout(self, timeout)
     }
 
     /// Begins a series of protocol upgrades via an
@@ -394,6 +395,9 @@ pub enum TransportError<TErr> {
     /// Contains back the same address.
     MultiaddrNotSupported(Multiaddr),
 
+    /// The transport timed out.
+    Timeout,
+
     /// Any other error that a [`Transport`] may produce.
     Other(TErr),
 }
@@ -403,6 +407,7 @@ impl<TErr> TransportError<TErr> {
     pub fn map<TNewErr>(self, map: impl FnOnce(TErr) -> TNewErr) -> TransportError<TNewErr> {
         match self {
             TransportError::MultiaddrNotSupported(addr) => TransportError::MultiaddrNotSupported(addr),
+            TransportError::Timeout => TransportError::Timeout,
             TransportError::Other(err) => TransportError::Other(map(err)),
         }
     }
@@ -421,6 +426,7 @@ where TErr: fmt::Display,
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TransportError::MultiaddrNotSupported(addr) => write!(f, "Multiaddr is not supported: {}", addr),
+            TransportError::Timeout => write!(f, "Operation timeout"),
             TransportError::Other(err) => write!(f, "{}", err),
         }
     }
@@ -432,6 +438,7 @@ where TErr: Error + 'static,
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             TransportError::MultiaddrNotSupported(_) => None,
+            TransportError::Timeout => None,
             TransportError::Other(err) => Some(err),
         }
     }

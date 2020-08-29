@@ -188,7 +188,7 @@ impl Transport for TcpConfig {
 
         debug!("Dialing {}", addr);
 
-        let stream = <TcpStream>::connect(&socket_addr).await?;
+        let stream = TcpStream::connect(&socket_addr).await?;
         apply_config(&self, &stream)?;
         Ok(TcpTransStream { inner: stream })
     }
@@ -491,6 +491,7 @@ mod tests {
     #[cfg(feature = "async-std")]
     use super::TcpConfig;
     use libp2p_core::transport::TransportListener;
+    use std::time::Duration;
     /*
         #[test]
         #[cfg(feature = "async-std")]
@@ -583,6 +584,27 @@ mod tests {
                 8080,
             ))
         );
+    }
+
+    #[test]
+    #[cfg(feature = "async-std")]
+    fn dialer_and_listener_timeout() {
+        fn test1(addr: Multiaddr) {
+            async_std::task::block_on(async move {
+                let timeout_listener = TcpConfig::new().timeout(Duration::from_secs(1)).listen_on(addr).unwrap();
+                assert!(timeout_listener.accept().await.is_err());
+            });
+        }
+
+        fn test2(addr: Multiaddr) {
+            async_std::task::block_on(async move {
+                let tcp = TcpConfig::new().timeout(Duration::from_secs(1));
+                assert!(tcp.dial(addr.clone()).await.is_err());
+            });
+        }
+
+        test1("/ip4/127.0.0.1/tcp/1110".parse().unwrap());
+        test2("/ip4/127.0.0.1/tcp/1110".parse().unwrap());
     }
 
     #[test]
