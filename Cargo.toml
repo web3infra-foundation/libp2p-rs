@@ -19,7 +19,7 @@ no-default-features = true
 libp2p-traits = { path = "traits", version = "0.1.0", package = "libp2p-traits" }
 yamux = { path = "yamux", version = "0.1.0", package = "yamux" }
 secio = { path = "secio", version = "0.1.0", package = "secio" }
-multiaddr = { path = "multiaddr", package = "multiaddr", version = "0.1.0" }
+multiaddr = { path = "multiaddr", package = "parity-multiaddr", version = "0.9.1" }
 libp2p-core = { path = "core", version = "0.1.0", package = "libp2p-core" }
 
 
@@ -56,6 +56,7 @@ members = [
   "yamux",
   "secio",
   "core",
+  "transports/tcp",
 #  "multiaddr",
 #  "bench",
 ]

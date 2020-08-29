@@ -1,6 +1,11 @@
-use std::{error, fmt};
+use std::{net, fmt, error, io, num, str, string};
+use bs58;
+use multihash;
 use unsigned_varint::decode;
 
+pub type Result<T> = ::std::result::Result<T, Error>;
+
+/// Error types
 #[derive(Debug)]
 pub enum Error {
     DataLessThanLen,
@@ -8,9 +13,10 @@ pub enum Error {
     InvalidProtocolString,
     InvalidUvar(decode::Error),
     ParsingError(Box<dyn error::Error + Send + Sync>),
-    UnknownHash,
     UnknownProtocolId(u32),
-    UnknownProtocolString,
+    UnknownProtocolString(String),
+    #[doc(hidden)]
+    __Nonexhaustive
 }
 
 impl fmt::Display for Error {
@@ -21,9 +27,9 @@ impl fmt::Display for Error {
             Error::InvalidProtocolString => f.write_str("invalid protocol string"),
             Error::InvalidUvar(e) => write!(f, "failed to decode unsigned varint: {}", e),
             Error::ParsingError(e) => write!(f, "failed to parse: {}", e),
-            Error::UnknownHash => write!(f, "unknown hash"),
             Error::UnknownProtocolId(id) => write!(f, "unknown protocol id: {}", id),
-            Error::UnknownProtocolString => f.write_str("unknown protocol string"),
+            Error::UnknownProtocolString(string) => write!(f, "unknown protocol string: {}", string),
+            Error::__Nonexhaustive => f.write_str("__Nonexhaustive")
         }
     }
 }
@@ -39,8 +45,14 @@ impl error::Error for Error {
     }
 }
 
-impl From<::std::io::Error> for Error {
-    fn from(err: ::std::io::Error) -> Error {
+impl From<io::Error> for Error {
+    fn from(err: io::Error) -> Error {
+        Error::ParsingError(err.into())
+    }
+}
+
+impl From<multihash::DecodeOwnedError> for Error {
+    fn from(err: multihash::DecodeOwnedError) -> Error {
         Error::ParsingError(err.into())
     }
 }
@@ -51,32 +63,33 @@ impl From<bs58::decode::Error> for Error {
     }
 }
 
-impl From<::std::net::AddrParseError> for Error {
-    fn from(err: ::std::net::AddrParseError) -> Error {
+impl From<net::AddrParseError> for Error {
+    fn from(err: net::AddrParseError) -> Error {
         Error::ParsingError(err.into())
     }
 }
 
-impl From<::std::num::ParseIntError> for Error {
-    fn from(err: ::std::num::ParseIntError) -> Error {
+impl From<num::ParseIntError> for Error {
+    fn from(err: num::ParseIntError) -> Error {
         Error::ParsingError(err.into())
     }
 }
 
-impl From<::std::string::FromUtf8Error> for Error {
-    fn from(err: ::std::string::FromUtf8Error) -> Error {
+impl From<string::FromUtf8Error> for Error {
+    fn from(err: string::FromUtf8Error) -> Error {
         Error::ParsingError(err.into())
     }
 }
 
-impl From<::std::str::Utf8Error> for Error {
-    fn from(err: ::std::str::Utf8Error) -> Error {
+impl From<str::Utf8Error> for Error {
+    fn from(err: str::Utf8Error) -> Error {
         Error::ParsingError(err.into())
     }
 }
 
-impl From<unsigned_varint::decode::Error> for Error {
-    fn from(e: unsigned_varint::decode::Error) -> Error {
+impl From<decode::Error> for Error {
+    fn from(e: decode::Error) -> Error {
         Error::InvalidUvar(e)
     }
 }
+
