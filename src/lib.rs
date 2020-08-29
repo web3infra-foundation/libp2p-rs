@@ -28,6 +28,9 @@ pub use multiaddr;
 pub use secio;
 /// Re-pub yamux crate
 pub use yamux;
+/// Underlying transport protocols wrapper
+//pub(crate) mod transports;
+pub use transports;
 
 /*
 /// Some gadgets that help create a service
@@ -48,8 +51,6 @@ pub(crate) mod session;
 pub(crate) mod substream;
 /// Useful traits
 pub mod traits;
-/// Underlying transport protocols wrapper
-pub(crate) mod transports;
 /// Some useful functions
 pub mod utils;
 
