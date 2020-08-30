@@ -216,7 +216,7 @@ impl TransportListener for TcpTransListener {
     type Output = TcpTransStream;
     type Error = io::Error;
 
-    async fn accept(&self) -> Result<Self::Output, TransportError<Self::Error>> {
+    async fn accept(&mut self) -> Result<Self::Output, TransportError<Self::Error>> {
         let (stream, _) = self.inner.accept().await?;
         apply_config(&self.config, &stream)?;
         Ok(TcpTransStream { inner: stream })
@@ -591,7 +591,7 @@ mod tests {
     fn dialer_and_listener_timeout() {
         fn test1(addr: Multiaddr) {
             async_std::task::block_on(async move {
-                let timeout_listener = TcpConfig::new().timeout(Duration::from_secs(1)).listen_on(addr).unwrap();
+                let mut timeout_listener = TcpConfig::new().timeout(Duration::from_secs(1)).listen_on(addr).unwrap();
                 assert!(timeout_listener.accept().await.is_err());
             });
         }
@@ -615,7 +615,7 @@ mod tests {
             let mut ready_tx = Some(ready_tx);
 
             async_std::task::spawn(async move {
-                let tcp_listener = TcpConfig::new().listen_on(addr).unwrap();
+                let mut tcp_listener = TcpConfig::new().listen_on(addr).unwrap();
 
                 ready_tx.take().unwrap().send(tcp_listener.multi_addr()).unwrap();
 

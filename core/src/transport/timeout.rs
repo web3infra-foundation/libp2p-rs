@@ -121,11 +121,11 @@ pub struct TimeoutListener<InnerListener> {
 }
 
 #[async_trait]
-impl<InnerListener: TransportListener + Sync> TransportListener for TimeoutListener<InnerListener> {
+impl<InnerListener: TransportListener + Send + Sync> TransportListener for TimeoutListener<InnerListener> {
     type Output = InnerListener::Output;
     type Error = InnerListener::Error;
 
-    async fn accept(&self) -> Result<Self::Output, TransportError<Self::Error>> {
+    async fn accept(&mut self) -> Result<Self::Output, TransportError<Self::Error>> {
         let mut accept = self.inner.accept().fuse();
         let mut timeout = Delay::new(self.timeout).fuse();
 

@@ -77,7 +77,7 @@ impl TransportListener for DummyListener {
     type Output = ();
     type Error = io::Error;
 
-    async fn accept(&self) -> Result<Self::Output, TransportError<Self::Error>> {
+    async fn accept(&mut self) -> Result<Self::Output, TransportError<Self::Error>> {
         Err(TransportError::Other(io::ErrorKind::Other.into()))
     }
 
