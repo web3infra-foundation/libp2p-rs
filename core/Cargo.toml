@@ -29,6 +29,8 @@ thiserror = "1.0"
 unsigned-varint = "0.3"
 zeroize = "1"
 async-trait = "0.1"
+parking_lot = "0.10.0"
+rw-stream-sink = "0.2.0"
 multiaddr = { package = "parity-multiaddr", version = "0.9.1", path = "../multiaddr" }
 
 [target.'cfg(not(any(target_os = "emscripten", target_os = "unknown")))'.dependencies]

@@ -37,8 +37,9 @@ use std::time::Duration;
 pub mod dummy;
 // pub mod map;
 // pub mod map_err;
-// pub mod memory;
+pub mod memory;
 pub mod timeout;
+//pub mod listener;
 // pub mod upgrade;
 //
 // mod optional;
@@ -235,7 +236,7 @@ pub trait TransportListener {
     type Error: Error;
 
     /// The Listener handles the inbound connections
-    async fn accept(&self) -> Result<Self::Output, TransportError<Self::Error>>;
+    async fn accept(&mut self) -> Result<Self::Output, TransportError<Self::Error>>;
 
     /// Returns the local multiaddr listened on
     fn multi_addr(&self) -> Multiaddr;
