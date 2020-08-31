@@ -75,17 +75,12 @@ impl<InnerTrans> TransportTimeout<InnerTrans> {
 }
 
 #[async_trait]
-impl<InnerTrans> Transport for TransportTimeout<InnerTrans>
-where
-    InnerTrans: Transport + Send,
-    InnerTrans::Error: 'static,
+impl<InnerTrans: Transport + Send> Transport for TransportTimeout<InnerTrans>
 {
     type Output = InnerTrans::Output;
-    type Error = InnerTrans::Error;
     type Listener = TimeoutListener<InnerTrans::Listener>;
-    type ListenerUpgrade = InnerTrans::ListenerUpgrade;
 
-    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError<Self::Error>> {
+    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
         let listener = self.inner.listen_on(addr)?;
 
         let listener = TimeoutListener {
@@ -96,7 +91,7 @@ where
         Ok(listener)
     }
 
-    async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError<Self::Error>> {
+    async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
 
         let mut dial = self.inner.dial(addr).fuse();
         let mut timeout = Delay::new(self.outgoing_timeout).fuse();
@@ -123,9 +118,8 @@ pub struct TimeoutListener<InnerListener> {
 #[async_trait]
 impl<InnerListener: TransportListener + Send + Sync> TransportListener for TimeoutListener<InnerListener> {
     type Output = InnerListener::Output;
-    type Error = InnerListener::Error;
 
-    async fn accept(&mut self) -> Result<Self::Output, TransportError<Self::Error>> {
+    async fn accept(&mut self) -> Result<Self::Output, TransportError> {
         let mut accept = self.inner.accept().fuse();
         let mut timeout = Delay::new(self.timeout).fuse();
 

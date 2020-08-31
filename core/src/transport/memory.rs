@@ -28,19 +28,19 @@ pub struct DialFuture {
 }
 
 impl Future for DialFuture {
-    type Output = Result<Channel<Vec<u8>>, MemoryTransportError>;
+    type Output = Result<Channel<Vec<u8>>, TransportError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         match self.sender.poll_ready(cx) {
             Poll::Pending => return Poll::Pending,
             Poll::Ready(Ok(())) => {},
-            Poll::Ready(Err(_)) => return Poll::Ready(Err(MemoryTransportError::Unreachable)),
+            Poll::Ready(Err(_)) => return Poll::Ready(Err(TransportError::Unreachable)),
         }
 
         let channel_to_send = self.channel_to_send.take()
             .expect("Future should not be polled again once complete");
         match self.sender.start_send(channel_to_send) {
-            Err(_) => return Poll::Ready(Err(MemoryTransportError::Unreachable)),
+            Err(_) => return Poll::Ready(Err(TransportError::Unreachable)),
             Ok(()) => {}
         }
 
@@ -52,11 +52,9 @@ impl Future for DialFuture {
 #[async_trait]
 impl Transport for MemoryTransport {
     type Output = Channel<Vec<u8>>;
-    type Error = MemoryTransportError;
     type Listener = Listener;
-    type ListenerUpgrade = Ready<Result<Self::Output, Self::Error>>;
 
-    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError<Self::Error>> {
+    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
         let port = if let Ok(port) = parse_memory_addr(&addr) {
             port
         } else {
@@ -82,7 +80,7 @@ impl Transport for MemoryTransport {
         let (tx, rx) = mpsc::channel(2);
         match hub.entry(port) {
             Entry::Occupied(_) =>
-                return Err(TransportError::Other(MemoryTransportError::Unreachable)),
+                return Err(TransportError::Unreachable),
             Entry::Vacant(e) => e.insert(tx)
         };
 
@@ -95,12 +93,12 @@ impl Transport for MemoryTransport {
         Ok(listener)
     }
 
-    async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError<Self::Error>> {
+    async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
         let port = if let Ok(port) = parse_memory_addr(&addr) {
             if let Some(port) = NonZeroU64::new(port) {
                 port
             } else {
-                return Err(TransportError::Other(MemoryTransportError::Unreachable));
+                return Err(TransportError::Unreachable);
             }
         } else {
             return Err(TransportError::MultiaddrNotSupported(addr));
@@ -112,7 +110,7 @@ impl Transport for MemoryTransport {
             if let Some(sender) = hub.get(&port) {
                 sender.clone()
             } else {
-                return Err(TransportError::Other(MemoryTransportError::Unreachable));
+                return Err(TransportError::Unreachable);
             }
         };
 
@@ -120,30 +118,10 @@ impl Transport for MemoryTransport {
         let (b_tx, b_rx) = mpsc::channel(4096);
         let channel_to_send = RwStreamSink::new(Chan { incoming: a_rx, outgoing: b_tx });
         let channel_to_return = RwStreamSink::new(Chan { incoming: b_rx, outgoing: a_tx });
-        sender.send(channel_to_send).await.map_err(|_| MemoryTransportError::Unreachable)?;
+        sender.send(channel_to_send).await.map_err(|_| TransportError::Unreachable)?;
         Ok(channel_to_return)
     }
 }
-
-/// Error that can be produced from the `MemoryTransport`.
-#[derive(Debug, Copy, Clone)]
-pub enum MemoryTransportError {
-    /// There's no listener on the given port.
-    Unreachable,
-    /// Tries to listen on a port that is already in use.
-    AlreadyInUse,
-}
-
-impl fmt::Display for MemoryTransportError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            MemoryTransportError::Unreachable => write!(f, "No listener on the given port."),
-            MemoryTransportError::AlreadyInUse => write!(f, "Port already occupied."),
-        }
-    }
-}
-
-impl error::Error for MemoryTransportError {}
 
 /// Listener for memory connections.
 pub struct Listener {
@@ -158,10 +136,9 @@ pub struct Listener {
 #[async_trait]
 impl TransportListener for Listener {
     type Output = Channel<Vec<u8>>;
-    type Error = MemoryTransportError;
 
-    async fn accept(&mut self) -> Result<Self::Output, TransportError<Self::Error>> {
-        self.receiver.next().await.ok_or(TransportError::Other(MemoryTransportError::Unreachable))
+    async fn accept(&mut self) -> Result<Self::Output, TransportError> {
+        self.receiver.next().await.ok_or(TransportError::Unreachable)
     }
 
     fn multi_addr(&self) -> Multiaddr {
