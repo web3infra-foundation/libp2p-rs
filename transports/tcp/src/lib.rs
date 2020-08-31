@@ -92,12 +92,9 @@ impl TcpConfig {
 #[async_trait]
 impl Transport for TcpConfig {
     type Output = TcpTransStream;
-    type Error = io::Error;
-    //type Listener = TcpListener;
     type Listener = TcpTransListener;
-    type ListenerUpgrade = Result<Self::Output, Self::Error>;
 
-    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError<Self::Error>> {
+    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
         let socket_addr =
             if let Ok(sa) = multiaddr_to_socketaddr(&addr) {
                 sa
@@ -174,12 +171,12 @@ impl Transport for TcpConfig {
         Ok(listener)
     }
 
-    async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError<Self::Error>> {
+    async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
         let socket_addr =
             if let Ok(socket_addr) = multiaddr_to_socketaddr(&addr) {
                 if socket_addr.port() == 0 || socket_addr.ip().is_unspecified() {
                     debug!("Instantly refusing dialing {}, as it is invalid", addr);
-                    return Err(TransportError::Other(io::ErrorKind::ConnectionRefused.into()))
+                    return Err(TransportError::IoError(io::ErrorKind::ConnectionRefused.into()))
                 }
                 socket_addr
             } else {
@@ -214,9 +211,8 @@ pub struct TcpTransListener {
 #[async_trait]
 impl TransportListener for TcpTransListener {
     type Output = TcpTransStream;
-    type Error = io::Error;
 
-    async fn accept(&mut self) -> Result<Self::Output, TransportError<Self::Error>> {
+    async fn accept(&mut self) -> Result<Self::Output, TransportError> {
         let (stream, _) = self.inner.accept().await?;
         apply_config(&self.config, &stream)?;
         Ok(TcpTransStream { inner: stream })
@@ -603,8 +599,8 @@ mod tests {
             });
         }
 
-        test1("/ip4/127.0.0.1/tcp/1110".parse().unwrap());
-        test2("/ip4/127.0.0.1/tcp/1110".parse().unwrap());
+        test1("/ip4/127.0.0.1/tcp/1111".parse().unwrap());
+        test2("/ip4/127.0.0.1/tcp/1111".parse().unwrap());
     }
 
     #[test]
