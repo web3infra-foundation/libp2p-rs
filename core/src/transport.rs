@@ -40,7 +40,7 @@ pub mod dummy;
 pub mod memory;
 pub mod timeout;
 //pub mod listener;
-// pub mod upgrade;
+pub mod upgrade;
 //
 // mod optional;
 
@@ -82,7 +82,7 @@ pub trait Transport {
     /// Typically the output contains at least a handle to a data stream (i.e. a
     /// connection or a substream multiplexer on top of a connection) that
     /// provides APIs for sending and receiving data through the connection.
-    type Output;
+    type Output: Send;
 
     /// An error that occurred during connection setup.
     type Error: Error;
