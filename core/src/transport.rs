@@ -41,7 +41,7 @@ pub mod dummy;
 pub mod memory;
 pub mod timeout;
 //pub mod listener;
-//pub mod upgrade;
+pub mod upgrade;
 //
 // mod optional;
 
@@ -389,6 +389,9 @@ pub enum TransportError {
     /// The memory transport is unreachable.
     Unreachable,
 
+    /// Internal error
+    Internal,
+
     /// Any other error that a [`Transport`] may produce.
     IoError(std::io::Error),
 }
@@ -407,6 +410,7 @@ impl fmt::Display for TransportError
             TransportError::MultiaddrNotSupported(addr) => write!(f, "Multiaddr is not supported: {}", addr),
             TransportError::Timeout => write!(f, "Operation timeout"),
             TransportError::Unreachable => write!(f, "Memory transport unreachable"),
+            TransportError::Internal => write!(f, "Internal error"),
             TransportError::IoError(err) => write!(f, "IO error {}", err),
         }
     }
@@ -419,6 +423,7 @@ impl Error for TransportError
             TransportError::MultiaddrNotSupported(_) => None,
             TransportError::Timeout => None,
             TransportError::Unreachable => None,
+            TransportError::Internal => None,
             TransportError::IoError(err) => Some(err),
         }
     }
