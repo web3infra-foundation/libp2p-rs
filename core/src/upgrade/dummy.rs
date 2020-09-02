@@ -66,12 +66,12 @@ impl<T: Send + 'static> Upgrader<T> for DummyUpgrader {
         iter::once(b"/dummy/1.0.0")
     }
 
-    async fn upgrade_inbound(&self, socket: T) -> Result<Self::Output, TransportError> {
+    async fn upgrade_inbound(self, socket: T) -> Result<Self::Output, TransportError> {
         trace!("dummy upgrader, upgrade inbound connection");
         Ok(socket)
     }
 
-    async fn upgrade_outbound(&self, socket: T) -> Result<Self::Output, TransportError> {
+    async fn upgrade_outbound(self, socket: T) -> Result<Self::Output, TransportError> {
         trace!("dummy upgrader, upgrade outbound connection");
         Ok(socket)
     }
