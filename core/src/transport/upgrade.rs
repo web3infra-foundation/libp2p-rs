@@ -73,18 +73,18 @@ where
     S: Upgrader<InnerTrans::Output> + Send + Sync,
 {
     type Output = S::Output;
-    type Listener = ListenerUpgrade<InnerTrans::Listener, S>;
+    type Listener = ListenerUpgrade<InnerTrans::Listener, S, S::Output>;
 
     fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
 
         let listener = self.inner.listen_on(addr)?;
-        //let (mut tx, mut rx) = mpsc::channel(10);
+        let (mut tx, mut rx) = mpsc::channel(10);
 
         let listener = ListenerUpgrade {
             inner: listener,
-            up: self.up
-
-            // tx,
+            up: self.up,
+            rx,
+            tx,
         };
 
         Ok(listener)
@@ -103,24 +103,25 @@ where
     }
 }
 
-pub struct ListenerUpgrade<InnerListener, S> {
+pub struct ListenerUpgrade<InnerListener, S, T>
+{
     inner: InnerListener,
-    //rx: mpsc::Receiver<T>,
-    //tx: mpsc::Receiver<T>,
-
     up: S,
+    rx: mpsc::Receiver<T>,
+    tx: mpsc::Sender<T>,
+
     // TODO: add threshold support here
 }
 
-impl<InnerListener, S> ListenerUpgrade<InnerListener, S> {
-    pub fn incoming(&mut self) -> Incoming<'_, InnerListener, S> {
+impl<InnerListener, S, T> ListenerUpgrade<InnerListener, S, T> {
+    pub fn incoming(&mut self) -> Incoming<'_, InnerListener, S, T> {
         Incoming(self)
     }
 }
 
-pub struct Incoming<'a, InnerListener, S>(&'a mut ListenerUpgrade<InnerListener, S>);
+pub struct Incoming<'a, InnerListener, S, T>(&'a mut ListenerUpgrade<InnerListener, S, T>);
 
-impl<'a, InnerListener, S> Stream for Incoming<'a, InnerListener, S>
+impl<'a, InnerListener, S, T> Stream for Incoming<'a, InnerListener, S, T>
 where
     InnerListener: TransportListener
 {
@@ -136,10 +137,11 @@ where
 }
 
 #[async_trait]
-impl<InnerListener, S> TransportListener for ListenerUpgrade<InnerListener, S>
+impl<InnerListener, S, T> TransportListener for ListenerUpgrade<InnerListener, S, T>
 where
     InnerListener: TransportListener + Send + Sync,
-    S: Upgrader<InnerListener::Output> + Send + Sync
+    S: Upgrader<InnerListener::Output> + Send + Sync + Clone,
+    T: Send
 {
     type Output = S::Output;
 
@@ -149,7 +151,7 @@ where
 
         trace!("got a new connection, upgrading...");
 
-        let ss = self.up.upgrade_inbound(stream).await?;
+        let ss = self.up.clone().upgrade_inbound(stream).await?;
         Ok(ss)
 
 

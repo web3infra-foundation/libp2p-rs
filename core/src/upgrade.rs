@@ -138,13 +138,13 @@ pub trait Upgrader<C> {
     /// method is called to start the handshake.
     ///
     /// The `info` is the identifier of the protocol, as produced by `protocol_info`.
-    async fn upgrade_inbound(&self, socket: C) -> Result<Self::Output, TransportError>;
+    async fn upgrade_inbound(self, socket: C) -> Result<Self::Output, TransportError>;
 
     /// After we have determined that the remote supports one of the protocols we support, this
     /// method is called to start the handshake.
     ///
     /// The `info` is the identifier of the protocol, as produced by `protocol_info`.
-    async fn upgrade_outbound(&self, socket: C) -> Result<Self::Output, TransportError>;
+    async fn upgrade_outbound(self, socket: C) -> Result<Self::Output, TransportError>;
 
 /*    /// Returns a new object that wraps around `Self` and applies a closure to the `Output`.
     fn map_inbound<F, T>(self, f: F) -> MapInboundUpgrade<Self, F>
