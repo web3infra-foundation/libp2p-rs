@@ -2,13 +2,13 @@
 use async_trait::async_trait;
 use crate::{Transport, transport::TransportError};
 use fnv::FnvHashMap;
-use futures::{future::Ready, prelude::*, channel::mpsc, task::Context, task::Poll, AsyncReadExt};
+use futures::{prelude::*, channel::mpsc, task::Context, task::Poll, AsyncReadExt};
 use futures::{SinkExt, StreamExt};
 use lazy_static::lazy_static;
 use multiaddr::{Protocol, Multiaddr};
 use parking_lot::Mutex;
 use rw_stream_sink::RwStreamSink;
-use std::{collections::hash_map::Entry, error, fmt, io, num::NonZeroU64, pin::Pin};
+use std::{collections::hash_map::Entry, io, num::NonZeroU64, pin::Pin};
 use crate::transport::TransportListener;
 
 lazy_static! {
