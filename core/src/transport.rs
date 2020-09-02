@@ -42,6 +42,7 @@ pub mod memory;
 pub mod timeout;
 //pub mod listener;
 pub mod upgrade;
+//pub mod security;
 //
 // mod optional;
 
@@ -83,7 +84,7 @@ pub trait Transport {
     /// Typically the output contains at least a handle to a data stream (i.e. a
     /// connection or a substream multiplexer on top of a connection) that
     /// provides APIs for sending and receiving data through the connection.
-    type Output: Read2 + Write2 + Send;
+    type Output: Send;
 
     /// A stream of [`Output`](Transport::Output)s for inbound connections.
     ///
@@ -220,7 +221,7 @@ pub trait TransportListener {
     /// Typically the output contains at least a handle to a data stream (i.e. a
     /// connection or a substream multiplexer on top of a connection) that
     /// provides APIs for sending and receiving data through the connection.
-    type Output: Read2 + Write2 + Send;
+    type Output: Send;
 
     /// The Listener handles the inbound connections
     async fn accept(&mut self) -> Result<Self::Output, TransportError>;
