@@ -1,35 +1,53 @@
-///! Mini Implementation of [multiaddr](https://github.com/jbenet/multiaddr) in Rust.
-mod error;
-mod protocol;
+///! Implementation of [multiaddr](https://github.com/jbenet/multiaddr) in Rust.
 
-pub use self::error::Error;
-pub use self::protocol::Protocol;
-use bytes::{Bytes, BytesMut};
+pub use multihash;
+
+mod protocol;
+mod onion_addr;
+mod errors;
+mod from_url;
+
 use serde::{
-    de::{self, Error as DeserializerError},
-    Deserialize, Deserializer, Serialize, Serializer,
+    Deserialize,
+    Deserializer,
+    Serialize,
+    Serializer,
+    de::{self, Error as DeserializerError}
 };
 use std::{
     convert::TryFrom,
     fmt,
+    io,
     iter::FromIterator,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     result::Result as StdResult,
     str::FromStr,
+    sync::Arc
 };
+pub use self::errors::{Result, Error};
+pub use self::from_url::{FromUrlErr, from_url, from_url_lossy};
+pub use self::protocol::Protocol;
+pub use self::onion_addr::Onion3Addr;
 
-pub type MultiAddr = Multiaddr;
+static_assertions::const_assert! {
+    // This check is most certainly overkill right now, but done here
+    // anyway to ensure the `as u64` casts in this crate are safe.
+    std::mem::size_of::<usize>() <= std::mem::size_of::<u64>()
+}
 
 /// Representation of a Multiaddr.
 #[derive(PartialEq, Eq, Clone, Hash)]
-pub struct Multiaddr {
-    bytes: Bytes,
-}
+pub struct Multiaddr { bytes: Arc<Vec<u8>> }
 
 impl Multiaddr {
-    /// Returns true if the multiaddres has no data.
-    pub fn is_empty(&self) -> bool {
-        self.bytes.is_empty()
+    /// Create a new, empty multiaddress.
+    pub fn empty() -> Self {
+        Self { bytes: Arc::new(Vec::new()) }
+    }
+
+    /// Create a new, empty multiaddress with the given capacity.
+    pub fn with_capacity(n: usize) -> Self {
+        Self { bytes: Arc::new(Vec::with_capacity(n)) }
     }
 
     /// Return the length in bytes of this multiaddress.
@@ -47,61 +65,68 @@ impl Multiaddr {
     /// # Examples
     ///
     /// ```
-    /// use tentacle_multiaddr::{Multiaddr, Protocol};
+    /// use parity_multiaddr::{Multiaddr, Protocol};
     ///
     /// let mut address: Multiaddr = "/ip4/127.0.0.1".parse().unwrap();
-    /// address.push(Protocol::TCP(10000));
-    /// println!("{}", address);
+    /// address.push(Protocol::Tcp(10000));
     /// assert_eq!(address, "/ip4/127.0.0.1/tcp/10000".parse().unwrap());
     /// ```
     ///
     pub fn push(&mut self, p: Protocol<'_>) {
-        let mut w = Vec::with_capacity(self.bytes.len());
-        unsafe { w.set_len(self.bytes.len()) }
-        w.copy_from_slice(&self.bytes[..]);
-        p.write_to_bytes(&mut w);
-        self.bytes = Bytes::from(w);
+        let mut w = io::Cursor::<&mut Vec<u8>>::new(Arc::make_mut(&mut self.bytes));
+        w.set_position(w.get_ref().len() as u64);
+        p.write_bytes(&mut w).expect("Writing to a `io::Cursor<&mut Vec<u8>>` never fails.")
     }
 
     /// Pops the last `Protocol` of this multiaddr, or `None` if the multiaddr is empty.
     /// ```
-    /// use std::net::Ipv4Addr;
-    /// use tentacle_multiaddr::{Multiaddr, Protocol};
+    /// use parity_multiaddr::{Multiaddr, Protocol};
     ///
-    /// let mut address: Multiaddr = "/ip4/127.0.0.1/tcp/5678".parse().unwrap();
+    /// let mut address: Multiaddr = "/ip4/127.0.0.1/udt/sctp/5678".parse().unwrap();
     ///
-    /// assert_eq!(address.pop().unwrap(), Protocol::TCP(5678));
-    /// assert_eq!(address.pop().unwrap(), Protocol::IP4(Ipv4Addr::new(127, 0, 0, 1)));
+    /// assert_eq!(address.pop().unwrap(), Protocol::Sctp(5678));
+    /// assert_eq!(address.pop().unwrap(), Protocol::Udt);
     /// ```
     ///
     pub fn pop<'a>(&mut self) -> Option<Protocol<'a>> {
         let mut slice = &self.bytes[..]; // the remaining multiaddr slice
         if slice.is_empty() {
-            return None;
+            return None
         }
         let protocol = loop {
             let (p, s) = Protocol::from_bytes(slice).expect("`slice` is a valid `Protocol`.");
             if s.is_empty() {
-                break p.acquire();
+                break p.acquire()
             }
             slice = s
         };
         let remaining_len = self.bytes.len() - slice.len();
-        self.bytes.truncate(remaining_len);
+        Arc::make_mut(&mut self.bytes).truncate(remaining_len);
         Some(protocol)
+    }
+
+    /// Like [`Multiaddr::push`] but consumes `self`.
+    pub fn with(mut self, p: Protocol<'_>) -> Self {
+        let mut w = io::Cursor::<&mut Vec<u8>>::new(Arc::make_mut(&mut self.bytes));
+        w.set_position(w.get_ref().len() as u64);
+        p.write_bytes(&mut w).expect("Writing to a `io::Cursor<&mut Vec<u8>>` never fails.");
+        self
     }
 
     /// Returns the components of this multiaddress.
     ///
-    /// ```
-    /// use std::net::Ipv4Addr;
-    /// use tentacle_multiaddr::{Multiaddr, Protocol};
+    /// # Example
     ///
-    /// let address: Multiaddr = "/ip4/127.0.0.1/tcp/5678".parse().unwrap();
+    /// ```rust
+    /// use std::net::Ipv4Addr;
+    /// use parity_multiaddr::{Multiaddr, Protocol};
+    ///
+    /// let address: Multiaddr = "/ip4/127.0.0.1/udt/sctp/5678".parse().unwrap();
     ///
     /// let components = address.iter().collect::<Vec<_>>();
-    /// assert_eq!(components[0], Protocol::IP4(Ipv4Addr::new(127, 0, 0, 1)));
-    /// assert_eq!(components[1], Protocol::TCP(5678));
+    /// assert_eq!(components[0], Protocol::Ip4(Ipv4Addr::new(127, 0, 0, 1)));
+    /// assert_eq!(components[1], Protocol::Udt);
+    /// assert_eq!(components[2], Protocol::Sctp(5678));
     /// ```
     ///
     pub fn iter(&self) -> Iter<'_> {
@@ -118,9 +143,9 @@ impl Multiaddr {
     /// updated `Protocol` at position `at` will be returned.
     pub fn replace<'a, F>(&self, at: usize, by: F) -> Option<Multiaddr>
     where
-        F: FnOnce(&Protocol) -> Option<Protocol<'a>>,
+        F: FnOnce(&Protocol) -> Option<Protocol<'a>>
     {
-        let mut address = BytesMut::with_capacity(self.bytes.len());
+        let mut address = Multiaddr::with_capacity(self.len());
         let mut fun = Some(by);
         let mut replaced = false;
 
@@ -128,22 +153,16 @@ impl Multiaddr {
             if i == at {
                 let f = fun.take().expect("i == at only happens once");
                 if let Some(q) = f(&p) {
-                    q.write_to_bytes(&mut address);
+                    address = address.with(q);
                     replaced = true;
-                    continue;
+                    continue
                 }
-                return None;
+                return None
             }
-            p.write_to_bytes(&mut address);
+            address = address.with(p)
         }
 
-        if replaced {
-            Some(Multiaddr {
-                bytes: address.freeze(),
-            })
-        } else {
-            None
-        }
+        if replaced { Some(address) } else { None }
     }
 }
 
@@ -156,13 +175,13 @@ impl fmt::Debug for Multiaddr {
 impl fmt::Display for Multiaddr {
     /// Convert a Multiaddr to a string
     ///
-    /// # Examples
+    /// # Example
     ///
     /// ```
-    /// use tentacle_multiaddr::Multiaddr;
+    /// use parity_multiaddr::Multiaddr;
     ///
-    /// let address: Multiaddr = "/ip4/127.0.0.1/tcp/80".parse().unwrap();
-    /// assert_eq!(address.to_string(), "/ip4/127.0.0.1/tcp/80");
+    /// let address: Multiaddr = "/ip4/127.0.0.1/udt".parse().unwrap();
+    /// assert_eq!(address.to_string(), "/ip4/127.0.0.1/udt");
     /// ```
     ///
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -193,36 +212,32 @@ impl<'a> FromIterator<Protocol<'a>> for Multiaddr {
     where
         T: IntoIterator<Item = Protocol<'a>>,
     {
-        let mut writer = BytesMut::new();
+        let mut writer = Vec::new();
         for cmp in iter {
-            cmp.write_to_bytes(&mut writer);
+            cmp.write_bytes(&mut writer).expect("Writing to a `Vec` never fails.");
         }
-        Multiaddr {
-            bytes: writer.freeze(),
-        }
+        Multiaddr { bytes: Arc::new(writer) }
     }
 }
 
 impl FromStr for Multiaddr {
     type Err = Error;
 
-    fn from_str(input: &str) -> Result<Self, Error> {
-        let mut writer = BytesMut::new();
+    fn from_str(input: &str) -> Result<Self> {
+        let mut writer = Vec::new();
         let mut parts = input.split('/').peekable();
 
         if Some("") != parts.next() {
             // A multiaddr must start with `/`
-            return Err(Error::InvalidMultiaddr);
+            return Err(Error::InvalidMultiaddr)
         }
 
         while parts.peek().is_some() {
-            let p = Protocol::from_str_peek(&mut parts)?;
-            p.write_to_bytes(&mut writer);
+            let p = Protocol::from_str_parts(&mut parts)?;
+            p.write_bytes(&mut writer).expect("Writing to a `Vec` never fails.");
         }
 
-        Ok(Multiaddr {
-            bytes: writer.freeze(),
-        })
+        Ok(Multiaddr { bytes: Arc::new(writer) })
     }
 }
 
@@ -247,9 +262,9 @@ impl<'a> Iterator for Iter<'a> {
 
 impl<'a> From<Protocol<'a>> for Multiaddr {
     fn from(p: Protocol<'a>) -> Multiaddr {
-        let mut w = BytesMut::new();
-        p.write_to_bytes(&mut w);
-        Multiaddr { bytes: w.freeze() }
+        let mut w = Vec::new();
+        p.write_bytes(&mut w).expect("Writing to a `Vec` never fails.");
+        Multiaddr { bytes: Arc::new(w) }
     }
 }
 
@@ -257,57 +272,41 @@ impl From<IpAddr> for Multiaddr {
     fn from(v: IpAddr) -> Multiaddr {
         match v {
             IpAddr::V4(a) => a.into(),
-            IpAddr::V6(a) => a.into(),
+            IpAddr::V6(a) => a.into()
         }
     }
 }
 
 impl From<Ipv4Addr> for Multiaddr {
     fn from(v: Ipv4Addr) -> Multiaddr {
-        Protocol::IP4(v).into()
+        Protocol::Ip4(v).into()
     }
 }
 
 impl From<Ipv6Addr> for Multiaddr {
     fn from(v: Ipv6Addr) -> Multiaddr {
-        Protocol::IP6(v).into()
-    }
-}
-
-impl TryFrom<Bytes> for Multiaddr {
-    type Error = Error;
-
-    fn try_from(v: Bytes) -> Result<Self, Error> {
-        // Check if the argument is a valid `Multiaddr` by reading its protocols.
-        let mut slice = &v[..];
-        while !slice.is_empty() {
-            let (_, s) = Protocol::from_bytes(slice)?;
-            slice = s
-        }
-        Ok(Multiaddr { bytes: v })
-    }
-}
-
-impl TryFrom<BytesMut> for Multiaddr {
-    type Error = Error;
-
-    fn try_from(v: BytesMut) -> Result<Self, Error> {
-        Multiaddr::try_from(v.freeze())
+        Protocol::Ip6(v).into()
     }
 }
 
 impl TryFrom<Vec<u8>> for Multiaddr {
     type Error = Error;
 
-    fn try_from(v: Vec<u8>) -> Result<Self, Error> {
-        Multiaddr::try_from(Bytes::from(v))
+    fn try_from(v: Vec<u8>) -> Result<Self> {
+        // Check if the argument is a valid `Multiaddr` by reading its protocols.
+        let mut slice = &v[..];
+        while !slice.is_empty() {
+            let (_, s) = Protocol::from_bytes(slice)?;
+            slice = s
+        }
+        Ok(Multiaddr { bytes: Arc::new(v) })
     }
 }
 
 impl TryFrom<String> for Multiaddr {
     type Error = Error;
 
-    fn try_from(s: String) -> Result<Multiaddr, Error> {
+    fn try_from(s: String) -> Result<Multiaddr> {
         s.parse()
     }
 }
@@ -315,7 +314,7 @@ impl TryFrom<String> for Multiaddr {
 impl<'a> TryFrom<&'a str> for Multiaddr {
     type Error = Error;
 
-    fn try_from(s: &'a str) -> Result<Multiaddr, Error> {
+    fn try_from(s: &'a str) -> Result<Multiaddr> {
         s.parse()
     }
 }
@@ -338,9 +337,7 @@ impl<'de> Deserialize<'de> for Multiaddr {
     where
         D: Deserializer<'de>,
     {
-        struct Visitor {
-            is_human_readable: bool,
-        };
+        struct Visitor { is_human_readable: bool };
 
         impl<'de> de::Visitor<'de> for Visitor {
             type Value = Multiaddr;
@@ -348,14 +345,9 @@ impl<'de> Deserialize<'de> for Multiaddr {
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("multiaddress")
             }
-            fn visit_seq<A: de::SeqAccess<'de>>(
-                self,
-                mut seq: A,
-            ) -> StdResult<Self::Value, A::Error> {
+            fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> StdResult<Self::Value, A::Error> {
                 let mut buf: Vec<u8> = Vec::with_capacity(seq.size_hint().unwrap_or(0));
-                while let Some(e) = seq.next_element()? {
-                    buf.push(e);
-                }
+                while let Some(e) = seq.next_element()? { buf.push(e); }
                 if self.is_human_readable {
                     let s = String::from_utf8(buf).map_err(DeserializerError::custom)?;
                     s.parse().map_err(DeserializerError::custom)
@@ -384,13 +376,9 @@ impl<'de> Deserialize<'de> for Multiaddr {
         }
 
         if deserializer.is_human_readable() {
-            deserializer.deserialize_str(Visitor {
-                is_human_readable: true,
-            })
+            deserializer.deserialize_str(Visitor { is_human_readable: true })
         } else {
-            deserializer.deserialize_bytes(Visitor {
-                is_human_readable: false,
-            })
+            deserializer.deserialize_bytes(Visitor { is_human_readable: false })
         }
     }
 }
@@ -400,8 +388,8 @@ impl<'de> Deserialize<'de> for Multiaddr {
 /// Example:
 ///
 /// ```rust
-/// # use tentacle_multiaddr::multiaddr;
-/// let addr = multiaddr!(IP4([127, 0, 0, 1]), TCP(10500u16));
+/// # use parity_multiaddr::multiaddr;
+/// let addr = multiaddr!(Ip4([127, 0, 0, 1]), Tcp(10500u16));
 /// ```
 ///
 /// Each element passed to `multiaddr!` should be a variant of the `Protocol` enum. The
@@ -421,39 +409,6 @@ macro_rules! multiaddr {
                 };
             )+
             elem.collect::<$crate::Multiaddr>()
-        }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::{Multiaddr, Protocol};
-    use parity_multiaddr::{Multiaddr as OtherMultiaddr, Protocol as OtherProtocol};
-
-    #[test]
-    fn compatibility_test() {
-        let mut address: Multiaddr = "/ip4/127.0.0.1".parse().unwrap();
-        address.push(Protocol::TCP(10000));
-        assert_eq!(address, "/ip4/127.0.0.1/tcp/10000".parse().unwrap());
-
-        let _address: Multiaddr = "/ip4/127.0.0.1/tcp/20/tls/main".parse().unwrap();
-
-        let mut address_1: Multiaddr =
-            "/ip4/47.111.169.36/tcp/8111/p2p/QmNQ4jky6uVqLDrPU7snqxARuNGWNLgSrTnssbRuy3ij2W"
-                .parse()
-                .unwrap();
-
-        let mut address_2: OtherMultiaddr =
-            "/ip4/47.111.169.36/tcp/8111/p2p/QmNQ4jky6uVqLDrPU7snqxARuNGWNLgSrTnssbRuy3ij2W"
-                .parse()
-                .unwrap();
-
-        let p_1 = address_1.pop().unwrap();
-        let p_2 = address_2.pop().unwrap();
-
-        match (p_1, p_2) {
-            (Protocol::P2P(s_1), OtherProtocol::P2p(s_2)) => assert_eq!(s_1, s_2.as_bytes()),
-            e => panic!("not expect protocol: {:?}", e),
         }
     }
 }
