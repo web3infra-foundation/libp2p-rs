@@ -46,45 +46,23 @@ where
             up
         }
     }
-
-/*    /// Upgrades the transport to setup the private network.
-    ///
-    pub fn protect(mut self, protector: TProtector) -> Self
-    {
-        self.protector = Some(protector);
-        self
-    }
-
-    /// Upgrades the transport to setup the security.
-    ///
-    pub fn secure(mut self, secure_up: TSecurityUpgrader) -> Self
-    where
-        TSecurityUpgrader: Upgrader<InnerTrans::Output, Output = InnerTrans::Output>,
-    {
-        self.secure_up = Some(secure_up);
-        self
-    }
-*/}
+}
 
 #[async_trait]
 impl<InnerTrans, S> Transport for TransportUpgrade<InnerTrans, S>
 where
-    InnerTrans: Transport + Send + Clone,
-    S: Upgrader<InnerTrans::Output> + Send + Sync,
+    InnerTrans: Transport + Send ,
+    S: Upgrader<InnerTrans::Output> + Send,
 {
     type Output = S::Output;
-    type Listener = ListenerUpgrade<InnerTrans::Listener, S, S::Output>;
+    type Listener = ListenerUpgrade<InnerTrans::Listener, S>;
 
     fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
 
         let listener = self.inner.listen_on(addr)?;
-        let (mut tx, mut rx) = mpsc::channel(10);
-
         let listener = ListenerUpgrade {
             inner: listener,
             up: self.up,
-            rx,
-            tx,
         };
 
         Ok(listener)
@@ -103,100 +81,62 @@ where
     }
 }
 
-pub struct ListenerUpgrade<InnerListener, S, T>
+pub struct ListenerUpgrade<InnerListener, S>
 {
     inner: InnerListener,
     up: S,
-    rx: mpsc::Receiver<T>,
-    tx: mpsc::Sender<T>,
 
     // TODO: add threshold support here
 }
 
-impl<InnerListener, S, T> ListenerUpgrade<InnerListener, S, T> {
-    pub fn incoming(&mut self) -> Incoming<'_, InnerListener, S, T> {
-        Incoming(self)
-    }
-}
 
-pub struct Incoming<'a, InnerListener, S, T>(&'a mut ListenerUpgrade<InnerListener, S, T>);
 
-impl<'a, InnerListener, S, T> Stream for Incoming<'a, InnerListener, S, T>
-where
-    InnerListener: TransportListener
-{
-    type Item = Result<InnerListener::Output, TransportError>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let future = self.0.inner.accept();
-        futures::pin_mut!(future);
-
-        let socket = futures::ready!(future.poll(cx))?;
-        Poll::Ready(Some(Ok(socket)))
-    }
-}
 
 #[async_trait]
-impl<InnerListener, S, T> TransportListener for ListenerUpgrade<InnerListener, S, T>
+impl<InnerListener, S> TransportListener for ListenerUpgrade<InnerListener, S>
 where
-    InnerListener: TransportListener + Send + Sync,
-    S: Upgrader<InnerListener::Output> + Send + Sync + Clone,
-    T: Send
+    InnerListener: TransportListener + Send,
+    S: Upgrader<InnerListener::Output> + Send,
 {
     type Output = S::Output;
 
     async fn accept(&mut self) -> Result<Self::Output, TransportError> {
 
-        let mut stream = self.inner.accept().await?;
-
-        trace!("got a new connection, upgrading...");
-
-        let ss = self.up.clone().upgrade_inbound(stream).await?;
-        Ok(ss)
-
-
-
-
-        // let mut cc = self.incoming().try_for_each_concurrent(20,|s| {let mut tx = tx.clone(); async move {
-        //     trace!("connected first");
-        //     futures_timer::Delay::new(Duration::from_secs(3)).await;
-        //     tx.send(s).await;
-        //     trace!("send an upgrade");
-        //     Ok(())
-        // }});
+        // let mut stream = self.inner.accept().await?;
         //
+        // trace!("got a new connection, upgrading...");
+        //
+        // let ss = self.up.clone().upgrade_inbound(stream).await?;
+        //
+        // futures_timer::Delay::new(Duration::from_secs(3)).await;
+        // Ok(ss)
+
+        // let mut tx = self.tx.clone();
+        // let up = self.up.clone();
+
+        //let mut cc = ;
+
         // loop {
-        //     let _ = select! {
-        //         // // stream = self.inner.accept().fuse() => {
-        //         // //     trace!("connected first");
-        //         // //     let mut stream = stream?;
-        //         // //     //stream.write2(b"upgrading").await?;
-        //         // //     trace!("send an upgrade");
-        //         // //     tx.send(async {stream}).await;
-        //         // // },
-        //         _c = cc => {},
-        //         up = rx.next() => {
-        //             trace!("got an upgrade");
-        //
-        //             let mut up = up.ok_or(TransportError::Internal)?;
-        //
-        //
-        //             trace!("upgrade ready to go");
-        //
-        //             //let mut s = self.security_muxer.upgrade_outbound(up).await.unwrap();
-        //             //up.write2(b"ready").await?;
-        //
+        //     select! {
+        //         c = self.inner.incoming().try_for_each_concurrent(20,|s| {
+        //             let mut tx = tx.clone();
+        //             let up = up.clone();
+        //             async move {
+        //                 trace!("connected first");
+        //                 let ss = up.upgrade_inbound(s).await?;
+        //                 futures_timer::Delay::new(Duration::from_secs(3)).await;
+        //                 tx.send(ss).await;
+        //                 trace!("send an upgrade");
+        //                 Ok(())
+        //         }}) => {
+        //         },
+        //         up = self.rx.next() => {
+        //             let up = up.unwrap();
         //             return Ok(up);
-        //         }
+        //         },
         //     };
-        //
-        //
-        //
-        //     // if let Some(up) = r {
-        //     //     let mut s = self.accept().await.unwrap();
-        //     //     return Ok(s);
-        //     // }
         // }
+        Err(TransportError::Internal)
 
     }
 
