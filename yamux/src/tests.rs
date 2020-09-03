@@ -21,6 +21,7 @@ use std::{
     io,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
 };
+use libp2p_traits::{Read2, Write2, ReadExt2};
 
 #[test]
 fn prop_send_recv() {
@@ -59,6 +60,7 @@ fn prop_send_recv() {
 fn prop_max_streams() {
     fn prop(n: usize) -> bool {
         let max_streams = n % 100;
+        log::error!("test for max streams ({})", max_streams);
         let mut cfg = Config::default();
         cfg.set_max_num_streams(max_streams);
 
@@ -96,6 +98,7 @@ fn prop_max_streams() {
 fn prop_send_recv_half_closed() {
     fn prop(msg: Msg) {
         let msg_len = msg.0.len();
+        log::info!("prop_send_recv_half_closed msg len ({})", msg_len);
         task::block_on(async move {
             let (listener, address) = bind().await.expect("bind");
 
@@ -110,9 +113,9 @@ fn prop_send_recv_half_closed() {
                     .expect("S: some stream");
                 task::spawn(crate::into_stream(connection).for_each(|_| future::ready(())));
                 let mut buf = vec![0; msg_len];
-                stream.read_exact(&mut buf).await.expect("S: read_exact");
-                stream.write_all(&buf).await.expect("S: send");
-                stream.close().await.expect("S: close")
+                stream.read_exact2(&mut buf).await.expect("S: read_exact");
+                stream.write_all2(&buf).await.expect("S: send");
+                stream.close2().await.expect("S: close")
             };
 
             // Client should be able to read after shutting down the stream.
@@ -122,20 +125,20 @@ fn prop_send_recv_half_closed() {
                 let mut control = connection.control();
                 task::spawn(crate::into_stream(connection).for_each(|_| future::ready(())));
                 let mut stream = control.open_stream().await.expect("C: open_stream");
-                stream.write_all(&msg.0).await.expect("C: send");
-                stream.close().await.expect("C: close");
-                assert_eq!(State::SendClosed, stream.state());
+                stream.write_all2(&msg.0).await.expect("C: send");
+                stream.close2().await.expect("C: close");
+                assert_eq!(State::SendClosed, stream.state().await);
                 let mut buf = vec![0; msg_len];
-                stream.read_exact(&mut buf).await.expect("C: read_exact");
+                stream.read_exact2(&mut buf).await.expect("C: read_exact");
                 assert_eq!(buf, msg.0);
-                assert_eq!(Some(0), stream.read(&mut buf).await.ok());
-                assert_eq!(State::Closed, stream.state());
+                assert_eq!(Some(0), stream.read2(&mut buf).await.ok());
+                assert_eq!(State::Closed, stream.state().await);
             };
 
             futures::join!(server, client);
         })
     }
-    QuickCheck::new().tests(7).quickcheck(prop as fn(_))
+    QuickCheck::new().tests(1).quickcheck(prop as fn(_))
 }
 
 #[derive(Clone, Debug)]
@@ -162,21 +165,19 @@ async fn bind() -> io::Result<(TcpListener, SocketAddr)> {
 async fn repeat_echo(c: Connection<TcpStream>) -> Result<(), ConnectionError> {
     let c = crate::into_stream(c);
     c.try_for_each_concurrent(None, |mut stream| async move {
-        {
-            let (mut r, mut w) = futures::io::AsyncReadExt::split(&mut stream);
-            futures::io::copy(&mut r, &mut w).await?;
-        }
-        stream.close().await?;
+        let (r, w) = stream.clone().split();
+        libp2p_traits::copy(r, w).await?;
+        stream.close2().await?;
         Ok(())
     })
-    .await
+        .await
 }
 
 /// For each message in `iter`, open a new stream, send the message and
 /// collect the response. The sequence of responses will be returned.
 async fn send_recv<I>(mut control: Control, iter: I) -> Result<Vec<Vec<u8>>, ConnectionError>
-where
-    I: Iterator<Item = Vec<u8>>,
+    where
+        I: Iterator<Item = Vec<u8>>,
 {
     let mut result = Vec::new();
     for msg in iter {
@@ -184,11 +185,21 @@ where
         log::debug!("C: new stream: {}", stream);
         let id = stream.id();
         let len = msg.len();
-        stream.write_all(&msg).await?;
+        stream.write_all2(&msg).await?;
         log::debug!("C: {}: sent {} bytes", id, len);
-        stream.close().await?;
-        let mut data = Vec::new();
-        stream.read_to_end(&mut data).await?;
+        stream.close2().await?;
+        log::debug!("stream({}) closed", id);
+        let mut data = vec![0; len];
+        let x = stream.read_exact2(&mut data).await;
+        match x {
+            Err(e) => {
+                log::error!("read from closed stream err {}", e);
+                return Err(e.into())
+            }
+            Ok(n) => {
+                log::debug!("==> read after close {:?}", n);
+            }
+        }
         log::debug!("C: {}: received {} bytes", id, data.len());
         result.push(data)
     }
