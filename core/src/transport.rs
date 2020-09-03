@@ -31,6 +31,9 @@ use libp2p_traits::{Read2, Write2};
 use multiaddr::Multiaddr;
 use std::{error::Error, fmt};
 use std::time::Duration;
+use futures::prelude::*;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 // pub mod and_then;
 // pub mod boxed;
@@ -229,10 +232,31 @@ pub trait TransportListener {
     /// Returns the local multiaddr listened on
     fn multi_addr(&self) -> Multiaddr;
 
+    fn incoming(&mut self) -> Incoming<Self>
+        where Self: Sized
+    {
+        Incoming(self)
+    }
     // /// Returns the local network address
     // fn local_addr(&self) -> io::Result<SocketAddr>;
 }
 
+pub struct Incoming<'a, T>(&'a mut T);
+
+impl<'a, T> Stream for Incoming<'a, T>
+    where
+        T: TransportListener
+{
+    type Item = Result<T::Output, TransportError>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let future = self.0.accept();
+        futures::pin_mut!(future);
+
+        let socket = futures::ready!(future.poll(cx))?;
+        Poll::Ready(Some(Ok(socket)))
+    }
+}
 
 /// Event produced by [`Transport::Listener`]s.
 ///

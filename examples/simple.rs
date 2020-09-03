@@ -12,6 +12,7 @@ use secio;
 use libp2p_core::identity::Keypair;
 use secio::handshake::Config;
 use winapi::_core::time::Duration;
+use libp2p_core::upgrade::DummyUpgrader;
 
 fn main() {
     env_logger::init();
@@ -26,7 +27,8 @@ fn main() {
 
         log::info!("starting echo server...");
 
-        let t1 = TransportUpgrade::new(MemoryTransport::default(), Config::new(Keypair::generate_secp256k1()));
+        //let t1 = TransportUpgrade::new(MemoryTransport::default(), Config::new(Keypair::generate_secp256k1()));
+        let t1 = TransportUpgrade::new(MemoryTransport::default(), DummyUpgrader::default());
         let mut listener = t1.listen_on(listen_addr).unwrap();
 
         loop {
@@ -44,13 +46,14 @@ fn main() {
     });
 
     // Setup dialer.
-    for i in 0..10u32 {
+    for i in 0..3u32 {
         let addr = t1_addr.clone();
         task::spawn(async move {
             let mut msg = [1, 2, 3];
             log::info!("start client{}", i);
 
-            let t2 = TransportUpgrade::new(MemoryTransport::default(), Config::new(Keypair::generate_secp256k1()));
+            //let t2 = TransportUpgrade::new(MemoryTransport::default(), Config::new(Keypair::generate_secp256k1()));
+            let t2 = TransportUpgrade::new(MemoryTransport::default(), DummyUpgrader::default());
             let mut socket = t2.dial(addr).await?;
 
             socket.write_all2(&msg).await?;
