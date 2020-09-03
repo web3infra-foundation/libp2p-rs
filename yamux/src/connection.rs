@@ -134,24 +134,24 @@ pub enum Mode {
 ///
 /// Randomly generated, this is mainly intended to improve log output.
 #[derive(Clone, Copy)]
-pub(crate) struct Id(u32);
+pub(crate) struct Id(u32, Mode);
 
 impl Id {
     /// Create a random connection ID.
-    pub(crate) fn random() -> Self {
-        Id(rand::random())
+    pub(crate) fn random(mode: Mode) -> Self {
+        Id(rand::random(), mode)
     }
 }
 
 impl fmt::Debug for Id {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:08x}", self.0)
+        write!(f, "{:?}({:08x})", self.1, self.0)
     }
 }
 
 impl fmt::Display for Id {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:08x}", self.0)
+        write!(f, "{:?}({:08x})", self.1, self.0)
     }
 }
 
@@ -276,7 +276,7 @@ impl<T> fmt::Display for Connection<T> {
 impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
     /// Create a new `Connection` from the given I/O resource.
     pub fn new(socket: T, cfg: Config, mode: Mode) -> Self {
-        let id = Id::random();
+        let id = Id::random(mode);
         log::debug!("new connection: {} ({:?})", id, mode);
         let (stream_sender, stream_receiver) = mpsc::channel(MAX_COMMAND_BACKLOG);
         let (control_sender, control_receiver) = mpsc::channel(MAX_COMMAND_BACKLOG);
@@ -671,12 +671,7 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
             if let Some(s) = self.streams.get_mut(&stream_id) {
                 let mut shared = s.shared().await;
                 shared.update_state(self.id, stream_id, State::Closed);
-                if let Some(w) = shared.reader.take() {
-                    w.wake()
-                }
-                if let Some(w) = shared.writer.take() {
-                    w.wake()
-                }
+                shared.wake_up_reader_and_writer();
             }
             return Action::None;
         }
@@ -757,12 +752,8 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
             shared.window = shared.window.saturating_sub(frame.body_len());
             shared.buffer.push(frame.into_body());
 
-            log::info!("wake up reader");
+            shared.wake_up_reader();
 
-            stream.reader.wake();
-            if let Some(w) = shared.reader.take() {
-                w.wake()
-            }
             if !is_finish
                 && shared.window == 0
                 && self.config.window_update_mode == WindowUpdateMode::OnReceive
@@ -789,12 +780,8 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
             if let Some(s) = self.streams.get_mut(&stream_id) {
                 let mut shared = s.shared().await;
                 shared.update_state(self.id, stream_id, State::Closed);
-                if let Some(w) = shared.reader.take() {
-                    w.wake()
-                }
-                if let Some(w) = shared.writer.take() {
-                    w.wake()
-                }
+
+                shared.wake_up_reader_and_writer();
             }
             return Action::None;
         }
@@ -840,9 +827,7 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
             if is_finish {
                 shared.update_state(self.id, stream_id, State::RecvClosed);
             }
-            if let Some(w) = shared.writer.take() {
-                w.wake()
-            }
+            shared.wake_up_writer();
         } else if !is_finish {
             log::debug!(
                 "{}/{}: window update for unknown stream",
@@ -956,12 +941,7 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
                     // remote end has already done so in the past.
                     State::Closed => None,
                 };
-                if let Some(w) = shared.reader.take() {
-                    w.wake()
-                }
-                if let Some(w) = shared.writer.take() {
-                    w.wake()
-                }
+                shared.wake_up_reader_and_writer();
                 frame
             };
             if let Some(f) = frame {
@@ -989,12 +969,8 @@ impl<T> Connection<T> {
         for (id, s) in self.streams.drain() {
             let mut shared = s.shared().await;
             shared.update_state(self.id, id, State::Closed);
-            if let Some(w) = shared.reader.take() {
-                w.wake()
-            }
-            if let Some(w) = shared.writer.take() {
-                w.wake()
-            }
+
+            shared.wake_up_reader_and_writer();
         }
     }
 }

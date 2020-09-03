@@ -1,8 +1,14 @@
+mod ext;
+mod copy;
+
 use async_trait::async_trait;
 use futures::prelude::*;
 use futures::{AsyncReadExt, AsyncWriteExt};
 use std::io;
 use std::io::ErrorKind;
+
+pub use ext::ReadExt2;
+pub use copy::copy;
 
 /// Read Trait for async/wait
 ///

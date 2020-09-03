@@ -28,7 +28,6 @@ use std::{
 
 use async_trait::async_trait;
 use futures::lock::{Mutex, MutexGuard};
-use futures::task::AtomicWaker;
 
 use libp2p_traits::{Read2, Write2};
 
@@ -91,9 +90,6 @@ pub struct Stream {
     pending: Option<Frame<WindowUpdate>>,
     flag: Flag,
     shared: Arc<Mutex<Shared>>,
-
-    pub(crate) reader: Arc<AtomicWaker>,
-    //pub(crate) writer: AtomicWaker,
 }
 
 impl fmt::Debug for Stream {
@@ -129,7 +125,6 @@ impl Stream {
             pending: None,
             flag: Flag::None,
             shared: Arc::new(Mutex::new(Shared::new(window, credit))),
-            reader: Arc::new(Default::default()),
         }
     }
 
@@ -165,8 +160,6 @@ impl Stream {
             pending: None,
             flag: self.flag,
             shared: self.shared.clone(),
-            reader: self.reader.clone(),
-            //writer: None
         }
     }
 
@@ -176,19 +169,7 @@ impl Stream {
             return Ok(0);
         }
 
-        // Copy data from stream buffer.
-        let mut shared = self.shared().await;
-
-        // Buffer is empty, let's check if we can expect to read more data.
-        if !shared.state().can_read() {
-            log::info!("{}/{}: eof", self.conn, self.id);
-            return Err(io::ErrorKind::BrokenPipe.into()); // stream has been reset
-        }
-        drop(shared);
-
-        log::debug!("{}/{}: reading", self.conn, self.id);
-
-        future::poll_fn::<(), _>(|cx| {
+        if let Some(n) = future::poll_fn::<Option<usize>, _>(|cx| {
             let fut = self.shared();
             futures::pin_mut!(fut);
             let mut shared = futures::ready!(fut.poll(cx));
@@ -197,17 +178,24 @@ impl Stream {
             // by the connection when more becomes available for us.
             // Note: shared will be dropped when it is out of scope
             if shared.buffer.len().unwrap() == 0 {
+                if !shared.state().can_read() {
+                    log::info!("{}/{}: eof", self.conn, self.id);
+                    // return Err(io::ErrorKind::BrokenPipe.into()); // stream has been reset
+                    return Poll::Ready(Some(0));
+                }
                 log::debug!("{}/{}: empty buffer, go pending", self.conn, self.id);
                 shared.reader = Some(cx.waker().clone());
                 Poll::Pending
             } else {
-                Poll::Ready(())
+                Poll::Ready(None)
             }
-        })
-        .await;
+        }).await {
+            return Ok(n);
+        }
 
-        shared = self.shared().await;
+        let mut shared = self.shared().await;
 
+        // Copy data from stream buffer.
         let mut n = 0;
         while let Some(chunk) = shared.buffer.front_mut() {
             if chunk.is_empty() {
@@ -221,6 +209,16 @@ impl Stream {
             if n == buf.len() {
                 break;
             }
+        }
+
+        if n > 0 {
+            return Ok(n);
+        }
+
+        if !shared.state().can_read() {
+            log::info!("{}/{}: eof", self.conn, self.id);
+            // return Err(io::ErrorKind::BrokenPipe.into()); // stream has been reset
+            return Ok(0)
         }
 
         log::trace!("{}/{}: read {} bytes", self.conn, self.id, n);
@@ -364,8 +362,8 @@ pub(crate) struct Shared {
     pub(crate) window: u32,
     pub(crate) credit: u32,
     pub(crate) buffer: Chunks,
-    pub(crate) reader: Option<Waker>,
-    pub(crate) writer: Option<Waker>,
+    reader: Option<Waker>,
+    writer: Option<Waker>,
 }
 
 impl Shared {
@@ -418,6 +416,25 @@ impl Shared {
         );
 
         current // Return the previous stream state for informational purposes.
+    }
+
+    pub(crate) fn wake_up_reader(&mut self) {
+        if let Some(w) = self.reader.take() {
+            log::debug!("wake up reader at {:?}", self.state);
+            w.wake()
+        }
+    }
+
+    pub(crate) fn wake_up_writer(&mut self) {
+        if let Some(w) = self.writer.take() {
+            log::debug!("wake up writer at {:?}", self.state);
+            w.wake()
+        }
+    }
+
+    pub(crate) fn wake_up_reader_and_writer(&mut self) {
+        self.wake_up_reader();
+        self.wake_up_writer();
     }
 }
 
