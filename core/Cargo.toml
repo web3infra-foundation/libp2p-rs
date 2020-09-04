@@ -31,6 +31,7 @@ zeroize = "1"
 async-trait = "0.1"
 parking_lot = "0.10.0"
 rw-stream-sink = "0.2.0"
+pin-project = "0.4"
 multiaddr = { package = "parity-multiaddr", version = "0.9.1", path = "../multiaddr" }
 libp2p-traits = { path = "../traits", version = "0.1.0", package = "libp2p-traits" }
 

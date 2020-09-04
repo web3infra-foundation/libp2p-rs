@@ -12,12 +12,15 @@ use std::task::{Context, Poll};
 use std::{time::Duration};
 use libp2p_traits::Write2;
 use futures::channel::mpsc;
-use futures::future::FutureExt;
 use futures::select;
+use pin_project::{pin_project, project};
 use log::{trace};
 use crate::{Multiaddr, Transport, transport::{TransportError}};
 use crate::transport::TransportListener;
 use crate::upgrade::Upgrader;
+use futures::stream::FuturesUnordered;
+use std::num::NonZeroUsize;
+use smallvec::alloc::fmt::UpperExp;
 
 //use crate::transport::security::SecurityUpgrader;
 
@@ -36,8 +39,8 @@ pub struct TransportUpgrade<InnerTrans, S> {
 
 impl<InnerTrans, S> TransportUpgrade<InnerTrans, S>
 where
-    InnerTrans: Transport + Send,
-    S: Upgrader<InnerTrans::Output>
+    InnerTrans: Transport,
+    S: Upgrader<InnerTrans::Output>,
 {
     /// Wraps around a `Transport` to add upgrade capabilities.
     pub fn new(inner: InnerTrans, up: S) -> Self {
@@ -47,58 +50,89 @@ where
         }
     }
 }
-
+/*
 #[async_trait]
-impl<InnerTrans, S> Transport for TransportUpgrade<InnerTrans, S>
+impl<T, InnerTrans, S, F, Fut> Transport for TransportUpgrade<InnerTrans, S>
 where
-    InnerTrans: Transport + Send ,
-    S: Upgrader<InnerTrans::Output> + Send,
+    InnerTrans: Transport,
+    InnerTrans::Listener: TransportListener + Send,
+    //S: Upgrader<InnerTrans::Output> + Send + Clone,
+    //F: FnMut(InnerTrans::Output) -> Fut,
+    //Fut: Future<Output = Result<S::Output, TransportError>>,
 {
-    type Output = S::Output;
-    type Listener = ListenerUpgrade<InnerTrans::Listener, S>;
+    type Output = T;//S::Output;
+    type Listener = ListenerUpgrade<InnerTrans::Listener, F, Fut>;
 
-    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
-
-        let listener = self.inner.listen_on(addr)?;
-        let listener = ListenerUpgrade {
-            inner: listener,
-            up: self.up,
-        };
+    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError>
+    where
+        S: Upgrader<<<InnerTrans as Transport>::Listener as TransportListener>::Output> + Send + Clone,
+        F: FnMut(<<InnerTrans as Transport>::Listener as TransportListener>::Output) -> Fut,
+        Fut: Future<Output = Result<T, TransportError>>,
+    {
+        let inner_listener = self.inner.listen_on(addr)?;
+        let listener = ListenerUpgrade::new(inner_listener, |s| {
+            let up = self.up.clone();
+            async move {
+                up.upgrade_inbound(s).await
+            }
+        });
 
         Ok(listener)
     }
 
     async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError>
+    where
+        S: Upgrader<InnerTrans::Output> + Send + Clone,
+        F: FnMut(InnerTrans::Output) -> Fut,
+        Fut: Future<Output = Result<S::Output, TransportError>>,
     {
-        let mut stream = self.inner.dial(addr).await?;
-
-        //stream.write2(b"hello").await?;
-
-        let mut s = self.up.upgrade_outbound(stream).await?;
-
-        //s.write(b"hello").await?;
-        Ok(s)
+        let stream = self.inner.dial(addr).await?;
+        let u = self.up.upgrade_outbound(stream).await?;
+        Ok(u)
     }
 }
 
-pub struct ListenerUpgrade<InnerListener, S>
+#[pin_project]
+pub struct ListenerUpgrade<InnerListener, F, Fut>
 {
+    #[pin]
     inner: InnerListener,
-    up: S,
+    //up: S,
 
+    f: F,
+    futures: FuturesUnordered<Fut>,
+    limit: Option<NonZeroUsize>,
     // TODO: add threshold support here
 }
 
-
+impl<T, InnerListener, F, Fut> ListenerUpgrade<InnerListener, F, Fut>
+where
+    InnerListener: TransportListener + Send,
+    F: FnMut(InnerListener::Output) -> Fut,
+    Fut: Future<Output = Result<T, TransportError>> + Send,
+    T: Send
+{
+    pub fn new(inner: InnerListener, f: F) -> Self {
+        Self {
+            inner,
+            //up,
+            f,
+            futures: FuturesUnordered::new(),
+            limit: NonZeroUsize::new(10),
+        }
+    }
+}
 
 
 #[async_trait]
-impl<InnerListener, S> TransportListener for ListenerUpgrade<InnerListener, S>
+impl<T, InnerListener, F, Fut> TransportListener for ListenerUpgrade<InnerListener, F, Fut>
 where
-    InnerListener: TransportListener + Send,
-    S: Upgrader<InnerListener::Output> + Send,
+    InnerListener: TransportListener + Send + Unpin,
+    F: FnMut(InnerListener::Output) -> Fut + Send,
+    Fut: Future<Output = Result<T, TransportError>> + Send,
+    T: Send + 'static,
 {
-    type Output = S::Output;
+    type Output = T;
 
     async fn accept(&mut self) -> Result<Self::Output, TransportError> {
 
@@ -136,8 +170,157 @@ where
         //         },
         //     };
         // }
-        Err(TransportError::Internal)
 
+        self.next().await.unwrap()
+
+
+
+
+
+        //Err(TransportError::Internal)
+
+    }
+
+    fn multi_addr(&self) -> Multiaddr {
+        self.inner.multi_addr()
+    }
+}
+
+
+impl<T, InnerListener, F, Fut> Stream for ListenerUpgrade<InnerListener, F, Fut>
+where
+    InnerListener: TransportListener + Send,
+    F: FnMut(InnerListener::Output) -> Fut,
+    Fut: Future<Output = Result<T, TransportError>>,
+{
+    type Item = Result<T, TransportError>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+
+        let this = self.project();
+        loop {
+            let mut made_progress_this_iter = false;
+
+            // Check if we've already created a number of futures greater than `limit`
+            if this.limit.map(|limit| limit.get() > this.futures.len()).unwrap_or(true) {
+                // let poll_res = match stream.as_mut().as_pin_mut() {
+                //     Some(stream) => stream.try_poll_next(cx),
+                //     None => Poll::Ready(None),
+                // };
+                let poll_res = this.listener.accept().try_poll_unpin(cx);
+
+                let elem = match poll_res {
+                    Poll::Ready(Ok(elem)) => {
+                        made_progress_this_iter = true;
+                        Some(elem)
+                    },
+                    // Poll::Ready(None) => {
+                    //     stream.set(None);
+                    //     None
+                    // }
+                    Poll::Pending => None,
+                    Poll::Ready(Err(e)) => {
+                        // Empty the stream and futures so that we know
+                        // the future has completed.
+                        // stream.set(None);
+                        drop(std::mem::replace(this.futures, FuturesUnordered::new()));
+                        return Poll::Ready(None);
+                    }
+                };
+
+                if let Some(elem) = elem {
+                    this.futures.push((this.f)(elem));
+                }
+            }
+
+            match this.futures.poll_next_unpin(cx) {
+                Poll::Ready(Some(Ok(s))) => {
+                    made_progress_this_iter = true;
+                    return Poll::Ready(Some(Ok(s)))
+                },
+                Poll::Ready(None) => {
+                    // if stream.is_none() {
+                    //     return Poll::Ready(Ok(()))
+                    // }
+                },
+                Poll::Pending => {}
+                Poll::Ready(Some(Err(e))) => {
+                    // Empty the stream and futures so that we know
+                    // the future has completed.
+                    // stream.set(None);
+                    drop(std::mem::replace(this.futures, FuturesUnordered::new()));
+                    return Poll::Ready(Some(Err(e)));
+                }
+            }
+
+            if !made_progress_this_iter {
+                return Poll::Pending;
+            }
+        }
+    }
+
+}
+
+*/
+
+
+#[async_trait]
+impl<InnerTrans, S> Transport for TransportUpgrade<InnerTrans, S>
+where
+    InnerTrans: Transport + Send,
+    InnerTrans::Listener: TransportListener + Send,
+    S: Upgrader<InnerTrans::Output> + Send,
+{
+    type Output = S::Output;
+    type Listener = ListenerUpgrade<InnerTrans::Listener, S>;
+
+    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError>
+    {
+        let inner_listener = self.inner.listen_on(addr)?;
+        let listener = ListenerUpgrade::new(inner_listener, self.up);
+
+        Ok(listener)
+    }
+
+    async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError>
+    {
+        let stream = self.inner.dial(addr).await?;
+        self.up.upgrade_outbound(stream).await
+    }
+}
+pub struct ListenerUpgrade<InnerListener, S>
+{
+    inner: InnerListener,
+    up: S,
+    // TODO: add threshold support here
+}
+
+impl<InnerListener, S> ListenerUpgrade<InnerListener, S>
+{
+    pub fn new(inner: InnerListener, up: S) -> Self {
+        Self {
+            inner,
+            up,
+        }
+    }
+}
+
+#[async_trait]
+impl<InnerListener, S> TransportListener for ListenerUpgrade<InnerListener, S>
+where
+    InnerListener: TransportListener + Send,
+    S: Upgrader<InnerListener::Output> + Send + Clone
+{
+    type Output = S::Output;
+
+    async fn accept(&mut self) -> Result<Self::Output, TransportError> {
+
+        let stream = self.inner.accept().await?;
+        let up = self.up.clone();
+
+        trace!("got a new connection, upgrading...");
+        futures_timer::Delay::new(Duration::from_secs(3)).await;
+        up.upgrade_inbound(stream).await
     }
 
     fn multi_addr(&self) -> Multiaddr {
