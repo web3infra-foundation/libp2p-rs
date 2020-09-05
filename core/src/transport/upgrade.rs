@@ -319,7 +319,7 @@ where
         let up = self.up.clone();
 
         trace!("got a new connection, upgrading...");
-        futures_timer::Delay::new(Duration::from_secs(3)).await;
+        //futures_timer::Delay::new(Duration::from_secs(3)).await;
         up.upgrade_inbound(stream).await
     }
 

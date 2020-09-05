@@ -15,7 +15,7 @@ impl<T> fmt::Debug for LengthPrefixSocket<T> {
 
 impl<T> LengthPrefixSocket<T>
 where
-    T: Read2 + Write2 + Unpin + Send + 'static,
+    T: Read2 + Write2 + Send + 'static,
 {
     /// create a new LengthPrefixSocket
     pub fn new(socket: T, max_len: usize) -> Self {
