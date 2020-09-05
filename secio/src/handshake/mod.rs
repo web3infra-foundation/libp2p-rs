@@ -12,9 +12,10 @@ use libp2p_core::PublicKey;
 
 use crate::codec::secure_stream::SecureStream;
 use futures::{AsyncRead, AsyncWrite};
-use libp2p_core::upgrade::Upgrader;
+use libp2p_core::upgrade::{Upgrader, UpgradeInfo};
 use libp2p_core::transport::TransportError;
 use std::iter;
+use libp2p_traits::{Read2, Write2};
 
 mod handshake_context;
 mod procedure;
@@ -85,7 +86,7 @@ impl Config {
         socket: T,
     ) -> Result<(SecureStream<T>, PublicKey, EphemeralPublicKey), SecioError>
     where
-        T: AsyncRead + AsyncWrite + Send + 'static + Unpin,
+        T: Read2 + Write2 + Send + 'static,
     {
         handshake(socket, self).await
     }
@@ -105,17 +106,21 @@ pub struct SecioOutput<S>
     pub ephemeral_public_key: Vec<u8>,
 }
 
-#[async_trait]
-impl<T> Upgrader<T> for Config
-where T: AsyncRead + AsyncWrite + Send + Unpin + 'static
+impl UpgradeInfo for Config
 {
     type Info = &'static [u8];
     type InfoIter = iter::Once<Self::Info>;
-    type Output = SecureStream<T>;
 
     fn protocol_info(&self) -> Self::InfoIter {
         iter::once(b"/secio/1.0.0")
     }
+}
+
+#[async_trait]
+impl<T> Upgrader<T> for Config
+    where T: Read2 + Write2 + Send + Unpin + 'static
+{
+    type Output = SecureStream<T>;
 
     async fn upgrade_inbound(self, socket: T) -> Result<Self::Output, TransportError> {
         let (handle, _, _) = self.handshake(socket).await.unwrap();

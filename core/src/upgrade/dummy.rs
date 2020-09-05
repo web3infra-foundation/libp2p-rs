@@ -22,7 +22,7 @@ use async_trait::async_trait;
 use std::{fmt, io, pin::Pin, iter};
 use futures::{prelude::*, task::Context, task::Poll};
 use log::trace;
-use crate::upgrade::Upgrader;
+use crate::upgrade::{Upgrader, UpgradeInfo};
 use crate::transport::{Transport, TransportError, TransportListener};
 use crate::Multiaddr;
 
@@ -56,15 +56,19 @@ impl Clone for DummyUpgrader {
     }
 }
 
-#[async_trait]
-impl<T: Send + 'static> Upgrader<T> for DummyUpgrader {
+impl UpgradeInfo for DummyUpgrader {
     type Info = &'static [u8];
     type InfoIter = iter::Once<Self::Info>;
-    type Output = T;
 
     fn protocol_info(&self) -> Self::InfoIter {
         iter::once(b"/dummy/1.0.0")
     }
+}
+
+
+#[async_trait]
+impl<T: Send + 'static> Upgrader<T> for DummyUpgrader {
+    type Output = T;
 
     async fn upgrade_inbound(self, socket: T) -> Result<Self::Output, TransportError> {
         trace!("dummy upgrader, upgrade inbound connection");

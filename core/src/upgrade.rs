@@ -43,6 +43,7 @@
 // mod select;
 // mod transfer;
 pub(crate) mod dummy;
+pub(crate) mod and_then;
 
 use async_trait::async_trait;
 use futures::future::Future;
@@ -69,6 +70,7 @@ pub use self::{
     dummy::DummyUpgrader,
 };
 use futures::{AsyncRead, AsyncWrite};
+use crate::upgrade::and_then::AndThenUpgrader;
 
 
 /// Types serving as protocol names.
@@ -118,21 +120,23 @@ impl<T: AsRef<[u8]>> ProtocolName for T {
     }
 }
 
+pub trait UpgradeInfo {
+    /// Opaque type representing a negotiable protocol.
+    type Info: ProtocolName + Clone + Send;
+    /// Iterator returned by `protocol_info`.
+    type InfoIter: IntoIterator<Item=Self::Info>;
+
+    /// Returns the list of protocols that are supported. Used during the negotiation process.
+    fn protocol_info(&self) -> Self::InfoIter;
+}
 
 /// Common trait for upgrades that can be applied on inbound substreams, outbound substreams,
 /// or both.
 /// Possible upgrade on a connection or substream.
 #[async_trait]
-pub trait Upgrader<C> {
-    /// Opaque type representing a negotiable protocol.
-    type Info: ProtocolName + Clone + Send;
-    /// Iterator returned by `protocol_info`.
-    type InfoIter: IntoIterator<Item = Self::Info>;
+pub trait Upgrader<C> : UpgradeInfo {
     /// Output after the upgrade has been successfully negotiated and the handshake performed.
     type Output: Send;
-
-    /// Returns the list of protocols that are supported. Used during the negotiation process.
-    fn protocol_info(&self) -> Self::InfoIter;
 
     /// After we have determined that the remote supports one of the protocols we support, this
     /// method is called to start the handshake.
@@ -146,22 +150,14 @@ pub trait Upgrader<C> {
     /// The `info` is the identifier of the protocol, as produced by `protocol_info`.
     async fn upgrade_outbound(self, socket: C) -> Result<Self::Output, TransportError>;
 
-/*    /// Returns a new object that wraps around `Self` and applies a closure to the `Output`.
-    fn map_inbound<F, T>(self, f: F) -> MapInboundUpgrade<Self, F>
+    fn and_then<U>(self, up: U) -> AndThenUpgrader<Self, U>
         where
             Self: Sized,
-            F: FnOnce(Self::Output) -> T
+            Self: Upgrader<C>,
+            U: Upgrader<<Self as Upgrader<C>>::Output>,
     {
-        MapInboundUpgrade::new(self, f)
+        AndThenUpgrader::new(self, up)
     }
 
-    /// Returns a new object that wraps around `Self` and applies a closure to the `Error`.
-    fn map_inbound_err<F, T>(self, f: F) -> MapInboundUpgradeErr<Self, F>
-        where
-            Self: Sized,
-            F: FnOnce(Self::Error) -> T
-    {
-        MapInboundUpgradeErr::new(self, f)
-    }
-*/
 }
+
