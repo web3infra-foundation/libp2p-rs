@@ -11,7 +11,6 @@ use libp2p_traits::{Write2, Read2};
 use secio;
 use libp2p_core::identity::Keypair;
 use secio::handshake::Config;
-use winapi::_core::time::Duration;
 use libp2p_core::upgrade::{DummyUpgrader, Upgrader};
 
 fn main() {

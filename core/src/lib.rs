@@ -28,3 +28,4 @@ pub use multiaddr::Multiaddr;
 
 pub mod upgrade;
 pub mod muxing;
+pub mod either;
