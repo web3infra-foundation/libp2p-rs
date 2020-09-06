@@ -40,36 +40,19 @@
 // mod from_fn;
 // mod map;
 // mod optional;
-// mod select;
+pub(crate) mod select;
 // mod transfer;
 pub(crate) mod dummy;
 pub(crate) mod and_then;
+//pub(crate) mod multistream;
 
 use async_trait::async_trait;
-use futures::future::Future;
-use std::error;
 use crate::transport::TransportError;
 
-//pub use crate::Negotiated;
-//pub use multistream_select::{Version, NegotiatedComplete, NegotiationError, ProtocolError};
-
-// pub use self::{
-//     apply::{apply, apply_inbound, apply_outbound, InboundUpgradeApply, OutboundUpgradeApply},
-//     denied::DeniedUpgrade,
-//     either::EitherUpgrade,
-//     error::UpgradeError,
-//     from_fn::{from_fn, FromFnUpgrade},
-//     map::{MapInboundUpgrade, MapOutboundUpgrade, MapInboundUpgradeErr, MapOutboundUpgradeErr},
-//     optional::OptionalUpgrade,
-//     select::SelectUpgrade,
-//     transfer::{write_one, write_with_len_prefix, write_varint, read_one, ReadOneError, read_varint},
-// };
 
 pub use self::{
-    //select::SelectUpgrade,
     dummy::DummyUpgrader,
 };
-use futures::{AsyncRead, AsyncWrite};
 use crate::upgrade::and_then::AndThenUpgrader;
 
 

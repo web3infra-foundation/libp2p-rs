@@ -2,7 +2,7 @@
 use async_trait::async_trait;
 use crate::{Transport, transport::TransportError};
 use fnv::FnvHashMap;
-use futures::{prelude::*, channel::mpsc, task::Context, task::Poll, AsyncReadExt};
+use futures::{prelude::*, channel::mpsc, task::Context, task::Poll};
 use futures::{SinkExt, StreamExt};
 use lazy_static::lazy_static;
 use multiaddr::{Protocol, Multiaddr};

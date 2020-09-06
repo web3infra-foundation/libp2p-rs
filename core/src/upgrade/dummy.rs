@@ -19,12 +19,10 @@
 // DEALINGS IN THE SOFTWARE.
 
 use async_trait::async_trait;
-use std::{fmt, io, pin::Pin, iter};
-use futures::{prelude::*, task::Context, task::Poll};
+use std::{fmt, iter};
 use log::trace;
 use crate::upgrade::{Upgrader, UpgradeInfo};
-use crate::transport::{Transport, TransportError, TransportListener};
-use crate::Multiaddr;
+use crate::transport::{TransportError};
 
 /// Implementation of dummy `Upgrader` that doesn't do anything practice.
 ///

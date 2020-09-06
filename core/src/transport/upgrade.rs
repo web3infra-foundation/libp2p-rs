@@ -11,7 +11,6 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::{time::Duration};
 use libp2p_traits::Write2;
-use futures::channel::mpsc;
 use futures::select;
 use pin_project::{pin_project, project};
 use log::{trace};
@@ -20,7 +19,6 @@ use crate::transport::TransportListener;
 use crate::upgrade::Upgrader;
 use futures::stream::FuturesUnordered;
 use std::num::NonZeroUsize;
-use smallvec::alloc::fmt::UpperExp;
 
 //use crate::transport::security::SecurityUpgrader;
 
