@@ -37,10 +37,9 @@ impl<A, B> AndThenUpgrader<A, B> {
 impl<A, B> UpgradeInfo for AndThenUpgrader<A, B>
 {
     type Info = &'static [u8];
-    type InfoIter = iter::Once<Self::Info>;
 
-    fn protocol_info(&self) -> Self::InfoIter {
-        iter::once(b"/stack/1.0.0")
+    fn protocol_info(&self) -> Vec<Self::Info> {
+        vec![b"/stack/1.0.0"]
     }
 }
 
@@ -70,16 +69,16 @@ mod tests {
     use super::*;
     use crate::upgrade::{DummyUpgrader};
 
-    #[test]
-    fn and_then() {
-
-        let dummy = DummyUpgrader::new();
-        let n = dummy.protocol_info();
-
-        let dummy = dummy.and_then(DummyUpgrader::new());
-
-        //let s = dummy.upgrade_inbound(8);
-
-
-    }
+    // #[test]
+    // fn and_then() {
+    //
+    //     let dummy = DummyUpgrader::new();
+    //     let n = dummy.protocol_info();
+    //
+    //     let dummy = dummy.and_then(DummyUpgrader::new());
+    //
+    //     //let s = dummy.upgrade_inbound(8);
+    //
+    //
+    // }
 }

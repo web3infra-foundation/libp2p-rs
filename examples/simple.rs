@@ -11,7 +11,7 @@ use libp2p_traits::{Write2, Read2};
 use secio;
 use libp2p_core::identity::Keypair;
 use secio::handshake::Config;
-use libp2p_core::upgrade::{DummyUpgrader, Upgrader};
+use libp2p_core::upgrade::{MultistreamSelector, DummyUpgrader, Upgrader};
 
 fn main() {
     env_logger::init();
@@ -26,7 +26,8 @@ fn main() {
 
         log::info!("starting echo server...");
 
-        let t1 = TransportUpgrade::new(MemoryTransport::default(), Config::new(Keypair::generate_secp256k1()));
+        let muxer = MultistreamSelector::new(Config::new(Keypair::generate_secp256k1()), DummyUpgrader::new());
+        let t1 = TransportUpgrade::new(MemoryTransport::default(), muxer);
         //let t1 = TransportUpgrade::new(MemoryTransport::default(), DummyUpgrader::default());
         let mut listener = t1.listen_on(listen_addr).unwrap();
 
@@ -52,7 +53,8 @@ fn main() {
                 let mut msg = [1, 2, 3];
                 log::info!("start client{}", i);
 
-                let t2 = TransportUpgrade::new(MemoryTransport::default(), Config::new(Keypair::generate_secp256k1()));
+                let muxer = MultistreamSelector::new(Config::new(Keypair::generate_secp256k1()), DummyUpgrader::new());
+                let t2 = TransportUpgrade::new(MemoryTransport::default(), muxer);
                 //let t2 = TransportUpgrade::new(MemoryTransport::default(), DummyUpgrader::default());
                 let mut socket = t2.dial(addr).await?;
 

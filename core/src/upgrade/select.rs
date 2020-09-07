@@ -1,4 +1,5 @@
 
+use async_trait::async_trait;
 use libp2p_traits::{Read2, Write2};
 
 use crate::{
@@ -11,7 +12,7 @@ use crate::either::{EitherOutput, EitherName};
 /// sub-upgrade.
 ///
 /// The protocols supported by the first element have a higher priority.
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct MultistreamSelector<A, B>(A, B);
 
 impl<A, B> MultistreamSelector<A, B> {
@@ -22,19 +23,20 @@ impl<A, B> MultistreamSelector<A, B> {
         MultistreamSelector(a, b)
     }
 
-    fn protocol_info(&self) -> InfoIterChain<<A::InfoIter as IntoIterator>::IntoIter, <B::InfoIter as IntoIterator>::IntoIter>
+    fn protocol_info(&self) -> InfoIterChain<Vec<A::Info>, Vec<B::Info>>
         where
             A: UpgradeInfo,
-            B: UpgradeInfo
+            B: UpgradeInfo,
     {
-        InfoIterChain(self.0.protocol_info().into_iter(), self.1.protocol_info().into_iter())
+        InfoIterChain(self.0.protocol_info(), self.1.protocol_info())
     }
 
-    async fn select_inbound<C>(self, socket: C) -> Result<EitherOutput<A::Output, B::Output>, TransportError>
+    pub async fn select_inbound<C>(self, socket: C) -> Result<EitherOutput<A::Output, B::Output>, TransportError>
         where
-            A: Upgrader<C>,
-            B: Upgrader<C>,
-            C: Read2 + Write2
+            A: Upgrader<C> + Send,
+            B: Upgrader<C> + Send,
+            // A::InfoIter: Send,
+            // B::InfoIter: Send,
     {
         // perform multi-stream selection to get the protocol we are going to run
         // TODO: multi stream
@@ -48,11 +50,10 @@ impl<A, B> MultistreamSelector<A, B> {
         }
     }
 
-    async fn select_outbound<C>(self, socket: C) -> Result<EitherOutput<A::Output, B::Output>, TransportError>
+    pub async fn select_outbound<C>(self, socket: C) -> Result<EitherOutput<A::Output, B::Output>, TransportError>
         where
-            A: Upgrader<C>,
-            B: Upgrader<C>,
-            C: Read2 + Write2
+            A: Upgrader<C> + Send,
+            B: Upgrader<C> + Send,
     {
         // perform multi-stream selection to get the protocol we are going to run
         // TODO: multi stream
@@ -97,3 +98,64 @@ where
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::upgrade::dummy::DummyUpgrader;
+    use crate::transport::memory::MemoryTransport;
+    use crate::{Transport, Multiaddr};
+
+
+    #[test]
+    fn verify_basic() {
+
+        struct TTT<A,B>(MultistreamSelector<A, B>);
+
+        //#[async_trait]
+        impl<A, B> TTT<A,B>
+            where
+                A: Upgrader<u32> + Send,
+                B: Upgrader<u32> + Send,
+        {
+            // type Output = ();
+            // type Listener = ();
+
+            // fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> where
+            //     Self: Sized {
+            //     unimplemented!()
+            // }
+
+            async fn dial(self, _addr: Multiaddr) -> Result<(), TransportError>
+            {
+                self.0.select_outbound(100).await;
+
+                Ok(())
+            }
+        }
+
+        let transport = MemoryTransport::default();
+
+        let m = MultistreamSelector::new(DummyUpgrader::new(), DummyUpgrader::new());
+
+        let ttt = TTT(m);
+
+
+
+        async_std::task::spawn(async move {
+
+            let st = transport.dial("/memory/12345".parse().unwrap()).await.unwrap();
+
+            ttt.dial("/memory/12345".parse().unwrap()).await;
+
+
+            // let o = match s {
+            //     EitherOutput::A(info) => info,
+            //     EitherOutput::B(info) => info,
+            // };
+
+
+
+            //assert_eq!(o, 100);
+        });
+    }
+}

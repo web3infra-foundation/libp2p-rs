@@ -109,10 +109,9 @@ pub struct SecioOutput<S>
 impl UpgradeInfo for Config
 {
     type Info = &'static [u8];
-    type InfoIter = iter::Once<Self::Info>;
 
-    fn protocol_info(&self) -> Self::InfoIter {
-        iter::once(b"/secio/1.0.0")
+    fn protocol_info(&self) -> Vec<Self::Info> {
+        vec!(b"/secio/1.0.0")
     }
 }
 
