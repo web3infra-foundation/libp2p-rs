@@ -52,6 +52,7 @@ use crate::transport::TransportError;
 
 pub use self::{
     dummy::DummyUpgrader,
+    select::MultistreamSelector,
 };
 use crate::upgrade::and_then::AndThenUpgrader;
 
@@ -106,11 +107,9 @@ impl<T: AsRef<[u8]>> ProtocolName for T {
 pub trait UpgradeInfo {
     /// Opaque type representing a negotiable protocol.
     type Info: ProtocolName + Clone + Send;
-    /// Iterator returned by `protocol_info`.
-    type InfoIter: IntoIterator<Item=Self::Info>;
 
     /// Returns the list of protocols that are supported. Used during the negotiation process.
-    fn protocol_info(&self) -> Self::InfoIter;
+    fn protocol_info(&self) -> Vec<Self::Info>;
 }
 
 /// Common trait for upgrades that can be applied on inbound substreams, outbound substreams,
@@ -142,5 +141,52 @@ pub trait Upgrader<C> : UpgradeInfo {
         AndThenUpgrader::new(self, up)
     }
 
+}
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upgrade_info_multi_versions() {
+
+        #[derive(PartialEq, Debug, Clone)]
+        enum MyProtocolName {
+            Version1,
+            Version2,
+            Version3,
+        }
+
+        impl ProtocolName for MyProtocolName {
+            fn protocol_name(&self) -> &[u8] {
+                match *self {
+                    MyProtocolName::Version1 => b"/myproto/1.0",
+                    MyProtocolName::Version2 => b"/myproto/2.0",
+                    MyProtocolName::Version3 => b"/myproto/3.0",
+                }
+            }
+        }
+
+        struct P;
+
+        impl UpgradeInfo for P {
+            type Info = MyProtocolName;
+            fn protocol_info(&self) -> Vec<Self::Info> {
+                vec![
+                    MyProtocolName::Version1,
+                    MyProtocolName::Version2,
+                    MyProtocolName::Version3
+                ]
+            }
+        }
+
+        let p = P {};
+
+        assert_eq!(p.protocol_info().get(0).unwrap(), &MyProtocolName::Version1);
+        assert_eq!(p.protocol_info().get(1).unwrap(), &MyProtocolName::Version2);
+        assert_eq!(p.protocol_info().get(2).unwrap(), &MyProtocolName::Version3);
+    }
 }
 

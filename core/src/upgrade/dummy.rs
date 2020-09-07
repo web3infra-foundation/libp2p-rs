@@ -56,10 +56,9 @@ impl Clone for DummyUpgrader {
 
 impl UpgradeInfo for DummyUpgrader {
     type Info = &'static [u8];
-    type InfoIter = iter::Once<Self::Info>;
 
-    fn protocol_info(&self) -> Self::InfoIter {
-        iter::once(b"/dummy/1.0.0")
+    fn protocol_info(&self) -> Vec<Self::Info> {
+        vec!(b"/dummy/1.0.0")
     }
 }
 
