@@ -77,8 +77,8 @@ where
 #[async_trait]
 impl<A, B> StreamMuxer for EitherOutput<A, B>
 where
-    A: StreamMuxer + Send + Sync,
-    B: StreamMuxer + Send + Sync,
+    A: StreamMuxer + Send,
+    B: StreamMuxer + Send,
 {
     type Substream = EitherOutput<A::Substream, B::Substream>;
 
