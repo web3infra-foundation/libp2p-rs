@@ -300,7 +300,7 @@ pub struct ListenerUpgrade<InnerListener, TMux, TSec>
 
 impl<InnerListener, TMux, TSec> ListenerUpgrade<InnerListener, TMux, TSec>
 {
-    pub fn new(inner: InnerListener, mux: Multistream<TMux>, sec: Multistream<TSec>) -> Self {
+    pub(crate) fn new(inner: InnerListener, mux: Multistream<TMux>, sec: Multistream<TSec>) -> Self {
         Self {
             inner,
             mux,

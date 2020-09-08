@@ -51,7 +51,6 @@ use crate::transport::TransportError;
 
 pub use self::{
     dummy::DummyUpgrader,
-    multistream::Multistream,
     select::Selector,
 };
 

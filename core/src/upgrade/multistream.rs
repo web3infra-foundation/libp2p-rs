@@ -9,7 +9,7 @@ use crate::upgrade::Upgrader;
 ///
 ///
 #[derive(Debug, Clone)]
-pub struct Multistream<U>
+pub(crate) struct Multistream<U>
 {
     inner: U,
 }
