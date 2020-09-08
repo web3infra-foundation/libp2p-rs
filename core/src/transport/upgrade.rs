@@ -40,11 +40,11 @@ pub struct TransportUpgrade<InnerTrans, TMux, TSec> {
 impl<InnerTrans, TMux, TSec> TransportUpgrade<InnerTrans, TMux, TSec>
 {
     /// Wraps around a `Transport` to add upgrade capabilities.
-    pub fn new(inner: InnerTrans, mux: Multistream<TMux>, sec: Multistream<TSec>) -> Self {
+    pub fn new(inner: InnerTrans, mux: TMux, sec: TSec) -> Self {
         TransportUpgrade {
             inner,
-            sec,
-            mux,
+            sec: Multistream::new(sec),
+            mux: Multistream::new(mux),
         }
     }
 }

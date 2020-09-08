@@ -9,9 +9,9 @@ use libp2p_core::transport::{TransportListener, TransportError};
 use libp2p_traits::{Write2, Read2, ReadExt2, copy};
 
 use secio;
+use yamux;
 use libp2p_core::identity::Keypair;
-use secio::handshake::Config;
-use libp2p_core::upgrade::{Multistream, DummyUpgrader, Upgrader, Selector};
+use libp2p_core::upgrade::{DummyUpgrader, Selector};
 
 fn main() {
     env_logger::init();
@@ -26,14 +26,15 @@ fn main() {
 
         log::info!("starting echo server...");
 
-        let sec = Config::new(Keypair::generate_secp256k1());
-        let mux = Selector::new(DummyUpgrader::new(), Config::new(Keypair::generate_secp256k1()));
-        let t1 = TransportUpgrade::new(MemoryTransport::default(), Multistream::new(mux), Multistream::new(sec));
+        let sec = secio::handshake::Config::new(Keypair::generate_secp256k1());
+        let mux = Selector::new(DummyUpgrader::new(), DummyUpgrader::new());
+        //let mux = yamux::Config::new();
+        let t1 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
         //let t1 = TransportUpgrade::new(MemoryTransport::default(), DummyUpgrader::default());
         let mut listener = t1.listen_on(listen_addr).unwrap();
 
         loop {
-            let mut stream = listener.accept().await.unwrap();
+            let stream = listener.accept().await.unwrap();
             task::spawn(async move {
 
                 let (rx, tx) = stream.split();
@@ -60,9 +61,9 @@ fn main() {
                 let mut msg = [1, 2, 3];
                 log::info!("start client{}", i);
 
-                let sec = Config::new(Keypair::generate_secp256k1());
-                let mux = Selector::new(DummyUpgrader::new(), Config::new(Keypair::generate_secp256k1()));
-                let t2 = TransportUpgrade::new(MemoryTransport::default(), Multistream::new(mux), Multistream::new(sec));
+                let sec = secio::handshake::Config::new(Keypair::generate_secp256k1());
+                let mux = Selector::new(DummyUpgrader::new(), DummyUpgrader::new());
+                let t2 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
                 let mut socket = t2.dial(addr).await?;
 
                 socket.write_all2(&msg).await.unwrap();
