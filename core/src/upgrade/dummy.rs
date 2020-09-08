@@ -19,15 +19,18 @@
 // DEALINGS IN THE SOFTWARE.
 
 use async_trait::async_trait;
-use std::fmt;
+use std::{fmt, io};
 use log::trace;
 use crate::upgrade::{Upgrader, UpgradeInfo};
 use crate::transport::{TransportError};
+use crate::muxing::StreamMuxer;
+use libp2p_traits::{Read2, Write2};
 
 /// Implementation of dummy `Upgrader` that doesn't do anything practice.
 ///
 /// Useful for testing purposes.
 pub struct DummyUpgrader;
+pub struct DummyStream<T>(T);
 
 impl DummyUpgrader {
     /// Builds a new `DummyUpgrader`.
@@ -65,15 +68,54 @@ impl UpgradeInfo for DummyUpgrader {
 
 #[async_trait]
 impl<T: Send + 'static> Upgrader<T> for DummyUpgrader {
-    type Output = T;
+    type Output = DummyStream<T>;
 
     async fn upgrade_inbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
         trace!("dummy upgrader, upgrade inbound connection");
-        Ok(socket)
+        Ok(DummyStream(socket))
     }
 
     async fn upgrade_outbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
         trace!("dummy upgrader, upgrade outbound connection");
-        Ok(socket)
+        Ok(DummyStream(socket))
+    }
+}
+
+#[async_trait]
+impl<T: Send + Read2> Read2 for DummyStream<T> {
+    async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.0.read2(buf).await
+    }
+}
+#[async_trait]
+impl<T: Send + Write2> Write2 for DummyStream<T> {
+    async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.write2(buf).await
+    }
+
+    async fn flush2(&mut self) -> io::Result<()> {
+        self.0.flush2().await
+    }
+
+    async fn close2(&mut self) -> io::Result<()> {
+        self.0.close2().await
+    }
+}
+
+
+#[async_trait]
+impl<T: Send> StreamMuxer for DummyStream<T> {
+    type Substream = ();
+
+    async fn open_stream(&mut self) -> Result<Self::Substream, TransportError> {
+        Ok(())
+    }
+
+    async fn accept_stream(&mut self) -> Result<Self::Substream, TransportError> {
+        Ok(())
+    }
+
+    fn start(&self) {
+        unimplemented!()
     }
 }
