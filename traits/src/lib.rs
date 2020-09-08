@@ -153,3 +153,61 @@ impl<T: AsyncWrite + Unpin + Send> Write2 for T {
         AsyncWriteExt::close(self).await
     }
 }
+
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_split() {
+        async_std::task::block_on(async {
+            use futures::io::{self, AsyncReadExt, Cursor};
+
+            struct Test(Cursor<Vec<u8>>);
+
+            #[async_trait]
+            impl Read2 for Test {
+                async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+                    self.0.read(buf).await
+                }
+            }
+
+            #[async_trait]
+            impl Write2 for Test {
+                async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
+                    self.0.write(buf).await
+                }
+
+                async fn flush2(&mut self) -> io::Result<()> {
+                    self.0.flush().await
+                }
+
+                async fn close2(&mut self) -> io::Result<()> {
+                    self.0.close().await
+                }
+            }
+
+            // Note that for `Cursor` the read and write halves share a single
+            // seek position. This may or may not be true for other types that
+            // implement both `AsyncRead` and `AsyncWrite`.
+
+            let reader = Cursor::new(vec![1u8,2,3,4]);
+            let mut buffer = Test(Cursor::new(vec![0, 0, 0, 0, 5, 6, 7, 8]));
+            let mut writer = Cursor::new(vec![0u8; 5]);
+
+            {
+                let (buffer_reader, buffer_writer) = buffer.split();
+                copy(reader, buffer_writer).await?;
+                copy(buffer_reader, &mut writer).await?;
+            }
+
+            // assert_eq!(buffer.into_inner(), [1, 2, 3, 4, 5, 6, 7, 8]);
+            // assert_eq!(writer.into_inner(), [5, 6, 7, 8, 0]);
+            Ok::<(), Box<dyn std::error::Error>>(())
+        }).unwrap();
+    }
+}
+

@@ -57,15 +57,13 @@ impl Clone for DummyTransport {
 #[async_trait]
 impl Transport for DummyTransport {
     type Output = DummyStream;
-    type Error = io::Error;
     type Listener = DummyListener;
-    type ListenerUpgrade = futures::future::Pending<Result<Self::Output, io::Error>>;
 
-    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError<Self::Error>> {
+    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
         Err(TransportError::MultiaddrNotSupported(addr))
     }
 
-    async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError<Self::Error>> {
+    async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
         Err(TransportError::MultiaddrNotSupported(addr))
     }
 }
@@ -74,11 +72,10 @@ pub struct DummyListener;
 
 #[async_trait]
 impl TransportListener for DummyListener {
-    type Output = ();
-    type Error = io::Error;
+    type Output = DummyStream;
 
-    async fn accept(&mut self) -> Result<Self::Output, TransportError<Self::Error>> {
-        Err(TransportError::Other(io::ErrorKind::Other.into()))
+    async fn accept(&mut self) -> Result<Self::Output, TransportError> {
+        Err(TransportError::IoError(io::ErrorKind::Other.into()))
     }
 
     fn multi_addr(&self) -> Multiaddr {
