@@ -27,6 +27,7 @@ name = "concurrent"
 harness = false
 
 [dependencies]
+libp2p-core = { path = "../core", version = "0.1.0", package = "libp2p-core" }
 libp2p-traits = { path = "../traits", version = "0.1.0", package = "libp2p-traits" }
 async-trait = "0.1"
 log = "0.4.8"

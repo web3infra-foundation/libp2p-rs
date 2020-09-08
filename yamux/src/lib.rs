@@ -34,12 +34,20 @@ mod tests;
 
 pub(crate) mod connection;
 
+use async_trait::async_trait;
+use std::{fmt, io};
+use futures::prelude::*;
+use futures::stream::BoxStream;
+
 pub use crate::connection::{into_stream, Connection, Control, Mode, Stream};
 pub use crate::error::ConnectionError;
 pub use crate::frame::{
     header::{HeaderDecodeError, StreamId},
     FrameDecodeError,
 };
+use libp2p_traits::{Write2, Read2};
+use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
+use libp2p_core::transport::TransportError;
 
 const DEFAULT_CREDIT: u32 = 256 * 1024; // as per yamux specification
 
@@ -104,6 +112,11 @@ impl Default for Config {
 }
 
 impl Config {
+    /// make a default yamux config
+    ///
+    pub fn new() -> Self {
+        Config::default()
+    }
     /// Set the receive window (must be >= 256 KiB).
     ///
     /// # Panics
@@ -166,4 +179,152 @@ static_assertions::const_assert! {
 // Check that we can safely cast a `u32` to a `usize`.
 static_assertions::const_assert! {
     std::mem::size_of::<u32>() <= std::mem::size_of::<usize>()
+}
+
+
+
+/// A Yamux connection.
+///
+/// This implementation isn't capable of detecting when the underlying socket changes its address,
+/// and no [`StreamMuxerEvent::AddressChange`] event is ever emitted.
+pub struct Yamux(Inner);
+
+impl fmt::Debug for Yamux {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("Yamux")
+    }
+}
+
+struct Inner {
+    /// The [`futures::stream::Stream`] of incoming substreams.
+    incoming: BoxStream<'static, Result<Stream, TransportError>>,
+    /// Handle to control the connection.
+    control: Control,
+}
+
+
+impl Yamux
+{
+    /// Create a new Yamux connection.
+    pub fn new<C>(io: C, mut cfg: Config, mode: Mode) -> Self
+        where C: Read2 + Write2 + Send + Unpin + 'static
+    {
+        cfg.set_read_after_close(false);
+        let conn = Connection::new(io, cfg, mode);
+        let ctrl = conn.control();
+        let inner = Inner {
+            incoming: into_stream(conn).err_into().boxed(),
+            control: ctrl,
+        };
+        Yamux(inner)
+    }
+}
+
+
+type Poll<T> = std::task::Poll<Result<T, ConnectionError>>;
+
+/*impl<S> libp2p_core::StreamMuxer for Yamux<S>
+    where
+        S: Stream<Item = Result<yamux::Stream, ConnectionError>> + Unpin
+{
+    type Substream = yamux::Stream;
+    type OutboundSubstream = OpenSubstreamToken;
+    type Error = ConnectionError;
+
+    fn poll_event(&self, c: &mut Context) -> Poll<StreamMuxerEvent<Self::Substream>> {
+        let mut inner = self.0.lock();
+        match ready!(inner.incoming.poll_next_unpin(c)) {
+            Some(Ok(s)) => Poll::Ready(Ok(StreamMuxerEvent::InboundSubstream(s))),
+            Some(Err(e)) => Poll::Ready(Err(e)),
+            None => Poll::Ready(Err(yamux::ConnectionError::Closed.into()))
+        }
+    }
+
+    fn open_outbound(&self) -> Self::OutboundSubstream {
+        OpenSubstreamToken(())
+    }
+
+    fn poll_outbound(&self, c: &mut Context, _: &mut OpenSubstreamToken) -> Poll<Self::Substream> {
+        let mut inner = self.0.lock();
+        Pin::new(&mut inner.control).poll_open_stream(c).map_err(ConnectionError)
+    }
+
+    fn destroy_outbound(&self, _: Self::OutboundSubstream) {
+        self.0.lock().control.abort_open_stream()
+    }
+
+    fn read_substream(&self, c: &mut Context, s: &mut Self::Substream, b: &mut [u8]) -> Poll<usize> {
+        Pin::new(s).poll_read(c, b).map_err(|e| ConnectionError(e.into()))
+    }
+
+    fn write_substream(&self, c: &mut Context, s: &mut Self::Substream, b: &[u8]) -> Poll<usize> {
+        Pin::new(s).poll_write(c, b).map_err(|e| ConnectionError(e.into()))
+    }
+
+    fn flush_substream(&self, c: &mut Context, s: &mut Self::Substream) -> Poll<()> {
+        Pin::new(s).poll_flush(c).map_err(|e| ConnectionError(e.into()))
+    }
+
+    fn shutdown_substream(&self, c: &mut Context, s: &mut Self::Substream) -> Poll<()> {
+        Pin::new(s).poll_close(c).map_err(|e| ConnectionError(e.into()))
+    }
+
+    fn destroy_substream(&self, _: Self::Substream) { }
+
+    fn close(&self, c: &mut Context) -> Poll<()> {
+        let mut inner = self.0.lock();
+        if let std::task::Poll::Ready(x) = Pin::new(&mut inner.control).poll_close(c) {
+            return Poll::Ready(x.map_err(ConnectionError))
+        }
+        while let std::task::Poll::Ready(x) = inner.incoming.poll_next_unpin(c) {
+            match x {
+                Some(Ok(_))  => {} // drop inbound stream
+                Some(Err(e)) => return Poll::Ready(Err(e)),
+                None => return Poll::Ready(Ok(()))
+            }
+        }
+        Poll::Pending
+    }
+
+    fn flush_all(&self, _: &mut Context) -> Poll<()> {
+        Poll::Ready(Ok(()))
+    }
+}
+*/
+
+
+impl UpgradeInfo for Config {
+    type Info = &'static [u8];
+
+    fn protocol_info(&self) -> Vec<Self::Info> {
+        vec!(b"/yamux/1.0.0")
+    }
+}
+
+#[async_trait]
+impl<T> Upgrader<T> for Config
+    where T: Read2 + Write2 + Send + Unpin + 'static
+{
+    type Output = Yamux;
+
+    async fn upgrade_inbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
+        Ok(Yamux::new(socket, self, Mode::Server))
+    }
+
+    async fn upgrade_outbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
+        Ok(Yamux::new(socket, self, Mode::Client))
+    }
+}
+
+// impl Into<TransportError> for ConnectionError {
+//     fn into(self: ConnectionError) -> TransportError {
+//         TransportError::Internal
+//     }
+// }
+
+impl From<ConnectionError> for TransportError {
+    fn from(_: ConnectionError) -> Self {
+        // TODO: make a mux error catalog for secio
+        TransportError::Internal
+    }
 }
