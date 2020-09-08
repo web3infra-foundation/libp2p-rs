@@ -19,6 +19,8 @@ pub use multiaddr;
 pub mod identity;
 mod peer_id;
 
+pub mod multistream;
+
 pub use identity::PublicKey;
 pub use peer_id::PeerId;
 

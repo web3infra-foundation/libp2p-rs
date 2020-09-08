@@ -154,9 +154,7 @@ impl<T: AsyncWrite + Unpin + Send> Write2 for T {
     }
 }
 
-
-
-
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -210,4 +208,4 @@ mod tests {
         }).unwrap();
     }
 }
-
+ */
