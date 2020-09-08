@@ -50,24 +50,14 @@ impl<A, B, C> Upgrader<C> for Selector<A, B>
 
     async fn upgrade_inbound(self, socket: C, info: <Self as UpgradeInfo>::Info) -> Result<EitherOutput<A::Output, B::Output>, TransportError>
     {
-        // let _protocols = self.protocol_info();
-        // let a = self.0.protocol_info().into_iter().next().unwrap();
-        // let info = EitherName::<A::Info, B::Info>::A(a);
-
         match info {
             EitherName::A(info) => Ok(EitherOutput::A(self.0.upgrade_inbound(socket, info).await?)),
             EitherName::B(info) => Ok(EitherOutput::B(self.1.upgrade_inbound(socket, info).await?)),
         }
     }
 
-    async fn upgrade_outbound(self, socket: C, _info: <Self as UpgradeInfo>::Info) -> Result<EitherOutput<A::Output, B::Output>, TransportError>
+    async fn upgrade_outbound(self, socket: C, info: <Self as UpgradeInfo>::Info) -> Result<EitherOutput<A::Output, B::Output>, TransportError>
     {
-        // perform multi-stream selection to get the protocol we are going to run
-        // TODO: multi stream
-        let _protocols = self.protocol_info();
-        let a = self.0.protocol_info().into_iter().next().unwrap();
-        let info = EitherName::<A::Info, B::Info>::A(a);
-
         match info {
             EitherName::A(info) => Ok(EitherOutput::A(self.0.upgrade_outbound(socket, info).await?)),
             EitherName::B(info) => Ok(EitherOutput::B(self.1.upgrade_outbound(socket, info).await?)),

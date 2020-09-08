@@ -105,7 +105,7 @@ impl<T: AsRef<[u8]>> ProtocolName for T {
 
 pub trait UpgradeInfo {
     /// Opaque type representing a negotiable protocol.
-    type Info: ProtocolName + Clone + Send;
+    type Info: ProtocolName + Clone + Send + std::fmt::Debug;
 
     /// Returns the list of protocols that are supported. Used during the negotiation process.
     fn protocol_info(&self) -> Vec<Self::Info>;

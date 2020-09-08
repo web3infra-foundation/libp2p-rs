@@ -27,7 +27,7 @@ fn main() {
         log::info!("starting echo server...");
 
         let sec = Config::new(Keypair::generate_secp256k1());
-        let mux = Selector::new(Config::new(Keypair::generate_secp256k1()), DummyUpgrader::new());
+        let mux = Selector::new(DummyUpgrader::new(), Config::new(Keypair::generate_secp256k1()));
         let t1 = TransportUpgrade::new(MemoryTransport::default(), Multistream::new(mux), Multistream::new(sec));
         //let t1 = TransportUpgrade::new(MemoryTransport::default(), DummyUpgrader::default());
         let mut listener = t1.listen_on(listen_addr).unwrap();
@@ -38,7 +38,7 @@ fn main() {
 
                 let (rx, tx) = stream.split();
 
-                copy(rx, tx).await.unwrap();
+                copy(rx, tx).await?;
 
 
                 // let mut msg = vec![0; 4096];
@@ -61,7 +61,7 @@ fn main() {
                 log::info!("start client{}", i);
 
                 let sec = Config::new(Keypair::generate_secp256k1());
-                let mux = Selector::new(Config::new(Keypair::generate_secp256k1()), DummyUpgrader::new());
+                let mux = Selector::new(DummyUpgrader::new(), Config::new(Keypair::generate_secp256k1()));
                 let t2 = TransportUpgrade::new(MemoryTransport::default(), Multistream::new(mux), Multistream::new(sec));
                 let mut socket = t2.dial(addr).await?;
 

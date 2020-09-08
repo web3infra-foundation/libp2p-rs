@@ -330,7 +330,7 @@ where
 
         let mux = self.mux.clone();
 
-        mux.select_outbound(sec_socket).await
+        mux.select_inbound(sec_socket).await
     }
 
     fn multi_addr(&self) -> Multiaddr {

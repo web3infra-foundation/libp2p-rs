@@ -36,6 +36,8 @@ impl<U> Multistream<U>
         //TODO: multi stream select ...
         let protocols = self.inner.protocol_info();
         let a = protocols.into_iter().next().unwrap();
+
+        log::info!("upgrade_inbound {:?}", a);
         self.inner.upgrade_inbound(socket, a).await
     }
 
@@ -48,6 +50,7 @@ impl<U> Multistream<U>
         let protocols = self.inner.protocol_info();
         let a = protocols.into_iter().next().unwrap();
 
+        log::info!("upgrade_outbound {:?}", a);
         self.inner.upgrade_outbound(socket, a).await
     }
 }
