@@ -3,7 +3,7 @@
 /// Some panic logic has been removed, some error handling has been removed, and an error has been added.
 ///
 use futures::prelude::*;
-use log::{debug, trace};
+use log::{debug, trace, info};
 use std::cmp::Ordering;
 
 use crate::{
@@ -215,6 +215,8 @@ where
         .write2(&pub_ephemeral_context.state.remote.nonce)
         .await?;
     secure_stream.verify_nonce().await?;
+
+    info!("handshake for {:?} successfully done!", pub_ephemeral_context.state.remote.local.nonce);
 
     Ok((
         secure_stream,

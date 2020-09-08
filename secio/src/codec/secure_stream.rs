@@ -88,7 +88,7 @@ where
             let nonce_len = self.read2(&mut nonce).await?;
 
             trace!(
-                "received nonce={}, my_nonce={}",
+                "verify_nonce nonce={}, my_nonce={}",
                 nonce_len,
                 self.nonce.len()
             );
