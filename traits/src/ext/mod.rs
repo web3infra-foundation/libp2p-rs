@@ -1,12 +1,6 @@
-mod split;
-mod bilock;
-
 use crate::{Read2, Write2};
 
-use split::{
-    ReadHalf,
-    WriteHalf,
-};
+use futures::{AsyncRead, AsyncReadExt, AsyncWrite, io::{ReadHalf, WriteHalf}};
 
 pub trait ReadExt2: Read2 {
     /// Helper method for splitting this read/write object into two halves.
@@ -38,11 +32,74 @@ pub trait ReadExt2: Read2 {
     /// assert_eq!(writer.into_inner(), [5, 6, 7, 8, 0]);
     /// # Ok::<(), Box<dyn std::error::Error>>(()) }).unwrap();
     /// ```
-    fn split(self) -> (ReadHalf<Self>, WriteHalf<Self>)
-        where Self: Write2 + Sized,
+    fn split2(self) -> (ReadHalf<Self>, WriteHalf<Self>)
+    where
+        Self: Sized + AsyncRead + AsyncWrite
     {
-        split::split(self)
+        self.split()
     }
 }
 
 impl<R: Read2 + ?Sized> ReadExt2 for R {}
+
+#[cfg(test)]
+mod tests {
+
+    use std::io;
+    use async_std::task;
+    use async_std::net::{TcpListener, TcpStream};
+
+    use super::{Read2, Write2, ReadExt2, AsyncWrite};
+
+    #[test]
+    fn test_split() {
+        task::block_on(async {
+            let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+            let addr = listener.local_addr().expect("local_addr");
+
+            let server = task::spawn(async move {
+                let (s, _addr) = listener.accept().await.expect("accept");
+                let (mut reader, mut writer) = s.split2();
+
+                task::spawn(async move {
+                    let mut buf = vec![0; 512];
+                    loop {
+                        let n = reader.read2(&mut buf).await.expect("read2");
+                        if n == 0 {
+                            break;
+                        }
+                    }
+                });
+
+                task::spawn(async move {
+                    let data = b"helloworld";
+                    for _ in 0_i32..5 {
+                        writer.write_all2(data).await.expect("write_all2");
+                    }
+                });
+            });
+
+            let client = task::spawn(async move {
+                let s = TcpStream::connect(addr).await.expect("connect");
+                let (mut reader, mut writer) = s.split2();
+
+                task::spawn(async move {
+                    let mut buf = vec![0; 512];
+                    loop {
+                        let n = reader.read2(&mut buf).await.expect("read2");
+                        if n == 0 {
+                            break;
+                        }
+                    }
+                });
+
+                task::spawn(async move {
+                    let data = b"helloworld";
+                    for _ in 0_i32..5 {
+                        writer.write_all2(data).await.expect("write_all2");
+                    }
+                });
+            });
+        });
+    }
+}
