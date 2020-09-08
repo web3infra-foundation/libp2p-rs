@@ -14,7 +14,6 @@ use crate::codec::secure_stream::SecureStream;
 use futures::{AsyncRead, AsyncWrite};
 use libp2p_core::upgrade::{Upgrader, UpgradeInfo};
 use libp2p_core::transport::TransportError;
-use std::iter;
 use libp2p_traits::{Read2, Write2};
 
 mod handshake_context;
