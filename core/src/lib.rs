@@ -25,3 +25,6 @@ pub use peer_id::PeerId;
 pub mod transport;
 pub use transport::Transport;
 pub use multiaddr::Multiaddr;
+
+pub mod upgrade;
+pub mod muxing;

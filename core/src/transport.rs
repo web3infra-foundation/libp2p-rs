@@ -27,9 +27,13 @@
 
 //use crate::ConnectedPoint;
 use async_trait::async_trait;
+use libp2p_traits::{Read2, Write2};
 use multiaddr::Multiaddr;
 use std::{error::Error, fmt};
 use std::time::Duration;
+use futures::prelude::*;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 // pub mod and_then;
 // pub mod boxed;
@@ -40,7 +44,8 @@ pub mod dummy;
 pub mod memory;
 pub mod timeout;
 //pub mod listener;
-// pub mod upgrade;
+pub mod upgrade;
+//pub mod security;
 //
 // mod optional;
 
@@ -82,10 +87,7 @@ pub trait Transport {
     /// Typically the output contains at least a handle to a data stream (i.e. a
     /// connection or a substream multiplexer on top of a connection) that
     /// provides APIs for sending and receiving data through the connection.
-    type Output;
-
-    /// An error that occurred during connection setup.
-    type Error: Error;
+    type Output: Send;
 
     /// A stream of [`Output`](Transport::Output)s for inbound connections.
     ///
@@ -98,23 +100,12 @@ pub trait Transport {
     /// is possible to report non-fatal errors by producing a [`ListenerEvent::Error`].
     type Listener;
 
-    /// A pending [`Output`](Transport::Output) for an inbound connection,
-    /// obtained from the [`Listener`](Transport::Listener) stream.
-    ///
-    /// After a connection has been accepted by the transport, it may need to go through
-    /// asynchronous post-processing (i.e. protocol upgrade negotiations). Such
-    /// post-processing should not block the `Listener` from producing the next
-    /// connection, hence further connection setup proceeds asynchronously.
-    /// Once a `ListenerUpgrade` future resolves it yields the [`Output`](Transport::Output)
-    /// of the connection setup process.
-    type ListenerUpgrade;
-
     /// Listens on the given [`Multiaddr`], producing a stream of pending, inbound connections
     /// and addresses this transport is listening on (cf. [`ListenerEvent`]).
     ///
     /// Returning an error from the stream is considered fatal. The listener can also report
     /// non-fatal errors by producing a [`ListenerEvent::Error`].
-    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError<Self::Error>>
+    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError>
     where
         Self: Sized;
 
@@ -122,7 +113,7 @@ pub trait Transport {
     ///
     /// If [`TransportError::MultiaddrNotSupported`] is returned, it may be desirable to
     /// try an alternative [`Transport`], if available.
-    async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError<Self::Error>>
+    async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError>
     where
         Self: Sized;
 
@@ -154,6 +145,7 @@ pub trait Transport {
     }
 
     /*
+
     /// Turns the transport into an abstract boxed (i.e. heap-allocated) transport.
     fn boxed(self) -> boxed::Boxed<Self::Output, Self::Error>
     where Self: Sized + Clone + Send + Sync + 'static,
@@ -232,19 +224,39 @@ pub trait TransportListener {
     /// Typically the output contains at least a handle to a data stream (i.e. a
     /// connection or a substream multiplexer on top of a connection) that
     /// provides APIs for sending and receiving data through the connection.
-    type Output;
-    type Error: Error;
+    type Output: Send;
 
     /// The Listener handles the inbound connections
-    async fn accept(&mut self) -> Result<Self::Output, TransportError<Self::Error>>;
+    async fn accept(&mut self) -> Result<Self::Output, TransportError>;
 
     /// Returns the local multiaddr listened on
     fn multi_addr(&self) -> Multiaddr;
 
+    fn incoming(&mut self) -> Incoming<Self>
+        where Self: Sized
+    {
+        Incoming(self)
+    }
     // /// Returns the local network address
     // fn local_addr(&self) -> io::Result<SocketAddr>;
 }
 
+pub struct Incoming<'a, T>(&'a mut T);
+
+impl<'a, T> Stream for Incoming<'a, T>
+    where
+        T: TransportListener
+{
+    type Item = Result<T::Output, TransportError>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let future = self.0.accept();
+        futures::pin_mut!(future);
+
+        let socket = futures::ready!(future.poll(cx))?;
+        Poll::Ready(Some(Ok(socket)))
+    }
+}
 
 /// Event produced by [`Transport::Listener`]s.
 ///
@@ -389,8 +401,8 @@ impl<TUpgr, TErr> ListenerEvent<TUpgr, TErr> {
 
 /// An error during [dialing][Transport::dial] or [listening][Transport::listen_on]
 /// on a [`Transport`].
-#[derive(Debug, Clone)]
-pub enum TransportError<TErr> {
+#[derive(Debug)]
+pub enum TransportError {
     /// The [`Multiaddr`] passed as parameter is not supported.
     ///
     /// Contains back the same address.
@@ -399,48 +411,45 @@ pub enum TransportError<TErr> {
     /// The transport timed out.
     Timeout,
 
+    /// The memory transport is unreachable.
+    Unreachable,
+
+    /// Internal error
+    Internal,
+
     /// Any other error that a [`Transport`] may produce.
-    Other(TErr),
+    IoError(std::io::Error),
 }
 
-impl<TErr> TransportError<TErr> {
-    /// Applies a function to the the error in [`TransportError::Other`].
-    pub fn map<TNewErr>(self, map: impl FnOnce(TErr) -> TNewErr) -> TransportError<TNewErr> {
-        match self {
-            TransportError::MultiaddrNotSupported(addr) => TransportError::MultiaddrNotSupported(addr),
-            TransportError::Timeout => TransportError::Timeout,
-            TransportError::Other(err) => TransportError::Other(map(err)),
-        }
+impl From<std::io::Error> for TransportError {
+    /// Converts IO error to TransportError
+    fn from(e: std::io::Error) -> Self {
+        TransportError::IoError(e)
     }
 }
 
-impl<TErr: Error> From<TErr> for TransportError<TErr> {
-    /// Conerts IO error to TransportError
-    fn from(e: TErr) -> Self {
-        TransportError::Other(e)
-    }
-}
-
-impl<TErr> fmt::Display for TransportError<TErr>
-where TErr: fmt::Display,
+impl fmt::Display for TransportError
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TransportError::MultiaddrNotSupported(addr) => write!(f, "Multiaddr is not supported: {}", addr),
             TransportError::Timeout => write!(f, "Operation timeout"),
-            TransportError::Other(err) => write!(f, "{}", err),
+            TransportError::Unreachable => write!(f, "Memory transport unreachable"),
+            TransportError::Internal => write!(f, "Internal error"),
+            TransportError::IoError(err) => write!(f, "IO error {}", err),
         }
     }
 }
 
-impl<TErr> Error for TransportError<TErr>
-where TErr: Error + 'static,
+impl Error for TransportError
 {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             TransportError::MultiaddrNotSupported(_) => None,
             TransportError::Timeout => None,
-            TransportError::Other(err) => Some(err),
+            TransportError::Unreachable => None,
+            TransportError::Internal => None,
+            TransportError::IoError(err) => Some(err),
         }
     }
 }

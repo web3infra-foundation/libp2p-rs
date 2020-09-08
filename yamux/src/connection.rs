@@ -375,6 +375,7 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
     /// public method itself in order to guarantee proper closing in
     /// case of an error or at EOF.
     async fn next(&mut self) -> Result<Option<Stream>> {
+
         loop {
             self.garbage_collect().await?;
 
