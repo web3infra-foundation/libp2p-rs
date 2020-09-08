@@ -20,6 +20,7 @@ use crate::upgrade::Upgrader;
 use futures::stream::FuturesUnordered;
 use std::num::NonZeroUsize;
 use crate::upgrade::multistream::Multistream;
+use crate::muxing::StreamMuxer;
 
 //use crate::transport::security::SecurityUpgrader;
 
@@ -34,10 +35,17 @@ pub struct TransportUpgrade<InnerTrans, TMux, TSec> {
     // protector: Option<TProtector>,
     mux: Multistream<TMux>,
     sec: Multistream<TSec>,
-    // mux_up: Option<TMuxUpgrader>,
 }
 
 impl<InnerTrans, TMux, TSec> TransportUpgrade<InnerTrans, TMux, TSec>
+where
+    InnerTrans: Transport + Send,
+    InnerTrans::Listener: TransportListener,
+    InnerTrans::Output: Read2 + Write2 + Unpin,
+    TSec: Upgrader<InnerTrans::Output> + Send + Clone,
+    TSec::Output: Read2 + Write2 + Unpin,
+    TMux: Upgrader<TSec::Output> + Send + Clone,
+    TMux::Output: StreamMuxer
 {
     /// Wraps around a `Transport` to add upgrade capabilities.
     pub fn new(inner: InnerTrans, mux: TMux, sec: TSec) -> Self {
@@ -267,9 +275,11 @@ impl<InnerTrans, TMux, TSec> Transport for TransportUpgrade<InnerTrans, TMux, TS
 where
     InnerTrans: Transport + Send,
     InnerTrans::Listener: TransportListener,
-    //InnerTrans::Output: Read2 + Write2 + Unpin,
+    InnerTrans::Output: Read2 + Write2 + Unpin,
     TSec: Upgrader<InnerTrans::Output> + Send + Clone,
+    TSec::Output: Read2 + Write2 + Unpin,
     TMux: Upgrader<TSec::Output> + Send + Clone,
+    TMux::Output: StreamMuxer
 {
     type Output = TMux::Output;
     type Listener = ListenerUpgrade<InnerTrans::Listener, TMux, TSec>;
@@ -315,7 +325,9 @@ where
     InnerListener: TransportListener + Send,
     InnerListener::Output: Read2 + Write2 + Unpin,
     TSec: Upgrader<InnerListener::Output> + Send + Clone,
+    TSec::Output: Read2 + Write2 + Unpin,
     TMux: Upgrader<TSec::Output> + Send + Clone,
+    TMux::Output: StreamMuxer,
 {
     type Output = TMux::Output;
 

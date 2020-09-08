@@ -48,6 +48,7 @@ pub use crate::frame::{
 use libp2p_traits::{Write2, Read2};
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
 use libp2p_core::transport::TransportError;
+use libp2p_core::muxing::StreamMuxer;
 
 const DEFAULT_CREDIT: u32 = 256 * 1024; // as per yamux specification
 
@@ -220,77 +221,24 @@ impl Yamux
     }
 }
 
-
-type Poll<T> = std::task::Poll<Result<T, ConnectionError>>;
-
-/*impl<S> libp2p_core::StreamMuxer for Yamux<S>
-    where
-        S: Stream<Item = Result<yamux::Stream, ConnectionError>> + Unpin
+#[async_trait]
+impl StreamMuxer for Yamux
 {
-    type Substream = yamux::Stream;
-    type OutboundSubstream = OpenSubstreamToken;
-    type Error = ConnectionError;
+    type Substream = Stream;
 
-    fn poll_event(&self, c: &mut Context) -> Poll<StreamMuxerEvent<Self::Substream>> {
-        let mut inner = self.0.lock();
-        match ready!(inner.incoming.poll_next_unpin(c)) {
-            Some(Ok(s)) => Poll::Ready(Ok(StreamMuxerEvent::InboundSubstream(s))),
-            Some(Err(e)) => Poll::Ready(Err(e)),
-            None => Poll::Ready(Err(yamux::ConnectionError::Closed.into()))
-        }
+    async fn open_stream(&mut self) -> Result<Self::Substream, TransportError> {
+        let s = self.0.control.open_stream().await?;
+        Ok(s)
     }
 
-    fn open_outbound(&self) -> Self::OutboundSubstream {
-        OpenSubstreamToken(())
+    async fn accept_stream(&mut self) -> Result<Self::Substream, TransportError> {
+        unimplemented!()
     }
 
-    fn poll_outbound(&self, c: &mut Context, _: &mut OpenSubstreamToken) -> Poll<Self::Substream> {
-        let mut inner = self.0.lock();
-        Pin::new(&mut inner.control).poll_open_stream(c).map_err(ConnectionError)
-    }
-
-    fn destroy_outbound(&self, _: Self::OutboundSubstream) {
-        self.0.lock().control.abort_open_stream()
-    }
-
-    fn read_substream(&self, c: &mut Context, s: &mut Self::Substream, b: &mut [u8]) -> Poll<usize> {
-        Pin::new(s).poll_read(c, b).map_err(|e| ConnectionError(e.into()))
-    }
-
-    fn write_substream(&self, c: &mut Context, s: &mut Self::Substream, b: &[u8]) -> Poll<usize> {
-        Pin::new(s).poll_write(c, b).map_err(|e| ConnectionError(e.into()))
-    }
-
-    fn flush_substream(&self, c: &mut Context, s: &mut Self::Substream) -> Poll<()> {
-        Pin::new(s).poll_flush(c).map_err(|e| ConnectionError(e.into()))
-    }
-
-    fn shutdown_substream(&self, c: &mut Context, s: &mut Self::Substream) -> Poll<()> {
-        Pin::new(s).poll_close(c).map_err(|e| ConnectionError(e.into()))
-    }
-
-    fn destroy_substream(&self, _: Self::Substream) { }
-
-    fn close(&self, c: &mut Context) -> Poll<()> {
-        let mut inner = self.0.lock();
-        if let std::task::Poll::Ready(x) = Pin::new(&mut inner.control).poll_close(c) {
-            return Poll::Ready(x.map_err(ConnectionError))
-        }
-        while let std::task::Poll::Ready(x) = inner.incoming.poll_next_unpin(c) {
-            match x {
-                Some(Ok(_))  => {} // drop inbound stream
-                Some(Err(e)) => return Poll::Ready(Err(e)),
-                None => return Poll::Ready(Ok(()))
-            }
-        }
-        Poll::Pending
-    }
-
-    fn flush_all(&self, _: &mut Context) -> Poll<()> {
-        Poll::Ready(Ok(()))
+    fn start(&self) {
+        unimplemented!()
     }
 }
-*/
 
 
 impl UpgradeInfo for Config {
