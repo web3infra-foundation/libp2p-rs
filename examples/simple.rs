@@ -26,7 +26,7 @@ fn main() {
 
         log::info!("starting echo server...");
 
-        let sec = secio::handshake::Config::new(Keypair::generate_secp256k1());
+        let sec = secio::Config::new(Keypair::generate_secp256k1());
         let mux = Selector::new(DummyUpgrader::new(), DummyUpgrader::new());
         //let mux = yamux::Config::new();
         let t1 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
@@ -61,7 +61,7 @@ fn main() {
                 let mut msg = [1, 2, 3];
                 log::info!("start client{}", i);
 
-                let sec = secio::handshake::Config::new(Keypair::generate_secp256k1());
+                let sec = secio::Config::new(Keypair::generate_secp256k1());
                 let mux = Selector::new(DummyUpgrader::new(), DummyUpgrader::new());
                 let t2 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
                 let mut socket = t2.dial(addr).await?;

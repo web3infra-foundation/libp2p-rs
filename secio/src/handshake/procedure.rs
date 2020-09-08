@@ -10,8 +10,8 @@ use crate::{
     crypto::{cipher::CipherType, new_stream, BoxStreamCipher, CryptoMode},
     error::SecioError,
     exchange,
+    Config,
     handshake::handshake_context::HandshakeContext,
-    handshake::Config,
     handshake_proto::Exchange,
     Digest, EphemeralPublicKey,
 };
@@ -31,7 +31,7 @@ use prost::Message;
 /// On success, returns an object that implements the `AsyncWrite` and `AsyncRead` trait,
 /// plus the public key of the remote, plus the ephemeral public key used during
 /// negotiation.
-pub(in crate::handshake) async fn handshake<T>(
+pub(crate) async fn handshake<T>(
     socket: T,
     config: Config,
 ) -> Result<(SecureStream<T>, PublicKey, EphemeralPublicKey), SecioError>
