@@ -2,12 +2,11 @@ use async_std::{
     net::{TcpListener, TcpStream},
     task,
 };
-use log::{error, info};
-
+use futures::TryStreamExt;
 use libp2p_traits::{Read2, Write2};
+use log::{error, info};
 use mplex::connection::Connection;
 use std::time::Duration;
-use futures::TryStreamExt;
 
 fn main() {
     env_logger::init();
