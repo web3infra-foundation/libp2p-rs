@@ -28,6 +28,8 @@ pub use multiaddr;
 pub use secio;
 /// Re-pub yamux crate
 pub use yamux;
+/// Re-pub mplex crate
+pub use mplex;
 /// Underlying transport protocols wrapper
 // pub(crate) mod transports;
 // pub use transports;
