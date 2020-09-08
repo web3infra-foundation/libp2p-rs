@@ -19,7 +19,6 @@ use nohash_hasher::IntMap;
 use std::fmt;
 use stream::Stream;
 
-
 /// `Control` to `Connection` commands.
 #[derive(Debug)]
 pub enum ControlCommand {

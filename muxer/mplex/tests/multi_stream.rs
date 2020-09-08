@@ -1,10 +1,10 @@
-use futures::{channel, prelude::*, TryStreamExt};
 use async_std::{
     net::{TcpListener, TcpStream},
     task,
 };
+use futures::{channel, prelude::*, TryStreamExt};
 use libp2p_traits::{Read2, Write2};
-use mplex::connection::{Connection, self};
+use mplex::connection::{self, Connection};
 
 #[test]
 fn multi_stream() {
@@ -14,9 +14,7 @@ fn multi_stream() {
 
         // server
         task::spawn(async {
-            let listener = TcpListener::bind("127.0.0.1:0")
-                .await
-                .unwrap();
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let listener_addr = listener.local_addr().unwrap();
             let _res = addr_sender.send(listener_addr);
             let (socket, _) = listener.accept().await.unwrap();
@@ -35,15 +33,13 @@ fn multi_stream() {
                         };
                     }
                     Ok(())
-                }).await;
+                })
+                .await;
         });
-
 
         // client
         let listener_addr = addr_receiver.await.unwrap();
-        let socket = TcpStream::connect(&listener_addr)
-            .await
-            .unwrap();
+        let socket = TcpStream::connect(&listener_addr).await.unwrap();
 
         let conn = Connection::new(socket);
         let mut ctrl = conn.control().expect("get control failed");
