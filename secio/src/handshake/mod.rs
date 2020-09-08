@@ -121,12 +121,12 @@ impl<T> Upgrader<T> for Config
 {
     type Output = SecureStream<T>;
 
-    async fn upgrade_inbound(self, socket: T) -> Result<Self::Output, TransportError> {
+    async fn upgrade_inbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
         let (handle, _, _) = self.handshake(socket).await.unwrap();
         Ok(handle)
     }
 
-    async fn upgrade_outbound(self, socket: T) -> Result<Self::Output, TransportError> {
+    async fn upgrade_outbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
         let (handle, _, _) = self.handshake(socket).await.unwrap();
         Ok(handle)
     }

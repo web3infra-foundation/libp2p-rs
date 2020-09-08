@@ -43,7 +43,7 @@
 pub(crate) mod select;
 // mod transfer;
 pub(crate) mod dummy;
-pub(crate) mod and_then;
+//pub(crate) mod and_then;
 pub(crate) mod multistream;
 
 use async_trait::async_trait;
@@ -55,7 +55,7 @@ pub use self::{
     multistream::Multistream,
     select::Selector,
 };
-use crate::upgrade::and_then::AndThenUpgrader;
+//use crate::upgrade::and_then::AndThenUpgrader;
 
 
 /// Types serving as protocol names.
@@ -125,22 +125,22 @@ pub trait Upgrader<C> : UpgradeInfo {
     /// method is called to start the handshake.
     ///
     /// The `info` is the identifier of the protocol, as produced by `protocol_info`.
-    async fn upgrade_inbound(self, socket: C) -> Result<Self::Output, TransportError>;
+    async fn upgrade_inbound(self, socket: C, info: Self::Info) -> Result<Self::Output, TransportError>;
 
     /// After we have determined that the remote supports one of the protocols we support, this
     /// method is called to start the handshake.
     ///
     /// The `info` is the identifier of the protocol, as produced by `protocol_info`.
-    async fn upgrade_outbound(self, socket: C) -> Result<Self::Output, TransportError>;
+    async fn upgrade_outbound(self, socket: C, info: Self::Info) -> Result<Self::Output, TransportError>;
 
-    fn and_then<U>(self, up: U) -> AndThenUpgrader<Self, U>
-        where
-            Self: Sized,
-            Self: Upgrader<C>,
-            U: Upgrader<<Self as Upgrader<C>>::Output>,
-    {
-        AndThenUpgrader::new(self, up)
-    }
+    // fn and_then<U>(self, up: U) -> AndThenUpgrader<Self, U>
+    //     where
+    //         Self: Sized,
+    //         Self: Upgrader<C>,
+    //         U: Upgrader<<Self as Upgrader<C>>::Output>,
+    // {
+    //     AndThenUpgrader::new(self, up)
+    // }
 
 }
 

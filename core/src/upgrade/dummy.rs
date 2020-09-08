@@ -67,12 +67,12 @@ impl UpgradeInfo for DummyUpgrader {
 impl<T: Send + 'static> Upgrader<T> for DummyUpgrader {
     type Output = T;
 
-    async fn upgrade_inbound(self, socket: T) -> Result<Self::Output, TransportError> {
+    async fn upgrade_inbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
         trace!("dummy upgrader, upgrade inbound connection");
         Ok(socket)
     }
 
-    async fn upgrade_outbound(self, socket: T) -> Result<Self::Output, TransportError> {
+    async fn upgrade_outbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
         trace!("dummy upgrader, upgrade outbound connection");
         Ok(socket)
     }
