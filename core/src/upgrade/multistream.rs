@@ -35,10 +35,9 @@ impl<U> Multistream<U>
     {
         trace!("starting multistream select for inbound...");
         //TODO: multi stream select ...
-        let p = self.inner.protocol_info();
-        // //
-
-        self.inner.upgrade_inbound(socket).await
+        let protocols = self.inner.protocol_info();
+        let a = protocols.into_iter().next().unwrap();
+        self.inner.upgrade_inbound(socket, a).await
     }
 
     pub(crate) async fn select_outbound<C>(self, socket: C) -> Result<U::Output, TransportError>
@@ -46,10 +45,11 @@ impl<U> Multistream<U>
             U: Upgrader<C> + Send
     {
         trace!("starting multistream select for outbound...");
-        let p = self.inner.protocol_info();
-        // //
+        //TODO: multi stream select ...
+        let protocols = self.inner.protocol_info();
+        let a = protocols.into_iter().next().unwrap();
 
-        self.inner.upgrade_outbound(socket).await
+        self.inner.upgrade_outbound(socket, a).await
     }
 }
 
