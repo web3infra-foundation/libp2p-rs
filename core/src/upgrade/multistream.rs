@@ -1,8 +1,7 @@
 
-use async_trait::async_trait;
 use log::{trace};
 use crate::transport::TransportError;
-use crate::upgrade::{UpgradeInfo, Upgrader};
+use crate::upgrade::Upgrader;
 
 //b"/multistream/1.0.0"
 

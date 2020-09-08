@@ -2,7 +2,6 @@
 ///
 /// Some panic logic has been removed, some error handling has been removed, and an error has been added.
 ///
-use futures::prelude::*;
 use log::{debug, trace, info};
 use std::cmp::Ordering;
 

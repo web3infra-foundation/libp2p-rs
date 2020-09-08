@@ -20,8 +20,6 @@ use crate::upgrade::Upgrader;
 use futures::stream::FuturesUnordered;
 use std::num::NonZeroUsize;
 use crate::upgrade::multistream::Multistream;
-use crate::either::EitherOutput;
-use std::ops::Mul;
 
 //use crate::transport::security::SecurityUpgrader;
 

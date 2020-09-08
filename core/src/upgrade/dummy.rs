@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use async_trait::async_trait;
-use std::{fmt, iter};
+use std::fmt;
 use log::trace;
 use crate::upgrade::{Upgrader, UpgradeInfo};
 use crate::transport::{TransportError};
