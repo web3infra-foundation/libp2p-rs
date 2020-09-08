@@ -13,33 +13,44 @@ use crate::either::{EitherOutput, EitherName};
 ///
 /// The protocols supported by the first element have a higher priority.
 #[derive(Debug, Copy, Clone)]
-pub struct MultistreamSelector<A, B>(A, B);
+pub struct Selector<A, B>(A, B);
 
-impl<A, B> MultistreamSelector<A, B> {
-    /// Combines two upgraders into an `MultistreamSelector`.
+impl<A, B> Selector<A, B> {
+    /// Combines two upgraders into an `Selector`.
     ///
     /// The protocols supported by the first element have a higher priority.
     pub fn new(a: A, b: B) -> Self {
-        MultistreamSelector(a, b)
+        Selector(a, b)
     }
+}
 
-    fn protocol_info(&self) -> InfoIterChain<Vec<A::Info>, Vec<B::Info>>
-        where
-            A: UpgradeInfo,
-            B: UpgradeInfo,
+impl<A, B> UpgradeInfo for Selector<A, B>
+    where
+        A: UpgradeInfo,
+        B: UpgradeInfo,
+{
+    type Info = EitherName<A::Info, B::Info>;
+
+    fn protocol_info(&self) -> Vec<Self::Info>
     {
-        InfoIterChain(self.0.protocol_info(), self.1.protocol_info())
+        let mut v = Vec::default();
+        v.extend(self.0.protocol_info().into_iter().map(|a| EitherName::A(a)));
+        v.extend(self.1.protocol_info().into_iter().map(|a| EitherName::B(a)));
+        v
     }
+}
 
-    pub async fn select_inbound<C>(self, socket: C) -> Result<EitherOutput<A::Output, B::Output>, TransportError>
-        where
-            A: Upgrader<C> + Send,
-            B: Upgrader<C> + Send,
-            // A::InfoIter: Send,
-            // B::InfoIter: Send,
+#[async_trait]
+impl<A, B, C> Upgrader<C> for Selector<A, B>
+    where
+        A: Upgrader<C> + Send,
+        B: Upgrader<C> + Send,
+        C: Send + 'static
+{
+    type Output = EitherOutput<A::Output, B::Output>;
+
+    async fn upgrade_inbound(self, socket: C) -> Result<EitherOutput<A::Output, B::Output>, TransportError>
     {
-        // perform multi-stream selection to get the protocol we are going to run
-        // TODO: multi stream
         let _protocols = self.protocol_info();
         let a = self.0.protocol_info().into_iter().next().unwrap();
         let info = EitherName::<A::Info, B::Info>::A(a);
@@ -50,10 +61,7 @@ impl<A, B> MultistreamSelector<A, B> {
         }
     }
 
-    pub async fn select_outbound<C>(self, socket: C) -> Result<EitherOutput<A::Output, B::Output>, TransportError>
-        where
-            A: Upgrader<C> + Send,
-            B: Upgrader<C> + Send,
+    async fn upgrade_outbound(self, socket: C) -> Result<EitherOutput<A::Output, B::Output>, TransportError>
     {
         // perform multi-stream selection to get the protocol we are going to run
         // TODO: multi stream
@@ -67,95 +75,56 @@ impl<A, B> MultistreamSelector<A, B> {
         }
     }
 }
-
-
-/// Iterator that combines the protocol names of twp upgrades.
-#[derive(Debug, Clone)]
-pub struct InfoIterChain<A, B>(A, B);
-
-impl<A, B> Iterator for InfoIterChain<A, B>
-where
-    A: Iterator,
-    B: Iterator
-{
-    type Item = EitherName<A::Item, B::Item>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(info) = self.0.next() {
-            return Some(EitherName::A(info))
-        }
-        if let Some(info) = self.1.next() {
-            return Some(EitherName::B(info))
-        }
-        None
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let (min1, max1) = self.0.size_hint();
-        let (min2, max2) = self.1.size_hint();
-        let max = max1.and_then(move |m1| max2.and_then(move |m2| m1.checked_add(m2)));
-        (min1.saturating_add(min2), max)
-    }
-}
+//
+//
+// /// Iterator that combines the protocol names of twp upgrades.
+// #[derive(Debug, Clone)]
+// pub struct InfoIterChain<A, B>(A, B);
+//
+// impl<A, B> Iterator for InfoIterChain<A, B>
+// where
+//     A: Iterator,
+//     B: Iterator
+// {
+//     type Item = EitherName<A::Item, B::Item>;
+//
+//     fn next(&mut self) -> Option<Self::Item> {
+//         if let Some(info) = self.0.next() {
+//             return Some(EitherName::A(info))
+//         }
+//         if let Some(info) = self.1.next() {
+//             return Some(EitherName::B(info))
+//         }
+//         None
+//     }
+//
+//     fn size_hint(&self) -> (usize, Option<usize>) {
+//         let (min1, max1) = self.0.size_hint();
+//         let (min2, max2) = self.1.size_hint();
+//         let max = max1.and_then(move |m1| max2.and_then(move |m2| m1.checked_add(m2)));
+//         (min1.saturating_add(min2), max)
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::upgrade::dummy::DummyUpgrader;
-    use crate::transport::memory::MemoryTransport;
-    use crate::{Transport, Multiaddr};
-
 
     #[test]
     fn verify_basic() {
 
-        struct TTT<A,B>(MultistreamSelector<A, B>);
+        let m = Selector::new(DummyUpgrader::new(), DummyUpgrader::new());
 
-        //#[async_trait]
-        impl<A, B> TTT<A,B>
-            where
-                A: Upgrader<u32> + Send,
-                B: Upgrader<u32> + Send,
-        {
-            // type Output = ();
-            // type Listener = ();
+        async_std::task::block_on(async move {
+            let output = m.upgrade_outbound(100).await.unwrap();
 
-            // fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> where
-            //     Self: Sized {
-            //     unimplemented!()
-            // }
+            let o = match output {
+                EitherOutput::A(a) => a,
+                EitherOutput::B(a) => a,
+            };
 
-            async fn dial(self, _addr: Multiaddr) -> Result<(), TransportError>
-            {
-                self.0.select_outbound(100).await;
-
-                Ok(())
-            }
-        }
-
-        let transport = MemoryTransport::default();
-
-        let m = MultistreamSelector::new(DummyUpgrader::new(), DummyUpgrader::new());
-
-        let ttt = TTT(m);
-
-
-
-        async_std::task::spawn(async move {
-
-            let st = transport.dial("/memory/12345".parse().unwrap()).await.unwrap();
-
-            ttt.dial("/memory/12345".parse().unwrap()).await;
-
-
-            // let o = match s {
-            //     EitherOutput::A(info) => info,
-            //     EitherOutput::B(info) => info,
-            // };
-
-
-
-            //assert_eq!(o, 100);
+            assert_eq!(o, 100);
         });
     }
 }

@@ -44,7 +44,7 @@ pub(crate) mod select;
 // mod transfer;
 pub(crate) mod dummy;
 pub(crate) mod and_then;
-//pub(crate) mod multistream;
+pub(crate) mod multistream;
 
 use async_trait::async_trait;
 use crate::transport::TransportError;
@@ -52,7 +52,8 @@ use crate::transport::TransportError;
 
 pub use self::{
     dummy::DummyUpgrader,
-    select::MultistreamSelector,
+    multistream::Multistream,
+    select::Selector,
 };
 use crate::upgrade::and_then::AndThenUpgrader;
 

@@ -6,12 +6,12 @@ use libp2p_core::{Multiaddr, Transport};
 use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::transport::memory::MemoryTransport;
 use libp2p_core::transport::{TransportListener, TransportError};
-use libp2p_traits::{Write2, Read2};
+use libp2p_traits::{Write2, Read2, ReadExt2, copy};
 
 use secio;
 use libp2p_core::identity::Keypair;
 use secio::handshake::Config;
-use libp2p_core::upgrade::{MultistreamSelector, DummyUpgrader, Upgrader};
+use libp2p_core::upgrade::{Multistream, DummyUpgrader, Upgrader, Selector};
 
 fn main() {
     env_logger::init();
@@ -26,19 +26,26 @@ fn main() {
 
         log::info!("starting echo server...");
 
-        let muxer = MultistreamSelector::new(Config::new(Keypair::generate_secp256k1()), DummyUpgrader::new());
-        let t1 = TransportUpgrade::new(MemoryTransport::default(), muxer);
+        let sec = Config::new(Keypair::generate_secp256k1());
+        let mux = Selector::new(Config::new(Keypair::generate_secp256k1()), DummyUpgrader::new());
+        let t1 = TransportUpgrade::new(MemoryTransport::default(), Multistream::new(mux), Multistream::new(sec));
         //let t1 = TransportUpgrade::new(MemoryTransport::default(), DummyUpgrader::default());
         let mut listener = t1.listen_on(listen_addr).unwrap();
 
         loop {
             let mut stream = listener.accept().await.unwrap();
             task::spawn(async move {
-                let mut msg = vec![0; 4096];
-                loop {
-                    let n = stream.read2(&mut msg).await?;
-                    stream.write2(&msg[..n]).await?;
-                }
+
+                let (rx, tx) = stream.split();
+
+                copy(rx, tx).await.unwrap();
+
+
+                // let mut msg = vec![0; 4096];
+                // loop {
+                //     let n = stream.read2(&mut msg).await?;
+                //     stream.write2(&msg[..n]).await?;
+                // }
 
                 Ok::<(), std::io::Error>(())
             });
@@ -53,13 +60,13 @@ fn main() {
                 let mut msg = [1, 2, 3];
                 log::info!("start client{}", i);
 
-                let muxer = MultistreamSelector::new(Config::new(Keypair::generate_secp256k1()), DummyUpgrader::new());
-                let t2 = TransportUpgrade::new(MemoryTransport::default(), muxer);
-                //let t2 = TransportUpgrade::new(MemoryTransport::default(), DummyUpgrader::default());
+                let sec = Config::new(Keypair::generate_secp256k1());
+                let mux = Selector::new(Config::new(Keypair::generate_secp256k1()), DummyUpgrader::new());
+                let t2 = TransportUpgrade::new(MemoryTransport::default(), Multistream::new(mux), Multistream::new(sec));
                 let mut socket = t2.dial(addr).await?;
 
-                socket.write_all2(&msg).await?;
-                socket.read_exact2(&mut msg).await?;
+                socket.write_all2(&msg).await.unwrap();
+                socket.read_exact2(&mut msg).await.unwrap();
                 log::info!("client{} got {:?}", i, msg);
 
                 socket.close2().await?;

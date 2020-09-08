@@ -19,8 +19,9 @@ use crate::transport::TransportListener;
 use crate::upgrade::Upgrader;
 use futures::stream::FuturesUnordered;
 use std::num::NonZeroUsize;
-use crate::upgrade::select::MultistreamSelector;
+use crate::upgrade::multistream::Multistream;
 use crate::either::EitherOutput;
+use std::ops::Mul;
 
 //use crate::transport::security::SecurityUpgrader;
 
@@ -29,27 +30,29 @@ use crate::either::EitherOutput;
 /// upgrade capabilities to all inbound and outbound connection attempts.
 ///
 #[derive(Debug, Clone)]
-pub struct TransportUpgrade<InnerTrans, A, B> {
+pub struct TransportUpgrade<InnerTrans, TMux, TSec> {
     inner: InnerTrans,
 
     // protector: Option<TProtector>,
-    up: MultistreamSelector<A, B>,
+    mux: Multistream<TMux>,
+    sec: Multistream<TSec>,
     // mux_up: Option<TMuxUpgrader>,
 }
 
-impl<InnerTrans, A, B> TransportUpgrade<InnerTrans, A, B>
+impl<InnerTrans, TMux, TSec> TransportUpgrade<InnerTrans, TMux, TSec>
 {
     /// Wraps around a `Transport` to add upgrade capabilities.
-    pub fn new(inner: InnerTrans, up: MultistreamSelector<A, B>) -> Self {
+    pub fn new(inner: InnerTrans, mux: Multistream<TMux>, sec: Multistream<TSec>) -> Self {
         TransportUpgrade {
             inner,
-            up
+            sec,
+            mux,
         }
     }
 }
 /*
 #[async_trait]
-impl<T, InnerTrans, A, B, F, Fut> Transport for TransportUpgrade<InnerTrans, A, B>
+impl<T, InnerTrans, TMux, TSec, F, Fut> Transport for TransportUpgrade<InnerTrans, TMux, TSec>
 where
     InnerTrans: Transport,
     InnerTrans::Listener: TransportListener + Send,
@@ -262,21 +265,21 @@ where
 
 
 #[async_trait]
-impl<InnerTrans, A, B> Transport for TransportUpgrade<InnerTrans, A, B>
+impl<InnerTrans, TMux, TSec> Transport for TransportUpgrade<InnerTrans, TMux, TSec>
 where
     InnerTrans: Transport + Send,
     InnerTrans::Listener: TransportListener,
     //InnerTrans::Output: Read2 + Write2 + Unpin,
-    A: Upgrader<InnerTrans::Output> + Send + Clone,
-    B: Upgrader<InnerTrans::Output> + Send + Clone,
+    TSec: Upgrader<InnerTrans::Output> + Send + Clone,
+    TMux: Upgrader<TSec::Output> + Send + Clone,
 {
-    type Output = EitherOutput<A::Output, B::Output>;
-    type Listener = ListenerUpgrade<InnerTrans::Listener, A, B>;
+    type Output = TMux::Output;
+    type Listener = ListenerUpgrade<InnerTrans::Listener, TMux, TSec>;
 
     fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError>
     {
         let inner_listener = self.inner.listen_on(addr)?;
-        let listener = ListenerUpgrade::new(inner_listener, self.up);
+        let listener = ListenerUpgrade::new(inner_listener, self.mux, self.sec);
 
         Ok(listener)
     }
@@ -284,44 +287,52 @@ where
     async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError>
     {
         let socket = self.inner.dial(addr).await?;
-        self.up.select_outbound(socket).await
+        let sec_socket = self.sec.select_outbound(socket).await?;
+        
+        self.mux.select_outbound(sec_socket).await
     }
 }
-pub struct ListenerUpgrade<InnerListener, A, B>
+pub struct ListenerUpgrade<InnerListener, TMux, TSec>
 {
     inner: InnerListener,
-    up: MultistreamSelector<A, B>,
+    mux: Multistream<TMux>,
+    sec: Multistream<TSec>,
     // TODO: add threshold support here
 }
 
-impl<InnerListener, A, B> ListenerUpgrade<InnerListener, A, B>
+impl<InnerListener, TMux, TSec> ListenerUpgrade<InnerListener, TMux, TSec>
 {
-    pub fn new(inner: InnerListener, up: MultistreamSelector<A, B>) -> Self {
+    pub fn new(inner: InnerListener, mux: Multistream<TMux>, sec: Multistream<TSec>) -> Self {
         Self {
             inner,
-            up,
+            mux,
+            sec
         }
     }
 }
 
 #[async_trait]
-impl<InnerListener, A, B> TransportListener for ListenerUpgrade<InnerListener, A, B>
+impl<InnerListener, TMux, TSec> TransportListener for ListenerUpgrade<InnerListener, TMux, TSec>
 where
     InnerListener: TransportListener + Send,
     InnerListener::Output: Read2 + Write2 + Unpin,
-    A: Upgrader<InnerListener::Output> + Send + Clone,
-    B: Upgrader<InnerListener::Output> + Send + Clone,
+    TSec: Upgrader<InnerListener::Output> + Send + Clone,
+    TMux: Upgrader<TSec::Output> + Send + Clone,
 {
-    type Output = EitherOutput<A::Output, B::Output>;
+    type Output = TMux::Output;
 
     async fn accept(&mut self) -> Result<Self::Output, TransportError> {
 
         let stream = self.inner.accept().await?;
-        let up = self.up.clone();
+        let sec = self.sec.clone();
 
         trace!("got a new connection, upgrading...");
         //futures_timer::Delay::new(Duration::from_secs(3)).await;
-        up.select_inbound(stream).await
+        let sec_socket = sec.select_inbound(stream).await?;
+
+        let mux = self.mux.clone();
+
+        mux.select_outbound(sec_socket).await
     }
 
     fn multi_addr(&self) -> Multiaddr {
@@ -342,7 +353,7 @@ mod tests {
 
     #[test]
     fn listen() {
-        let transport = TransportUpgrade::new(MemoryTransport::default(), MultistreamSelector::new(DummyUpgrader::new(), DummyUpgrader::new()));
+        let transport = TransportUpgrade::new(MemoryTransport::default(), Multistream::new(DummyUpgrader::new(), DummyUpgrader::new()));
         let mut listener = transport.listen_on("/memory/1639174018481".parse().unwrap()).unwrap();
 
         futures::executor::block_on(async move {

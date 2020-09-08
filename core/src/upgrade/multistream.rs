@@ -1,70 +1,55 @@
 
 use async_trait::async_trait;
+use log::{trace};
 use crate::transport::TransportError;
-use std::iter;
 use crate::upgrade::{UpgradeInfo, Upgrader};
-use std::collections::HashMap;
 
+//b"/multistream/1.0.0"
 
-type BoxedUpgrader = Box<dyn Upgrader<T>>;
-
-/// Upgrade that uses multistream-selector to select protocols.
+/// Multistream that uses multistream-select to select protocols.
 ///
 ///
 #[derive(Debug, Clone)]
-pub struct MultistreamSelector
+pub struct Multistream<U>
 {
-    handlers: HashMap<String, BoxedUpgrader>,
+    inner: U,
 }
 
-impl MultistreamSelector {
-    /// Combines two upgrades into an `MultistreamSelector`.
+impl<U> Multistream<U> {
+    /// Add `Multistream` on top of any `Upgrader`·
     ///
     /// The protocols supported by the first element have a higher priority.
-    pub fn new() -> Self
+    pub fn new(inner: U) -> Self
     {
         Self {
-            handlers: HashMap::new(),
+            inner,
         }
     }
-
-    pub fn add_handler(&mut self, up: BoxedUpgrader) {
-        self.handlers.insert(up.protocol_info().into_iter().next().unwrap(), up);
-    }
 }
 
-#[async_trait]
-impl UpgradeInfo for MultistreamSelector
+impl<U> Multistream<U>
 {
-    type Info = &'static [u8];
-    type InfoIter = iter::Once<Self::Info>;
-
-    fn protocol_info(&self) -> Self::InfoIter {
-        iter::once(b"/multistream/1.0.0")
-    }
-}
-
-#[async_trait]
-impl<C> Upgrader<C> for MultistreamSelector
-where
-    C: Send + 'static
-{
-    type Output = BoxedUpgrader;
-
-    async fn upgrade_inbound(self, socket: C) -> Result<Self::Output, TransportError> {
+    pub(crate) async fn select_inbound<C>(self, socket: C) -> Result<U::Output, TransportError>
+        where
+            U: Upgrader<C> + Send
+    {
+        trace!("starting multistream select for inbound...");
         //TODO: multi stream select ...
+        let p = self.inner.protocol_info();
+        // //
 
-        let mut h = self.handlers;
-
-        let t = h.remove("default".parse().unwrap()).unwrap();
-        t.clone().upgrade_inbound(socket).await
+        self.inner.upgrade_inbound(socket).await
     }
 
-    async fn upgrade_outbound(self, socket: C) -> Result<Self::Output, TransportError> {
-        let mut h = self.handlers;
+    pub(crate) async fn select_outbound<C>(self, socket: C) -> Result<U::Output, TransportError>
+        where
+            U: Upgrader<C> + Send
+    {
+        trace!("starting multistream select for outbound...");
+        let p = self.inner.protocol_info();
+        // //
 
-        let t = h.remove("default".parse().unwrap()).unwrap();
-        t.clone().upgrade_outbound(socket).await
+        self.inner.upgrade_outbound(socket).await
     }
 }
 
@@ -80,7 +65,7 @@ mod tests {
         let dummy = DummyUpgrader::new();
         let n = dummy.protocol_info();
 
-        let dummy = dummy.and_then(DummyUpgrader::new());
+        //let dummy = dummy.and_then(DummyUpgrader::new());
 
         //let s = dummy.upgrade_inbound(8);
 
