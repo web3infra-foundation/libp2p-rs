@@ -68,7 +68,8 @@ impl<A, B, C> Upgrader<C> for Selector<A, B>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::upgrade::dummy::DummyUpgrader;
+    use crate::upgrade::dummy::{DummyUpgrader, DummyStream};
+    use crate::muxing::StreamMuxer;
 
     #[test]
     fn verify_basic() {
@@ -76,14 +77,16 @@ mod tests {
         let m = Selector::new(DummyUpgrader::new(), DummyUpgrader::new());
 
         async_std::task::block_on(async move {
-            let output = m.upgrade_outbound(100).await.unwrap();
+            let output = m.upgrade_outbound(100u32, EitherName::A(b"")).await.unwrap();
 
-            let o = match output {
+            let mut o = match output {
                 EitherOutput::A(a) => a,
                 EitherOutput::B(a) => a,
             };
 
-            assert_eq!(o, 100);
+            let oo = o.open_stream().await.unwrap();
+
+            assert_eq!(oo, ());
         });
     }
 }

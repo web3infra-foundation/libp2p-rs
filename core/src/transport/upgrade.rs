@@ -22,8 +22,6 @@ use std::num::NonZeroUsize;
 use crate::upgrade::multistream::Multistream;
 use crate::muxing::StreamMuxer;
 
-//use crate::transport::security::SecurityUpgrader;
-
 
 /// A `TransportUpgrade` is a `Transport` that wraps another `Transport` and adds
 /// upgrade capabilities to all inbound and outbound connection attempts.
@@ -58,28 +56,35 @@ where
 }
 /*
 #[async_trait]
-impl<T, InnerTrans, TMux, TSec, F, Fut> Transport for TransportUpgrade<InnerTrans, TMux, TSec>
+impl<F, Fut, InnerTrans, TMux, TSec> Transport for TransportUpgrade<InnerTrans, TMux, TSec>
 where
-    InnerTrans: Transport,
+    InnerTrans: Transport + Send,
     InnerTrans::Listener: TransportListener + Send,
-    //S: Upgrader<InnerTrans::Output> + Send + Clone,
-    //F: FnMut(InnerTrans::Output) -> Fut,
-    //Fut: Future<Output = Result<S::Output, TransportError>>,
+    InnerTrans::Output: Read2 + Write2 + Unpin,
+    TSec: Upgrader<InnerTrans::Output> + Send + Clone,
+    TSec::Output: Read2 + Write2 + Unpin,
+    TMux: Upgrader<TSec::Output> + Send + Clone,
+    TMux::Output: StreamMuxer,
 {
-    type Output = T;//S::Output;
+    type Output = TMux::Output;
     type Listener = ListenerUpgrade<InnerTrans::Listener, F, Fut>;
 
     fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError>
     where
-        S: Upgrader<<<InnerTrans as Transport>::Listener as TransportListener>::Output> + Send + Clone,
+        //TSec: Upgrader<<<InnerTrans as Transport>::Listener as TransportListener>::Output> + Send + Clone,
+        //TSec::Output: Read2 + Write2 + Unpin,
+        //TMux: Upgrader<TSec::Output> + Send + Clone,
+        //TMux::Output: StreamMuxer,
         F: FnMut(<<InnerTrans as Transport>::Listener as TransportListener>::Output) -> Fut,
-        Fut: Future<Output = Result<T, TransportError>>,
+        //Fut: Future<Output = Result<TMux::Output, TransportError>>,
     {
         let inner_listener = self.inner.listen_on(addr)?;
         let listener = ListenerUpgrade::new(inner_listener, |s| {
-            let up = self.up.clone();
+            let sec = self.sec.clone();
+            let mux = self.mux.clone();
             async move {
-                up.upgrade_inbound(s).await
+                let t = sec.select_outbound(s).await?;
+                mux.select_outbound(t).await
             }
         });
 
@@ -88,13 +93,16 @@ where
 
     async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError>
     where
-        S: Upgrader<InnerTrans::Output> + Send + Clone,
-        F: FnMut(InnerTrans::Output) -> Fut,
-        Fut: Future<Output = Result<S::Output, TransportError>>,
+        TSec: Upgrader<InnerTrans::Output> + Send + Clone,
+        TSec::Output: Read2 + Write2 + Unpin,
+        TMux: Upgrader<TSec::Output> + Send + Clone,
+        TMux::Output: StreamMuxer,
+        // F: FnMut(<<InnerTrans as Transport>::Listener as TransportListener>::Output) -> Fut,
+        // Fut: Future<Output = Result<TMux::Output, TransportError>>,
     {
         let stream = self.inner.dial(addr).await?;
-        let u = self.up.upgrade_outbound(stream).await?;
-        Ok(u)
+        let u = self.sec.select_outbound(stream).await?;
+        self.mux.select_outbound(u).await
     }
 }
 
@@ -266,9 +274,7 @@ where
     }
 
 }
-
 */
-
 
 #[async_trait]
 impl<InnerTrans, TMux, TSec> Transport for TransportUpgrade<InnerTrans, TMux, TSec>
@@ -296,7 +302,7 @@ where
     {
         let socket = self.inner.dial(addr).await?;
         let sec_socket = self.sec.select_outbound(socket).await?;
-        
+
         self.mux.select_outbound(sec_socket).await
     }
 }
@@ -350,27 +356,13 @@ where
     }
 }
 
-
 // TODO:
-/*
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::transport::memory::MemoryTransport;
     use crate::upgrade::dummy::DummyUpgrader;
-
-    #[test]
-    fn listen() {
-        let transport = TransportUpgrade::new(MemoryTransport::default(), Multistream::new(DummyUpgrader::new(), DummyUpgrader::new()));
-        let mut listener = transport.listen_on("/memory/1639174018481".parse().unwrap()).unwrap();
-
-        futures::executor::block_on(async move {
-            let s = listener.accept().await.unwrap();
-        });
-    }
-
 
     #[test]
     fn communicating_between_dialer_and_listener() {
@@ -382,34 +374,25 @@ mod tests {
         let t1_addr: Multiaddr = format!("/memory/{}", rand_port).parse().unwrap();
         let cloned_t1_addr = t1_addr.clone();
 
-        let t1 = TransportUpgrade::new(MemoryTransport::default(), DummyUpgrader::new());
+        let t1 = TransportUpgrade::new(MemoryTransport::default(), DummyUpgrader::new(), DummyUpgrader::new());
 
         let listener = async move {
             let mut listener = t1.listen_on(t1_addr.clone()).unwrap();
 
-            // kingwel, TBD  upgrade memory transport
-
-            // let upgrade = listener.filter_map(|ev| futures::future::ready(
-            //     ListenerEvent::into_upgrade(ev.unwrap())
-            // )).next().await.unwrap();
-
-            // let mut socket = upgrade.0.await.unwrap();
-
             let mut socket = listener.accept().await.unwrap();
 
             let mut buf = [0; 3];
-            socket.read_exact(&mut buf).await.unwrap();
+            socket.read_exact2(&mut buf).await.unwrap();
 
             assert_eq!(buf, msg);
         };
 
         // Setup dialer.
-
-        let t2 = TransportUpgrade::new(MemoryTransport::default(), DummyUpgrader::new());
+        let t2 = TransportUpgrade::new(MemoryTransport::default(), DummyUpgrader::new(), DummyUpgrader::new());
 
         let dialer = async move {
             let mut socket = t2.dial(cloned_t1_addr).await.unwrap();
-            socket.write_all(&msg).await.unwrap();
+            socket.write_all2(&msg).await.unwrap();
         };
 
         // Wait for both to finish.
@@ -418,4 +401,3 @@ mod tests {
     }
 }
 
-*/

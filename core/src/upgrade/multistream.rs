@@ -62,15 +62,7 @@ mod tests {
     use crate::upgrade::{DummyUpgrader};
 
     #[test]
-    fn and_then() {
-
-        let dummy = DummyUpgrader::new();
-        let n = dummy.protocol_info();
-
-        //let dummy = dummy.and_then(DummyUpgrader::new());
-
-        //let s = dummy.upgrade_inbound(8);
-
+    fn to_be_done() {
 
     }
 }
