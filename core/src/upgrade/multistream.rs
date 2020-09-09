@@ -1,7 +1,7 @@
 
 use log::{trace};
 use crate::transport::TransportError;
-use crate::upgrade::Upgrader;
+use crate::upgrade::{Upgrader, ProtocolName};
 
 //b"/multistream/1.0.0"
 
@@ -37,7 +37,7 @@ impl<U> Multistream<U>
         let protocols = self.inner.protocol_info();
         let a = protocols.into_iter().next().unwrap();
 
-        log::info!("upgrade_inbound {:?}", a);
+        log::info!("select_inbound {:?}", a.protocol_name_str());
         self.inner.upgrade_inbound(socket, a).await
     }
 
@@ -50,7 +50,7 @@ impl<U> Multistream<U>
         let protocols = self.inner.protocol_info();
         let a = protocols.into_iter().next().unwrap();
 
-        log::info!("upgrade_outbound {:?}", a);
+        log::info!("select_outbound {:?}", a.protocol_name_str());
         self.inner.upgrade_outbound(socket, a).await
     }
 }

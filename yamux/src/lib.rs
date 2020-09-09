@@ -36,6 +36,7 @@ pub(crate) mod connection;
 
 use async_trait::async_trait;
 use std::{fmt, io};
+use log::{trace};
 use futures::prelude::*;
 use futures::stream::BoxStream;
 
@@ -49,6 +50,8 @@ use libp2p_traits::{Write2, Read2};
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
 use libp2p_core::transport::TransportError;
 use libp2p_core::muxing::StreamMuxer;
+use futures::StreamExt;
+use futures::future::BoxFuture;
 
 const DEFAULT_CREDIT: u32 = 256 * 1024; // as per yamux specification
 
@@ -198,7 +201,7 @@ impl fmt::Debug for Yamux {
 
 struct Inner {
     /// The [`futures::stream::Stream`] of incoming substreams.
-    incoming: BoxStream<'static, Result<Stream, TransportError>>,
+    incoming: Option<BoxStream<'static, Result<Stream, TransportError>>>,
     /// Handle to control the connection.
     control: Control,
 }
@@ -214,7 +217,7 @@ impl Yamux
         let conn = Connection::new(io, cfg, mode);
         let ctrl = conn.control();
         let inner = Inner {
-            incoming: into_stream(conn).err_into().boxed(),
+            incoming: Some(into_stream(conn).err_into().boxed()),
             control: ctrl,
         };
         Yamux(inner)
@@ -227,19 +230,35 @@ impl StreamMuxer for Yamux
     type Substream = Stream;
 
     async fn open_stream(&mut self) -> Result<Self::Substream, TransportError> {
+        trace!("opening a new outbound substream for yamux...");
         let s = self.0.control.open_stream().await?;
         Ok(s)
     }
 
     async fn accept_stream(&mut self) -> Result<Self::Substream, TransportError> {
-        unimplemented!()
+        trace!("waiting for a new inbound substream for yamux...");
+
+        if let Some(mut s) = self.0.incoming.as_mut() {
+            Ok(s.next().await.unwrap().unwrap())
+        } else {
+            Err(TransportError::Internal)
+        }
+        // let ss = self.0.incoming.unwrap().next().await.ok_or(TransportError::Internal);
+        // Ok(ss.unwrap().unwrap())
     }
 
-    fn start(&self) {
-        unimplemented!()
+    fn take_inner_stream(&mut self) -> Option<BoxStream<'static, Result<Self::Substream, TransportError>>> {
+        let stream = self.0.incoming.take();
+        stream
+    }
+
+    async fn start(&mut self) {
     }
 }
 
+fn start(f: impl Fn(BoxFuture<()>) + Send + 'static) {
+
+}
 
 impl UpgradeInfo for Config {
     type Info = &'static [u8];
@@ -256,10 +275,12 @@ impl<T> Upgrader<T> for Config
     type Output = Yamux;
 
     async fn upgrade_inbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
+        trace!("upgrading yamux inbound");
         Ok(Yamux::new(socket, self, Mode::Server))
     }
 
     async fn upgrade_outbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
+        trace!("upgrading yamux outbound");
         Ok(Yamux::new(socket, self, Mode::Client))
     }
 }
