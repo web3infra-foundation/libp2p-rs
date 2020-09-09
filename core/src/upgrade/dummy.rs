@@ -115,7 +115,7 @@ impl<T: Send> StreamMuxer for DummyStream<T> {
         Ok(())
     }
 
-    fn start(&self) {
+    async fn start(&mut self) {
         unimplemented!()
     }
 }

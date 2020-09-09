@@ -93,7 +93,7 @@ where
         unimplemented!()
     }
 
-    fn start(&self) {
+    async fn start(&mut self) {
         unimplemented!()
     }
 }
