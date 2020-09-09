@@ -25,6 +25,7 @@ use crate::upgrade::{Upgrader, UpgradeInfo};
 use crate::transport::{TransportError};
 use crate::muxing::StreamMuxer;
 use libp2p_traits::{Read2, Write2};
+use futures::future::BoxFuture;
 
 /// Implementation of dummy `Upgrader` that doesn't do anything practice.
 ///
@@ -115,7 +116,7 @@ impl<T: Send> StreamMuxer for DummyStream<T> {
         Ok(())
     }
 
-    async fn start(&mut self) {
-        unimplemented!()
+    fn task(&mut self) -> Option<BoxFuture<'static, ()>> {
+        None
     }
 }

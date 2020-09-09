@@ -35,7 +35,7 @@ mod tests;
 pub(crate) mod connection;
 
 use async_trait::async_trait;
-use std::{fmt, io};
+use std::fmt;
 use log::{trace};
 use futures::prelude::*;
 use futures::stream::BoxStream;
@@ -50,8 +50,9 @@ use libp2p_traits::{Write2, Read2};
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
 use libp2p_core::transport::TransportError;
 use libp2p_core::muxing::StreamMuxer;
-use futures::StreamExt;
+use futures::{StreamExt, TryStreamExt, SinkExt};
 use futures::future::BoxFuture;
+use futures::channel::mpsc;
 
 const DEFAULT_CREDIT: u32 = 256 * 1024; // as per yamux specification
 
@@ -204,6 +205,9 @@ struct Inner {
     incoming: Option<BoxStream<'static, Result<Stream, TransportError>>>,
     /// Handle to control the connection.
     control: Control,
+
+    stream_sender: mpsc::Sender<Stream>,
+    stream_receiver: mpsc::Receiver<Stream>,
 }
 
 
@@ -216,9 +220,12 @@ impl Yamux
         cfg.set_read_after_close(false);
         let conn = Connection::new(io, cfg, mode);
         let ctrl = conn.control();
+        let (tx, rx) = mpsc::channel(1);
         let inner = Inner {
             incoming: Some(into_stream(conn).err_into().boxed()),
             control: ctrl,
+            stream_sender: tx,
+            stream_receiver: rx,
         };
         Yamux(inner)
     }
@@ -237,27 +244,45 @@ impl StreamMuxer for Yamux
 
     async fn accept_stream(&mut self) -> Result<Self::Substream, TransportError> {
         trace!("waiting for a new inbound substream for yamux...");
+        self.0.stream_receiver.next().await.ok_or(TransportError::Internal)
+    }
 
-        if let Some(mut s) = self.0.incoming.as_mut() {
-            Ok(s.next().await.unwrap().unwrap())
+    // fn take_inner_stream(&mut self) -> Option<BoxStream<'static, Result<Self::Substream, TransportError>>> {
+    //     let stream = self.0.incoming.take();
+    //     stream
+    // }
+
+    fn task(&mut self) -> Option<BoxFuture<'static, ()>>{
+        if let Some(mut incoming) = self.0.incoming.take() {
+            trace!("starting yamux main loop...");
+
+            //let tx = self.0.stream_sender.clone();
+            // Some(incoming.for_each(move|s| {
+            //     let mut tx = tx.clone();
+            //     async move {
+            //         tx.send(s.unwrap()).await;
+            //     }
+            // }).boxed())
+
+            let mut tx = self.0.stream_sender.clone();
+            Some(
+                async move {
+                    loop {
+                        if let Some(Ok(s)) = incoming.next().await {
+                            if tx.send(s).await.is_err() {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            .boxed())
+
         } else {
-            Err(TransportError::Internal)
+            None
         }
-        // let ss = self.0.incoming.unwrap().next().await.ok_or(TransportError::Internal);
-        // Ok(ss.unwrap().unwrap())
     }
-
-    fn take_inner_stream(&mut self) -> Option<BoxStream<'static, Result<Self::Substream, TransportError>>> {
-        let stream = self.0.incoming.take();
-        stream
-    }
-
-    async fn start(&mut self) {
-    }
-}
-
-fn start(f: impl Fn(BoxFuture<()>) + Send + 'static) {
-
 }
 
 impl UpgradeInfo for Config {

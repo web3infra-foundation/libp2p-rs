@@ -15,7 +15,6 @@ use libp2p_core::upgrade::{DummyUpgrader, Selector};
 use libp2p_core::muxing::StreamMuxer;
 use futures::StreamExt;
 use futures::future;
-use winapi::_core::time::Duration;
 
 fn main() {
     env_logger::init();
@@ -39,26 +38,26 @@ fn main() {
 
         loop {
             let mut stream_muxer = listener.accept().await.unwrap();
-            task::spawn(async move {
+            if let Some(task) = stream_muxer.task() {
+                task::spawn(task);
+            }
 
-                loop {
-                    let stream = stream_muxer.accept_stream().await.unwrap();
-                    log::info!("server accepted a new substream {:?}", stream);
+            loop {
+                let stream = stream_muxer.accept_stream().await.unwrap();
+                log::info!("server accepted a new substream {:?}", stream);
 
-                    task::spawn(async {
-                        let (rx, tx) = stream.split();
-                        copy(rx, tx).await?;
-                        Ok::<(), std::io::Error>(())
-                    });
-                }
+                task::spawn(async {
+                    let (rx, tx) = stream.split();
+                    copy(rx, tx).await?;
+                    Ok::<(), std::io::Error>(())
+                });
+            }
 
-                // let mut msg = vec![0; 4096];
-                // loop {
-                //     let n = stream.read2(&mut msg).await?;
-                //     stream.write2(&msg[..n]).await?;
-                // }
-
-            });
+            // let mut msg = vec![0; 4096];
+            // loop {
+            //     let n = stream.read2(&mut msg).await?;
+            //     stream.write2(&msg[..n]).await?;
+            // }
         }
     });
 
@@ -78,19 +77,24 @@ fn main() {
                 let t2 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
                 let mut stream_muxer = t2.dial(addr).await?;
 
-                task::spawn(stream_muxer.take_inner_stream().unwrap().for_each(|_| future::ready(())));
+                if let Some(task) = stream_muxer.task() {
+                    task::spawn(task);
+                }
 
-                let mut socket = stream_muxer.open_stream().await?;
+                for j in 0..3u32 {
+                    let mut socket = stream_muxer.open_stream().await?;
 
-                log::info!("client{} got a new substream {:?}", i, socket);
+                    log::info!("client{} got a new substream {:?}", i, socket);
 
-                socket.write_all2(&msg).await.unwrap();
-                socket.read_exact2(&mut msg).await.unwrap();
-                log::info!("client{} got {:?}", i, msg);
+                    socket.write_all2(&msg).await.unwrap();
+                    socket.read_exact2(&mut msg).await.unwrap();
+                    log::info!("client{} got {:?}", i, msg);
 
-                socket.close2().await?;
+                    socket.close2().await?;
+                }
                 Ok::<(), TransportError>(())
             }).await;
         }
     });
 }
+
