@@ -90,7 +90,10 @@ where
     }
 
     async fn accept_stream(&mut self) -> Result<Self::Substream, TransportError> {
-        unimplemented!()
+        match self {
+            EitherOutput::A(a) => Ok(EitherOutput::A(a.accept_stream().await?)),
+            EitherOutput::B(b) => Ok(EitherOutput::B(b.accept_stream().await?)),
+        }
     }
 
     async fn start(&mut self) {

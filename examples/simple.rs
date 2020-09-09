@@ -30,9 +30,9 @@ fn main() {
 
         log::info!("starting echo server...");
 
-        //let sec = secio::Config::new(Keypair::generate_secp256k1());
-        let sec = DummyUpgrader::new();
-        //let mux = Selector::new(yamux::Config::new(), DummyUpgrader::new());
+        let sec = secio::Config::new(Keypair::generate_secp256k1());
+        //let sec = DummyUpgrader::new();
+        //let mux = Selector::new(yamux::Config::new(), Selector::new(yamux::Config::new(), yamux::Config::new()));
         let mux = yamux::Config::new();
         let t1 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
         let mut listener = t1.listen_on(listen_addr).unwrap();
@@ -73,8 +73,8 @@ fn main() {
 
                 let sec = secio::Config::new(Keypair::generate_secp256k1());
                 //let sec = DummyUpgrader::new();
-                //let mux = Selector::new(yamux::Config::new(), DummyUpgrader::new());
                 let mux = yamux::Config::new();
+                //let mux = Selector::new(yamux::Config::new(), Selector::new(yamux::Config::new(), yamux::Config::new()));
                 let t2 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
                 let mut stream_muxer = t2.dial(addr).await?;
 
