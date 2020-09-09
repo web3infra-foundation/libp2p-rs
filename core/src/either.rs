@@ -24,6 +24,7 @@ use std::io;
 use crate::upgrade::ProtocolName;
 use crate::muxing::StreamMuxer;
 use crate::transport::TransportError;
+use futures::future::BoxFuture;
 
 
 #[derive(Debug, Copy, Clone)]
@@ -96,8 +97,11 @@ where
         }
     }
 
-    async fn start(&mut self) {
-        unimplemented!()
+    fn task(&mut self) -> Option<BoxFuture<'static, ()>> {
+        match self {
+            EitherOutput::A(a) => a.task(),
+            EitherOutput::B(b) => b.task(),
+        }
     }
 }
 
