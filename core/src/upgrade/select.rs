@@ -68,7 +68,7 @@ impl<A, B, C> Upgrader<C> for Selector<A, B>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::upgrade::dummy::{DummyUpgrader, DummyStream};
+    use crate::upgrade::dummy::DummyUpgrader;
     use crate::muxing::StreamMuxer;
 
     #[test]
