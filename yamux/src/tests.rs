@@ -165,7 +165,7 @@ async fn bind() -> io::Result<(TcpListener, SocketAddr)> {
 async fn repeat_echo(c: Connection<TcpStream>) -> Result<(), ConnectionError> {
     let c = crate::into_stream(c);
     c.try_for_each_concurrent(None, |mut stream| async move {
-        let (r, w) = stream.clone().split();
+        let (r, w) = stream.clone().split2();
         libp2p_traits::copy(r, w).await?;
         stream.close2().await?;
         Ok(())
