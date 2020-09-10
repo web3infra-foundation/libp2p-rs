@@ -273,7 +273,7 @@ impl<T> fmt::Display for Connection<T> {
     }
 }
 
-impl<T: Read2 + Write2 + Unpin + Send + Clone + 'static> Connection<T> {
+impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
     /// Create a new `Connection` from the given I/O resource.
     pub fn new(socket: T, cfg: Config, mode: Mode) -> Self {
         let id = Id::random(mode);
@@ -300,9 +300,6 @@ impl<T: Read2 + Write2 + Unpin + Send + Clone + 'static> Connection<T> {
             is_closed: false,
         }
     }
-}
-
-impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
 
     /// Get a controller for this connection.
     pub fn control(&self) -> Control {
@@ -385,9 +382,8 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
             // Select all futures: socket, stream receiver and controller
 
             select! {
-                frame = self.socket.stream.next() => {
-                    let frame = frame.transpose().map_err(|e| e.into());
-                    if let Some(stream) = self.on_frame(frame).await? {
+                frame = self.socket.recv_frame().fuse() => {
+                    if let Some(stream) = self.on_frame(Ok(frame.ok())).await? {
                         self.socket
                             .flush()
                             .await

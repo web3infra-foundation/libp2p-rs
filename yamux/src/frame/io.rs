@@ -32,7 +32,7 @@ pub(crate) struct Io<T> {
     io: T,
     max_body_len: usize,
 
-    pub(crate) stream: Pin<Box<dyn FusedStream<Item = Result<Frame<()>, FrameDecodeError>> + Send>>,
+    // pub(crate) stream: Pin<Box<dyn FusedStream<Item = Result<Frame<()>, FrameDecodeError>> + Send>>,
 }
 
 impl<T> fmt::Debug for Io<T> {
@@ -41,26 +41,37 @@ impl<T> fmt::Debug for Io<T> {
     }
 }
 
-impl<T: Read2 + Write2 + Unpin + Send + Clone + 'static> Io<T> {
+impl<T: Read2 + Write2 + Unpin + Send> Io<T> {
     pub(crate) fn new(id: Id, io: T, max_frame_body_len: usize) -> Self {
-        let fr = FrameReader::new(id.clone(), io.clone(), max_frame_body_len);
-        // futures::stream::Unfold<FrameReader<T>, fn(FrameReader<T>) -> impl Future<Output = Result<Frame<()>, FrameDecodeError>>, impl Future<Output = Result<Frame<()>, FrameDecodeError>>>
-        let stream = futures::stream::unfold(fr, |mut fr| async {
-            Some((fr.recv_frame().await, fr))
-        });
-
-        let stream = Box::pin(stream) as Pin<Box<dyn FusedStream<Item=Result<Frame<()>, FrameDecodeError>> + Send>>;
-
         Io {
             id,
             io,
             max_body_len: max_frame_body_len,
-            stream,
         }
     }
-}
 
-impl<T: Read2 + Write2 + Unpin + Send> Io<T> {
+    pub(crate) async fn recv_frame(&mut self) -> Result<Frame<()>, FrameDecodeError> {
+        let mut header_data = [0; HEADER_SIZE];
+
+        self.io.read_exact2(&mut header_data).await?;
+        let header = header::decode(&header_data)?;
+
+        log::trace!("{}: read stream header: {}", self.id, header);
+
+        if header.tag() != header::Tag::Data {
+            return Ok(Frame::new(header));
+        }
+
+        let body_len = header.len().val() as usize;
+        if body_len > self.max_body_len {
+            return Err(FrameDecodeError::FrameTooLarge(body_len));
+        }
+
+        let mut body = vec![0; body_len];
+        self.io.read_exact2(&mut body).await?;
+
+        Ok(Frame { header, body })
+    }
 
     pub(crate) async fn send_frame<A>(&mut self, frame: &Frame<A>) -> io::Result<()> {
         log::trace!("{}: write stream, header: {}", self.id, frame.header);
