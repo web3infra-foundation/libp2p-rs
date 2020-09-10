@@ -1,6 +1,9 @@
+pub mod split;
+
 use crate::{Read2, Write2};
 
-use futures::{AsyncRead, AsyncReadExt, AsyncWrite, io::{ReadHalf, WriteHalf}};
+// use futures::{AsyncRead, AsyncReadExt, AsyncWrite, io::{ReadHalf, WriteHalf}};
+use split::{ReadHalf, WriteHalf};
 
 pub trait ReadExt2: Read2 {
     /// Helper method for splitting this read/write object into two halves.
@@ -34,10 +37,11 @@ pub trait ReadExt2: Read2 {
     /// ```
     fn split2(self) -> (ReadHalf<Self>, WriteHalf<Self>)
     where
-        Self: Sized + AsyncRead + AsyncWrite
+        Self: Sized + Write2 + Send + Unpin
     {
-        self.split()
+        split::split(self)
     }
+
 }
 
 impl<R: Read2 + ?Sized> ReadExt2 for R {}
@@ -49,7 +53,7 @@ mod tests {
     use async_std::task;
     use async_std::net::{TcpListener, TcpStream};
 
-    use super::{Read2, Write2, ReadExt2, AsyncWrite};
+    use super::{Read2, Write2, ReadExt2};
 
     #[test]
     fn test_split() {
@@ -81,6 +85,7 @@ mod tests {
 
             let client = task::spawn(async move {
                 let s = TcpStream::connect(addr).await.expect("connect");
+
                 let (mut reader, mut writer) = s.split2();
 
                 task::spawn(async move {
