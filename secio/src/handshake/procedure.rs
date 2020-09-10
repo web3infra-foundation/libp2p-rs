@@ -2,8 +2,7 @@
 ///
 /// Some panic logic has been removed, some error handling has been removed, and an error has been added.
 ///
-use futures::prelude::*;
-use log::{debug, trace};
+use log::{debug, trace, info};
 use std::cmp::Ordering;
 
 use crate::{
@@ -11,8 +10,8 @@ use crate::{
     crypto::{cipher::CipherType, new_stream, BoxStreamCipher, CryptoMode},
     error::SecioError,
     exchange,
+    Config,
     handshake::handshake_context::HandshakeContext,
-    handshake::Config,
     handshake_proto::Exchange,
     Digest, EphemeralPublicKey,
 };
@@ -20,7 +19,7 @@ use crate::{
 use libp2p_core::identity::*;
 use libp2p_core::PublicKey;
 
-use libp2p_traits::Write2;
+use libp2p_traits::{Write2, Read2};
 use prost::Message;
 
 /// Performs a handshake on the given socket.
@@ -32,12 +31,12 @@ use prost::Message;
 /// On success, returns an object that implements the `AsyncWrite` and `AsyncRead` trait,
 /// plus the public key of the remote, plus the ephemeral public key used during
 /// negotiation.
-pub(in crate::handshake) async fn handshake<T>(
+pub(crate) async fn handshake<T>(
     socket: T,
     config: Config,
 ) -> Result<(SecureStream<T>, PublicKey, EphemeralPublicKey), SecioError>
 where
-    T: AsyncRead + AsyncWrite + Send + 'static + Unpin,
+    T: Read2 + Write2 + Send + 'static,
 {
     // The handshake messages all start with a 4-bytes message length prefix.
     let mut socket = LengthPrefixSocket::new(socket, config.max_frame_length);
@@ -215,6 +214,8 @@ where
         .write2(&pub_ephemeral_context.state.remote.nonce)
         .await?;
     secure_stream.verify_nonce().await?;
+
+    info!("handshake for {:?} successfully done!", pub_ephemeral_context.state.remote.local.nonce);
 
     Ok((
         secure_stream,

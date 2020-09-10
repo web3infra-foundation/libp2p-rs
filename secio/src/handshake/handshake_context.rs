@@ -2,7 +2,7 @@
 /// It does not use protobuf. It uses flatbuffers as the basis for serialization and deserialization.
 /// It does not use protobuf bytes when determining the order of the order. But the original public key bytes
 use crate::{
-    crypto::cipher::CipherType, error::SecioError, exchange::KeyAgreement, handshake::Config,
+    crypto::cipher::CipherType, error::SecioError, exchange::KeyAgreement, Config,
     handshake_proto::Propose, support, Digest,
 };
 

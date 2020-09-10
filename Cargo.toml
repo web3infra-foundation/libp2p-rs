@@ -18,6 +18,7 @@ no-default-features = true
 [dependencies]
 libp2p-traits = { path = "traits", version = "0.1.0", package = "libp2p-traits" }
 yamux = { path = "yamux", version = "0.1.0", package = "yamux" }
+mplex = { path = "muxer/mplex", version = "0.1.0", package = "mplex" }
 secio = { path = "secio", version = "0.1.0", package = "secio" }
 multiaddr = { path = "multiaddr", package = "parity-multiaddr", version = "0.9.1" }
 libp2p-core = { path = "core", version = "0.1.0", package = "libp2p-core" }
@@ -56,6 +57,7 @@ nix = "0.13.0"
 members = [
   "traits",
   "yamux",
+  "muxer/mplex",
   "secio",
   "core",
   "transports/tcp",
