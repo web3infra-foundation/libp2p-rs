@@ -40,35 +40,20 @@
 // mod from_fn;
 // mod map;
 // mod optional;
-// mod select;
+pub(crate) mod select;
 // mod transfer;
 pub(crate) mod dummy;
+pub(crate) mod multistream;
 
 use async_trait::async_trait;
-use futures::future::Future;
-use std::error;
+use std::borrow::Cow;
 use crate::transport::TransportError;
 
-//pub use crate::Negotiated;
-//pub use multistream_select::{Version, NegotiatedComplete, NegotiationError, ProtocolError};
-
-// pub use self::{
-//     apply::{apply, apply_inbound, apply_outbound, InboundUpgradeApply, OutboundUpgradeApply},
-//     denied::DeniedUpgrade,
-//     either::EitherUpgrade,
-//     error::UpgradeError,
-//     from_fn::{from_fn, FromFnUpgrade},
-//     map::{MapInboundUpgrade, MapOutboundUpgrade, MapInboundUpgradeErr, MapOutboundUpgradeErr},
-//     optional::OptionalUpgrade,
-//     select::SelectUpgrade,
-//     transfer::{write_one, write_with_len_prefix, write_varint, read_one, ReadOneError, read_varint},
-// };
 
 pub use self::{
-    //select::SelectUpgrade,
     dummy::DummyUpgrader,
+    select::Selector,
 };
-use futures::{AsyncRead, AsyncWrite};
 
 
 /// Types serving as protocol names.
@@ -110,6 +95,9 @@ pub trait ProtocolName {
     /// **Note:** Valid protocol names must start with `/` and
     /// not exceed 140 bytes in length.
     fn protocol_name(&self) -> &[u8];
+    fn protocol_name_str(&self) -> Cow<str> {
+        String::from_utf8_lossy(self.protocol_name())
+    }
 }
 
 impl<T: AsRef<[u8]>> ProtocolName for T {
@@ -118,50 +106,79 @@ impl<T: AsRef<[u8]>> ProtocolName for T {
     }
 }
 
+pub trait UpgradeInfo {
+    /// Opaque type representing a negotiable protocol.
+    type Info: ProtocolName + Clone + Send + std::fmt::Debug;
+
+    /// Returns the list of protocols that are supported. Used during the negotiation process.
+    fn protocol_info(&self) -> Vec<Self::Info>;
+}
 
 /// Common trait for upgrades that can be applied on inbound substreams, outbound substreams,
 /// or both.
 /// Possible upgrade on a connection or substream.
 #[async_trait]
-pub trait Upgrader<C> {
-    /// Opaque type representing a negotiable protocol.
-    type Info: ProtocolName + Clone + Send;
-    /// Iterator returned by `protocol_info`.
-    type InfoIter: IntoIterator<Item = Self::Info>;
+pub trait Upgrader<C> : UpgradeInfo {
     /// Output after the upgrade has been successfully negotiated and the handshake performed.
     type Output: Send;
 
-    /// Returns the list of protocols that are supported. Used during the negotiation process.
-    fn protocol_info(&self) -> Self::InfoIter;
+    /// After we have determined that the remote supports one of the protocols we support, this
+    /// method is called to start the handshake.
+    ///
+    /// The `info` is the identifier of the protocol, as produced by `protocol_info`.
+    async fn upgrade_inbound(self, socket: C, info: Self::Info) -> Result<Self::Output, TransportError>;
 
     /// After we have determined that the remote supports one of the protocols we support, this
     /// method is called to start the handshake.
     ///
     /// The `info` is the identifier of the protocol, as produced by `protocol_info`.
-    async fn upgrade_inbound(self, socket: C) -> Result<Self::Output, TransportError>;
-
-    /// After we have determined that the remote supports one of the protocols we support, this
-    /// method is called to start the handshake.
-    ///
-    /// The `info` is the identifier of the protocol, as produced by `protocol_info`.
-    async fn upgrade_outbound(self, socket: C) -> Result<Self::Output, TransportError>;
-
-/*    /// Returns a new object that wraps around `Self` and applies a closure to the `Output`.
-    fn map_inbound<F, T>(self, f: F) -> MapInboundUpgrade<Self, F>
-        where
-            Self: Sized,
-            F: FnOnce(Self::Output) -> T
-    {
-        MapInboundUpgrade::new(self, f)
-    }
-
-    /// Returns a new object that wraps around `Self` and applies a closure to the `Error`.
-    fn map_inbound_err<F, T>(self, f: F) -> MapInboundUpgradeErr<Self, F>
-        where
-            Self: Sized,
-            F: FnOnce(Self::Error) -> T
-    {
-        MapInboundUpgradeErr::new(self, f)
-    }
-*/
+    async fn upgrade_outbound(self, socket: C, info: Self::Info) -> Result<Self::Output, TransportError>;
 }
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upgrade_info_multi_versions() {
+
+        #[derive(PartialEq, Debug, Clone)]
+        enum MyProtocolName {
+            Version1,
+            Version2,
+            Version3,
+        }
+
+        impl ProtocolName for MyProtocolName {
+            fn protocol_name(&self) -> &[u8] {
+                match *self {
+                    MyProtocolName::Version1 => b"/myproto/1.0",
+                    MyProtocolName::Version2 => b"/myproto/2.0",
+                    MyProtocolName::Version3 => b"/myproto/3.0",
+                }
+            }
+        }
+
+        struct P;
+
+        impl UpgradeInfo for P {
+            type Info = MyProtocolName;
+            fn protocol_info(&self) -> Vec<Self::Info> {
+                vec![
+                    MyProtocolName::Version1,
+                    MyProtocolName::Version2,
+                    MyProtocolName::Version3
+                ]
+            }
+        }
+
+        let p = P {};
+
+        assert_eq!(p.protocol_info().get(0).unwrap(), &MyProtocolName::Version1);
+        assert_eq!(p.protocol_info().get(1).unwrap(), &MyProtocolName::Version2);
+        assert_eq!(p.protocol_info().get(2).unwrap(), &MyProtocolName::Version3);
+    }
+}
+

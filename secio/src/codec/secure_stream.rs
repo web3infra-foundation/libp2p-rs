@@ -31,7 +31,7 @@ pub struct SecureStream<T> {
 
 impl<T> SecureStream<T>
 where
-    T: Read2 + Write2 + Unpin + Send + 'static,
+    T: Read2 + Write2 + Send + 'static,
 {
     /// New a secure stream
     pub(crate) fn new(
@@ -88,7 +88,7 @@ where
             let nonce_len = self.read2(&mut nonce).await?;
 
             trace!(
-                "received nonce={}, my_nonce={}",
+                "verify_nonce nonce={}, my_nonce={}",
                 nonce_len,
                 self.nonce.len()
             );
@@ -138,7 +138,7 @@ where
 #[async_trait]
 impl<T> Read2 for SecureStream<T>
 where
-    T: Read2 + Write2 + Unpin + Send + 'static,
+    T: Read2 + Write2 + Send + 'static,
 {
     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         // when there is somthing in recv_buffer
@@ -173,7 +173,7 @@ where
 #[async_trait]
 impl<T> Write2 for SecureStream<T>
 where
-    T: Read2 + Write2 + Unpin + Send + 'static,
+    T: Read2 + Write2 + Send + 'static,
 {
     async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
         debug!("start sending plain data: {:?}", buf);
