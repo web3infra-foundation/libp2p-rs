@@ -6,13 +6,15 @@ use libp2p_core::{Multiaddr, Transport};
 use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::transport::memory::MemoryTransport;
 use libp2p_core::transport::{TransportListener, TransportError};
-use libp2p_traits::{Write2, Read2};
+use libp2p_traits::{Write2, Read2, ReadExt2, copy};
 
 use secio;
+use yamux;
 use libp2p_core::identity::Keypair;
-use secio::handshake::Config;
-use winapi::_core::time::Duration;
-use libp2p_core::upgrade::DummyUpgrader;
+use libp2p_core::upgrade::{DummyUpgrader, Selector};
+use libp2p_core::muxing::StreamMuxer;
+use futures::StreamExt;
+use futures::future;
 
 fn main() {
     env_logger::init();
@@ -27,43 +29,72 @@ fn main() {
 
         log::info!("starting echo server...");
 
-        //let t1 = TransportUpgrade::new(MemoryTransport::default(), Config::new(Keypair::generate_secp256k1()));
-        let t1 = TransportUpgrade::new(MemoryTransport::default(), DummyUpgrader::default());
+        let sec = secio::Config::new(Keypair::generate_secp256k1());
+        //let sec = DummyUpgrader::new();
+        //let mux = Selector::new(yamux::Config::new(), Selector::new(yamux::Config::new(), yamux::Config::new()));
+        let mux = yamux::Config::new();
+        let t1 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
         let mut listener = t1.listen_on(listen_addr).unwrap();
 
         loop {
-            let mut stream = listener.accept().await.unwrap();
-            task::spawn(async move {
-                let mut msg = vec![0; 4096];
-                loop {
-                    let n = stream.read2(&mut msg).await?;
-                    stream.write2(&msg[..n]).await?;
-                }
+            let mut stream_muxer = listener.accept().await.unwrap();
+            if let Some(task) = stream_muxer.task() {
+                task::spawn(task);
+            }
 
-                Ok::<(), std::io::Error>(())
-            });
+            loop {
+                let stream = stream_muxer.accept_stream().await.unwrap();
+                log::info!("server accepted a new substream {:?}", stream);
+
+                task::spawn(async {
+                    let (rx, tx) = stream.split();
+                    copy(rx, tx).await?;
+                    Ok::<(), std::io::Error>(())
+                });
+            }
+
+            // let mut msg = vec![0; 4096];
+            // loop {
+            //     let n = stream.read2(&mut msg).await?;
+            //     stream.write2(&msg[..n]).await?;
+            // }
         }
     });
 
     // Setup dialer.
-    for i in 0..3u32 {
-        let addr = t1_addr.clone();
-        task::spawn(async move {
-            let mut msg = [1, 2, 3];
-            log::info!("start client{}", i);
+    task::block_on(async {
 
-            //let t2 = TransportUpgrade::new(MemoryTransport::default(), Config::new(Keypair::generate_secp256k1()));
-            let t2 = TransportUpgrade::new(MemoryTransport::default(), DummyUpgrader::default());
-            let mut socket = t2.dial(addr).await?;
+        for i in 0..1u32 {
+            let addr = t1_addr.clone();
+            task::spawn(async move {
+                let mut msg = [1, 2, 3];
+                log::info!("start client{}", i);
 
-            socket.write_all2(&msg).await?;
-            socket.read_exact2(&mut msg).await?;
-            log::info!("client{} got {:?}", i, msg);
+                let sec = secio::Config::new(Keypair::generate_secp256k1());
+                //let sec = DummyUpgrader::new();
+                let mux = yamux::Config::new();
+                //let mux = Selector::new(yamux::Config::new(), Selector::new(yamux::Config::new(), yamux::Config::new()));
+                let t2 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
+                let mut stream_muxer = t2.dial(addr).await?;
 
-            socket.close2().await?;
-            Ok::<(), TransportError>(())
-        });
-    }
+                if let Some(task) = stream_muxer.task() {
+                    task::spawn(task);
+                }
 
-    loop {}
+                for j in 0..3u32 {
+                    let mut socket = stream_muxer.open_stream().await?;
+
+                    log::info!("client{} got a new substream {:?}", i, socket);
+
+                    socket.write_all2(&msg).await.unwrap();
+                    socket.read_exact2(&mut msg).await.unwrap();
+                    log::info!("client{} got {:?}", i, msg);
+
+                    socket.close2().await?;
+                }
+                Ok::<(), TransportError>(())
+            }).await;
+        }
+    });
 }
+

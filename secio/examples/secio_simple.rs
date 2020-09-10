@@ -2,7 +2,7 @@ use async_std::task;
 use env_logger;
 use libp2p_core::identity::Keypair;
 use log::info;
-use secio::handshake::Config;
+use secio::Config;
 
 use libp2p_traits::{Read2, Write2};
 

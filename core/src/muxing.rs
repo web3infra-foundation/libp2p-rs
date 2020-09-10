@@ -1,22 +1,3 @@
-// Copyright 2018 Parity Technologies (UK) Ltd.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the "Software"),
-// to deal in the Software without restriction, including without limitation
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,
-// and/or sell copies of the Software, and to permit persons to whom the
-// Software is furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
 
 //! Muxing is the process of splitting a connection into multiple substreams.
 //!
@@ -51,11 +32,16 @@
 //! The upgrade process will take ownership of the connection, which makes it possible for the
 //! implementation of `StreamMuxer` to control everything that happens on the wire.
 
+use async_trait::async_trait;
+
 use fnv::FnvHashMap;
 use futures::{future, prelude::*, task::Context, task::Poll};
 use multiaddr::Multiaddr;
 use parking_lot::Mutex;
 use std::{io, ops::Deref, fmt, pin::Pin, sync::atomic::{AtomicUsize, Ordering}};
+use crate::transport::TransportError;
+use futures::stream::BoxStream;
+use futures::future::BoxFuture;
 
 //pub use self::singleton::SingletonMuxer;
 
@@ -73,6 +59,7 @@ use std::{io, ops::Deref, fmt, pin::Pin, sync::atomic::{AtomicUsize, Ordering}};
 /// - A list of outbound substreams being opened. The `open_outbound`, `poll_outbound` and
 ///   `destroy_outbound` methods allow controlling these entries.
 ///
+/*
 pub trait StreamMuxer {
     /// Type of the object that represents the raw substream where data can be read and written.
     type Substream;
@@ -667,4 +654,22 @@ where
     fn flush_all(&self, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
         self.inner.flush_all(cx).map_err(|e| e.into())
     }
+}
+*/
+
+#[async_trait]
+pub trait StreamMuxer {
+    /// Type of the object that represents the raw substream where data can be read and written.
+    type Substream;
+
+    /// Opens a new outgoing substream, and produces the equivalent to a future that will be
+    /// resolved when it becomes available.
+    ///
+    /// The API of `OutboundSubstream` is totally opaque, and the object can only be interfaced
+    /// through the methods on the `StreamMuxer` trait.
+    async fn open_stream(&mut self) -> Result<Self::Substream, TransportError>;
+
+    async fn accept_stream(&mut self) -> Result<Self::Substream, TransportError>;
+
+    fn task(&mut self) -> Option<BoxFuture<'static, ()>>;
 }
