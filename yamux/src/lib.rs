@@ -34,12 +34,25 @@ mod tests;
 
 pub(crate) mod connection;
 
+use async_trait::async_trait;
+use std::fmt;
+use log::{trace};
+use futures::prelude::*;
+use futures::stream::BoxStream;
+
 pub use crate::connection::{into_stream, Connection, Control, Mode, Stream};
 pub use crate::error::ConnectionError;
 pub use crate::frame::{
     header::{HeaderDecodeError, StreamId},
     FrameDecodeError,
 };
+use libp2p_traits::{Write2, Read2};
+use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
+use libp2p_core::transport::TransportError;
+use libp2p_core::muxing::StreamMuxer;
+use futures::{StreamExt, TryStreamExt, SinkExt};
+use futures::future::BoxFuture;
+use futures::channel::mpsc;
 
 const DEFAULT_CREDIT: u32 = 256 * 1024; // as per yamux specification
 
@@ -104,6 +117,11 @@ impl Default for Config {
 }
 
 impl Config {
+    /// make a default yamux config
+    ///
+    pub fn new() -> Self {
+        Config::default()
+    }
     /// Set the receive window (must be >= 256 KiB).
     ///
     /// # Panics
@@ -166,4 +184,141 @@ static_assertions::const_assert! {
 // Check that we can safely cast a `u32` to a `usize`.
 static_assertions::const_assert! {
     std::mem::size_of::<u32>() <= std::mem::size_of::<usize>()
+}
+
+
+
+/// A Yamux connection.
+///
+/// This implementation isn't capable of detecting when the underlying socket changes its address,
+/// and no [`StreamMuxerEvent::AddressChange`] event is ever emitted.
+pub struct Yamux(Inner);
+
+impl fmt::Debug for Yamux {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("Yamux")
+    }
+}
+
+struct Inner {
+    /// The [`futures::stream::Stream`] of incoming substreams.
+    incoming: Option<BoxStream<'static, Result<Stream, TransportError>>>,
+    /// Handle to control the connection.
+    control: Control,
+
+    stream_sender: mpsc::Sender<Stream>,
+    stream_receiver: mpsc::Receiver<Stream>,
+}
+
+
+impl Yamux
+{
+    /// Create a new Yamux connection.
+    pub fn new<C>(io: C, mut cfg: Config, mode: Mode) -> Self
+        where C: Read2 + Write2 + Send + Unpin + 'static
+    {
+        cfg.set_read_after_close(false);
+        let conn = Connection::new(io, cfg, mode);
+        let ctrl = conn.control();
+        let (tx, rx) = mpsc::channel(1);
+        let inner = Inner {
+            incoming: Some(into_stream(conn).err_into().boxed()),
+            control: ctrl,
+            stream_sender: tx,
+            stream_receiver: rx,
+        };
+        Yamux(inner)
+    }
+}
+
+#[async_trait]
+impl StreamMuxer for Yamux
+{
+    type Substream = Stream;
+
+    async fn open_stream(&mut self) -> Result<Self::Substream, TransportError> {
+        trace!("opening a new outbound substream for yamux...");
+        let s = self.0.control.open_stream().await?;
+        Ok(s)
+    }
+
+    async fn accept_stream(&mut self) -> Result<Self::Substream, TransportError> {
+        trace!("waiting for a new inbound substream for yamux...");
+        self.0.stream_receiver.next().await.ok_or(TransportError::Internal)
+    }
+
+    // fn take_inner_stream(&mut self) -> Option<BoxStream<'static, Result<Self::Substream, TransportError>>> {
+    //     let stream = self.0.incoming.take();
+    //     stream
+    // }
+
+    fn task(&mut self) -> Option<BoxFuture<'static, ()>>{
+        if let Some(mut incoming) = self.0.incoming.take() {
+            trace!("starting yamux main loop...");
+
+            //let tx = self.0.stream_sender.clone();
+            // Some(incoming.for_each(move|s| {
+            //     let mut tx = tx.clone();
+            //     async move {
+            //         tx.send(s.unwrap()).await;
+            //     }
+            // }).boxed())
+
+            let mut tx = self.0.stream_sender.clone();
+            Some(
+                async move {
+                    loop {
+                        if let Some(Ok(s)) = incoming.next().await {
+                            if tx.send(s).await.is_err() {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            .boxed())
+
+        } else {
+            None
+        }
+    }
+}
+
+impl UpgradeInfo for Config {
+    type Info = &'static [u8];
+
+    fn protocol_info(&self) -> Vec<Self::Info> {
+        vec!(b"/yamux/1.0.0")
+    }
+}
+
+#[async_trait]
+impl<T> Upgrader<T> for Config
+    where T: Read2 + Write2 + Send + Unpin + 'static
+{
+    type Output = Yamux;
+
+    async fn upgrade_inbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
+        trace!("upgrading yamux inbound");
+        Ok(Yamux::new(socket, self, Mode::Server))
+    }
+
+    async fn upgrade_outbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
+        trace!("upgrading yamux outbound");
+        Ok(Yamux::new(socket, self, Mode::Client))
+    }
+}
+
+// impl Into<TransportError> for ConnectionError {
+//     fn into(self: ConnectionError) -> TransportError {
+//         TransportError::Internal
+//     }
+// }
+
+impl From<ConnectionError> for TransportError {
+    fn from(_: ConnectionError) -> Self {
+        // TODO: make a mux error catalog for secio
+        TransportError::Internal
+    }
 }

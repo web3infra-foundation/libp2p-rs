@@ -27,7 +27,6 @@
 
 //use crate::ConnectedPoint;
 use async_trait::async_trait;
-use libp2p_traits::{Read2, Write2};
 use multiaddr::Multiaddr;
 use std::{error::Error, fmt};
 use std::time::Duration;
