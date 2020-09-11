@@ -47,7 +47,7 @@ fn main() {
                 log::info!("server accepted a new substream {:?}", stream);
 
                 task::spawn(async {
-                    let (rx, tx) = stream.split();
+                    let (rx, tx) = stream.split2();
                     copy(rx, tx).await?;
                     Ok::<(), std::io::Error>(())
                 });
