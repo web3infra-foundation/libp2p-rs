@@ -34,6 +34,8 @@ use futures::prelude::*;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use crate::multistream::NegotiationError;
+
 // pub mod and_then;
 // pub mod boxed;
 // pub mod choice;
@@ -418,12 +420,21 @@ pub enum TransportError {
 
     /// Any other error that a [`Transport`] may produce.
     IoError(std::io::Error),
+
+    NegotiationError(NegotiationError),
+
 }
 
 impl From<std::io::Error> for TransportError {
     /// Converts IO error to TransportError
     fn from(e: std::io::Error) -> Self {
         TransportError::IoError(e)
+    }
+}
+
+impl From<NegotiationError> for TransportError {
+    fn from(ne: NegotiationError) -> Self {
+        TransportError::NegotiationError(ne)
     }
 }
 
@@ -436,6 +447,7 @@ impl fmt::Display for TransportError
             TransportError::Unreachable => write!(f, "Memory transport unreachable"),
             TransportError::Internal => write!(f, "Internal error"),
             TransportError::IoError(err) => write!(f, "IO error {}", err),
+            TransportError::NegotiationError(err) => write!(f, "Negotiation error {:?}", err),
         }
     }
 }
@@ -449,6 +461,7 @@ impl Error for TransportError
             TransportError::Unreachable => None,
             TransportError::Internal => None,
             TransportError::IoError(err) => Some(err),
+            TransportError::NegotiationError(err) => Some(err),
         }
     }
 }
