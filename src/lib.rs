@@ -30,9 +30,6 @@ pub use secio;
 pub use yamux;
 /// Re-pub mplex crate
 pub use mplex;
-/// Underlying transport protocols wrapper
-// pub(crate) mod transports;
-// pub use transports;
 
 /*
 /// Some gadgets that help create a service

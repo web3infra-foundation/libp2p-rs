@@ -37,12 +37,11 @@ pub struct TransportUpgrade<InnerTrans, TMux, TSec> {
 
 impl<InnerTrans, TMux, TSec> TransportUpgrade<InnerTrans, TMux, TSec>
 where
-    InnerTrans: Transport + Send,
-    InnerTrans::Listener: TransportListener,
+    InnerTrans: Transport,
     InnerTrans::Output: Read2 + Write2 + Unpin,
-    TSec: Upgrader<InnerTrans::Output> + Send + Clone,
+    TSec: Upgrader<InnerTrans::Output>,
     TSec::Output: Read2 + Write2 + Unpin,
-    TMux: Upgrader<TSec::Output> + Send + Clone,
+    TMux: Upgrader<TSec::Output>,
     TMux::Output: StreamMuxer
 {
     /// Wraps around a `Transport` to add upgrade capabilities.
@@ -279,11 +278,11 @@ where
 #[async_trait]
 impl<InnerTrans, TMux, TSec> Transport for TransportUpgrade<InnerTrans, TMux, TSec>
 where
-    InnerTrans: Transport + Send,
+    InnerTrans: Transport,
     InnerTrans::Output: Read2 + Write2 + Unpin,
-    TSec: Upgrader<InnerTrans::Output> + Send + Clone,
+    TSec: Upgrader<InnerTrans::Output>,
     TSec::Output: Read2 + Write2 + Unpin,
-    TMux: Upgrader<TSec::Output> + Send + Clone,
+    TMux: Upgrader<TSec::Output>,
     TMux::Output: StreamMuxer
 {
     type Output = TMux::Output;
@@ -327,11 +326,11 @@ impl<InnerListener, TMux, TSec> ListenerUpgrade<InnerListener, TMux, TSec>
 #[async_trait]
 impl<InnerListener, TMux, TSec> TransportListener for ListenerUpgrade<InnerListener, TMux, TSec>
 where
-    InnerListener: TransportListener + Send,
+    InnerListener: TransportListener,
     InnerListener::Output: Read2 + Write2 + Unpin,
-    TSec: Upgrader<InnerListener::Output> + Send + Clone,
+    TSec: Upgrader<InnerListener::Output>,
     TSec::Output: Read2 + Write2 + Unpin,
-    TMux: Upgrader<TSec::Output> + Send + Clone,
+    TMux: Upgrader<TSec::Output>,
     TMux::Output: StreamMuxer,
 {
     type Output = TMux::Output;
