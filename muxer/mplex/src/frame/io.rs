@@ -15,23 +15,18 @@ pub struct IO<T> {
 
 impl<T> IO<T>
 where
-    T: Read2 + Write2 + Unpin + Send,
+    T: Unpin + Send,
 {
     pub(crate) fn new(id: Id, io: T) -> Self {
         let io = LengthDelimited::new(io, MAX_MESSAGE_SIZE);
         IO { id, io }
     }
+}
 
-    pub(crate) async fn send_frame(&mut self, frame: &Frame) -> io::Result<()> {
-        log::info!("{}: write stream, header: {}", self.id, frame.header);
-
-        let hdr = header::encode(&frame.header);
-
-        self.io.write_header(hdr).await?;
-        self.io.write_body(&frame.body).await?;
-        self.io.flush().await
-    }
-
+impl<T> IO<T>
+    where
+        T: Read2 + Unpin + Send,
+{
     pub(crate) async fn recv_frame(&mut self) -> Result<Frame, FrameDecodeError> {
         // get header
         let header_byte = self.io.read_uvarint().await?;
@@ -51,10 +46,26 @@ where
 
         Ok(Frame { header, body })
     }
+}
+
+impl<T> IO<T>
+    where
+        T: Write2 + Unpin + Send,
+{
+    pub(crate) async fn send_frame(&mut self, frame: &Frame) -> io::Result<()> {
+        log::info!("{}: write stream, header: {}", self.id, frame.header);
+
+        let hdr = header::encode(&frame.header);
+
+        self.io.write_header(hdr).await?;
+        self.io.write_body(&frame.body).await?;
+        self.io.flush().await
+    }
 
     pub(crate) async fn close(&mut self) -> io::Result<()> {
         self.io.close().await
     }
+
 }
 
 /// Possible errors while decoding a message frame.
