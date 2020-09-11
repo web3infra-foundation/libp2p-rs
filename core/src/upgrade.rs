@@ -46,6 +46,7 @@ pub(crate) mod dummy;
 pub(crate) mod multistream;
 
 use async_trait::async_trait;
+use std::borrow::Cow;
 use crate::transport::TransportError;
 
 
@@ -94,6 +95,9 @@ pub trait ProtocolName {
     /// **Note:** Valid protocol names must start with `/` and
     /// not exceed 140 bytes in length.
     fn protocol_name(&self) -> &[u8];
+    fn protocol_name_str(&self) -> Cow<str> {
+        String::from_utf8_lossy(self.protocol_name())
+    }
 }
 
 impl<T: AsRef<[u8]>> ProtocolName for T {

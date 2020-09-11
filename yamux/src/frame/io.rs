@@ -8,7 +8,12 @@
 // at https://www.apache.org/licenses/LICENSE-2.0 and a copy of the MIT license
 // at https://opensource.org/licenses/MIT.
 
-use std::io;
+use std::{
+    fmt,
+    future::Future,
+    io,
+    pin::Pin,
+};
 
 use super::{
     header::{self, HeaderDecodeError},
@@ -17,14 +22,23 @@ use super::{
 use crate::connection::Id;
 use crate::frame::header::HEADER_SIZE;
 
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{Read2, Write2, ReadExt2};
+use futures::stream::{Stream, StreamExt, FusedStream};
 
 /// A [`Stream`] and writer of [`Frame`] values.
-#[derive(Debug)]
+// #[derive(Debug)]
 pub(crate) struct Io<T> {
     id: Id,
     io: T,
     max_body_len: usize,
+
+    // pub(crate) stream: Pin<Box<dyn FusedStream<Item = Result<Frame<()>, FrameDecodeError>> + Send>>,
+}
+
+impl<T> fmt::Debug for Io<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Io[id: {:?}]", self.id)
+    }
 }
 
 impl<T: Read2 + Write2 + Unpin + Send> Io<T> {
@@ -34,6 +48,29 @@ impl<T: Read2 + Write2 + Unpin + Send> Io<T> {
             io,
             max_body_len: max_frame_body_len,
         }
+    }
+
+    pub(crate) async fn recv_frame(&mut self) -> Result<Frame<()>, FrameDecodeError> {
+        let mut header_data = [0; HEADER_SIZE];
+
+        self.io.read_exact2(&mut header_data).await?;
+        let header = header::decode(&header_data)?;
+
+        log::trace!("{}: read stream header: {}", self.id, header);
+
+        if header.tag() != header::Tag::Data {
+            return Ok(Frame::new(header));
+        }
+
+        let body_len = header.len().val() as usize;
+        if body_len > self.max_body_len {
+            return Err(FrameDecodeError::FrameTooLarge(body_len));
+        }
+
+        let mut body = vec![0; body_len];
+        self.io.read_exact2(&mut body).await?;
+
+        Ok(Frame { header, body })
     }
 
     pub(crate) async fn send_frame<A>(&mut self, frame: &Frame<A>) -> io::Result<()> {
@@ -50,6 +87,23 @@ impl<T: Read2 + Write2 + Unpin + Send> Io<T> {
     }
     pub(crate) async fn close(&mut self) -> io::Result<()> {
         self.io.close2().await
+    }
+
+}
+
+struct FrameReader<T> {
+    id: Id,
+    io: T,
+    max_body_len: usize,
+}
+
+impl<T: Read2 + Write2 + Unpin + Send> FrameReader<T> {
+    pub(crate) fn new(id: Id, io: T, max_frame_body_len: usize) -> Self {
+        FrameReader {
+            id,
+            io,
+            max_body_len: max_frame_body_len,
+        }
     }
 
     pub(crate) async fn recv_frame(&mut self) -> Result<Frame<()>, FrameDecodeError> {

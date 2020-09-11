@@ -25,13 +25,12 @@
 // TODO: add example
 
 use async_trait::async_trait;
-use crate::{Multiaddr, Transport, transport::{TransportError}};
-use futures_timer::Delay;
 use std::{time::Duration};
-use futures::FutureExt;
-use futures::select;
 use log::{trace};
+use futures_timer::Delay;
+use futures::future::{select, Either};
 use crate::transport::TransportListener;
+use crate::{Multiaddr, Transport, transport::{TransportError}};
 
 /// A `TransportTimeout` is a `Transport` that wraps another `Transport` and adds
 /// timeouts to all inbound and outbound connection attempts.
@@ -92,21 +91,31 @@ impl<InnerTrans: Transport + Send> Transport for TransportTimeout<InnerTrans>
     }
 
     async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
-
-        let mut dial = self.inner.dial(addr).fuse();
-        let mut timeout = Delay::new(self.outgoing_timeout).fuse();
-
-        select! {
-            stream = dial => {
-                trace!("connected first");
-                let stream = stream?;
-                Ok(stream)
+        let output = select(self.inner.dial(addr), Delay::new(self.outgoing_timeout)).await;
+        match output {
+            Either::Left((stream, _)) => {
+                trace!("dialing connected first");
+                Ok(stream?)
             },
-            _ = timeout => {
-                trace!("dial timeout first");
+            Either::Right(_) => {
+                trace!("dialing timeout first");
                 Err(TransportError::Timeout)
             }
         }
+        // let mut dial = self.inner.dial(addr).fuse();
+        // let mut timeout = Delay::new(self.outgoing_timeout).fuse();
+        //
+        // select! {
+        //     stream = dial => {
+        //         trace!("connected first");
+        //         let stream = stream?;
+        //         Ok(stream)
+        //     },
+        //     _ = timeout => {
+        //         trace!("dial timeout first");
+        //         Err(TransportError::Timeout)
+        //     }
+        // }
     }
 }
 
@@ -120,23 +129,64 @@ impl<InnerListener: TransportListener + Send + Sync> TransportListener for Timeo
     type Output = InnerListener::Output;
 
     async fn accept(&mut self) -> Result<Self::Output, TransportError> {
-        let mut accept = self.inner.accept().fuse();
-        let mut timeout = Delay::new(self.timeout).fuse();
-
-        select! {
-            stream = accept => {
-                trace!("accept first");
-                let stream = stream?;
-                Ok(stream)
+        let output = select(self.inner.accept(), Delay::new(self.timeout)).await;
+        match output {
+            Either::Left((stream, _)) => {
+                trace!("accepted first");
+                Ok(stream?)
             },
-            _ = timeout => {
-                trace!("dial timeout first");
+            Either::Right(_) => {
+                trace!("accept timeout first");
                 Err(TransportError::Timeout)
             }
         }
+        // let mut accept = self.inner.accept().fuse();
+        // let mut timeout = Delay::new(self.timeout).fuse();
+        //
+        // select! {
+        //     stream = accept => {
+        //         trace!("accept first");
+        //         let stream = stream?;
+        //         Ok(stream)
+        //     },
+        //     _ = timeout => {
+        //         trace!("dial timeout first");
+        //         Err(TransportError::Timeout)
+        //     }
+        // }
     }
 
     fn multi_addr(&self) -> Multiaddr {
         self.inner.multi_addr()
+    }
+}
+
+
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+    use crate::{Transport, Multiaddr};
+    use crate::transport::TransportListener;
+    use crate::transport::memory::MemoryTransport;
+
+    #[test]
+    fn dialer_and_listener_timeout() {
+        fn test1(addr: Multiaddr) {
+            futures::executor::block_on(async move {
+                let mut timeout_listener = MemoryTransport::default().timeout(Duration::from_secs(1)).listen_on(addr).unwrap();
+                assert!(timeout_listener.accept().await.is_err());
+            });
+        }
+
+        fn test2(addr: Multiaddr) {
+            futures::executor::block_on(async move {
+                let tcp = MemoryTransport::default().timeout(Duration::from_secs(1));
+                assert!(tcp.dial(addr.clone()).await.is_err());
+            });
+        }
+
+        test1("/memory/1111".parse().unwrap());
+        test2("/memory/1111".parse().unwrap());
     }
 }

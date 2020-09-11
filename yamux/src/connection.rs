@@ -383,8 +383,7 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
 
             select! {
                 frame = self.socket.recv_frame().fuse() => {
-                    let frame = frame?;
-                    if let Some(stream) = self.on_frame(Ok(Some(frame))).await? {
+                    if let Some(stream) = self.on_frame(Ok(frame.ok())).await? {
                         self.socket
                             .flush()
                             .await

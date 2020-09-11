@@ -19,10 +19,9 @@
 // DEALINGS IN THE SOFTWARE.
 
 use async_trait::async_trait;
+use std::fmt;
 use crate::transport::{Transport, TransportError, TransportListener};
 use crate::Multiaddr;
-use std::{fmt, io, pin::Pin};
-use futures::{prelude::*, task::Context, task::Poll};
 
 /// Implementation of `Transport` that doesn't support any multiaddr.
 ///
@@ -59,12 +58,12 @@ impl Transport for DummyTransport {
     type Output = DummyStream;
     type Listener = DummyListener;
 
-    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
-        Err(TransportError::MultiaddrNotSupported(addr))
+    fn listen_on(self, _addr: Multiaddr) -> Result<Self::Listener, TransportError> {
+        Err(TransportError::Internal)
     }
 
-    async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
-        Err(TransportError::MultiaddrNotSupported(addr))
+    async fn dial(self, _addr: Multiaddr) -> Result<Self::Output, TransportError> {
+        Err(TransportError::Internal)
     }
 }
 
@@ -75,7 +74,7 @@ impl TransportListener for DummyListener {
     type Output = DummyStream;
 
     async fn accept(&mut self) -> Result<Self::Output, TransportError> {
-        Err(TransportError::IoError(io::ErrorKind::Other.into()))
+        Err(TransportError::Internal)
     }
 
     fn multi_addr(&self) -> Multiaddr {
@@ -85,39 +84,4 @@ impl TransportListener for DummyListener {
     }
 }
 
-/// Implementation of `AsyncRead` and `AsyncWrite`. Not meant to be instanciated.
 pub struct DummyStream(());
-
-impl fmt::Debug for DummyStream {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "DummyStream")
-    }
-}
-
-impl AsyncRead for DummyStream {
-    fn poll_read(self: Pin<&mut Self>, _: &mut Context, _: &mut [u8])
-        -> Poll<Result<usize, io::Error>>
-    {
-        Poll::Ready(Err(io::ErrorKind::Other.into()))
-    }
-}
-
-impl AsyncWrite for DummyStream {
-    fn poll_write(self: Pin<&mut Self>, _: &mut Context, _: &[u8])
-        -> Poll<Result<usize, io::Error>>
-    {
-        Poll::Ready(Err(io::ErrorKind::Other.into()))
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, _: &mut Context)
-        -> Poll<Result<(), io::Error>>
-    {
-        Poll::Ready(Err(io::ErrorKind::Other.into()))
-    }
-
-    fn poll_close(self: Pin<&mut Self>, _: &mut Context)
-        -> Poll<Result<(), io::Error>>
-    {
-        Poll::Ready(Err(io::ErrorKind::Other.into()))
-    }
-}
