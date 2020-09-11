@@ -280,7 +280,6 @@ where
 impl<InnerTrans, TMux, TSec> Transport for TransportUpgrade<InnerTrans, TMux, TSec>
 where
     InnerTrans: Transport + Send,
-    InnerTrans::Listener: TransportListener,
     InnerTrans::Output: Read2 + Write2 + Unpin,
     TSec: Upgrader<InnerTrans::Output> + Send + Clone,
     TSec::Output: Read2 + Write2 + Unpin,
