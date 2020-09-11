@@ -1,5 +1,5 @@
 
-use log::{trace};
+use log::{trace, info};
 use crate::transport::TransportError;
 use crate::upgrade::{Upgrader, ProtocolName};
 use crate::multistream::Negotiator;
@@ -36,14 +36,13 @@ impl<U> Multistream<U>
         U: Upgrader<C> + Send
     {
         trace!("starting multistream select for inbound...");
-        //TODO: multi stream select ...
         let protocols = self.inner.protocol_info();
         let neg = Negotiator::new_with_protocols(
             protocols.into_iter().map(NameWrap as fn(_) -> NameWrap<_>));
 
         let (proto, socket) = neg.negotiate(socket).await?;
 
-        log::info!("select_inbound {:?}", proto.protocol_name_str());
+        info!("select_inbound {:?}", proto.protocol_name_str());
         self.inner.upgrade_inbound(socket, proto.0).await
     }
 
@@ -53,14 +52,13 @@ impl<U> Multistream<U>
         U: Upgrader<C> + Send,
     {
         trace!("starting multistream select for outbound...");
-        //TODO: multi stream select ...
         let protocols = self.inner.protocol_info();
         let neg = Negotiator::new_with_protocols(
             protocols.into_iter().map(NameWrap as fn(_) -> NameWrap<_>));
 
         let (proto, socket) = neg.select_one(socket).await?;
 
-        log::info!("select_outbound {:?}", proto.protocol_name_str());
+        info!("select_outbound {:?}", proto.protocol_name_str());
         self.inner.upgrade_outbound(socket, proto.0).await
     }
 }
