@@ -82,7 +82,7 @@ pub mod upgrade;
 /// >           so that you would implement this trait on `&Foo` or `&mut Foo` instead of directly
 /// >           on `Foo`.
 #[async_trait]
-pub trait Transport {
+pub trait Transport: Send {
     /// The result of a connection setup process, including protocol upgrades.
     ///
     /// Typically the output contains at least a handle to a data stream (i.e. a
@@ -99,7 +99,7 @@ pub trait Transport {
     ///
     /// If this stream produces an error, it is considered fatal and the listener is killed. It
     /// is possible to report non-fatal errors by producing a [`ListenerEvent::Error`].
-    type Listener: TransportListener<Output = Self::Output> + Send;
+    type Listener: TransportListener<Output = Self::Output>;
 
     /// Listens on the given [`Multiaddr`], producing a stream of pending, inbound connections
     /// and addresses this transport is listening on (cf. [`ListenerEvent`]).
@@ -219,7 +219,7 @@ pub trait Transport {
 }
 
 #[async_trait]
-pub trait TransportListener {
+pub trait TransportListener: Send {
     /// The result of a connection setup process, including protocol upgrades.
     ///
     /// Typically the output contains at least a handle to a data stream (i.e. a

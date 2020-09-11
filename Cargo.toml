@@ -22,6 +22,7 @@ mplex = { path = "muxer/mplex", version = "0.1.0", package = "mplex" }
 secio = { path = "secio", version = "0.1.0", package = "secio" }
 multiaddr = { path = "multiaddr", package = "parity-multiaddr", version = "0.9.1" }
 libp2p-core = { path = "core", version = "0.1.0", package = "libp2p-core" }
+libp2p-swarm = { path = "swarm", version = "0.1.0", package = "libp2p-swarm" }
 
 
 async-std = { version = "1.6.2", features = ["attributes", "unstable"] }
@@ -61,8 +62,8 @@ members = [
   "secio",
   "core",
   "transports/tcp",
-#  "multiaddr",
-#  "bench",
+  "multiaddr",
+  "swarm",
 ]
 exclude = [
   "protocols/discovery",
