@@ -40,6 +40,8 @@ use multiaddr::Multiaddr;
 use parking_lot::Mutex;
 use std::{io, ops::Deref, fmt, pin::Pin, sync::atomic::{AtomicUsize, Ordering}};
 use crate::transport::TransportError;
+use futures::stream::BoxStream;
+use futures::future::BoxFuture;
 
 //pub use self::singleton::SingletonMuxer;
 
@@ -669,5 +671,5 @@ pub trait StreamMuxer {
 
     async fn accept_stream(&mut self) -> Result<Self::Substream, TransportError>;
 
-    fn start(&self);
+    fn task(&mut self) -> Option<BoxFuture<'static, ()>>;
 }

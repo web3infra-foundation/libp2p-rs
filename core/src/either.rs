@@ -24,6 +24,7 @@ use std::io;
 use crate::upgrade::ProtocolName;
 use crate::muxing::StreamMuxer;
 use crate::transport::TransportError;
+use futures::future::BoxFuture;
 
 
 #[derive(Debug, Copy, Clone)]
@@ -77,8 +78,8 @@ where
 #[async_trait]
 impl<A, B> StreamMuxer for EitherOutput<A, B>
 where
-    A: StreamMuxer + Send + Sync,
-    B: StreamMuxer + Send + Sync,
+    A: StreamMuxer + Send,
+    B: StreamMuxer + Send,
 {
     type Substream = EitherOutput<A::Substream, B::Substream>;
 
@@ -90,11 +91,17 @@ where
     }
 
     async fn accept_stream(&mut self) -> Result<Self::Substream, TransportError> {
-        unimplemented!()
+        match self {
+            EitherOutput::A(a) => Ok(EitherOutput::A(a.accept_stream().await?)),
+            EitherOutput::B(b) => Ok(EitherOutput::B(b.accept_stream().await?)),
+        }
     }
 
-    fn start(&self) {
-        unimplemented!()
+    fn task(&mut self) -> Option<BoxFuture<'static, ()>> {
+        match self {
+            EitherOutput::A(a) => a.task(),
+            EitherOutput::B(b) => b.task(),
+        }
     }
 }
 
