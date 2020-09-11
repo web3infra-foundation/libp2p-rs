@@ -74,7 +74,7 @@ impl<InnerTrans> TransportTimeout<InnerTrans> {
 }
 
 #[async_trait]
-impl<InnerTrans: Transport + Send> Transport for TransportTimeout<InnerTrans>
+impl<InnerTrans: Transport> Transport for TransportTimeout<InnerTrans>
 {
     type Output = InnerTrans::Output;
     type Listener = TimeoutListener<InnerTrans::Listener>;
@@ -125,7 +125,7 @@ pub struct TimeoutListener<InnerListener> {
 }
 
 #[async_trait]
-impl<InnerListener: TransportListener + Send> TransportListener for TimeoutListener<InnerListener> {
+impl<InnerListener: TransportListener> TransportListener for TimeoutListener<InnerListener> {
     type Output = InnerListener::Output;
 
     async fn accept(&mut self) -> Result<Self::Output, TransportError> {
