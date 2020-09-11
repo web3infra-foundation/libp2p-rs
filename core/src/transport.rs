@@ -99,7 +99,7 @@ pub trait Transport {
     ///
     /// If this stream produces an error, it is considered fatal and the listener is killed. It
     /// is possible to report non-fatal errors by producing a [`ListenerEvent::Error`].
-    type Listener;
+    type Listener: TransportListener<Output = Self::Output> + Send;
 
     /// Listens on the given [`Multiaddr`], producing a stream of pending, inbound connections
     /// and addresses this transport is listening on (cf. [`ListenerEvent`]).
