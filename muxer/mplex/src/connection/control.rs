@@ -26,6 +26,13 @@ impl Control {
         rx.await?
     }
 
+    /// Accept a new stream from the remote.
+    pub async fn accept_stream(&mut self) -> Result<Stream> {
+        let (tx, rx) = oneshot::channel();
+        self.sender.send(ControlCommand::AcceptStream(tx)).await?;
+        rx.await?
+    }
+
     /// Close the connection.
     pub async fn close(&mut self) -> Result<()> {
         let (tx, rx) = oneshot::channel();

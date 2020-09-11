@@ -13,7 +13,7 @@ pub struct LengthDelimited<T> {
 
 impl<R> LengthDelimited<R>
 where
-    R: Read2 + Write2 + Unpin + Send,
+    R: Unpin + Send,
 {
     /// Creates a new I/O resource for reading and writing unsigned-varint
     /// length delimited frames.
@@ -100,7 +100,7 @@ where
 
 impl<T> LengthDelimited<T>
 where
-    T: Read2 + Write2 + Send,
+    T: Write2 + Send,
 {
     pub(crate) async fn flush(&mut self) -> io::Result<()> {
         self.inner.write_all2(&self.write_buffer).await?;

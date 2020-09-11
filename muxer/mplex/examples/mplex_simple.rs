@@ -25,9 +25,17 @@ fn run_server() {
         while let Ok((socket, _)) = listener.accept().await {
             task::spawn(async move {
                 let mut muxer_conn = Connection::new(socket);
-                while let Ok(Some(mut stream)) = muxer_conn.next_stream().await {
+                let mut ctrl = muxer_conn.control().expect("get control failed");
+
+                task::spawn(async {
+                    let mut muxer_conn = muxer_conn;
+                    while let Ok(_) = muxer_conn.next_stream().await {}
+                    info!("connection is closed");
+                });
+
+                while let Ok(mut stream) = ctrl.accept_stream().await {
                     task::spawn(async move {
-                        info!("S: accepted new stream");
+                        info!("accepted new stream: {:?}", stream);
                         let mut buf = [0; 4096];
 
                         loop {
@@ -66,12 +74,12 @@ fn run_client() {
 
         task::spawn(async {
             let mut muxer_conn = muxer_conn;
-            while let Ok(Some(_)) = muxer_conn.next_stream().await {}
+            while let Ok(_) = muxer_conn.next_stream().await {}
             info!("connection is closed");
         });
 
         let mut handles = Vec::new();
-        for _ in 0..10 {
+        for _ in 0..1 {
             let mut stream = ctrl.clone().open_stream().await.unwrap();
             let handle = task::spawn(async move {
                 info!("C: opened new stream {}", stream.id());
