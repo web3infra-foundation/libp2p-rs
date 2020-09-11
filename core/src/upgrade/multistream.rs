@@ -2,6 +2,8 @@
 use log::{trace};
 use crate::transport::TransportError;
 use crate::upgrade::{Upgrader, ProtocolName};
+use crate::multistream::Negotiator;
+use libp2p_traits::{Read2 as ReadEx, Write2 as WriteEx};
 
 //b"/multistream/1.0.0"
 
@@ -29,32 +31,48 @@ impl<U> Multistream<U> {
 impl<U> Multistream<U>
 {
     pub(crate) async fn select_inbound<C>(self, socket: C) -> Result<U::Output, TransportError>
-        where
-            U: Upgrader<C> + Send
+    where
+        C: ReadEx + WriteEx + Send + Unpin,
+        U: Upgrader<C> + Send
     {
         trace!("starting multistream select for inbound...");
         //TODO: multi stream select ...
         let protocols = self.inner.protocol_info();
-        let a = protocols.into_iter().next().unwrap();
+        let neg = Negotiator::new_with_protocols(
+            protocols.into_iter().map(NameWrap as fn(_) -> NameWrap<_>));
 
-        log::info!("select_inbound {:?}", a.protocol_name_str());
-        self.inner.upgrade_inbound(socket, a).await
+        let (proto, socket) = neg.negotiate(socket).await?;
+
+        log::info!("select_inbound {:?}", proto.protocol_name_str());
+        self.inner.upgrade_inbound(socket, proto.0).await
     }
 
-    pub(crate) async fn select_outbound<C>(self, socket: C) -> Result<U::Output, TransportError>
-        where
-            U: Upgrader<C> + Send
+    pub(crate) async fn select_outbound<C: Send + Unpin>(self, socket: C) -> Result<U::Output, TransportError>
+    where
+        C: ReadEx + WriteEx + Send + Unpin,
+        U: Upgrader<C> + Send,
     {
         trace!("starting multistream select for outbound...");
         //TODO: multi stream select ...
         let protocols = self.inner.protocol_info();
-        let a = protocols.into_iter().next().unwrap();
+        let neg = Negotiator::new_with_protocols(
+            protocols.into_iter().map(NameWrap as fn(_) -> NameWrap<_>));
 
-        log::info!("select_outbound {:?}", a.protocol_name_str());
-        self.inner.upgrade_outbound(socket, a).await
+        let (proto, socket) = neg.select_one(socket).await?;
+
+        log::info!("select_outbound {:?}", proto.protocol_name_str());
+        self.inner.upgrade_outbound(socket, proto.0).await
     }
 }
 
+#[derive(Clone)]
+struct NameWrap<N>(N);
+
+impl<N: ProtocolName> AsRef<[u8]> for NameWrap<N> {
+    fn as_ref(&self) -> &[u8] {
+        self.0.protocol_name()
+    }
+}
 
 #[cfg(test)]
 mod tests {
