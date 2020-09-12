@@ -127,6 +127,7 @@ use std::num::{NonZeroU32, NonZeroUsize};
 use crate::network::{NetworkInfo, NetworkConfig};
 use crate::connection::{ConnectionLimit, ConnectedPoint, ConnectionId, ConnectionInfo, Connection, Endpoint, Direction};
 use libp2p_core::transport::TransportListener;
+use libp2p_core::secure_io::SecureInfo;
 
 /// The ID of a single listener.
 ///
@@ -275,6 +276,8 @@ where
     /// The next listener ID to assign.
     next_id: ListenerId,
 
+
+
 /*
     /// Handles which nodes to connect to and how to handle the events sent back by the protocol
     /// handlers.
@@ -316,7 +319,7 @@ where
 
 impl<TTrans, THandler> Swarm<TTrans, THandler>
 where TTrans: Transport + Clone,
-      TTrans::Output: StreamMuxer,
+      TTrans::Output: StreamMuxer + SecureInfo,
       // TInEvent: Clone + Send + 'static,
       // TOutEvent: Send + 'static,
       // TConnInfo: ConnectionInfo<PeerId = PeerId> + fmt::Debug + Clone + Send + 'static,
@@ -400,53 +403,74 @@ where TTrans: Transport + Clone,
             Err(())
         }
     }
-/*
+
     /// Tries to dial the given address.
     ///
     /// Returns an error if the address is not supported.
-    pub fn dial_addr(&mut self, addr: Multiaddr) -> Result<(), ConnectionLimit> {
-        let handler = self.behaviour.new_handler();
-        self.network.dial(&addr, handler.into_node_handler_builder()).map(|_id| ())
+    pub fn dial_addr(&mut self, addr: &Multiaddr) -> Result<(), TransportError> {
+        //let handler = self.behaviour.new_handler();
+        //self.network.dial(&addr, handler.into_node_handler_builder()).map(|_id| ())
+
+        // TODO: add dial limiter...
+        let conn = self.transport().clone().dial(addr.clone()).await?;
+
+        self.add_connection(conn, Direction::Outbound);
+        Ok(())
     }
 
     /// Tries to initiate a dialing attempt to the given peer.
     ///
-    /// If a new dialing attempt has been initiated, `Ok(true)` is returned.
-    ///
-    /// If no new dialing attempt has been initiated, meaning there is an ongoing
-    /// dialing attempt or `addresses_of_peer` reports no addresses, `Ok(false)`
-    /// is returned.
-    pub fn dial(&mut self, peer_id: &PeerId) -> Result<(), DialError> {
-        let self_listening = &self.listened_addrs;
-        let mut addrs = self.behaviour.addresses_of_peer(peer_id)
-            .into_iter()
-            .filter(|a| !self_listening.contains(a));
+    pub fn dial_peer(&mut self, peer_id: PeerId) -> Result<(), TransportError> {
+        // Find the multiaddr of the peer
 
-        let result =
-            if let Some(first) = addrs.next() {
-                let handler = self.behaviour.new_handler().into_node_handler_builder();
-                self.network.peer(peer_id.clone())
-                    .dial(first, addrs, handler)
-                    .map(|_| ())
-                    .map_err(DialError::ConnectionLimit)
-            } else {
-                Err(DialError::NoAddresses)
-            };
+        //
 
-        if let Err(error) = &result {
-            log::debug!(
-                "New dialing attempt to peer {:?} failed: {:?}.",
-                peer_id, error);
-            self.behaviour.inject_dial_failure(&peer_id);
+        // TODO: add dial limiter...
+        let conn = self.transport().clone().dial(address).await?;
+
+        self.add_connection(conn, Direction::Outbound);
+        Ok(())
+    }
+
+    /*
+        /// Tries to initiate a dialing attempt to the given peer.
+        ///
+        /// If a new dialing attempt has been initiated, `Ok(true)` is returned.
+        ///
+        /// If no new dialing attempt has been initiated, meaning there is an ongoing
+        /// dialing attempt or `addresses_of_peer` reports no addresses, `Ok(false)`
+        /// is returned.
+        pub fn dial(&mut self, peer_id: &PeerId) -> Result<(), DialError> {
+            let self_listening = &self.listened_addrs;
+            let mut addrs = self.behaviour.addresses_of_peer(peer_id)
+                .into_iter()
+                .filter(|a| !self_listening.contains(a));
+
+            let result =
+                if let Some(first) = addrs.next() {
+                    let handler = self.behaviour.new_handler().into_node_handler_builder();
+                    self.network.peer(peer_id.clone())
+                        .dial(first, addrs, handler)
+                        .map(|_| ())
+                        .map_err(DialError::ConnectionLimit)
+                } else {
+                    Err(DialError::NoAddresses)
+                };
+
+            if let Err(error) = &result {
+                log::debug!(
+                    "New dialing attempt to peer {:?} failed: {:?}.",
+                    peer_id, error);
+                self.behaviour.inject_dial_failure(&peer_id);
+            }
+
+            result
         }
-
-        result
-    }
-    /// Returns an iterator that produces the list of addresses we're listening on.
-    pub fn listeners(&self) -> impl Iterator<Item = &Multiaddr> {
-        self.listeners.iter().flat_map(|l| l.addresses.iter())
-    }
-*/
+        /// Returns an iterator that produces the list of addresses we're listening on.
+        pub fn listeners(&self) -> impl Iterator<Item = &Multiaddr> {
+            self.listeners.iter().flat_map(|l| l.addresses.iter())
+        }
+    */
 
     /// Returns an iterator that produces the list of addresses that other nodes can use to reach
     /// us.
@@ -504,8 +528,7 @@ where TTrans: Transport + Clone,
     }
 
     pub fn add_connection(&mut self, stream_muxer: TTrans::Output, dir: Direction) {
-        // TODO: get remote peerId, public key from underlying connection
-        let remote_peer_id = PeerId::random();
+        let remote_peer_id = stream_muxer.remote_peer();
 
         // build a Connection
         let conn = Connection::new(stream_muxer, dir);

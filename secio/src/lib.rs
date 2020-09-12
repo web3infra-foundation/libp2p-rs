@@ -17,7 +17,7 @@ use futures::{AsyncRead, AsyncWrite};
 use libp2p_core::upgrade::{Upgrader, UpgradeInfo};
 use libp2p_core::transport::TransportError;
 use libp2p_traits::{Read2, Write2};
-use libp2p_core::secure_io::SecureIo;
+use libp2p_core::secure_io::SecureInfo;
 use std::io;
 
 
@@ -180,8 +180,6 @@ impl<T> Upgrader<T> for Config
 
 /// Output of the secio protocol. It implements the SecureStream trait
 pub struct SecioOutput<S>
-    where
-        S: Read2 + Write2 + Unpin + Send + 'static
 {
     /// The encrypted stream.
     pub stream: SecureStream<S>,
@@ -197,9 +195,7 @@ pub struct SecioOutput<S>
     pub remote_peer_id: PeerId,
 }
 
-impl<S> SecureIo for SecioOutput<S>
-where
-    S: Read2 + Write2 + Unpin + Send + 'static
+impl<S> SecureInfo for SecioOutput<S>
 {
     fn local_peer(&self) -> PeerId {
         self.local_peer_id.clone()

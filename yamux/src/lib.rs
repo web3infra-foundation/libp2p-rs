@@ -53,6 +53,9 @@ use libp2p_core::muxing::StreamMuxer;
 use futures::{StreamExt, TryStreamExt, SinkExt};
 use futures::future::BoxFuture;
 use futures::channel::mpsc;
+use libp2p_core::secure_io::SecureInfo;
+use libp2p_core::identity::Keypair;
+use libp2p_core::{PublicKey, PeerId};
 
 const DEFAULT_CREDIT: u32 = 256 * 1024; // as per yamux specification
 
@@ -230,6 +233,25 @@ impl Yamux
         Yamux(inner)
     }
 }
+
+impl SecureInfo for Yamux {
+    fn local_peer(&self) -> PeerId {
+        unimplemented!()
+    }
+
+    fn remote_peer(&self) -> PeerId {
+        unimplemented!()
+    }
+
+    fn local_priv_key(&self) -> Keypair {
+        unimplemented!()
+    }
+
+    fn remote_pub_key(&self) -> PublicKey {
+        unimplemented!()
+    }
+}
+
 
 #[async_trait]
 impl StreamMuxer for Yamux
