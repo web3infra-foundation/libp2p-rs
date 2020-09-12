@@ -10,13 +10,15 @@ use crate::{
 };
 
 use libp2p_core::identity::Keypair;
-use libp2p_core::PublicKey;
+use libp2p_core::{PublicKey, PeerId};
 
 use crate::codec::secure_stream::SecureStream;
 use futures::{AsyncRead, AsyncWrite};
 use libp2p_core::upgrade::{Upgrader, UpgradeInfo};
 use libp2p_core::transport::TransportError;
 use libp2p_traits::{Read2, Write2};
+use libp2p_core::secure_io::SecureIo;
+use std::io;
 
 
 /// Encrypted and decrypted codec implementation, and stream handle
@@ -133,20 +135,6 @@ impl Config {
     }
 }
 
-
-/// Output of the secio protocol.
-pub struct SecioOutput<S>
-    where
-        S: AsyncRead + AsyncWrite + Unpin + Send + 'static
-{
-    /// The encrypted stream.
-    pub stream: SecureStream<S>,
-    /// The public key of the remote.
-    pub remote_key: PublicKey,
-    /// Ephemeral public key used during the negotiation.
-    pub ephemeral_public_key: Vec<u8>,
-}
-
 impl UpgradeInfo for Config
 {
     type Info = &'static [u8];
@@ -156,56 +144,103 @@ impl UpgradeInfo for Config
     }
 }
 
+async fn make_secure_output<T>(config: Config, socket: T) -> Result<SecioOutput<T>, TransportError>
+where T: Read2 + Write2 + Send + Unpin + 'static
+{
+    // TODO: to be more elegant, local private key could be returned by handshake()
+    let pri_key = config.key.clone();
+
+    let (stream, remote_pub_key, ephemeral_public_key) = config.handshake(socket).await?;
+    let output = SecioOutput {
+        stream,
+        local_priv_key: pri_key.clone(),
+        local_peer_id: pri_key.public().into(),
+        remote_pub_key: remote_pub_key.clone(),
+        ephemeral_public_key,
+        remote_peer_id: remote_pub_key.into(),
+    };
+    Ok(output)
+}
+
+
 #[async_trait]
 impl<T> Upgrader<T> for Config
     where T: Read2 + Write2 + Send + Unpin + 'static
 {
-    type Output = SecureStream<T>;
+    type Output = SecioOutput<T>;
 
     async fn upgrade_inbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
-        let (handle, _, _) = self.handshake(socket).await?;
-        Ok(handle)
+        make_secure_output(self, socket).await
     }
 
     async fn upgrade_outbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
-        let (handle, _, _) = self.handshake(socket).await?;
-        Ok(handle)
-    }
-}
-/*
-impl<S> AsyncRead for SecioOutput<S>
-    where
-        S: AsyncRead + AsyncWrite + Unpin + Send + 'static
-{
-    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context, buf: &mut [u8])
-                 -> Poll<Result<usize, io::Error>>
-    {
-        AsyncRead::poll_read(Pin::new(&mut self.stream), cx, buf)
+        make_secure_output(self, socket).await
     }
 }
 
-impl<S> AsyncWrite for SecioOutput<S>
+/// Output of the secio protocol. It implements the SecureStream trait
+pub struct SecioOutput<S>
     where
-        S: AsyncRead + AsyncWrite + Unpin + Send + 'static
+        S: Read2 + Write2 + Unpin + Send + 'static
 {
-    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context, buf: &[u8])
-                  -> Poll<Result<usize, io::Error>>
-    {
-        AsyncWrite::poll_write(Pin::new(&mut self.stream), cx, buf)
+    /// The encrypted stream.
+    pub stream: SecureStream<S>,
+    /// The private key of the local
+    pub local_priv_key: Keypair,
+    /// For convenience, the local peer ID, generated from local pub key
+    pub local_peer_id: PeerId,
+    /// The public key of the remote.
+    pub remote_pub_key: PublicKey,
+    /// Ephemeral public key used during the negotiation.
+    pub ephemeral_public_key: Vec<u8>,
+    /// For convenience, put a PeerId here, which is actually calculated from remote_key
+    pub remote_peer_id: PeerId,
+}
+
+impl<S> SecureIo for SecioOutput<S>
+where
+    S: Read2 + Write2 + Unpin + Send + 'static
+{
+    fn local_peer(&self) -> PeerId {
+        self.local_peer_id.clone()
     }
 
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context)
-                  -> Poll<Result<(), io::Error>>
-    {
-        AsyncWrite::poll_flush(Pin::new(&mut self.stream), cx)
+    fn remote_peer(&self) -> PeerId {
+        self.remote_peer_id.clone()
     }
 
-    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context)
-                  -> Poll<Result<(), io::Error>>
-    {
-        AsyncWrite::poll_close(Pin::new(&mut self.stream), cx)
+    fn local_priv_key(&self) -> Keypair {
+        self.local_priv_key.clone()
     }
-}*/
+
+    fn remote_pub_key(&self) -> PublicKey {
+        self.remote_pub_key.clone()
+    }
+}
+
+#[async_trait]
+impl<S: Read2 + Write2 + Unpin + Send + 'static> Read2 for SecioOutput<S>
+{
+    async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
+        self.stream.read2(buf).await
+    }
+}
+
+#[async_trait]
+impl<S: Read2 + Write2 + Unpin + Send + 'static> Write2 for SecioOutput<S>
+{
+    async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
+        self.stream.write2(buf).await
+    }
+
+    async fn flush2(&mut self) -> Result<(), io::Error> {
+        self.stream.flush2().await
+    }
+
+    async fn close2(&mut self) -> Result<(), io::Error> {
+        self.stream.close2().await
+    }
+}
 
 impl From<SecioError> for TransportError {
     fn from(_: SecioError) -> Self {

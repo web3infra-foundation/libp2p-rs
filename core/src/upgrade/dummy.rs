@@ -116,6 +116,10 @@ impl<T: Send> StreamMuxer for DummyStream<T> {
         Ok(())
     }
 
+    async fn close(&mut self) -> Result<(), TransportError> {
+        Ok(())
+    }
+
     fn task(&mut self) -> Option<BoxFuture<'static, ()>> {
         None
     }

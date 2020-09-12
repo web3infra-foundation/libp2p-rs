@@ -671,5 +671,7 @@ pub trait StreamMuxer {
 
     async fn accept_stream(&mut self) -> Result<Self::Substream, TransportError>;
 
+    async fn close(&mut self) -> Result<(), TransportError>;
+
     fn task(&mut self) -> Option<BoxFuture<'static, ()>>;
 }

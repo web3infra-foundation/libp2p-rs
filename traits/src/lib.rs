@@ -46,7 +46,7 @@ pub trait Read2 {
     ///
     /// On success, returns `Ok(Vec<u8>)`.
     /// Otherwise, returns io::Error
-    async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize>;
+    async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error>;
 
     /// Reads the exact number of bytes requested.
     ///
@@ -65,7 +65,7 @@ pub trait Read2 {
     /// assert_eq!(contents, b"hel");
     /// # std::io::Result::Ok(()) });
     /// ```
-    async fn read_exact2<'a>(&'a mut self, buf: &'a mut [u8]) -> io::Result<()> {
+    async fn read_exact2<'a>(&'a mut self, buf: &'a mut [u8]) -> Result<(), io::Error> {
         let mut buf_piece = buf;
         while !buf_piece.is_empty() {
             let n = self.read2(buf_piece).await?;
@@ -88,12 +88,12 @@ pub trait Write2 {
     ///
     /// On success, returns `Ok(num_bytes_written)`.
     /// Otherwise, returns io::Error
-    async fn write2(&mut self, buf: &[u8]) -> io::Result<usize>;
+    async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error>;
     /// Attempt to write the entire contents of data into object.
     ///
     /// The operation will not complete until all the data has been written.
     ///
-    async fn write_all2(&mut self, buf: &[u8]) -> io::Result<()> {
+    async fn write_all2(&mut self, buf: &[u8]) -> Result<(), io::Error> {
         let mut buf_piece = buf;
         while !buf_piece.is_empty() {
             let n = self.write2(buf).await?;
@@ -111,7 +111,7 @@ pub trait Write2 {
     /// their destination.
     ///
     /// On success, returns `Ok(())`.
-    async fn flush2(&mut self) -> io::Result<()>;
+    async fn flush2(&mut self) -> Result<(), io::Error>;
 
     /// Attempt to close the object.
     ///
@@ -128,12 +128,12 @@ pub trait Write2 {
     /// `Interrupted`.  Implementations must convert `WouldBlock` into
     /// `Poll::Pending` and either internally retry or convert
     /// `Interrupted` into another error kind.
-    async fn close2(&mut self) -> io::Result<()>;
+    async fn close2(&mut self) -> Result<(), io::Error>;
 }
 
 #[async_trait]
 impl<T: AsyncRead + Unpin + Send> Read2 for T {
-    async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+    async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
         let n = AsyncReadExt::read(self, buf).await?;
         Ok(n)
     }
@@ -141,15 +141,15 @@ impl<T: AsyncRead + Unpin + Send> Read2 for T {
 
 #[async_trait]
 impl<T: AsyncWrite + Unpin + Send> Write2 for T {
-    async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
+    async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
         AsyncWriteExt::write(self, buf).await
     }
 
-    async fn flush2(&mut self) -> io::Result<()> {
+    async fn flush2(&mut self) -> Result<(), io::Error> {
         AsyncWriteExt::flush(self).await
     }
 
-    async fn close2(&mut self) -> io::Result<()> {
+    async fn close2(&mut self) -> Result<(), io::Error> {
         AsyncWriteExt::close(self).await
     }
 }
@@ -168,22 +168,22 @@ mod tests {
 
             #[async_trait]
             impl Read2 for Test {
-                async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+                async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
                     self.0.read(buf).await
                 }
             }
 
             #[async_trait]
             impl Write2 for Test {
-                async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
+                async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
                     self.0.write(buf).await
                 }
 
-                async fn flush2(&mut self) -> io::Result<()> {
+                async fn flush2(&mut self) -> Result<(), io::Error> {
                     self.0.flush().await
                 }
 
-                async fn close2(&mut self) -> io::Result<()> {
+                async fn close2(&mut self) -> Result<(), io::Error> {
                     self.0.close().await
                 }
             }

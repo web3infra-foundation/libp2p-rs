@@ -234,6 +234,109 @@ where
             substreams: Default::default()
         }
     }
+
+    /*
+    pub fn local_multiaddr(&self) -> Multiaddr {
+        //self.muxer.mul
+    }
+
+
+// LocalMultiaddr is the Multiaddr on this side
+func (c *Conn) LocalMultiaddr() ma.Multiaddr {
+	return c.conn.LocalMultiaddr()
+}
+
+// LocalPeer is the Peer on our side of the connection
+func (c *Conn) LocalPeer() peer.ID {
+	return c.conn.LocalPeer()
+}
+
+// RemoteMultiaddr is the Multiaddr on the remote side
+func (c *Conn) RemoteMultiaddr() ma.Multiaddr {
+	return c.conn.RemoteMultiaddr()
+}
+
+// RemotePeer is the Peer on the remote side
+func (c *Conn) RemotePeer() peer.ID {
+	return c.conn.RemotePeer()
+}
+
+// LocalPrivateKey is the public key of the peer on this side
+func (c *Conn) LocalPrivateKey() ic.PrivKey {
+	return c.conn.LocalPrivateKey()
+}
+
+// RemotePublicKey is the public key of the peer on the remote side
+func (c *Conn) RemotePublicKey() ic.PubKey {
+	return c.conn.RemotePublicKey()
+}
+
+// Stat returns metadata pertaining to this connection
+func (c *Conn) Stat() network.Stat {
+	return c.stat
+}
+
+// NewStream returns a new Stream from this connection
+func (c *Conn) NewStream() (network.Stream, error) {
+	ts, err := c.conn.OpenStream()
+	if err != nil {
+		return nil, err
+	}
+	return c.addStream(ts, network.DirOutbound)
+}
+
+func (c *Conn) addStream(ts mux.MuxedStream, dir network.Direction) (*Stream, error) {
+	c.streams.Lock()
+	// Are we still online?
+	if c.streams.m == nil {
+		c.streams.Unlock()
+		ts.Reset()
+		return nil, ErrConnClosed
+	}
+
+	// Wrap and register the stream.
+	stat := network.Stat{Direction: dir}
+	s := &Stream{
+		stream: ts,
+		conn:   c,
+		stat:   stat,
+	}
+	c.streams.m[s] = struct{}{}
+
+	// Released once the stream disconnect notifications have finished
+	// firing (in Swarm.remove).
+	c.swarm.refs.Add(1)
+
+	// Take the notification lock before releasing the streams lock to block
+	// StreamClose notifications until after the StreamOpen notifications
+	// done.
+	s.notifyLk.Lock()
+	c.streams.Unlock()
+
+	c.swarm.notifyAll(func(f network.Notifiee) {
+		f.OpenedStream(c.swarm, s)
+	})
+	s.notifyLk.Unlock()
+
+	return s, nil
+}
+
+// GetStreams returns the streams associated with this connection.
+func (c *Conn) GetStreams() []network.Stream {
+	c.streams.Lock()
+	defer c.streams.Unlock()
+	streams := make([]network.Stream, 0, len(c.streams.m))
+	for s := range c.streams.m {
+		streams = append(streams, s)
+	}
+	return streams
+}
+
+
+     */
+
+
+
     /*
 
     /// Notifies the connection handler of an event.

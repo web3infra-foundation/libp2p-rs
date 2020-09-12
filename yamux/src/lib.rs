@@ -247,6 +247,11 @@ impl StreamMuxer for Yamux
         self.0.stream_receiver.next().await.ok_or(TransportError::Internal)
     }
 
+    async fn close(&mut self) -> Result<(), TransportError> {
+        let _ = self.0.control.close().await?;
+        Ok(())
+    }
+
     // fn take_inner_stream(&mut self) -> Option<BoxStream<'static, Result<Self::Substream, TransportError>>> {
     //     let stream = self.0.incoming.take();
     //     stream
