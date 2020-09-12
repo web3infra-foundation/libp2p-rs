@@ -33,3 +33,5 @@ pub mod secure_io;
 pub mod muxing;
 
 pub mod either;
+
+pub mod peerstore;
