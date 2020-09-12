@@ -26,6 +26,9 @@ use crate::transport::{TransportError};
 use crate::muxing::StreamMuxer;
 use libp2p_traits::{Read2, Write2};
 use futures::future::BoxFuture;
+use crate::secure_io::SecureInfo;
+use crate::identity::Keypair;
+use crate::{PublicKey, PeerId};
 
 /// Implementation of dummy `Upgrader` that doesn't do anything practice.
 ///
@@ -122,5 +125,23 @@ impl<T: Send> StreamMuxer for DummyStream<T> {
 
     fn task(&mut self) -> Option<BoxFuture<'static, ()>> {
         None
+    }
+}
+
+impl<T> SecureInfo for DummyStream<T> {
+    fn local_peer(&self) -> PeerId {
+        PeerId::random()
+    }
+
+    fn remote_peer(&self) -> PeerId {
+        PeerId::random()
+    }
+
+    fn local_priv_key(&self) -> Keypair {
+        Keypair::generate_ed25519()
+    }
+
+    fn remote_pub_key(&self) -> PublicKey {
+        unimplemented!()
     }
 }

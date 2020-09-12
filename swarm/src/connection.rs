@@ -30,6 +30,9 @@ use std::hash::Hash;
 use libp2p_core::muxing::StreamMuxer;
 use libp2p_core::transport::TransportError;
 use smallvec::SmallVec;
+use libp2p_core::secure_io::SecureInfo;
+use libp2p_core::PublicKey;
+use libp2p_core::identity::Keypair;
 
 /// The direction of a peer-to-peer communication channel.
 #[derive(Debug, Clone, PartialEq)]
@@ -223,7 +226,7 @@ where
 
 impl<TMuxer> Connection<TMuxer>
 where
-    TMuxer: StreamMuxer,
+    TMuxer: StreamMuxer + SecureInfo,
 {
     /// Builds a new `Connection` from the given substream multiplexer
     /// and connection handler.
@@ -234,6 +237,54 @@ where
             substreams: Default::default()
         }
     }
+
+    /// local_peer is the Peer on our side of the connection
+    pub fn local_peer(&self) -> PeerId {
+        self.muxer.local_peer()
+    }
+
+    /// remote_peer is the Peer on the remote side
+    pub fn remote_peer(&self) -> PeerId {
+        self.muxer.remote_peer()
+    }
+
+    /// local_priv_key is the public key of the peer on this side
+    pub fn local_priv_key(&self) -> Keypair {
+        self.muxer.local_priv_key()
+    }
+
+    /// remote_pub_key is the public key of the peer on the remote side
+    pub fn remote_pub_key(&self) -> PublicKey {
+        self.muxer.remote_pub_key()
+    }
+
+
+    fn add_stream(&mut self, ss: TMuxer::Substream, dir: Endpoint) -> Result<(), ()> {
+        self.substreams.push(ss);
+
+        // TODO: generate STREAM_OPENED event
+
+        Ok(())
+    }
+
+    /// new_stream returns a new Stream from this connection
+    ///
+    pub async fn new_stream(&mut self) -> Result<TMuxer::Substream, TransportError> {
+        let ss = self.muxer.open_stream().await?;
+        self.add_stream(ss.clone(), Endpoint::Dialer);
+
+        Ok(ss)
+    }
+
+    /// new_stream returns a new Stream from this connection
+    ///
+    pub async fn accept_stream(&mut self) -> Result<TMuxer::Substream, TransportError> {
+        let ss = self.muxer.accept_stream().await?;
+        self.add_stream(ss.clone(), Endpoint::Listener);
+
+        Ok(ss)
+    }
+}
 
     /*
     pub fn local_multiaddr(&self) -> Multiaddr {
@@ -246,30 +297,13 @@ func (c *Conn) LocalMultiaddr() ma.Multiaddr {
 	return c.conn.LocalMultiaddr()
 }
 
-// LocalPeer is the Peer on our side of the connection
-func (c *Conn) LocalPeer() peer.ID {
-	return c.conn.LocalPeer()
-}
 
 // RemoteMultiaddr is the Multiaddr on the remote side
 func (c *Conn) RemoteMultiaddr() ma.Multiaddr {
 	return c.conn.RemoteMultiaddr()
 }
 
-// RemotePeer is the Peer on the remote side
-func (c *Conn) RemotePeer() peer.ID {
-	return c.conn.RemotePeer()
-}
 
-// LocalPrivateKey is the public key of the peer on this side
-func (c *Conn) LocalPrivateKey() ic.PrivKey {
-	return c.conn.LocalPrivateKey()
-}
-
-// RemotePublicKey is the public key of the peer on the remote side
-func (c *Conn) RemotePublicKey() ic.PubKey {
-	return c.conn.RemotePublicKey()
-}
 
 // Stat returns metadata pertaining to this connection
 func (c *Conn) Stat() network.Stat {
@@ -393,7 +427,7 @@ func (c *Conn) GetStreams() []network.Stream {
                 }
             }
         }*/
-}
+
 
 /// Borrowed information about an incoming connection currently being negotiated.
 #[derive(Debug, Copy, Clone)]

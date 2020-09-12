@@ -5,8 +5,7 @@ use crate::transport::TransportError;
 use crate::{PeerId, PublicKey};
 use crate::identity::Keypair;
 
-
-pub trait SecureIo: Read2 + Write2 + Unpin {
+pub trait SecureInfo {
     fn local_peer(&self) -> PeerId;
 
     fn remote_peer(&self) -> PeerId;
@@ -15,3 +14,4 @@ pub trait SecureIo: Read2 + Write2 + Unpin {
 
     fn remote_pub_key(&self) -> PublicKey;
 }
+
