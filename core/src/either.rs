@@ -97,6 +97,13 @@ where
         }
     }
 
+    async fn close(&mut self) -> Result<(), TransportError> {
+        match self {
+            EitherOutput::A(a) => a.close().await,
+            EitherOutput::B(b) => b.close().await,
+        }
+    }
+
     fn task(&mut self) -> Option<BoxFuture<'static, ()>> {
         match self {
             EitherOutput::A(a) => a.task(),

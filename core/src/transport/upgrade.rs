@@ -21,6 +21,7 @@ use futures::stream::FuturesUnordered;
 use std::num::NonZeroUsize;
 use crate::upgrade::multistream::Multistream;
 use crate::muxing::StreamMuxer;
+use crate::secure_io::SecureIo;
 
 
 /// A `TransportUpgrade` is a `Transport` that wraps another `Transport` and adds
@@ -40,7 +41,7 @@ where
     InnerTrans: Transport,
     InnerTrans::Output: Read2 + Write2 + Unpin,
     TSec: Upgrader<InnerTrans::Output>,
-    TSec::Output: Read2 + Write2 + Unpin,
+    TSec::Output: SecureIo,
     TMux: Upgrader<TSec::Output>,
     TMux::Output: StreamMuxer
 {
@@ -281,7 +282,7 @@ where
     InnerTrans: Transport,
     InnerTrans::Output: Read2 + Write2 + Unpin,
     TSec: Upgrader<InnerTrans::Output>,
-    TSec::Output: Read2 + Write2 + Unpin,
+    TSec::Output: SecureIo,
     TMux: Upgrader<TSec::Output>,
     TMux::Output: StreamMuxer
 {
@@ -329,7 +330,7 @@ where
     InnerListener: TransportListener,
     InnerListener::Output: Read2 + Write2 + Unpin,
     TSec: Upgrader<InnerListener::Output>,
-    TSec::Output: Read2 + Write2 + Unpin,
+    TSec::Output: SecureIo,
     TMux: Upgrader<TSec::Output>,
     TMux::Output: StreamMuxer,
 {

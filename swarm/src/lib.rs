@@ -122,10 +122,10 @@ use libp2p_core::{
 use registry::{Addresses, AddressIntoIter};
 use smallvec::SmallVec;
 use std::{error, fmt, hash::Hash, io, ops::{Deref, DerefMut}, pin::Pin, task::{Context, Poll}};
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::num::{NonZeroU32, NonZeroUsize};
 use crate::network::{NetworkInfo, NetworkConfig};
-use crate::connection::{ConnectionLimit, ConnectedPoint, ConnectionId, ConnectionInfo};
+use crate::connection::{ConnectionLimit, ConnectedPoint, ConnectionId, ConnectionInfo, Connection, Endpoint, Direction};
 use libp2p_core::transport::TransportListener;
 
 /// The ID of a single listener.
@@ -259,7 +259,9 @@ pub enum SwarmEvent<TBvEv/*, THandleErr*/> {
 /// Contains the state of the network, plus the way it should behave.
 pub struct Swarm<TTrans, THandler>
 where
-    TTrans: Transport,
+    TTrans: Transport + Clone,
+    TTrans::Output: StreamMuxer,
+
 //    THandler: IntoProtocolsHandler,
 //    TConnInfo: ConnectionInfo<PeerId = PeerId>,
 {
@@ -292,6 +294,11 @@ where
     /// List of nodes for which we deny any incoming connection.
     banned_peers: HashSet<PeerId>,
 
+    /// The active connections, both incoming and outgoing
+    connections: HashMap<PeerId, Connection<TTrans::Output>>,
+
+
+
     //
     // /// Pending event to be delivered to connection handlers
     // /// (or dropped if the peer disconnected) before the `behaviour`
@@ -309,6 +316,7 @@ where
 
 impl<TTrans, THandler> Swarm<TTrans, THandler>
 where TTrans: Transport + Clone,
+      TTrans::Output: StreamMuxer,
       // TInEvent: Clone + Send + 'static,
       // TOutEvent: Send + 'static,
       // TConnInfo: ConnectionInfo<PeerId = PeerId> + fmt::Debug + Clone + Send + 'static,
@@ -339,7 +347,8 @@ where TTrans: Transport + Clone,
             supported_protocols: Default::default(),
             listened_addrs: Default::default(),
             external_addrs: Default::default(),
-            banned_peers: Default::default()
+            banned_peers: Default::default(),
+            connections: Default::default()
         }
     }
 
@@ -369,7 +378,7 @@ where TTrans: Transport + Clone,
     /// TODO: addr: Multiaddr might be a Vec<Multiaddr>
     pub fn listen_on(&mut self, addr: Multiaddr) -> Result<ListenerId, TransportError> {
         let listener = self.transport.clone().listen_on(addr)?;
-        //self.listened_addrs.push(listener.multi_addr());
+        self.listened_addrs.push(listener.multi_addr());
         self.listeners.push(Listener {
             id: self.next_id,
             listener,
@@ -491,8 +500,28 @@ where TTrans: Transport + Clone,
 
     /// Unbans a peer.
     pub fn unban_peer_id(&mut self, peer_id: PeerId) {
-        self.banned_peers.remove(&peer_id);
+        self.banned_peers.remove(peer_id.as_ref());
     }
+
+    pub fn add_connection(&mut self, stream_muxer: TTrans::Output, dir: Direction) {
+        // TODO: get remote peerId, public key from underlying connection
+        let remote_peer_id = PeerId::random();
+
+        // build a Connection
+        let conn = Connection::new(stream_muxer, dir);
+
+        self.connections.insert(remote_peer_id, conn);
+
+        // TODO: we have a connection to the specified peer_id, now cancel all pending attempts
+
+
+        // TODO: generate a connected event
+
+        // TODO: start the connection in a background task
+
+        // TODO: return the connection
+    }
+
 /*
     /// Returns the next event that happens in the `Swarm`.
     ///

@@ -29,6 +29,7 @@ pub use transport::Transport;
 pub use multiaddr::Multiaddr;
 
 pub mod upgrade;
+pub mod secure_io;
 pub mod muxing;
 
 pub mod either;
