@@ -37,21 +37,30 @@ fn main() {
         let mut listener = t1.listen_on(listen_addr).unwrap();
 
         loop {
+            log::error!("looping accept");
             let mut stream_muxer = listener.accept().await.unwrap();
             if let Some(task) = stream_muxer.task() {
                 task::spawn(task);
             }
 
-            loop {
-                let stream = stream_muxer.accept_stream().await.unwrap();
-                log::info!("server accepted a new substream {:?}", stream);
+            task::spawn(async move {
+                loop {
+                    let mut stream = stream_muxer.accept_stream().await.unwrap();
+                    log::info!("server accepted a new substream {:?}", stream);
 
-                task::spawn(async {
-                    let (rx, tx) = stream.split2();
-                    copy(rx, tx).await?;
-                    Ok::<(), std::io::Error>(())
-                });
+                    task::spawn(async move {
+                        let mut msg = vec![0; 4096];
+                        loop {
+                            let n = stream.read2(&mut msg).await?;
+                            stream.write2(&msg[..n]).await?;
+                        }
+                        // let (rx, tx) = stream.split2();
+                        // copy(rx, tx).await?;
+                        Ok::<(), std::io::Error>(())
+                    });
+                }
             }
+            );
 
             // let mut msg = vec![0; 4096];
             // loop {
@@ -64,7 +73,7 @@ fn main() {
     // Setup dialer.
     task::block_on(async {
 
-        for i in 0..1u32 {
+        for i in 0..2u32 {
             let addr = t1_addr.clone();
             task::spawn(async move {
                 let mut msg = [1, 2, 3];
@@ -81,13 +90,13 @@ fn main() {
                     task::spawn(task);
                 }
 
-                for j in 0..3u32 {
+                for j in 0..2u32 {
                     let mut socket = stream_muxer.open_stream().await?;
 
                     log::info!("client{} got a new substream {:?}", i, socket);
 
-                    socket.write_all2(&msg).await.unwrap();
-                    socket.read_exact2(&mut msg).await.unwrap();
+                    socket.write_all2(&msg).await?;
+                    socket.read_exact2(&mut msg).await?;
                     log::info!("client{} got {:?}", i, msg);
 
                     socket.close2().await?;
@@ -95,6 +104,8 @@ fn main() {
                 Ok::<(), TransportError>(())
             }).await;
         }
+
+        //loop{}
     });
 }
 
