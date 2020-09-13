@@ -10,13 +10,14 @@ keywords = ["peer-to-peer", "libp2p", "networking"]
 categories = ["network-programming", "asynchronous"]
 
 [dependencies]
+async-std = "1.6"
 futures = "0.3"
-libp2p-core = { version = "0.1.0", path = "../core" }
 log = "0.4"
 rand = "0.7"
 smallvec = "1.0"
 wasm-timer = "0.2"
 void = "1"
+libp2p-core = { version = "0.1.0", path = "../core" }
 
 [dev-dependencies]
 #libp2p-mplex = { path = "../muxer/mplex" }
