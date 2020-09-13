@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 use smallvec::SmallVec;
 
+#[derive(Default)]
 pub struct PeerStore {
     pub addrs: AddrBook,
 }
@@ -44,7 +45,7 @@ impl fmt::Display for AddrBook {
 
 impl AddrBook {
     pub fn add_addr(&mut self, peer_id: &PeerId, addr: Multiaddr, _ttl: Duration) {
-        if let Some(entry) = self.book.get_mut(peer_id) {
+        if let Some(entry) = self.book.get_mut(peer_id.as_ref()) {
             if !entry.contains(&addr) {
                 entry.push(addr);
             }
@@ -54,11 +55,11 @@ impl AddrBook {
         }
 
     }
-    pub fn del_addr(&mut self, peer_id: &PeerId) {
-        self.book.remove(peer_id);
+    pub fn del_peer(&mut self, peer_id: &PeerId) {
+        self.book.remove(peer_id.as_ref());
     }
-    pub fn get_addr(&mut self, peer_id: &PeerId) -> Option<&SmallVec<[Multiaddr; 4]>> {
-        self.book.get(peer_id)
+    pub fn get_addr(&self, peer_id: &PeerId) -> Option<&SmallVec<[Multiaddr; 4]>> {
+        self.book.get(peer_id.as_ref())
     }
 }
 
@@ -87,7 +88,7 @@ mod tests {
         let addrs = ab.get_addr(&peer_id).unwrap();
         assert_eq!(addrs.len(), 2);
 
-        ab.del_addr(&peer_id);
+        ab.del_peer(&peer_id);
         assert!(ab.get_addr(&peer_id).is_none());
     }
 }
