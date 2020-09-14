@@ -16,7 +16,7 @@ use libp2p_core::upgrade::{DummyUpgrader, Selector};
 use libp2p_core::muxing::StreamMuxer;
 use futures::StreamExt;
 use futures::future;
-use winapi::_core::time::Duration;
+use std::time::Duration;
 
 fn main() {
     //env_logger::init();
