@@ -660,7 +660,7 @@ where
 #[async_trait]
 pub trait StreamMuxer {
     /// Type of the object that represents the raw substream where data can be read and written.
-    type Substream: Clone;
+    type Substream;
 
     /// Opens a new outgoing substream, and produces the equivalent to a future that will be
     /// resolved when it becomes available.
