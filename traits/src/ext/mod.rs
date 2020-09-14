@@ -3,7 +3,7 @@ pub mod split;
 use crate::{Read2, Write2};
 
 // use futures::{AsyncRead, AsyncReadExt, AsyncWrite, io::{ReadHalf, WriteHalf}};
-use split::{ReadHalf, WriteHalf};
+pub use split::{ReadHalf, WriteHalf};
 
 pub trait ReadExt2: Read2 {
     /// Helper method for splitting this read/write object into two halves.

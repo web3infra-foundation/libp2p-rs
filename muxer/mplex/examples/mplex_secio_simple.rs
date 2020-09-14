@@ -3,10 +3,14 @@ use async_std::{
     task,
 };
 use futures::TryStreamExt;
-use libp2p_traits::{Read2, Write2};
 use log::{error, info};
+
+use libp2p_core::identity::Keypair;
+use secio::Config as SecioConfig;
+
+use async_std::sync::Arc;
+use libp2p_traits::{Read2, Write2};
 use mplex::connection::Connection;
-use std::time::Duration;
 
 fn main() {
     env_logger::init();
@@ -20,12 +24,17 @@ fn main() {
 }
 
 fn run_server() {
+    let key = Keypair::generate_ed25519();
+    let config = SecioConfig::new(key);
+
     task::block_on(async {
-        let listener = TcpListener::bind("127.0.0.1:12345").await.unwrap();
+        let listener = TcpListener::bind("127.0.0.1:16789").await.unwrap();
         while let Ok((socket, _)) = listener.accept().await {
+            let config = config.clone();
             task::spawn(async move {
-                let mut muxer_conn = Connection::new(socket);
-                let mut ctrl = muxer_conn.control();
+                let (mut sconn, _, _) = config.handshake(socket).await.unwrap();
+                let mut muxer_conn = Connection::new(sconn);
+                let mut ctrl = muxer_conn.control().expect("get control failed");
 
                 task::spawn(async {
                     let mut muxer_conn = muxer_conn;
@@ -42,14 +51,14 @@ fn run_server() {
                             let n = match stream.read2(&mut buf).await {
                                 Ok(num) => num,
                                 Err(e) => {
-                                    error!("read failed: {:?}", e);
-                                    return;
+                                    error!("S {} read failed: {:?}", stream.id(), e);
+                                    break;
                                 }
                             };
-                            info!("read {:?}", &buf[..n]);
+                            info!("S {} read {:?}", stream.id(), &buf[..n]);
                             if let Err(e) = stream.write_all2(buf[..n].as_ref()).await {
-                                error!("write failed: {:?}", e);
-                                return;
+                                error!("S {} write failed: {:?}", stream.id(), e);
+                                break;
                             };
                         }
                         // if let Err(e) = stream.close2().await {
@@ -64,11 +73,15 @@ fn run_server() {
 }
 
 fn run_client() {
-    task::block_on(async {
-        let socket = TcpStream::connect("127.0.0.1:12345").await.unwrap();
-        let muxer_conn = Connection::new(socket);
+    let key = Keypair::generate_ed25519();
+    let config = SecioConfig::new(key);
 
-        let mut ctrl = muxer_conn.control();
+    task::block_on(async {
+        let socket = TcpStream::connect("127.0.0.1:16789").await.unwrap();
+        let (sconn, _, _) = config.handshake(socket).await.unwrap();
+        let muxer_conn = Connection::new(sconn);
+
+        let mut ctrl = muxer_conn.control().expect("get control failed");
 
         task::spawn(async {
             let mut muxer_conn = muxer_conn;
@@ -77,19 +90,25 @@ fn run_client() {
         });
 
         let mut handles = Vec::new();
-        for _ in 0..100 {
+        for _ in 0..3 {
             let mut stream = ctrl.clone().open_stream().await.unwrap();
             let handle = task::spawn(async move {
                 info!("C: opened new stream {}", stream.id());
 
                 let data = b"hello world";
 
-                stream.write_all2(data.as_ref()).await.unwrap();
+                if let Err(e) = stream.write_all2(data.as_ref()).await {
+                    error!("C: {} write failed: {:?}", stream.id(), e);
+                    return;
+                }
                 info!("C: {}: wrote {} bytes", stream.id(), data.len());
 
                 let mut frame = vec![0; data.len()];
-                stream.read_exact2(&mut frame).await.unwrap();
-                info!("C: {}: read {:?}", stream.id(), &frame);
+                if let Err(e) = stream.read_exact2(&mut frame).await {
+                    error!("C: {} read failed: {:?}", stream.id(), e);
+                    return;
+                }
+                info!("C: {} read {:?}", stream.id(), &frame);
                 // assert_eq!(&data[..], &frame[..]);
 
                 stream.close2().await.expect("close stream");

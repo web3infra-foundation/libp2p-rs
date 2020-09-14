@@ -24,8 +24,8 @@ where
 }
 
 impl<T> IO<T>
-    where
-        T: Read2 + Unpin + Send,
+where
+    T: Read2 + Unpin + Send,
 {
     pub(crate) async fn recv_frame(&mut self) -> Result<Frame, FrameDecodeError> {
         // get header
@@ -49,8 +49,8 @@ impl<T> IO<T>
 }
 
 impl<T> IO<T>
-    where
-        T: Write2 + Unpin + Send,
+where
+    T: Write2 + Unpin + Send,
 {
     pub(crate) async fn send_frame(&mut self, frame: &Frame) -> io::Result<()> {
         log::info!("{}: write stream, header: {}", self.id, frame.header);
@@ -65,7 +65,6 @@ impl<T> IO<T>
     pub(crate) async fn close(&mut self) -> io::Result<()> {
         self.io.close().await
     }
-
 }
 
 /// Possible errors while decoding a message frame.

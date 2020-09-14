@@ -14,9 +14,13 @@ use crate::{
     pause::Pausable,
 };
 use control::Control;
-use libp2p_traits::{ext::split::{ReadHalf, WriteHalf}, Read2, Write2, ReadExt2};
+use libp2p_traits::{
+    ext::split::{ReadHalf, WriteHalf},
+    Read2, ReadExt2, Write2,
+};
 use nohash_hasher::IntMap;
 use std::fmt;
+use std::pin::Pin;
 use stream::Stream;
 
 /// `Control` to `Connection` commands.
@@ -112,8 +116,8 @@ type Result<T> = std::result::Result<T, ConnectionError>;
 
 pub struct Connection<T> {
     id: Id,
-    reader: Option<io::IO<ReadHalf<T>>>,
-    socket: io::IO<WriteHalf<T>>,
+    reader: Pin<Box<dyn FusedStream<Item = std::result::Result<Frame, FrameDecodeError>> + Send>>,
+    writer: io::IO<WriteHalf<T>>,
     is_closed: bool,
     shutdown: Shutdown,
     next_stream_id: u32,
@@ -122,26 +126,29 @@ pub struct Connection<T> {
     stream_receiver: mpsc::Receiver<StreamCommand>,
     control_sender: mpsc::Sender<ControlCommand>,
     control_receiver: Pausable<mpsc::Receiver<ControlCommand>>,
-    accept_stream:  Option<oneshot::Sender<Result<stream::Stream>>>,
+    accept_stream: Option<oneshot::Sender<Result<stream::Stream>>>,
+    pending_streams: Vec<stream::Stream>,
 }
 
-impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
+impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
     pub fn new(socket: T) -> Self {
         let id = Id::random();
         log::debug!("new connection: {}", id);
 
-        let (reader, writer) = socket.split();
-        let reader = Option::Some(io::IO::new(id, reader));
+        let (reader, writer) = socket.split2();
+        let reader = io::IO::new(id, reader);
+        let mut reader =
+            futures::stream::unfold(reader, |mut io| async { Some((io.recv_frame().await, io)) });
+        let reader = Box::pin(reader);
 
-
-        let socket = io::IO::new(id, writer);
+        let writer = io::IO::new(id, writer);
         let (stream_sender, stream_receiver) = mpsc::channel(MAX_COMMAND_BACKLOG);
         let (control_sender, control_receiver) = mpsc::channel(MAX_COMMAND_BACKLOG);
 
         Connection {
             id,
             reader,
-            socket,
+            writer,
             is_closed: false,
             next_stream_id: 0,
             shutdown: Shutdown::NotStarted,
@@ -150,18 +157,14 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
             stream_receiver,
             control_sender,
             control_receiver: Pausable::new(control_receiver),
-            accept_stream:  None
+            accept_stream: None,
+            pending_streams: Vec::default(),
         }
     }
 
     // The param of control must be
-    pub fn control(&self) -> Result<Control> {
-        let ctrl = Control::new(self.control_sender.clone());
-        Ok(ctrl)
-    }
-
-    pub async fn close(&mut self) {
-        self.socket.close().await;
+    pub fn control(&self) -> Control {
+        Control::new(self.control_sender.clone())
     }
 
     pub async fn next_stream(&mut self) -> Result<()> {
@@ -171,6 +174,7 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
         }
 
         let result = self.handle_coming().await;
+        log::error!("error exit, {:?}", result);
         // if let Ok(Some(_)) = result {
         //     return result;
         // }
@@ -217,33 +221,21 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
     }
 
     pub async fn handle_coming(&mut self) -> Result<()> {
-        if let Some(reader) = self.reader.take() {
-            let mut reader = futures::stream::unfold(reader, |mut io| async {
-                Some((io.recv_frame().await, io))
-            }.boxed());
-
-
-            loop {
-                select! {
-                    // handle incoming
-                    // frame = self.socket.recv_frame().fuse() => {
-                    frame = reader.next() => {
-                        if let Some(f) = frame {
-                            let frame = f?;
-                            self.on_frame(frame).await?;
-                        }
-                        // let frame = frame?;
-                        // if let Some(stream) = self.on_frame(frame).await? {
-                        //     return Ok(Some(stream));
-                        // }
+        loop {
+            select! {
+                // handle incoming
+                frame = self.reader.next() => {
+                    if let Some(f) = frame {
+                        let frame = f?;
+                        self.on_frame(frame).await?;
                     }
-                    // handle outcoming
-                    scmd = self.stream_receiver.next() => {
-                        self.on_stream_command(scmd).await?;
-                    }
-                    ccmd = self.control_receiver.next() => {
-                        self.on_control_command(ccmd).await?;
-                    }
+                }
+                // handle outcoming
+                scmd = self.stream_receiver.next() => {
+                    self.on_stream_command(scmd).await?;
+                }
+                ccmd = self.control_receiver.next() => {
+                    self.on_control_command(ccmd).await?;
                 }
             }
         }
@@ -276,6 +268,8 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
                 log::info!("{}: new inbound {} of {}", self.id, stream, self);
                 if let Some(sender) = self.accept_stream.take() {
                     sender.send(Ok(stream));
+                } else {
+                    self.pending_streams.push(stream);
                 }
             }
             Tag::Message => {
@@ -300,7 +294,7 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
         match cmd {
             Some(StreamCommand::SendFrame(frame)) => {
                 log::info!("{}: sending: {}", self.id, frame.header());
-                self.socket
+                self.writer
                     .send_frame(&frame)
                     .await
                     .or(Err(ConnectionError::Closed))?
@@ -352,7 +346,7 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
                 // send to peer with new stream frame
                 let body = format!("{}", stream_id.val());
                 let frame = Frame::new_stream_frame(stream_id, body.as_bytes());
-                self.socket
+                self.writer
                     .send_frame(&frame)
                     .await
                     .or(Err(ConnectionError::Closed))?;
@@ -360,10 +354,16 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
                 reply.send(Ok(stream));
             }
             Some(ControlCommand::AcceptStream(reply)) => {
+                if !self.pending_streams.is_empty() {
+                    if let Some(stream) = self.pending_streams.pop() {
+                        reply.send(Ok(stream));
+                    }
+                    return Ok(());
+                }
                 if self.accept_stream.is_none() {
                     self.accept_stream = Some(reply);
                 }
-            },
+            }
             Some(ControlCommand::CloseConnection(reply)) => {
                 if self.shutdown.is_complete() {
                     // We are already closed so just inform the control.
@@ -388,7 +388,7 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
                     // Inform the `Control` that initiated the shutdown.
                     let _ = tx.send(());
                 }
-                self.socket.close().await.or(Err(ConnectionError::Closed))?;
+                self.writer.close().await.or(Err(ConnectionError::Closed))?;
 
                 return Err(ConnectionError::Closed);
             }
