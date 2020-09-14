@@ -98,13 +98,9 @@ where
 mod tests {
     use async_std::task;
     use async_trait::async_trait;
-    use bytes::Bytes;
-    use futures::channel::mpsc;
-    use std::io;
 
     use super::super::Memory;
     use super::{BoxHandler, BoxStream, Handler, Muxer, Stream};
-    use futures::{SinkExt, StreamExt};
 
     struct Test(String);
     impl Stream for Test {}

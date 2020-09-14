@@ -73,9 +73,6 @@ impl<N: ProtocolName> AsRef<[u8]> for NameWrap<N> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::upgrade::DummyUpgrader;
-
     #[test]
     fn to_be_done() {}
 }
