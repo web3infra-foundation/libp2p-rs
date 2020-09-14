@@ -71,8 +71,17 @@ impl<T: Read2 + Write2 + Unpin + Send> Io<T> {
 
         let header = header::encode(&frame.header);
 
-        self.io.write_all2(header.to_vec().as_ref()).await?;
-        self.io.write_all2(&frame.body).await
+        // write flush can reduce the probability of secuio read failed Because split bug
+        // Also reduce the number of secuio crypto
+        // especially for test case of secuio + muxer
+        use bytes::{BufMut, BytesMut};
+        let mut buf = BytesMut::with_capacity(frame.body.len() + 12);
+        buf.put(header.to_vec().as_ref());
+        buf.put(&frame.body[..]);
+        self.io.write_all2(&buf).await
+
+        // self.io.write_all2(header.to_vec().as_ref()).await?;
+        // self.io.write_all2(&frame.body).await
     }
 
     pub(crate) async fn flush(&mut self) -> io::Result<()> {

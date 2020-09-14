@@ -34,7 +34,7 @@ fn run_server() {
             task::spawn(async move {
                 let (mut sconn, _, _) = config.handshake(socket).await.unwrap();
                 let mut muxer_conn = Connection::new(sconn);
-                let mut ctrl = muxer_conn.control().expect("get control failed");
+                let mut ctrl = muxer_conn.control();
 
                 task::spawn(async {
                     let mut muxer_conn = muxer_conn;
@@ -81,7 +81,7 @@ fn run_client() {
         let (sconn, _, _) = config.handshake(socket).await.unwrap();
         let muxer_conn = Connection::new(sconn);
 
-        let mut ctrl = muxer_conn.control().expect("get control failed");
+        let mut ctrl = muxer_conn.control();
 
         task::spawn(async {
             let mut muxer_conn = muxer_conn;
