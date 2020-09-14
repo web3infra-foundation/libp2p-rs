@@ -303,6 +303,8 @@ impl StreamMuxer for Yamux
                             break;
                         }
                     }
+
+                    tx.close_channel();
                 }
             .boxed())
 

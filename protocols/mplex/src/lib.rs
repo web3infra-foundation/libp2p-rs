@@ -73,6 +73,11 @@ impl<C: Read2 + Write2 + Unpin + Send + 'static> StreamMuxer for Mplex<C> {
             .or(Err(TransportError::Internal))
     }
 
+    async fn close(&mut self) -> Result<(), TransportError> {
+        let _ = self.ctrl.close().await?;
+        Ok(())
+    }
+
     fn task(&mut self) -> Option<BoxFuture<'static, ()>> {
         if let Some(mut conn) = self.conn.take() {
             return Some(

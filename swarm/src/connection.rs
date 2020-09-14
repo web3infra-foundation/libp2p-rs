@@ -271,7 +271,7 @@ where
     ///
     pub async fn new_stream(&mut self) -> Result<TMuxer::Substream, TransportError> {
         let ss = self.muxer.open_stream().await?;
-        self.add_stream(ss.clone(), Endpoint::Dialer);
+        //self.add_stream(ss.clone(), Endpoint::Dialer);
 
         Ok(ss)
     }
@@ -280,7 +280,7 @@ where
     ///
     pub async fn accept_stream(&mut self) -> Result<TMuxer::Substream, TransportError> {
         let ss = self.muxer.accept_stream().await?;
-        self.add_stream(ss.clone(), Endpoint::Listener);
+        //self.add_stream(ss.clone(), Endpoint::Listener);
 
         Ok(ss)
     }
