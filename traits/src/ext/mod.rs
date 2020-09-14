@@ -50,8 +50,6 @@ mod tests {
 
     use async_std::net::{TcpListener, TcpStream};
     use async_std::task;
-    use std::io;
-
     use super::{Read2, ReadExt2, Write2};
 
     #[test]
@@ -60,7 +58,7 @@ mod tests {
             let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
             let addr = listener.local_addr().expect("local_addr");
 
-            let server = task::spawn(async move {
+            let _server = task::spawn(async move {
                 let (s, _addr) = listener.accept().await.expect("accept");
                 let (mut reader, mut writer) = s.split2();
 
@@ -82,7 +80,7 @@ mod tests {
                 });
             });
 
-            let client = task::spawn(async move {
+            let _client = task::spawn(async move {
                 let s = TcpStream::connect(addr).await.expect("connect");
 
                 let (mut reader, mut writer) = s.split2();
