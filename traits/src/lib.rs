@@ -1,4 +1,4 @@
-mod ext;
+pub mod ext;
 mod copy;
 
 use async_trait::async_trait;

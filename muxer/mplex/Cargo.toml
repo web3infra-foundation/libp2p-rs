@@ -7,6 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 libp2p-traits = { path = "../../traits", version = "0.1.0", package = "libp2p-traits" }
+libp2p-core = { path = "../../core", version = "0.1.0", package = "libp2p-core" }
 nohash-hasher = "0.2"
 unsigned-varint = "0.4"
 async-trait = "0.1"
@@ -24,3 +25,11 @@ default-features = false
 env_logger = "0.6"
 criterion = "0.3"
 async-std = "1.6"
+
+[dev-dependencies.secio]
+path = "../../secio"
+
+[dev-dependencies.libp2p-core]
+path = "../../core"
+version = "0.1.0"
+package = "libp2p-core"
