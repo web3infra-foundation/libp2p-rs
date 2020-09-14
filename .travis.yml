@@ -45,8 +45,8 @@ matrix:
       #rust: nightly
       os: linux
       script:
-        - cd secio/examples/go && docker build -t libp2p-rs/go-secio-server:latest  .
-        - cd ../../../
+        - cd protocols/secio/examples/go && docker build -t libp2p-rs/go-secio-server:latest  .
+        - cd ../../../../
         #- echo "$DOCKER_PASSWORD" | docker login --username "$DOCKER_USERNAME" --password-stdin registry.paradeum.com
         #- docker tag libp2p-rs/go-secio-server:latest registry.paradeum.com/libp2p-rs/go-secio-server:latest 
         #- docker push registry.paradeum.com/libp2p-rs/go-secio-server:latest
