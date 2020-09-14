@@ -16,9 +16,12 @@ use libp2p_core::upgrade::{DummyUpgrader, Selector};
 use libp2p_core::muxing::StreamMuxer;
 use futures::StreamExt;
 use futures::future;
+use winapi::_core::time::Duration;
 
 fn main() {
-    env_logger::init();
+    //env_logger::init();
+
+    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     // Setup listener.
     let rand_port = rand::random::<u64>().saturating_add(1);
@@ -40,37 +43,46 @@ fn main() {
 
         loop {
             let mut stream_muxer = listener.accept().await.unwrap();
+
+            log::info!("server accept a new connection: {:?}", stream_muxer);
             if let Some(task) = stream_muxer.task() {
                 task::spawn(task);
             }
 
-            loop {
-                let stream = stream_muxer.accept_stream().await.unwrap();
-                log::info!("server accepted a new substream {:?}", stream);
+            // spawn a task for handling this connection/stream-muxer
+            task::spawn(async move {
+                loop {
+                    let stream = stream_muxer.accept_stream().await.unwrap();
+                    log::info!("server accepted a new substream {:?}", stream);
 
-                task::spawn(async {
-                    let (rx, tx) = stream.split2();
-                    copy(rx, tx).await?;
-                    Ok::<(), std::io::Error>(())
-                });
-            }
+                    task::spawn(async {
+                        let (rx, tx) = stream.split2();
+                        copy(rx, tx).await?;
+                        Ok::<(), std::io::Error>(())
+                    });
+                }
 
-            // let mut msg = vec![0; 4096];
-            // loop {
-            //     let n = stream.read2(&mut msg).await?;
-            //     stream.write2(&msg[..n]).await?;
-            // }
+                // let mut msg = vec![0; 4096];
+                // loop {
+                //     let n = stream.read2(&mut msg).await?;
+                //     stream.write2(&msg[..n]).await?;
+                // }
+
+            });
         }
     });
 
     // Setup dialer.
     task::block_on(async {
 
-        for i in 0..1u32 {
+        task::sleep(Duration::from_secs(1)).await;
+
+        for i in 0..2u32 {
+            log::info!("start client{}", i);
+
             let addr = t1_addr.clone();
             task::spawn(async move {
                 let mut msg = [1, 2, 3];
-                log::info!("start client{}", i);
 
                 let sec = secio::Config::new(Keypair::generate_secp256k1());
                 //let sec = DummyUpgrader::new();
@@ -78,25 +90,29 @@ fn main() {
                 let mux = mplex::Config::new();
                 //let mux = Selector::new(yamux::Config::new(), Selector::new(yamux::Config::new(), yamux::Config::new()));
                 let t2 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
-                let mut stream_muxer = t2.dial(addr).await?;
+                let mut stream_muxer = t2.dial(addr).await.expect("listener is started already");
 
                 if let Some(task) = stream_muxer.task() {
                     task::spawn(task);
                 }
 
-                for j in 0..3u32 {
+                for j in 0..1u32 {
                     let mut socket = stream_muxer.open_stream().await?;
 
-                    log::info!("client{} got a new substream {:?}", i, socket);
+                    log::info!("client{}/{} got a new substream {:?}", i, j, socket);
 
                     socket.write_all2(&msg).await.unwrap();
                     socket.read_exact2(&mut msg).await.unwrap();
-                    log::info!("client{} got {:?}", i, msg);
+                    log::info!("client{}/{} got {:?}", i, j, msg);
 
-                    socket.close2().await?;
+                    socket.close2().await.unwrap();
                 }
+
+                stream_muxer.close().await;
                 Ok::<(), TransportError>(())
             }).await;
+
+            log::info!("client{} exited", i);
         }
     });
 }
