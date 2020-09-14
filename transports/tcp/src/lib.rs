@@ -477,9 +477,7 @@ mod tests {
     use super::multiaddr_to_socketaddr;
     #[cfg(feature = "async-std")]
     use super::TcpConfig;
-    use libp2p_core::{
-        multiaddr::{Multiaddr}
-    };
+    use libp2p_core::multiaddr::Multiaddr;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     #[test]
     fn multiaddr_to_tcp_conversion() {

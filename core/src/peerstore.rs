@@ -61,7 +61,7 @@ impl AddrBook {
 #[cfg(test)]
 mod tests {
     use crate::peerstore::AddrBook;
-    use crate::{PeerId};
+    use crate::PeerId;
     use std::time::Duration;
 
     #[test]

@@ -528,6 +528,4 @@ impl error::Error for DialError {
 }
 
 #[cfg(test)]
-mod tests {
-   
-}
+mod tests {}

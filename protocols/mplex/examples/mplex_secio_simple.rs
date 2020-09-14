@@ -2,13 +2,11 @@ use async_std::{
     net::{TcpListener, TcpStream},
     task,
 };
-use futures::TryStreamExt;
 use log::{error, info};
 
 use libp2p_core::identity::Keypair;
 use secio::Config as SecioConfig;
 
-use async_std::sync::Arc;
 use libp2p_traits::{Read2, Write2};
 use mplex::connection::Connection;
 
@@ -90,7 +88,7 @@ fn run_client() {
         });
 
         let mut handles = Vec::new();
-        for _ in 0..3 {
+        for _ in 0_u32..3 {
             let mut stream = ctrl.clone().open_stream().await.unwrap();
             let handle = task::spawn(async move {
                 info!("C: opened new stream {}", stream.id());

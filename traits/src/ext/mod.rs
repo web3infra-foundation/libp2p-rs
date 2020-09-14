@@ -48,9 +48,9 @@ impl<R: Read2 + ?Sized> ReadExt2 for R {}
 #[cfg(test)]
 mod tests {
 
+    use super::{Read2, ReadExt2, Write2};
     use async_std::net::{TcpListener, TcpStream};
     use async_std::task;
-    use super::{Read2, ReadExt2, Write2};
 
     #[test]
     fn test_split() {

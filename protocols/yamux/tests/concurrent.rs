@@ -20,6 +20,7 @@ use std::{
 };
 use yamux::{Config, Connection, Mode};
 
+#[allow(dead_code)]
 async fn roundtrip(address: SocketAddr, nstreams: usize, data: Arc<Vec<u8>>) {
     let listener = TcpListener::bind(&address).await.expect("bind");
     let address = listener.local_addr().expect("local address");

@@ -11,6 +11,7 @@
 use async_std::task;
 use criterion::{criterion_group, criterion_main, Criterion};
 use futures::{channel::mpsc, future, prelude::*, ready};
+use libp2p_traits::{Read2, Write2};
 use std::{
     fmt, io,
     pin::Pin,
@@ -18,7 +19,6 @@ use std::{
     task::{Context, Poll},
 };
 use yamux::{Config, Connection, Mode};
-use libp2p_traits::{Read2, Write2};
 
 criterion_group!(benches, concurrent);
 criterion_main!(benches);

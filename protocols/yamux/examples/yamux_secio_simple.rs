@@ -9,7 +9,7 @@ use libp2p_traits::{Read2, Write2};
 use yamux::{Config, Connection, Mode};
 
 use libp2p_core::identity::Keypair;
-use secio::handshake::Config as SecioConfig;
+use secio::Config as SecioConfig;
 
 fn main() {
     env_logger::builder()
