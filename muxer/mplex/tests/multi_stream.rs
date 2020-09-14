@@ -42,7 +42,7 @@ fn multi_stream() {
         let socket = TcpStream::connect(&listener_addr).await.unwrap();
 
         let conn = Connection::new(socket);
-        let mut ctrl = conn.control().expect("get control failed");
+        let mut ctrl = conn.control();
 
         task::spawn(connection::into_stream(conn).for_each(|_| future::ready(())));
 
