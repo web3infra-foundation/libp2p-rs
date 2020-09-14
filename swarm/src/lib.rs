@@ -38,31 +38,18 @@ mod connection;
 mod network;
 mod registry;
 
-use crate::connection::{
-    ConnectedPoint, Connection, ConnectionId,ConnectionLimit, Direction,
-};
+use crate::connection::{ConnectedPoint, Connection, ConnectionId, ConnectionLimit, Direction};
 use crate::network::{NetworkConfig, NetworkInfo};
-
 
 use libp2p_core::peerstore::PeerStore;
 use libp2p_core::secure_io::SecureInfo;
 use libp2p_core::transport::TransportListener;
-use libp2p_core::{
-    muxing::StreamMuxer,
-    transport::TransportError,
-    Multiaddr,
-    PeerId,
-    Transport,
-};
-use registry::{ Addresses};
+use libp2p_core::{muxing::StreamMuxer, transport::TransportError, Multiaddr, PeerId, Transport};
+use registry::Addresses;
 use smallvec::SmallVec;
 use std::collections::{HashMap, HashSet};
-use std::num::{NonZeroU32};
-use std::{
-    error, fmt,
-    hash::Hash,
-    io
-};
+use std::num::NonZeroU32;
+use std::{error, fmt, hash::Hash, io};
 
 /// The ID of a single listener.
 ///
@@ -496,7 +483,6 @@ where
 
         // TODO: return the connection
     }
-    
 }
 
 /// Connections to notify of a pending event.

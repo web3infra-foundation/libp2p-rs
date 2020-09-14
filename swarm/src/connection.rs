@@ -169,7 +169,7 @@ pub enum Event<T> {
 }
 
 /// A multiplexed connection to a peer with associated `Substream`s.
-#[allow(dead_code)] 
+#[allow(dead_code)]
 pub struct Connection<TMuxer>
 where
     TMuxer: StreamMuxer,

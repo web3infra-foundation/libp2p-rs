@@ -1,8 +1,8 @@
 use crate::{Multiaddr, PeerId};
 use smallvec::SmallVec;
 use std::collections::HashMap;
+use std::fmt;
 use std::time::Duration;
-use std::{ fmt,};
 
 #[derive(Default)]
 pub struct PeerStore {

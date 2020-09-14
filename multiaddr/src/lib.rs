@@ -58,7 +58,7 @@ impl Multiaddr {
 
     /// is empty
     pub fn is_empty(&self) -> bool {
-        self.bytes.len()==0
+        self.bytes.len() == 0
     }
 
     /// Return a copy of this [`Multiaddr`]'s byte representation.

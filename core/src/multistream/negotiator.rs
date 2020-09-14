@@ -154,12 +154,10 @@ impl<TProto: AsRef<[u8]> + Clone> Negotiator<TProto> {
 }
 
 impl<TProto: AsRef<[u8]> + Clone> Default for Negotiator<TProto> {
-     fn default() -> Self {
+    fn default() -> Self {
         Self::new()
     }
 }
-
-
 
 #[derive(Debug)]
 pub enum NegotiationError {

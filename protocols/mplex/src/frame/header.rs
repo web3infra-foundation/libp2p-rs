@@ -3,7 +3,7 @@ use std::fmt;
 /// The ID of a stream.
 ///
 /// The value 0 denotes no particular stream but the whole session.
-#[derive(Copy, Clone, Debug, PartialEq, Eq,Hash,PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct StreamID {
     id: u32,
     initiator: bool,
