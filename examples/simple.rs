@@ -11,12 +11,18 @@ use futures::future;
 use futures::StreamExt;
 use libp2p_core::identity::Keypair;
 use libp2p_core::muxing::StreamMuxer;
+<<<<<<< HEAD
 use libp2p_core::upgrade::{DummyUpgrader, Selector};
 use mplex;
 use pnet::{PnetConfig, PreSharedKey};
 use secio;
 use std::time::Duration;
 use yamux;
+=======
+use futures::StreamExt;
+use futures::future;
+use std::time::Duration;
+>>>>>>> 105c1a71afbb0127d24270b7b6e6ca4236f2ad24
 
 fn main() {
     //env_logger::init();
