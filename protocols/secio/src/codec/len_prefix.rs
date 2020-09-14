@@ -48,10 +48,16 @@ where
 
     /// sending a length delimited frame
     pub async fn send_frame(&mut self, frame: &[u8]) -> io::Result<()> {
-        self.inner
-            .write_all2(&(frame.len() as u32).to_be_bytes())
-            .await?;
-        self.inner.write_all2(&frame).await
+        use bytes::{BytesMut, BufMut};
+        let mut buf = BytesMut::with_capacity(frame.len() + 4);
+        buf.put_u32(frame.len() as u32);
+        buf.put(frame);
+        self.inner.write_all2(&buf).await
+
+        // self.inner
+        //     .write_all2(&(frame.len() as u32).to_be_bytes())
+        //     .await?;
+        // self.inner.write_all2(&frame).await
     }
 
     pub(crate) async fn flush(&mut self) -> io::Result<()> {
