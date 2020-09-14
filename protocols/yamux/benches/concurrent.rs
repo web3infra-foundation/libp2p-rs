@@ -18,6 +18,7 @@ use std::{
     task::{Context, Poll},
 };
 use yamux::{Config, Connection, Mode};
+use libp2p_traits::{Read2, Write2};
 
 criterion_group!(benches, concurrent);
 criterion_main!(benches);
@@ -125,11 +126,21 @@ async fn roundtrip(nstreams: usize, nmessages: usize, data: Bytes, send_all: boo
     let server = async move {
         yamux::into_stream(Connection::new(server, Config::default(), Mode::Server))
             .try_for_each_concurrent(None, |mut stream| async move {
+                /*
                 {
                     let (mut r, mut w) = futures::io::AsyncReadExt::split(&mut stream);
                     futures::io::copy(&mut r, &mut w).await?;
                 }
-                stream.close().await?;
+                 */
+                let mut buf = vec![0; 512];
+                loop {
+                    let n = stream.read2(&mut buf).await?;
+                    if n == 0 {
+                        break;
+                    }
+                    stream.write_all2(&buf[..n]).await?;
+                }
+                stream.close2().await?;
                 Ok(())
             })
             .await
@@ -152,13 +163,13 @@ async fn roundtrip(nstreams: usize, nmessages: usize, data: Bytes, send_all: boo
             if send_all {
                 // Send `nmessages` messages and receive `nmessages` messages.
                 for _ in 0..nmessages {
-                    stream.write_all(data.as_ref()).await?
+                    stream.write_all2(data.as_ref()).await?
                 }
-                stream.close().await?;
+                stream.close2().await?;
                 let mut n = 0;
                 let mut b = vec![0; data.0.len()];
                 loop {
-                    let k = stream.read(&mut b).await?;
+                    let k = stream.read2(&mut b).await?;
                     if k == 0 {
                         break;
                     }
@@ -170,11 +181,11 @@ async fn roundtrip(nstreams: usize, nmessages: usize, data: Bytes, send_all: boo
                 let mut n = 0;
                 let mut b = vec![0; data.0.len()];
                 for _ in 0..nmessages {
-                    stream.write_all(data.as_ref()).await?;
-                    stream.read_exact(&mut b[..]).await?;
+                    stream.write_all2(data.as_ref()).await?;
+                    stream.read_exact2(&mut b[..]).await?;
                     n += b.len()
                 }
-                stream.close().await?;
+                stream.close2().await?;
                 tx.unbounded_send(n).expect("unbounded_send");
             }
             Ok::<(), yamux::ConnectionError>(())
