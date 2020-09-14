@@ -4,7 +4,7 @@ mod frame;
 mod pause;
 
 use async_trait::async_trait;
-use futures::{channel::mpsc, stream::BoxStream, FutureExt};
+use futures::{ FutureExt};
 use log::{info, trace};
 use std::fmt;
 

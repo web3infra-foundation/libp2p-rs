@@ -1,11 +1,8 @@
-
-use crate::{PublicKey, PeerId, Multiaddr};
-use multihash::{self, Code, Sha2_256};
-use std::{borrow::Borrow, cmp, convert::TryFrom, fmt, hash, str::FromStr};
-use thiserror::Error;
+use crate::{Multiaddr, PeerId};
+use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::time::Duration;
-use smallvec::SmallVec;
+use std::{ fmt,};
 
 #[derive(Default)]
 pub struct PeerStore {
@@ -14,7 +11,7 @@ pub struct PeerStore {
 
 #[derive(Default)]
 pub struct AddrBook {
-    pub book: HashMap<PeerId, SmallVec<[Multiaddr; 4]>>
+    pub book: HashMap<PeerId, SmallVec<[Multiaddr; 4]>>,
 }
 
 impl fmt::Debug for PeerStore {
@@ -36,12 +33,11 @@ impl fmt::Debug for AddrBook {
 }
 
 impl fmt::Display for AddrBook {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
         //self.book.iter().for_each(|a| a.0.fmt(f)
         Ok(())
     }
 }
-
 
 impl AddrBook {
     pub fn add_addr(&mut self, peer_id: &PeerId, addr: Multiaddr, _ttl: Duration) {
@@ -50,10 +46,9 @@ impl AddrBook {
                 entry.push(addr);
             }
         } else {
-            let vec = vec!(addr);
+            let vec = vec![addr];
             self.book.insert(peer_id.clone(), SmallVec::from_vec(vec));
         }
-
     }
     pub fn del_peer(&mut self, peer_id: &PeerId) {
         self.book.remove(peer_id.as_ref());
@@ -65,13 +60,13 @@ impl AddrBook {
 
 #[cfg(test)]
 mod tests {
-    use crate::{identity, PeerId, Multiaddr};
+    use crate::peerstore::AddrBook;
+    use crate::{identity, Multiaddr, PeerId};
+    use std::time::Duration;
     use std::{
         convert::TryFrom as _,
         hash::{self, Hasher as _},
     };
-    use crate::peerstore::AddrBook;
-    use std::time::Duration;
 
     #[test]
     fn addr_book_basic() {
@@ -79,12 +74,24 @@ mod tests {
 
         let peer_id = PeerId::random();
 
-        ab.add_addr(&peer_id, "/memory/123456".parse().unwrap(), Duration::from_secs(1));
-        ab.add_addr(&peer_id, "/memory/654321".parse().unwrap(), Duration::from_secs(1));
+        ab.add_addr(
+            &peer_id,
+            "/memory/123456".parse().unwrap(),
+            Duration::from_secs(1),
+        );
+        ab.add_addr(
+            &peer_id,
+            "/memory/654321".parse().unwrap(),
+            Duration::from_secs(1),
+        );
         let addrs = ab.get_addr(&peer_id).unwrap();
         assert_eq!(addrs.len(), 2);
 
-        ab.add_addr(&peer_id, "/memory/654321".parse().unwrap(), Duration::from_secs(1));
+        ab.add_addr(
+            &peer_id,
+            "/memory/654321".parse().unwrap(),
+            Duration::from_secs(1),
+        );
         let addrs = ab.get_addr(&peer_id).unwrap();
         assert_eq!(addrs.len(), 2);
 

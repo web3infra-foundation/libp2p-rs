@@ -18,17 +18,17 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_trait::async_trait;
-use std::{fmt, io};
-use log::trace;
-use crate::upgrade::{Upgrader, UpgradeInfo};
-use crate::transport::{TransportError};
-use crate::muxing::StreamMuxer;
-use libp2p_traits::{Read2, Write2};
-use futures::future::BoxFuture;
-use crate::secure_io::SecureInfo;
 use crate::identity::Keypair;
-use crate::{PublicKey, PeerId};
+use crate::muxing::StreamMuxer;
+use crate::secure_io::SecureInfo;
+use crate::transport::TransportError;
+use crate::upgrade::{UpgradeInfo, Upgrader};
+use crate::{PeerId, PublicKey};
+use async_trait::async_trait;
+use futures::future::BoxFuture;
+use libp2p_traits::{Read2, Write2};
+use log::trace;
+use std::{fmt, io};
 
 /// Implementation of dummy `Upgrader` that doesn't do anything practice.
 ///
@@ -65,21 +65,28 @@ impl UpgradeInfo for DummyUpgrader {
     type Info = &'static [u8];
 
     fn protocol_info(&self) -> Vec<Self::Info> {
-        vec!(b"/dummy/1.0.0")
+        vec![b"/dummy/1.0.0"]
     }
 }
-
 
 #[async_trait]
 impl<T: Send + 'static> Upgrader<T> for DummyUpgrader {
     type Output = DummyStream<T>;
 
-    async fn upgrade_inbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
+    async fn upgrade_inbound(
+        self,
+        socket: T,
+        _info: <Self as UpgradeInfo>::Info,
+    ) -> Result<Self::Output, TransportError> {
         trace!("dummy upgrader, upgrade inbound connection");
         Ok(DummyStream(socket))
     }
 
-    async fn upgrade_outbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
+    async fn upgrade_outbound(
+        self,
+        socket: T,
+        _info: <Self as UpgradeInfo>::Info,
+    ) -> Result<Self::Output, TransportError> {
         trace!("dummy upgrader, upgrade outbound connection");
         Ok(DummyStream(socket))
     }
@@ -105,7 +112,6 @@ impl<T: Send + Write2> Write2 for DummyStream<T> {
         self.0.close2().await
     }
 }
-
 
 #[async_trait]
 impl<T: Send> StreamMuxer for DummyStream<T> {

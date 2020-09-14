@@ -1,23 +1,3 @@
-// Copyright 2017 Parity Technologies (UK) Ltd.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the "Software"),
-// to deal in the Software without restriction, including without limitation
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,
-// and/or sell copies of the Software, and to permit persons to whom the
-// Software is furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-
 //! Multistream-select protocol messages an I/O operations for
 //! constructing protocol negotiation flows.
 //!
@@ -25,11 +5,11 @@
 //! `Stream` and `Sink` implementations of `MessageIO` and
 //! `MessageReader`.
 
-use super::length_delimited::{LengthDelimited};
+use super::length_delimited::LengthDelimited;
 use super::{ReadEx, WriteEx};
 
-use bytes::{Bytes, BytesMut, BufMut};
-use std::{convert::TryFrom, io, fmt, error::Error};
+use bytes::{BufMut, Bytes, BytesMut};
+use std::{convert::TryFrom, error::Error, fmt, io};
 use unsigned_varint as uvi;
 
 /// The maximum number of supported protocols that can be processed.
@@ -50,7 +30,7 @@ const MAX_PROTOCOL_LEN: usize = 140;
 /// The encoded form of a multistream-select 1.0.0 header message.
 const MSG_MULTISTREAM_1_0: &[u8] = b"/multistream/1.0.0\n";
 /// The encoded form of a multistream-select 1.0.0 header message.
-const MSG_MULTISTREAM_1_0_LAZY: &[u8] = b"/multistream-lazy/1\n";
+//const MSG_MULTISTREAM_1_0_LAZY: &[u8] = b"/multistream-lazy/1\n";
 /// The encoded form of a multistream-select 'na' message.
 const MSG_PROTOCOL_NA: &[u8] = b"na\n";
 /// The encoded form of a multistream-select 'ls' message.
@@ -64,7 +44,6 @@ pub enum Version {
     /// [1]: https://github.com/libp2p/specs/blob/master/connections/README.md#protocol-negotiation
     /// [2]: https://github.com/multiformats/multistream-select
     V1,
-
     // /// A lazy variant of version 1 that is identical on the wire but delays
     // /// sending of protocol negotiation data as much as possible.
     // ///
@@ -133,7 +112,7 @@ impl TryFrom<Bytes> for Protocol {
 
     fn try_from(value: Bytes) -> Result<Self, Self::Error> {
         if !value.as_ref().starts_with(b"/") || value.len() > MAX_PROTOCOL_LEN {
-            return Err(ProtocolError::InvalidProtocol)
+            return Err(ProtocolError::InvalidProtocol);
         }
         Ok(Protocol(value))
     }
@@ -230,10 +209,11 @@ impl Message {
          */
 
         if msg == MSG_MULTISTREAM_1_0 {
-            return Ok(Message::Header(Version::V1))
+            return Ok(Message::Header(Version::V1));
         }
 
-        if msg.get(0) == Some(&b'/') && msg.last() == Some(&b'\n') && msg.len() <= MAX_PROTOCOL_LEN {
+        if msg.get(0) == Some(&b'/') && msg.last() == Some(&b'\n') && msg.len() <= MAX_PROTOCOL_LEN
+        {
             let p = Protocol::try_from(msg.split_to(msg.len() - 1))?;
             return Ok(Message::Protocol(p));
         }
@@ -243,27 +223,27 @@ impl Message {
         }
 
         if msg == MSG_LS {
-            return Ok(Message::ListProtocols)
+            return Ok(Message::ListProtocols);
         }
 
         // At this point, it must be a varint number of protocols, i.e.
         // a `Protocols` message.
         let (num_protocols, mut remaining) = uvi::decode::usize(&msg)?;
         if num_protocols > MAX_PROTOCOLS {
-            return Err(ProtocolError::TooManyProtocols)
+            return Err(ProtocolError::TooManyProtocols);
         }
         let mut protocols = Vec::with_capacity(num_protocols);
-        for _ in 0 .. num_protocols {
+        for _ in 0..num_protocols {
             let (len, rem) = uvi::decode::usize(remaining)?;
             if len == 0 || len > rem.len() || rem[len - 1] != b'\n' {
-                return Err(ProtocolError::InvalidMessage)
+                return Err(ProtocolError::InvalidMessage);
             }
-            let p = Protocol::try_from(Bytes::copy_from_slice(&rem[.. len - 1]))?;
+            let p = Protocol::try_from(Bytes::copy_from_slice(&rem[..len - 1]))?;
             protocols.push(p);
-            remaining = &rem[len ..]
+            remaining = &rem[len..]
         }
 
-        return Ok(Message::Protocols(protocols));
+        Ok(Message::Protocols(protocols))
     }
 }
 
@@ -274,12 +254,13 @@ pub struct MessageIO<R> {
 
 impl<R> MessageIO<R>
 where
-    R: ReadEx + WriteEx + Send
+    R: ReadEx + WriteEx + Send,
 {
     /// Constructs a new `MessageIO` resource wrapping the given I/O stream.
-    pub fn new(inner: R) -> MessageIO<R>
-    {
-        Self { inner: LengthDelimited::new(inner) }
+    pub fn new(inner: R) -> MessageIO<R> {
+        Self {
+            inner: LengthDelimited::new(inner),
+        }
     }
 
     /// Drops the [`MessageIO`] resource, yielding the underlying I/O stream
@@ -310,7 +291,10 @@ where
     pub async fn send_message(&mut self, msg: Message) -> Result<(), ProtocolError> {
         let mut buf = BytesMut::new();
         msg.encode(&mut buf)?;
-        self.inner.send_message(buf.freeze()).await.map_err(From::from)
+        self.inner
+            .send_message(buf.freeze())
+            .await
+            .map_err(From::from)
     }
 }
 
@@ -339,9 +323,9 @@ impl From<io::Error> for ProtocolError {
 impl Into<io::Error> for ProtocolError {
     fn into(self) -> io::Error {
         if let ProtocolError::IoError(e) = self {
-            return e
+            return e;
         }
-        return io::ErrorKind::InvalidData.into()
+        io::ErrorKind::InvalidData.into()
     }
 }
 
@@ -363,14 +347,10 @@ impl Error for ProtocolError {
 impl fmt::Display for ProtocolError {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
-            ProtocolError::IoError(e) =>
-                write!(fmt, "I/O error: {}", e),
-            ProtocolError::InvalidMessage =>
-                write!(fmt, "Received an invalid message."),
-            ProtocolError::InvalidProtocol =>
-                write!(fmt, "A protocol (name) is invalid."),
-            ProtocolError::TooManyProtocols =>
-                write!(fmt, "Too many protocols received.")
+            ProtocolError::IoError(e) => write!(fmt, "I/O error: {}", e),
+            ProtocolError::InvalidMessage => write!(fmt, "Received an invalid message."),
+            ProtocolError::InvalidProtocol => write!(fmt, "A protocol (name) is invalid."),
+            ProtocolError::TooManyProtocols => write!(fmt, "Too many protocols received."),
         }
     }
 }
@@ -379,8 +359,8 @@ impl fmt::Display for ProtocolError {
 mod tests {
     use super::*;
     use quickcheck::*;
-    use rand::Rng;
     use rand::distributions::Alphanumeric;
+    use rand::Rng;
     use std::iter;
 
     impl Arbitrary for Protocol {
@@ -402,7 +382,7 @@ mod tests {
                 2 => Message::ListProtocols,
                 3 => Message::Protocol(Protocol::arbitrary(g)),
                 4 => Message::Protocols(Vec::arbitrary(g)),
-                _ => panic!()
+                _ => panic!(),
             }
         }
     }
@@ -411,13 +391,13 @@ mod tests {
     fn encode_decode_message() {
         fn prop(msg: Message) {
             let mut buf = BytesMut::new();
-            msg.encode(&mut buf).expect(&format!("Encoding message failed: {:?}", msg));
+            msg.encode(&mut buf)
+                .expect(&format!("Encoding message failed: {:?}", msg));
             match Message::decode(buf.freeze()) {
                 Ok(m) => assert_eq!(m, msg),
-                Err(e) => panic!("Decoding failed: {:?}", e)
+                Err(e) => panic!("Decoding failed: {:?}", e),
             }
         }
         quickcheck(prop as fn(_))
     }
 }
-

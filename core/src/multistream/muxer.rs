@@ -1,11 +1,8 @@
-use std::{
-    collections::HashMap,
-    future::Future,
-};
 use async_trait::async_trait;
+use std::{collections::HashMap, future::Future};
 
 use super::{
-    negotiator::{Negotiator, NegotiationError},
+    negotiator::{NegotiationError, Negotiator},
     ReadEx, WriteEx,
 };
 
@@ -55,27 +52,29 @@ where
         }
     }
 
-    pub fn add_handler(&mut self, proto: TProto, handler: BoxHandler<T>)
-        -> Option<BoxHandler<T>>
-    {
-        self.negotiator.add_protocol(proto.clone());
+    pub fn add_handler(&mut self, proto: TProto, handler: BoxHandler<T>) -> Option<BoxHandler<T>> {
+        self.negotiator.add_protocol(proto.clone()).expect("protocol duplicate");
         self.handlers.insert(proto, handler)
     }
 
-    pub async fn negotiate<TSocket>(&mut self, socket: TSocket)
-                                    -> Result<(&mut BoxHandler<T>, TProto, TSocket), NegotiationError>
-        where
-            TSocket: ReadEx + WriteEx + Send + Unpin
+    pub async fn negotiate<TSocket>(
+        &mut self,
+        socket: TSocket,
+    ) -> Result<(&mut BoxHandler<T>, TProto, TSocket), NegotiationError>
+    where
+        TSocket: ReadEx + WriteEx + Send + Unpin,
     {
         let (proto, io) = self.negotiator.negotiate(socket).await?;
         let h = self.handlers.get_mut(&proto).expect("get handler");
         Ok((h, proto, io))
     }
 
-    pub async fn select_one<TSocket>(&mut self, socket: TSocket)
-                                     -> Result<(&mut BoxHandler<T>, TProto, TSocket), NegotiationError>
-        where
-            TSocket: ReadEx + WriteEx + Send + Unpin
+    pub async fn select_one<TSocket>(
+        &mut self,
+        socket: TSocket,
+    ) -> Result<(&mut BoxHandler<T>, TProto, TSocket), NegotiationError>
+    where
+        TSocket: ReadEx + WriteEx + Send + Unpin,
     {
         let (proto, io) = self.negotiator.select_one(socket).await?;
         let h = self.handlers.get_mut(&proto).expect("get handler");
@@ -83,63 +82,27 @@ where
     }
 }
 
-/*
-impl<S, Fut, T, E, P, H> Muxer<P, H>
+impl<TProto, T> Default for Muxer<TProto, T>
 where
-    S: Stream,
-    Fut: Future<Output = Result<T, E>>,
-    Fut: Send + 'static,
-    T: Send + 'static,
-    E: Error,
-    P: AsRef<[u8]> + Clone + Eq + std::hash::Hash,
-    H: FnMut(S) -> Fut,
-{
-    pub fn new() -> Self {
-        Muxer {
-            negotiator: Negotiator::new(),
-            handlers: HashMap::new(),
-        }
-    }
-
-    pub fn add_handler(&mut self, proto: P, handler: H) -> Option<H> {
-        self.negotiator.add_protocol(proto.clone());
-        self.handlers.insert(proto, handler)
-    }
-
-    pub async fn negotiate<TSocket>(&mut self, socket: TSocket)
-        -> Result<(&mut H, P, TSocket), NegotiationError>
-    where
-        TSocket: ReadEx + WriteEx + Send + Unpin
-    {
-        let (proto, io) = self.negotiator.negotiate(socket).await?;
-        let h = self.handlers.get_mut(&proto).expect("get handler");
-        Ok((h, proto, io))
-    }
-
-    pub async fn select_one<TSocket>(&mut self, socket: TSocket)
-        -> Result<(&mut H, P, TSocket), NegotiationError>
-    where
-        TSocket: ReadEx + WriteEx + Send + Unpin
-    {
-        let (proto, io) = self.negotiator.select_one(socket).await?;
-        let h = self.handlers.get_mut(&proto).expect("get handler");
-        Ok((h, proto, io))
+    TProto: AsRef<[u8]> + Clone + Eq + std::hash::Hash,
+    T: Send + 'static, {
+     fn default() -> Self {
+        Self::new()
     }
 }
- */
+
 
 #[cfg(test)]
 mod tests {
-    use std::io;
-    use async_trait::async_trait;
     use async_std::task;
-    use futures::channel::mpsc;
+    use async_trait::async_trait;
     use bytes::Bytes;
+    use futures::channel::mpsc;
+    use std::io;
 
-    use super::{BoxHandler, Muxer, Stream, BoxStream, Handler};
     use super::super::Memory;
-    use futures::{StreamExt, SinkExt};
-
+    use super::{BoxHandler, BoxStream, Handler, Muxer, Stream};
+    use futures::{SinkExt, StreamExt};
 
     struct Test(String);
     impl Stream for Test {}
@@ -170,26 +133,22 @@ mod tests {
      */
 
     fn get_client_proto_handler() -> BoxHandler<&'static str> {
-        Box::new(|_s: &mut BoxStream| {
-            async {
-                "/proto1 client handler"
-            }
-        })
+        Box::new(|_s: &mut BoxStream| async { "/proto1 client handler" })
     }
 
     #[test]
     fn test_muxer() {
-
         task::block_on(async {
             let (client, server) = Memory::pair();
 
             let server = task::spawn(async move {
                 let mut muxer = Muxer::new();
-                let duplicate = muxer.add_handler(b"/proto1", get_handler("server")).is_some();
+                let duplicate = muxer
+                    .add_handler(b"/proto1", get_handler("server"))
+                    .is_some();
                 assert!(!duplicate, "add duplicate protocol '{}' handler", "/proto1");
 
-                let (h, proto, _) = muxer.negotiate(server).await
-                    .expect("muxer.negotiate");
+                let (h, proto, _) = muxer.negotiate(server).await.expect("muxer.negotiate");
 
                 assert_eq!(proto, b"/proto1");
 
@@ -200,11 +159,12 @@ mod tests {
 
             let client = task::spawn(async move {
                 let mut muxer = Muxer::new();
-                let duplicate = muxer.add_handler(b"/proto1", get_client_proto_handler()).is_some();
+                let duplicate = muxer
+                    .add_handler(b"/proto1", get_client_proto_handler())
+                    .is_some();
                 assert!(!duplicate, "add duplicate protocol '{}' handler", "/proto1");
 
-                let (h, proto, _) = muxer.select_one(client).await
-                    .expect("muxer.select_one");
+                let (h, proto, _) = muxer.select_one(client).await.expect("muxer.select_one");
 
                 assert_eq!(proto, b"/proto1");
 

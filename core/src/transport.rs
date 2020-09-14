@@ -27,12 +27,12 @@
 
 //use crate::ConnectedPoint;
 use async_trait::async_trait;
-use multiaddr::Multiaddr;
-use std::{error::Error, fmt};
-use std::time::Duration;
 use futures::prelude::*;
+use multiaddr::Multiaddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::Duration;
+use std::{error::Error, fmt};
 
 use crate::multistream::NegotiationError;
 
@@ -121,8 +121,8 @@ pub trait Transport: Send {
     /// Adds a timeout to the connection setup (including upgrades) for all
     /// inbound and outbound connections established through the transport.
     fn timeout(self, timeout: Duration) -> timeout::TransportTimeout<Self>
-        where
-            Self: Sized
+    where
+        Self: Sized,
     {
         timeout::TransportTimeout::new(self, timeout)
     }
@@ -130,8 +130,8 @@ pub trait Transport: Send {
     /// Adds a timeout to the connection setup (including upgrades) for all outbound
     /// connections established through the transport.
     fn outbound_timeout(self, timeout: Duration) -> timeout::TransportTimeout<Self>
-        where
-            Self: Sized
+    where
+        Self: Sized,
     {
         timeout::TransportTimeout::with_outgoing_timeout(self, timeout)
     }
@@ -139,8 +139,8 @@ pub trait Transport: Send {
     /// Adds a timeout to the connection setup (including upgrades) for all inbound
     /// connections established through the transport.
     fn inbound_timeout(self, timeout: Duration) -> timeout::TransportTimeout<Self>
-        where
-            Self: Sized
+    where
+        Self: Sized,
     {
         timeout::TransportTimeout::with_ingoing_timeout(self, timeout)
     }
@@ -234,7 +234,8 @@ pub trait TransportListener: Send {
     fn multi_addr(&self) -> Multiaddr;
 
     fn incoming(&mut self) -> Incoming<Self>
-        where Self: Sized
+    where
+        Self: Sized,
     {
         Incoming(self)
     }
@@ -245,8 +246,8 @@ pub trait TransportListener: Send {
 pub struct Incoming<'a, T>(&'a mut T);
 
 impl<'a, T> Stream for Incoming<'a, T>
-    where
-        T: TransportListener
+where
+    T: TransportListener,
 {
     type Item = Result<T::Output, TransportError>;
 
@@ -276,7 +277,7 @@ pub enum ListenerEvent<TUpgr, TErr> {
         /// The local address which produced this upgrade.
         local_addr: Multiaddr,
         /// The remote address which produced this upgrade.
-        remote_addr: Multiaddr
+        remote_addr: Multiaddr,
     },
     /// A [`Multiaddr`] is no longer used for listening.
     AddressExpired(Multiaddr),
@@ -293,9 +294,15 @@ impl<TUpgr, TErr> ListenerEvent<TUpgr, TErr> {
     /// based the the function's result.
     pub fn map<U>(self, f: impl FnOnce(TUpgr) -> U) -> ListenerEvent<U, TErr> {
         match self {
-            ListenerEvent::Upgrade { upgrade, local_addr, remote_addr } => {
-                ListenerEvent::Upgrade { upgrade: f(upgrade), local_addr, remote_addr }
-            }
+            ListenerEvent::Upgrade {
+                upgrade,
+                local_addr,
+                remote_addr,
+            } => ListenerEvent::Upgrade {
+                upgrade: f(upgrade),
+                local_addr,
+                remote_addr,
+            },
             ListenerEvent::NewAddress(a) => ListenerEvent::NewAddress(a),
             ListenerEvent::AddressExpired(a) => ListenerEvent::AddressExpired(a),
             ListenerEvent::Error(e) => ListenerEvent::Error(e),
@@ -307,8 +314,15 @@ impl<TUpgr, TErr> ListenerEvent<TUpgr, TErr> {
     /// function's result.
     pub fn map_err<U>(self, f: impl FnOnce(TErr) -> U) -> ListenerEvent<TUpgr, U> {
         match self {
-            ListenerEvent::Upgrade { upgrade, local_addr, remote_addr } =>
-                ListenerEvent::Upgrade { upgrade, local_addr, remote_addr },
+            ListenerEvent::Upgrade {
+                upgrade,
+                local_addr,
+                remote_addr,
+            } => ListenerEvent::Upgrade {
+                upgrade,
+                local_addr,
+                remote_addr,
+            },
             ListenerEvent::NewAddress(a) => ListenerEvent::NewAddress(a),
             ListenerEvent::AddressExpired(a) => ListenerEvent::AddressExpired(a),
             ListenerEvent::Error(e) => ListenerEvent::Error(f(e)),
@@ -317,7 +331,7 @@ impl<TUpgr, TErr> ListenerEvent<TUpgr, TErr> {
 
     /// Returns `true` if this is an `Upgrade` listener event.
     pub fn is_upgrade(&self) -> bool {
-        if let ListenerEvent::Upgrade {..} = self {
+        if let ListenerEvent::Upgrade { .. } = self {
             true
         } else {
             false
@@ -329,7 +343,12 @@ impl<TUpgr, TErr> ListenerEvent<TUpgr, TErr> {
     /// Returns `None` if the event is not actually an upgrade,
     /// otherwise the upgrade and the remote address.
     pub fn into_upgrade(self) -> Option<(TUpgr, Multiaddr)> {
-        if let ListenerEvent::Upgrade { upgrade, remote_addr, .. } = self {
+        if let ListenerEvent::Upgrade {
+            upgrade,
+            remote_addr,
+            ..
+        } = self
+        {
             Some((upgrade, remote_addr))
         } else {
             None
@@ -423,6 +442,8 @@ pub enum TransportError {
 
     NegotiationError(NegotiationError),
 
+    //handshake error
+    HandshakeError,
 }
 
 impl From<std::io::Error> for TransportError {
@@ -438,22 +459,23 @@ impl From<NegotiationError> for TransportError {
     }
 }
 
-impl fmt::Display for TransportError
-{
+impl fmt::Display for TransportError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TransportError::MultiaddrNotSupported(addr) => write!(f, "Multiaddr is not supported: {}", addr),
+            TransportError::MultiaddrNotSupported(addr) => {
+                write!(f, "Multiaddr is not supported: {}", addr)
+            }
             TransportError::Timeout => write!(f, "Operation timeout"),
             TransportError::Unreachable => write!(f, "Memory transport unreachable"),
             TransportError::Internal => write!(f, "Internal error"),
             TransportError::IoError(err) => write!(f, "IO error {}", err),
             TransportError::NegotiationError(err) => write!(f, "Negotiation error {:?}", err),
+            TransportError::HandshakeError => write!(f, "Handshake error"),
         }
     }
 }
 
-impl Error for TransportError
-{
+impl Error for TransportError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             TransportError::MultiaddrNotSupported(_) => None,
@@ -462,6 +484,7 @@ impl Error for TransportError
             TransportError::Internal => None,
             TransportError::IoError(err) => Some(err),
             TransportError::NegotiationError(err) => Some(err),
+            TransportError::HandshakeError => None,
         }
     }
 }
