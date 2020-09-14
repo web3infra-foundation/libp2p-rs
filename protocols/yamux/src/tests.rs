@@ -14,6 +14,7 @@ use async_std::{
     task,
 };
 use futures::{future, prelude::*};
+use libp2p_traits::{Read2, ReadExt2, Write2};
 use quickcheck::{Arbitrary, Gen, QuickCheck, TestResult};
 use rand::Rng;
 use std::{
@@ -21,7 +22,6 @@ use std::{
     io,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
 };
-use libp2p_traits::{Read2, Write2, ReadExt2};
 
 #[test]
 fn prop_send_recv() {
@@ -170,14 +170,14 @@ async fn repeat_echo(c: Connection<TcpStream>) -> Result<(), ConnectionError> {
         stream.close2().await?;
         Ok(())
     })
-        .await
+    .await
 }
 
 /// For each message in `iter`, open a new stream, send the message and
 /// collect the response. The sequence of responses will be returned.
 async fn send_recv<I>(mut control: Control, iter: I) -> Result<Vec<Vec<u8>>, ConnectionError>
-    where
-        I: Iterator<Item = Vec<u8>>,
+where
+    I: Iterator<Item = Vec<u8>>,
 {
     let mut result = Vec::new();
     for msg in iter {
@@ -194,7 +194,7 @@ async fn send_recv<I>(mut control: Control, iter: I) -> Result<Vec<Vec<u8>>, Con
         match x {
             Err(e) => {
                 log::error!("read from closed stream err {}", e);
-                return Err(e.into())
+                return Err(e.into());
             }
             Ok(n) => {
                 log::debug!("==> read after close {:?}", n);

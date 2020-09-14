@@ -7,14 +7,12 @@
 //!   hash of the public key used to negotiate encryption on the
 //!   communication channel, thereby guaranteeing that they cannot be spoofed.
 
-
 pub mod keys_proto {
     include!(concat!(env!("OUT_DIR"), "/keys_proto.rs"));
 }
 
 // re-export multiaddr
 pub use multiaddr;
-
 
 pub mod identity;
 mod peer_id;
@@ -25,13 +23,15 @@ pub use identity::PublicKey;
 pub use peer_id::PeerId;
 
 pub mod transport;
-pub use transport::Transport;
 pub use multiaddr::Multiaddr;
+pub use transport::Transport;
 
-pub mod upgrade;
-pub mod secure_io;
 pub mod muxing;
+pub mod secure_io;
+pub mod upgrade;
 
 pub mod either;
 
 pub mod peerstore;
+
+pub use pnet;

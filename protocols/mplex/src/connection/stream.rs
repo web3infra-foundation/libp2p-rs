@@ -104,7 +104,7 @@ impl Stream {
             .map_err(|_| self.write_zero_err())?;
 
         // step3: close channel
-        self.sender.close().await;
+        self.sender.close().await.expect("send err");
 
         Ok(())
     }

@@ -8,12 +8,7 @@
 // at https://www.apache.org/licenses/LICENSE-2.0 and a copy of the MIT license
 // at https://opensource.org/licenses/MIT.
 
-use std::{
-    fmt,
-    future::Future,
-    io,
-    pin::Pin,
-};
+use std::{fmt,  io};
 
 use super::{
     header::{self, HeaderDecodeError},
@@ -22,8 +17,7 @@ use super::{
 use crate::connection::Id;
 use crate::frame::header::HEADER_SIZE;
 
-use libp2p_traits::{Read2, Write2, ReadExt2};
-use futures::stream::{Stream, StreamExt, FusedStream};
+use libp2p_traits::{Read2, Write2};
 
 /// A [`Stream`] and writer of [`Frame`] values.
 // #[derive(Debug)]
@@ -31,7 +25,6 @@ pub(crate) struct Io<T> {
     id: Id,
     io: T,
     max_body_len: usize,
-
     // pub(crate) stream: Pin<Box<dyn FusedStream<Item = Result<Frame<()>, FrameDecodeError>> + Send>>,
 }
 
@@ -88,15 +81,16 @@ impl<T: Read2 + Write2 + Unpin + Send> Io<T> {
     pub(crate) async fn close(&mut self) -> io::Result<()> {
         self.io.close2().await
     }
-
 }
 
+#[allow(dead_code)]
 struct FrameReader<T> {
     id: Id,
     io: T,
     max_body_len: usize,
 }
 
+#[allow(dead_code)]
 impl<T: Read2 + Write2 + Unpin + Send> FrameReader<T> {
     pub(crate) fn new(id: Id, io: T, max_frame_body_len: usize) -> Self {
         FrameReader {

@@ -1,23 +1,3 @@
-#![feature(fn_traits)]
-// Copyright 2017 Parity Technologies (UK) Ltd.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the "Software"),
-// to deal in the Software without restriction, including without limitation
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,
-// and/or sell copies of the Software, and to permit persons to whom the
-// Software is furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
 
 //! # Multistream-select Protocol Negotiation
 //!
@@ -71,40 +51,18 @@
 //! protocols layered on top of each other may trigger undesirable behaviour
 //! for a listener not supporting one of the intermediate protocols.
 //! See [`dialer_select_proto`](self::dialer_select_proto).
-//!
-//! ## Examples
-//!
-//! For a dialer:
-//!
-//! ```no_run
-//! # fn main() {
-//! use async_std::net::TcpStream;
-//! use self::{Version};
-//! use futures::prelude::*;
-//!
-//! async_std::task::block_on(async move {
-//!     let socket = TcpStream::connect("127.0.0.1:10333").await.unwrap();
-//!
-//!     let protos = vec![b"/echo/1.0.0", b"/echo/2.5.0"];
-//!     let (protocol, _io) = dialer_select_proto(socket, protos, Version::V1).await.unwrap();
-//!
-//!     println!("Negotiated protocol: {:?}", protocol);
-//!     // You can now use `_io` to communicate with the remote.
-//! });
-//! # }
-//! ```
-//!
+
 
 // mod dialer_select;
 mod length_delimited;
 // mod listener_select;
-mod protocol;
-mod negotiator;
 pub mod muxer;
-mod upgrade;
+mod negotiator;
+mod protocol;
 mod tests;
 
-pub use self::negotiator::{Negotiator, NegotiationError};
+
+pub use self::negotiator::{NegotiationError, Negotiator};
 pub use self::protocol::{ProtocolError, Version};
 // pub use self::dialer_select::{dialer_select_proto, DialerSelectFuture};
 // pub use self::listener_select::{listener_select_proto, ListenerSelectFuture};
@@ -115,72 +73,3 @@ pub(self) use libp2p_traits::Write2 as WriteEx;
 #[cfg(test)]
 pub(self) use tests::Memory;
 
-/*
-use std::io;
-use async_trait::async_trait;
-
-#[async_trait]
-pub trait ReadEx {
-    async fn async_read(&mut self, buf: &mut [u8]) -> io::Result<usize>;
-
-    async fn async_read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
-        let mut buf_piece = buf;
-        while !buf_piece.is_empty() {
-            let n = self.async_read(buf_piece).await?;
-            if n == 0 {
-                return Err(io::ErrorKind::UnexpectedEof.into());
-            }
-
-            let (_, rest) = buf_piece.split_at_mut(n);
-            buf_piece = rest;
-        }
-        Ok(())
-    }
-}
-
-#[async_trait]
-pub trait WriteEx {
-    async fn async_write(&mut self, buf: &[u8]) -> io::Result<usize>;
-
-    async fn async_flush(&mut self) -> io::Result<()>;
-
-    async fn async_close(&mut self) -> io::Result<()>;
-
-    async fn async_write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-        let mut buf_piece = buf;
-        while !buf_piece.is_empty() {
-            let n = self.async_write(buf).await?;
-            if n == 0 {
-                return Err(io::ErrorKind::WriteZero.into());
-            }
-            let (_, rest) = buf_piece.split_at(n);
-            buf_piece = rest;
-        }
-        Ok(())
-    }
-}
-
-use futures::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-
-#[async_trait]
-impl<R: AsyncRead + Send + Unpin> ReadEx for R {
-    async fn async_read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.read(buf).await
-    }
-}
-
-#[async_trait]
-impl<W: AsyncWrite + Send + Unpin> WriteEx for W {
-    async fn async_write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.write(buf).await
-    }
-
-    async fn async_flush(&mut self) -> io::Result<()> {
-        self.flush().await
-    }
-
-    async fn async_close(&mut self) -> io::Result<()> {
-        self.close().await
-    }
-}
- */

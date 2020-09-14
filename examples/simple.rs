@@ -1,22 +1,22 @@
-
 use async_std::task;
 use log;
 
-use libp2p_core::{Multiaddr, Transport};
-use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::transport::memory::MemoryTransport;
-use libp2p_core::transport::{TransportListener, TransportError};
-use libp2p_traits::{Write2, Read2, ReadExt2, copy};
+use libp2p_core::transport::upgrade::TransportUpgrade;
+use libp2p_core::transport::{TransportError, TransportListener};
+use libp2p_core::{Multiaddr, Transport};
+use libp2p_traits::{copy, Read2, ReadExt2, Write2};
 
-use secio;
-use yamux;
-use mplex;
-use libp2p_core::identity::Keypair;
-use libp2p_core::upgrade::{DummyUpgrader, Selector};
-use libp2p_core::muxing::StreamMuxer;
-use futures::StreamExt;
 use futures::future;
-use winapi::_core::time::Duration;
+use futures::StreamExt;
+use libp2p_core::identity::Keypair;
+use libp2p_core::muxing::StreamMuxer;
+use libp2p_core::upgrade::{DummyUpgrader, Selector};
+use mplex;
+use pnet::{PnetConfig, PreSharedKey};
+use secio;
+use std::time::Duration;
+use yamux;
 
 fn main() {
     //env_logger::init();
@@ -29,8 +29,7 @@ fn main() {
 
     let listen_addr = t1_addr.clone();
 
-    task::spawn( async move {
-
+    task::spawn(async move {
         log::info!("starting echo server...");
 
         let sec = secio::Config::new(Keypair::generate_secp256k1());
@@ -38,7 +37,9 @@ fn main() {
         //let mux = Selector::new(yamux::Config::new(), Selector::new(yamux::Config::new(), yamux::Config::new()));
         let mux = yamux::Config::new();
         //let mux = mplex::Config::new();
-        let t1 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
+        let psk = "/key/swarm/psk/1.0.0/\n/base16/\n6189c5cf0b87fb800c1a9feeda73c6ab5e998db48fb9e6a978575c770ceef683".parse::<PreSharedKey>().unwrap();
+        let pnet = PnetConfig::new(Some(psk));
+        let t1 = TransportUpgrade::new(MemoryTransport::default(), pnet, mux, sec);
         let mut listener = t1.listen_on(listen_addr).unwrap();
 
         loop {
@@ -51,22 +52,22 @@ fn main() {
 
             // spawn a task for handling this connection/stream-muxer
             //task::spawn(async move {
-                loop {
-                    let stream = stream_muxer.accept_stream().await.unwrap();
-                    log::info!("server accepted a new substream {:?}", stream);
+            loop {
+                let stream = stream_muxer.accept_stream().await.unwrap();
+                log::info!("server accepted a new substream {:?}", stream);
 
-                    task::spawn(async {
-                        let (rx, tx) = stream.split2();
-                        copy(rx, tx).await?;
-                        Ok::<(), std::io::Error>(())
-                    });
-                }
+                task::spawn(async {
+                    let (rx, tx) = stream.split2();
+                    copy(rx, tx).await?;
+                    Ok::<(), std::io::Error>(())
+                });
+            }
 
-                // let mut msg = vec![0; 4096];
-                // loop {
-                //     let n = stream.read2(&mut msg).await?;
-                //     stream.write2(&msg[..n]).await?;
-                // }
+            // let mut msg = vec![0; 4096];
+            // loop {
+            //     let n = stream.read2(&mut msg).await?;
+            //     stream.write2(&msg[..n]).await?;
+            // }
 
             //});
         }
@@ -74,9 +75,7 @@ fn main() {
 
     // Setup dialer.
     task::block_on(async {
-
-        task::sleep(Duration::from_secs(1)).await;
-
+        task::sleep(Duration::from_secs(3)).await;
         for i in 0..2u32 {
             log::info!("start client{}", i);
 
@@ -89,7 +88,9 @@ fn main() {
                  let mux = yamux::Config::new();
                 //let mux = mplex::Config::new();
                 //let mux = Selector::new(yamux::Config::new(), Selector::new(yamux::Config::new(), yamux::Config::new()));
-                let t2 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
+                let psk ="/key/swarm/psk/1.0.0/\n/base16/\n6189c5cf0b87fb800c1a9feeda73c6ab5e998db48fb9e6a978575c770ceef683".parse::<PreSharedKey>().unwrap();
+                let pnet=PnetConfig::new(Some(psk));
+                let t2 = TransportUpgrade::new(MemoryTransport::default(),pnet, mux, sec);
                 let mut stream_muxer = t2.dial(addr).await.expect("listener is started already");
 
                 if let Some(task) = stream_muxer.task() {
@@ -116,4 +117,3 @@ fn main() {
         }
     });
 }
-

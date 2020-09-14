@@ -22,15 +22,15 @@
 
 #![cfg(test)]
 
-use super::{ReadEx, WriteEx, Version, NegotiationError};
 use super::negotiator::Negotiator;
+use super::{NegotiationError, ReadEx, Version, WriteEx};
 
-use std::io;
 use async_std::net::{TcpListener, TcpStream};
-use futures::prelude::*;
-use futures::channel::mpsc;
-use bytes::Bytes;
 use async_trait::async_trait;
+use bytes::Bytes;
+use futures::channel::mpsc;
+use futures::prelude::*;
+use std::io;
 
 #[derive(Debug)]
 pub struct Memory<T> {
@@ -44,7 +44,18 @@ impl Memory<Bytes> {
     pub fn pair() -> (Self, Self) {
         let (tx1, rx1) = mpsc::channel(1);
         let (tx2, rx2) = mpsc::channel(1);
-        (Memory {tx: tx1, rx: rx2, recv_drian: None}, Memory {tx: tx2, rx: rx1, recv_drian: None})
+        (
+            Memory {
+                tx: tx1,
+                rx: rx2,
+                recv_drian: None,
+            },
+            Memory {
+                tx: tx2,
+                rx: rx1,
+                recv_drian: None,
+            },
+        )
     }
 
     fn drain(&mut self, buf: &mut [u8]) -> Option<usize> {
@@ -52,7 +63,7 @@ impl Memory<Bytes> {
             // calculate number of bytes that we can copy
             let n = ::std::cmp::min(buf.len(), b.len());
             if n == 0 {
-                return None
+                return None;
             }
             buf[..n].copy_from_slice(b[..n].as_ref());
             *b = b.split_off(n);
@@ -79,14 +90,20 @@ impl ReadEx for Memory<Bytes> {
 impl WriteEx for Memory<Bytes> {
     async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
         log::debug!("write data: {:?}", buf);
-        self.tx.send(Bytes::copy_from_slice(buf)).await
+        self.tx
+            .send(Bytes::copy_from_slice(buf))
+            .await
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         Ok(buf.len())
     }
 
-    async fn flush2(&mut self) -> io::Result<()> { Ok(()) }
+    async fn flush2(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 
-    async fn close2(&mut self) -> io::Result<()> { Ok(()) }
+    async fn close2(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 #[test]
@@ -159,8 +176,8 @@ fn no_protocol_found() {
             let neg = Negotiator::new_with_protocols(protos);
             match neg.select_one(connec).await {
                 Err(NegotiationError::Failed) => return,
-                Ok(_) => {},
-                Err(_) => panic!()
+                Ok(_) => {}
+                Err(_) => panic!(),
             }
         });
 

@@ -13,12 +13,12 @@ use async_std::{
     task,
 };
 use futures::{channel::mpsc, prelude::*};
+use libp2p_traits::{Read2, Write2};
 use std::{
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     sync::Arc,
 };
 use yamux::{Config, Connection, Mode};
-use libp2p_traits::{Read2, Write2};
 
 async fn roundtrip(address: SocketAddr, nstreams: usize, data: Arc<Vec<u8>>) {
     let listener = TcpListener::bind(&address).await.expect("bind");

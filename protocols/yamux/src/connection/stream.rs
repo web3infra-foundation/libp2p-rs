@@ -190,7 +190,9 @@ impl Stream {
             } else {
                 Poll::Ready(None)
             }
-        }).await {
+        })
+        .await
+        {
             return Ok(n);
         }
 
@@ -219,7 +221,7 @@ impl Stream {
         if !shared.state().can_read() {
             log::info!("{}/{}: eof", self.conn, self.id);
             // return Err(io::ErrorKind::BrokenPipe.into()); // stream has been reset
-            return Ok(0)
+            return Ok(0);
         }
 
         log::trace!("{}/{}: read {} bytes", self.conn, self.id, n);

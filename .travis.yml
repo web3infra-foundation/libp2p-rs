@@ -33,7 +33,7 @@ matrix:
     - stage: Check
       name: Clippy
       script:
-        -  RUSTFLAGS='-F warnings' cargo clippy --all  -- -A clippy::derive_hash_xor_eq --verbose
+        -  RUSTFLAGS='-F warnings' cargo clippy --all  --verbose
     - stage: Test
       name: Secio test
       os: linux

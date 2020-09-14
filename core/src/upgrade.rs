@@ -1,4 +1,3 @@
-
 //! Contains everything related to upgrading a connection or a substream to use a protocol.
 //!
 //! After a connection with a remote has been successfully established or a substream successfully
@@ -45,16 +44,11 @@ pub(crate) mod select;
 pub(crate) mod dummy;
 pub(crate) mod multistream;
 
+use crate::transport::TransportError;
 use async_trait::async_trait;
 use std::borrow::Cow;
-use crate::transport::TransportError;
 
-
-pub use self::{
-    dummy::DummyUpgrader,
-    select::Selector,
-};
-
+pub use self::{dummy::DummyUpgrader, select::Selector};
 
 /// Types serving as protocol names.
 ///
@@ -118,7 +112,7 @@ pub trait UpgradeInfo {
 /// or both.
 /// Possible upgrade on a connection or substream.
 #[async_trait]
-pub trait Upgrader<C> : UpgradeInfo + Send + Clone {
+pub trait Upgrader<C>: UpgradeInfo + Send + Clone {
     /// Output after the upgrade has been successfully negotiated and the handshake performed.
     type Output: Send;
 
@@ -126,16 +120,22 @@ pub trait Upgrader<C> : UpgradeInfo + Send + Clone {
     /// method is called to start the handshake.
     ///
     /// The `info` is the identifier of the protocol, as produced by `protocol_info`.
-    async fn upgrade_inbound(self, socket: C, info: Self::Info) -> Result<Self::Output, TransportError>;
+    async fn upgrade_inbound(
+        self,
+        socket: C,
+        info: Self::Info,
+    ) -> Result<Self::Output, TransportError>;
 
     /// After we have determined that the remote supports one of the protocols we support, this
     /// method is called to start the handshake.
     ///
     /// The `info` is the identifier of the protocol, as produced by `protocol_info`.
-    async fn upgrade_outbound(self, socket: C, info: Self::Info) -> Result<Self::Output, TransportError>;
+    async fn upgrade_outbound(
+        self,
+        socket: C,
+        info: Self::Info,
+    ) -> Result<Self::Output, TransportError>;
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -143,7 +143,6 @@ mod tests {
 
     #[test]
     fn upgrade_info_multi_versions() {
-
         #[derive(PartialEq, Debug, Clone)]
         enum MyProtocolName {
             Version1,
@@ -169,7 +168,7 @@ mod tests {
                 vec![
                     MyProtocolName::Version1,
                     MyProtocolName::Version2,
-                    MyProtocolName::Version3
+                    MyProtocolName::Version3,
                 ]
             }
         }
@@ -181,4 +180,3 @@ mod tests {
         assert_eq!(p.protocol_info().get(2).unwrap(), &MyProtocolName::Version3);
     }
 }
-

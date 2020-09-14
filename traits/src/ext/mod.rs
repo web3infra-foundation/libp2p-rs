@@ -37,11 +37,10 @@ pub trait ReadExt2: Read2 {
     /// ```
     fn split2(self) -> (ReadHalf<Self>, WriteHalf<Self>)
     where
-        Self: Sized + Write2 + Send + Unpin
+        Self: Sized + Write2 + Send + Unpin,
     {
         split::split(self)
     }
-
 }
 
 impl<R: Read2 + ?Sized> ReadExt2 for R {}
@@ -49,11 +48,11 @@ impl<R: Read2 + ?Sized> ReadExt2 for R {}
 #[cfg(test)]
 mod tests {
 
-    use std::io;
-    use async_std::task;
     use async_std::net::{TcpListener, TcpStream};
+    use async_std::task;
+    use std::io;
 
-    use super::{Read2, Write2, ReadExt2};
+    use super::{Read2, ReadExt2, Write2};
 
     #[test]
     fn test_split() {

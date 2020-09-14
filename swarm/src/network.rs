@@ -1,8 +1,3 @@
-use std::fmt;
-use std::error::Error;
-use libp2p_core::{Multiaddr, PeerId};
-use std::hash::Hash;
-
 /// Information about the network obtained by [`Network::info()`].
 #[derive(Clone, Debug)]
 pub struct NetworkInfo {
@@ -34,51 +29,6 @@ pub struct NetworkConfig {
 }
 
 impl NetworkConfig {
-/*    pub fn set_executor(&mut self, e: Box<dyn Executor + Send>) -> &mut Self {
-        self.manager_config.executor = Some(e);
-        self
-    }
-
-    /// Shortcut for calling `executor` with an object that calls the given closure.
-    pub fn set_executor_fn(mut self, f: impl Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send + 'static) -> Self {
-        struct SpawnImpl<F>(F);
-        impl<F: Fn(Pin<Box<dyn Future<Output = ()> + Send>>)> Executor for SpawnImpl<F> {
-            fn exec(&self, f: Pin<Box<dyn Future<Output = ()> + Send>>) {
-                (self.0)(f)
-            }
-        }
-        self.set_executor(Box::new(SpawnImpl(f)));
-        self
-    }
-
-    pub fn executor(&self) -> Option<&Box<dyn Executor + Send>> {
-        self.manager_config.executor.as_ref()
-    }
-
-    /// Sets the maximum number of events sent to a connection's background task
-    /// that may be buffered, if the task cannot keep up with their consumption and
-    /// delivery to the connection handler.
-    ///
-    /// When the buffer for a particular connection is full, `notify_handler` will no
-    /// longer be able to deliver events to the associated `ConnectionHandler`,
-    /// thus exerting back-pressure on the connection and peer API.
-    pub fn set_notify_handler_buffer_size(&mut self, n: NonZeroUsize) -> &mut Self {
-        self.manager_config.task_command_buffer_size = n.get() - 1;
-        self
-    }
-
-    /// Sets the maximum number of buffered connection events (beyond a guaranteed
-    /// buffer of 1 event per connection).
-    ///
-    /// When the buffer is full, the background tasks of all connections will stall.
-    /// In this way, the consumers of network events exert back-pressure on
-    /// the network connection I/O.
-    pub fn set_connection_event_buffer_size(&mut self, n: usize) -> &mut Self {
-        self.manager_config.task_event_buffer_size = n;
-        self
-    }
-*/
-
     pub fn set_incoming_limit(&mut self, n: usize) -> &mut Self {
         self.max_incoming = Some(n);
         self

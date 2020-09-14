@@ -1,13 +1,13 @@
-
 use async_std::task;
 use log;
 
-use libp2p_core::{Multiaddr, Transport};
-use libp2p_core::transport::upgrade::TransportUpgrade;
-use libp2p_core::transport::memory::MemoryTransport;
-use libp2p_core::upgrade::DummyUpgrader;
-use libp2p_core::transport::TransportListener;
 use futures::{AsyncReadExt, AsyncWriteExt};
+use libp2p_core::pnet_core::*;
+use libp2p_core::transport::memory::MemoryTransport;
+use libp2p_core::transport::upgrade::TransportUpgrade;
+use libp2p_core::transport::TransportListener;
+use libp2p_core::upgrade::DummyUpgrader;
+use libp2p_core::{Multiaddr, Transport};
 use libp2p_traits::Write2;
 
 fn main() {
@@ -21,9 +21,13 @@ fn main() {
 
     let listen_addr = t1_addr.clone();
 
-    task::spawn( async move {
-
-        let t1 = TransportUpgrade::new(MemoryTransport::default(), DummyUpgrader::new());
+    task::spawn(async move {
+        let t1 = TransportUpgrade::new(
+            MemoryTransport::default(),
+            DummyPnet::new(),
+            DummyUpgrader::new(),
+            DummyUpgrader::new(),
+        );
         let mut listener = t1.listen_on(listen_addr).unwrap();
 
         loop {
@@ -31,10 +35,8 @@ fn main() {
             task::spawn(async move {
                 stream.write2(b"hello").await?;
                 Ok::<(), std::io::Error>(())
-
             });
         }
-
     });
 
     // Setup dialer.
@@ -42,16 +44,20 @@ fn main() {
     for i in 0..10u32 {
         let addr = t1_addr.clone();
         task::spawn(async move {
-                log::info!("start client{}", i);
+            log::info!("start client{}", i);
 
+            let t2 = TransportUpgrade::new(
+                MemoryTransport::default(),
+                DummyPnet::new(),
+                DummyUpgrader::new(),
+                DummyUpgrader::new(),
+            );
+            let mut socket = t2.dial(addr).await.unwrap();
 
-                let t2 = TransportUpgrade::new(MemoryTransport::default(), DummyUpgrader::new());
-                let mut socket = t2.dial(addr).await.unwrap();
-
-                let mut msg = [1, 2, 3];
-                socket.write_all(&msg).await.unwrap();
-                //socket.read_exact(&mut msg).await.unwrap();
-                log::info!("client{} got {:?}", i, msg);
+            let mut msg = [1, 2, 3];
+            socket.write_all(&msg).await.unwrap();
+            //socket.read_exact(&mut msg).await.unwrap();
+            log::info!("client{} got {:?}", i, msg);
         });
     }
 

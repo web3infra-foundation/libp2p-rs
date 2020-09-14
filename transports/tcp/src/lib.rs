@@ -1,45 +1,24 @@
-// Copyright 2017 Parity Technologies (UK) Ltd.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the "Software"),
-// to deal in the Software without restriction, including without limitation
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,
-// and/or sell copies of the Software, and to permit persons to whom the
-// Software is furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-
 //! Implementation of the libp2p `Transport` trait for TCP/IP.
 //!
 //! # Usage
 //!
-//! This crate provides `TcpConfig` 
+//! This crate provides `TcpConfig`
 //!
 //! The `TcpConfig` struct implements the `Transport` trait of the
 //! `core` library. See the documentation of `core` and of libp2p in general to learn how to
 //! use the `Transport` trait.
 
+use async_std::net::{TcpListener, TcpStream};
 use async_trait::async_trait;
 use futures::prelude::*;
 use futures_timer::Delay;
-use get_if_addrs::{IfAddr, get_if_addrs};
-use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 use libp2p_core::{
+    multiaddr::{Multiaddr, Protocol},
+    transport::{TransportError, TransportListener},
     Transport,
-    multiaddr::{Protocol, Multiaddr},
-    transport::{TransportListener, TransportError}
 };
-use log::{debug, trace};
-use socket2::{Socket, Domain, Type};
+use log::{debug};
+use socket2::{Domain, Socket, Type};
 use std::{
     convert::TryFrom,
     io,
@@ -47,9 +26,8 @@ use std::{
     net::{IpAddr, SocketAddr},
     pin::Pin,
     task::{Context, Poll},
-    time::Duration
+    time::Duration,
 };
-use async_std::net::{TcpListener, TcpStream};
 
 /// Represents the configuration for a TCP/IP transport capability for libp2p.
 ///
@@ -95,17 +73,24 @@ impl Transport for TcpConfig {
     type Listener = TcpTransListener;
 
     fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
-        let socket_addr =
-            if let Ok(sa) = multiaddr_to_socketaddr(&addr) {
-                sa
-            } else {
-                return Err(TransportError::MultiaddrNotSupported(addr))
-            };
+        let socket_addr = if let Ok(sa) = multiaddr_to_socketaddr(&addr) {
+            sa
+        } else {
+            return Err(TransportError::MultiaddrNotSupported(addr));
+        };
 
         let socket = if socket_addr.is_ipv4() {
-            Socket::new(Domain::ipv4(), Type::stream(), Some(socket2::Protocol::tcp()))?
+            Socket::new(
+                Domain::ipv4(),
+                Type::stream(),
+                Some(socket2::Protocol::tcp()),
+            )?
         } else {
-            let s = Socket::new(Domain::ipv6(), Type::stream(), Some(socket2::Protocol::tcp()))?;
+            let s = Socket::new(
+                Domain::ipv6(),
+                Type::stream(),
+                Some(socket2::Protocol::tcp()),
+            )?;
             s.set_only_v6(true)?;
             s
         };
@@ -126,62 +111,63 @@ impl Transport for TcpConfig {
 
         // kingwel, don't care about the unspecified address, so far
         // TBD
-/*
-        // Determine all our listen addresses which is either a single local IP address
-        // or (if a wildcard IP address was used) the addresses of all our interfaces,
-        // as reported by `get_if_addrs`.
-        let addrs =
-            if socket_addr.ip().is_unspecified() {
-                let addrs = host_addresses(port)?;
-                debug!("Listening on {:?}", addrs.iter().map(|(_, _, ma)| ma).collect::<Vec<_>>());
-                Addresses::Many(addrs)
-            } else {
-                let ma = ip_to_multiaddr(local_addr.ip(), port);
-                debug!("Listening on {:?}", ma);
-                Addresses::One(ma)
-            };
+        /*
+                // Determine all our listen addresses which is either a single local IP address
+                // or (if a wildcard IP address was used) the addresses of all our interfaces,
+                // as reported by `get_if_addrs`.
+                let addrs =
+                    if socket_addr.ip().is_unspecified() {
+                        let addrs = host_addresses(port)?;
+                        debug!("Listening on {:?}", addrs.iter().map(|(_, _, ma)| ma).collect::<Vec<_>>());
+                        Addresses::Many(addrs)
+                    } else {
+                        let ma = ip_to_multiaddr(local_addr.ip(), port);
+                        debug!("Listening on {:?}", ma);
+                        Addresses::One(ma)
+                    };
 
-        // Generate `NewAddress` events for each new `Multiaddr`.
-        let pending = match addrs {
-            Addresses::One(ref ma) => {
-                let event = ListenerEvent::NewAddress(ma.clone());
-                let mut list = VecDeque::new();
-                list.push_back(Ok(event));
-                list
-            }
-            Addresses::Many(ref aa) => {
-                aa.iter()
-                    .map(|(_, _, ma)| ma)
-                    .cloned()
-                    .map(ListenerEvent::NewAddress)
-                    .map(Result::Ok)
-                    .collect::<VecDeque<_>>()
-            }
-        };
-*/
+                // Generate `NewAddress` events for each new `Multiaddr`.
+                let pending = match addrs {
+                    Addresses::One(ref ma) => {
+                        let event = ListenerEvent::NewAddress(ma.clone());
+                        let mut list = VecDeque::new();
+                        list.push_back(Ok(event));
+                        list
+                    }
+                    Addresses::Many(ref aa) => {
+                        aa.iter()
+                            .map(|(_, _, ma)| ma)
+                            .cloned()
+                            .map(ListenerEvent::NewAddress)
+                            .map(Result::Ok)
+                            .collect::<VecDeque<_>>()
+                    }
+                };
+        */
         let listener = TcpTransListener {
             inner: listener,
             pause: None,
             pause_duration: self.sleep_on_error,
             port,
             ma,
-            config: self
+            config: self,
         };
 
         Ok(listener)
     }
 
     async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
-        let socket_addr =
-            if let Ok(socket_addr) = multiaddr_to_socketaddr(&addr) {
-                if socket_addr.port() == 0 || socket_addr.ip().is_unspecified() {
-                    debug!("Instantly refusing dialing {}, as it is invalid", addr);
-                    return Err(TransportError::IoError(io::ErrorKind::ConnectionRefused.into()))
-                }
-                socket_addr
-            } else {
-                return Err(TransportError::MultiaddrNotSupported(addr))
-            };
+        let socket_addr = if let Ok(socket_addr) = multiaddr_to_socketaddr(&addr) {
+            if socket_addr.port() == 0 || socket_addr.ip().is_unspecified() {
+                debug!("Instantly refusing dialing {}, as it is invalid", addr);
+                return Err(TransportError::IoError(
+                    io::ErrorKind::ConnectionRefused.into(),
+                ));
+            }
+            socket_addr
+        } else {
+            return Err(TransportError::MultiaddrNotSupported(addr));
+        };
 
         debug!("Dialing {}", addr);
 
@@ -205,7 +191,7 @@ pub struct TcpTransListener {
     /// The set of known addresses.
     ma: Multiaddr,
     /// Original configuration.
-    config: TcpConfig
+    config: TcpConfig,
 }
 
 #[async_trait]
@@ -342,13 +328,21 @@ fn apply_config(config: &TcpConfig, socket: &TcpStream) -> Result<(), io::Error>
 }
 
 impl AsyncRead for TcpTransStream {
-    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context, buf: &mut [u8]) -> Poll<Result<usize, io::Error>> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context,
+        buf: &mut [u8],
+    ) -> Poll<Result<usize, io::Error>> {
         AsyncRead::poll_read(Pin::new(&mut self.inner), cx, buf)
     }
 }
 
 impl AsyncWrite for TcpTransStream {
-    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context, buf: &[u8]) -> Poll<Result<usize, io::Error>> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context,
+        buf: &[u8],
+    ) -> Poll<Result<usize, io::Error>> {
         AsyncWrite::poll_write(Pin::new(&mut self.inner), cx, buf)
     }
 
@@ -382,7 +376,7 @@ fn multiaddr_to_socketaddr(addr: &Multiaddr) -> Result<SocketAddr, ()> {
 fn ip_to_multiaddr(ip: IpAddr, port: u16) -> Multiaddr {
     let proto = match ip {
         IpAddr::V4(ip) => Protocol::Ip4(ip),
-        IpAddr::V6(ip) => Protocol::Ip6(ip)
+        IpAddr::V6(ip) => Protocol::Ip6(ip),
     };
     let it = iter::once(proto).chain(iter::once(Protocol::Tcp(port)));
     Multiaddr::from_iter(it)
@@ -480,13 +474,16 @@ fn check_for_interface_changes<T>(
 
 #[cfg(test)]
 mod tests {
-    use futures::prelude::*;
-    use libp2p_core::{Transport, multiaddr::{Multiaddr, Protocol}};
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use super::multiaddr_to_socketaddr;
     #[cfg(feature = "async-std")]
     use super::TcpConfig;
+    use futures::prelude::*;
     use libp2p_core::transport::TransportListener;
+    use libp2p_core::{
+        multiaddr::{Multiaddr, Protocol},
+        Transport,
+    };
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::time::Duration;
     /*
         #[test]
@@ -587,7 +584,10 @@ mod tests {
     fn dialer_and_listener_timeout() {
         fn test1(addr: Multiaddr) {
             async_std::task::block_on(async move {
-                let mut timeout_listener = TcpConfig::new().timeout(Duration::from_secs(1)).listen_on(addr).unwrap();
+                let mut timeout_listener = TcpConfig::new()
+                    .timeout(Duration::from_secs(1))
+                    .listen_on(addr)
+                    .unwrap();
                 assert!(timeout_listener.accept().await.is_err());
             });
         }
@@ -613,7 +613,11 @@ mod tests {
             async_std::task::spawn(async move {
                 let mut tcp_listener = TcpConfig::new().listen_on(addr).unwrap();
 
-                ready_tx.take().unwrap().send(tcp_listener.multi_addr()).unwrap();
+                ready_tx
+                    .take()
+                    .unwrap()
+                    .send(tcp_listener.multi_addr())
+                    .unwrap();
 
                 loop {
                     let mut socket = tcp_listener.accept().await.unwrap();
@@ -622,28 +626,28 @@ mod tests {
                     socket.read_exact(&mut buf).await.unwrap();
                     assert_eq!(buf, [1, 2, 3]);
                     socket.write_all(&[4, 5, 6]).await.unwrap();
-
                 }
 
-/*
-                let mut listener = tcp.listen_on(addr).await.unwrap();
+                /*
+                                let mut listener = tcp.listen_on(addr).await.unwrap();
 
-                loop {
-                    match listener.next().await.unwrap().unwrap() {
-                        ListenerEvent::NewAddress(listen_addr) => {
-                            ready_tx.take().unwrap().send(listen_addr).unwrap();
-                        },
-                        ListenerEvent::Upgrade { upgrade, .. } => {
-                            let mut upgrade = upgrade.await.unwrap();
-                            let mut buf = [0u8; 3];
-                            upgrade.read_exact(&mut buf).await.unwrap();
-                            assert_eq!(buf, [1, 2, 3]);
-                            upgrade.write_all(&[4, 5, 6]).await.unwrap();
-                        },
-                        _ => unreachable!()
-                    }
-                }
-*/            });
+                                loop {
+                                    match listener.next().await.unwrap().unwrap() {
+                                        ListenerEvent::NewAddress(listen_addr) => {
+                                            ready_tx.take().unwrap().send(listen_addr).unwrap();
+                                        },
+                                        ListenerEvent::Upgrade { upgrade, .. } => {
+                                            let mut upgrade = upgrade.await.unwrap();
+                                            let mut buf = [0u8; 3];
+                                            upgrade.read_exact(&mut buf).await.unwrap();
+                                            assert_eq!(buf, [1, 2, 3]);
+                                            upgrade.write_all(&[4, 5, 6]).await.unwrap();
+                                        },
+                                        _ => unreachable!()
+                                    }
+                                }
+                */
+            });
 
             async_std::task::block_on(async move {
                 let addr = ready_rx.await.unwrap();
@@ -662,54 +666,54 @@ mod tests {
         test("/ip4/127.0.0.1/tcp/1110".parse().unwrap());
         test("/ip6/::1/tcp/1110".parse().unwrap());
     }
-/*
-    #[test]
-    #[cfg(feature = "async-std")]
-    fn replace_port_0_in_returned_multiaddr_ipv4() {
-        let tcp = TcpConfig::new();
+    /*
+        #[test]
+        #[cfg(feature = "async-std")]
+        fn replace_port_0_in_returned_multiaddr_ipv4() {
+            let tcp = TcpConfig::new();
 
-        let addr = "/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap();
-        assert!(addr.to_string().contains("tcp/0"));
+            let addr = "/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap();
+            assert!(addr.to_string().contains("tcp/0"));
 
-        let new_addr = futures::executor::block_on_stream(tcp.listen_on(addr).await.unwrap())
-            .next()
-            .expect("some event")
-            .expect("no error")
-            .into_new_address()
-            .expect("listen address");
+            let new_addr = futures::executor::block_on_stream(tcp.listen_on(addr).await.unwrap())
+                .next()
+                .expect("some event")
+                .expect("no error")
+                .into_new_address()
+                .expect("listen address");
 
-        assert!(!new_addr.to_string().contains("tcp/0"));
-    }
+            assert!(!new_addr.to_string().contains("tcp/0"));
+        }
 
-    #[test]
-    #[cfg(feature = "async-std")]
-    fn replace_port_0_in_returned_multiaddr_ipv6() {
-        let tcp = TcpConfig::new();
+        #[test]
+        #[cfg(feature = "async-std")]
+        fn replace_port_0_in_returned_multiaddr_ipv6() {
+            let tcp = TcpConfig::new();
 
-        let addr: Multiaddr = "/ip6/::1/tcp/0".parse().unwrap();
-        assert!(addr.to_string().contains("tcp/0"));
+            let addr: Multiaddr = "/ip6/::1/tcp/0".parse().unwrap();
+            assert!(addr.to_string().contains("tcp/0"));
 
-        let new_addr = futures::executor::block_on_stream(tcp.listen_on(addr).unwrap())
-            .next()
-            .expect("some event")
-            .expect("no error")
-            .into_new_address()
-            .expect("listen address");
+            let new_addr = futures::executor::block_on_stream(tcp.listen_on(addr).unwrap())
+                .next()
+                .expect("some event")
+                .expect("no error")
+                .into_new_address()
+                .expect("listen address");
 
-        assert!(!new_addr.to_string().contains("tcp/0"));
-    }
-    #[test]
-    #[cfg(feature = "async-std")]
-    fn larger_addr_denied() {
-        let tcp = TcpConfig::new();
+            assert!(!new_addr.to_string().contains("tcp/0"));
+        }
+        #[test]
+        #[cfg(feature = "async-std")]
+        fn larger_addr_denied() {
+            let tcp = TcpConfig::new();
 
-        let addr = "/ip4/127.0.0.1/tcp/12345/tcp/12345"
-            .parse::<Multiaddr>()
-            .unwrap();
+            let addr = "/ip4/127.0.0.1/tcp/12345/tcp/12345"
+                .parse::<Multiaddr>()
+                .unwrap();
 
-        //let new_addr = futures::executor::block_on_stream(tcp.listen_on(addr).await.unwrap());
-        let ret = async_std::task::block_on(tcp.listen_on(addr)).is_err();
-        assert!(!ret);
-    }
-*/
+            //let new_addr = futures::executor::block_on_stream(tcp.listen_on(addr).await.unwrap());
+            let ret = async_std::task::block_on(tcp.listen_on(addr)).is_err();
+            assert!(!ret);
+        }
+    */
 }

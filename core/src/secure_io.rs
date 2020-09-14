@@ -1,9 +1,5 @@
-
-use multiaddr::Multiaddr;
-use libp2p_traits::{Read2, Write2};
-use crate::transport::TransportError;
-use crate::{PeerId, PublicKey};
 use crate::identity::Keypair;
+use crate::{PeerId, PublicKey};
 
 pub trait SecureInfo {
     fn local_peer(&self) -> PeerId;
@@ -14,4 +10,3 @@ pub trait SecureInfo {
 
     fn remote_pub_key(&self) -> PublicKey;
 }
-

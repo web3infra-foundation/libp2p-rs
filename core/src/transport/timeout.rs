@@ -24,13 +24,13 @@
 //! underlying `Transport`.
 // TODO: add example
 
-use async_trait::async_trait;
-use std::{time::Duration};
-use log::{trace};
-use futures_timer::Delay;
-use futures::future::{select, Either};
 use crate::transport::TransportListener;
-use crate::{Multiaddr, Transport, transport::{TransportError}};
+use crate::{transport::TransportError, Multiaddr, Transport};
+use async_trait::async_trait;
+use futures::future::{select, Either};
+use futures_timer::Delay;
+use log::trace;
+use std::time::Duration;
 
 /// A `TransportTimeout` is a `Transport` that wraps another `Transport` and adds
 /// timeouts to all inbound and outbound connection attempts.
@@ -74,8 +74,7 @@ impl<InnerTrans> TransportTimeout<InnerTrans> {
 }
 
 #[async_trait]
-impl<InnerTrans: Transport> Transport for TransportTimeout<InnerTrans>
-{
+impl<InnerTrans: Transport> Transport for TransportTimeout<InnerTrans> {
     type Output = InnerTrans::Output;
     type Listener = TimeoutListener<InnerTrans::Listener>;
 
@@ -96,7 +95,7 @@ impl<InnerTrans: Transport> Transport for TransportTimeout<InnerTrans>
             Either::Left((stream, _)) => {
                 trace!("dialing connected first");
                 Ok(stream?)
-            },
+            }
             Either::Right(_) => {
                 trace!("dialing timeout first");
                 Err(TransportError::Timeout)
@@ -134,7 +133,7 @@ impl<InnerListener: TransportListener> TransportListener for TimeoutListener<Inn
             Either::Left((stream, _)) => {
                 trace!("accepted first");
                 Ok(stream?)
-            },
+            }
             Either::Right(_) => {
                 trace!("accept timeout first");
                 Err(TransportError::Timeout)
@@ -161,20 +160,21 @@ impl<InnerListener: TransportListener> TransportListener for TimeoutListener<Inn
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-    use crate::{Transport, Multiaddr};
-    use crate::transport::TransportListener;
     use crate::transport::memory::MemoryTransport;
+    use crate::transport::TransportListener;
+    use crate::{Multiaddr, Transport};
+    use std::time::Duration;
 
     #[test]
     fn dialer_and_listener_timeout() {
         fn test1(addr: Multiaddr) {
             futures::executor::block_on(async move {
-                let mut timeout_listener = MemoryTransport::default().timeout(Duration::from_secs(1)).listen_on(addr).unwrap();
+                let mut timeout_listener = MemoryTransport::default()
+                    .timeout(Duration::from_secs(1))
+                    .listen_on(addr)
+                    .unwrap();
                 assert!(timeout_listener.accept().await.is_err());
             });
         }

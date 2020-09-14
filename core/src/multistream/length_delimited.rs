@@ -18,7 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use bytes::{Bytes, BytesMut, BufMut as _};
+use bytes::{BufMut as _, Bytes, BytesMut};
 use std::{convert::TryFrom as __, io, u16};
 
 use super::{ReadEx, WriteEx};
@@ -74,21 +74,26 @@ impl<R: ReadEx + WriteEx + Send> LengthDelimited<R> {
     async fn read_unsigned_varint(&mut self) -> io::Result<u16> {
         let mut b = unsigned_varint::encode::u16_buffer();
         for i in 0..b.len() {
-            self.inner.read_exact2(&mut b[i .. i + 1]).await?;
+            self.inner.read_exact2(&mut b[i..i + 1]).await?;
             if unsigned_varint::decode::is_last(b[i]) {
-                return Ok(unsigned_varint::decode::u16(&b[..= i])
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?.0)
+                return Ok(unsigned_varint::decode::u16(&b[..=i])
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
+                    .0);
             }
         }
-        Err(io::Error::new(io::ErrorKind::Other, unsigned_varint::decode::Error::Overflow))
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            unsigned_varint::decode::Error::Overflow,
+        ))
     }
 
     pub async fn recv_message(&mut self) -> io::Result<Bytes> {
         let len = self.read_unsigned_varint().await?;
         if len > MAX_FRAME_SIZE {
             return Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "Maximum frame length exceeded"))
+                io::ErrorKind::InvalidData,
+                "Maximum frame length exceeded",
+            ));
         }
         let buf = &mut self.read_buffer;
         buf.clear();
@@ -105,7 +110,8 @@ impl<R: ReadEx + WriteEx + Send> LengthDelimited<R> {
             _ => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    "Maximum frame size exceeded."))
+                    "Maximum frame size exceeded.",
+                ))
             }
         };
         let mut uvi_buf = unsigned_varint::encode::u16_buffer();
@@ -122,7 +128,7 @@ impl<R: ReadEx + WriteEx + Send> LengthDelimited<R> {
 mod tests {
     use super::LengthDelimited;
     use async_std::net::{TcpListener, TcpStream};
-    use futures::{prelude::*, io::Cursor};
+    use futures::{io::Cursor, prelude::*};
     use quickcheck::*;
     use std::io::ErrorKind;
     // use super::{ReadEx, WriteEx};
@@ -157,9 +163,8 @@ mod tests {
         let mut data = vec![(len & 0x7f) as u8 | 0x80, (len >> 7) as u8];
         data.extend(frame.clone().into_iter());
         let mut framed = LengthDelimited::new(Cursor::new(data));
-        let recved = futures::executor::block_on(async move {
-            framed.recv_message().await
-        }).unwrap();
+        let recved =
+            futures::executor::block_on(async move { framed.recv_message().await }).unwrap();
         assert_eq!(recved, frame);
     }
 
@@ -168,9 +173,7 @@ mod tests {
         let mut data = vec![0x81, 0x81, 0x1];
         data.extend((0..16513).map(|_| 0));
         let mut framed = LengthDelimited::new(Cursor::new(data));
-        let recved = futures::executor::block_on(async move {
-            framed.recv_message().await
-        });
+        let recved = futures::executor::block_on(async move { framed.recv_message().await });
 
         if let Err(io_err) = recved {
             assert_eq!(io_err.kind(), ErrorKind::InvalidData)
@@ -255,7 +258,7 @@ mod tests {
                 let server = async_std::task::spawn(async move {
                     let socket = listener.accept().await.unwrap().0;
 
-                    let mut framed= LengthDelimited::new(socket);
+                    let mut framed = LengthDelimited::new(socket);
                     /*
                     let framed = futures::stream::try_unfold(framed, |mut f| async move {
                         f.recv_message().await.map(|buf| Some((buf, f)))

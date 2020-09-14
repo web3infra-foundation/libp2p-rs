@@ -22,14 +22,16 @@
 pub use bytes;
 /// Traits
 pub use libp2p_traits;
+/// Re-pub mplex crate
+pub use mplex;
 /// Re-pub multiaddr crate
 pub use multiaddr;
+/// Re-pub mplex crate
+pub use pnet;
 /// Re-pub secio crate
 pub use secio;
 /// Re-pub yamux crate
 pub use yamux;
-/// Re-pub mplex crate
-pub use mplex;
 
 /*
 /// Some gadgets that help create a service

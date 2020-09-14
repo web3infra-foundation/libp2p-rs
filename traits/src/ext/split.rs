@@ -1,15 +1,13 @@
+use async_trait::async_trait;
+use futures::lock::BiLock;
 use std::{
     fmt,
     future::Future,
     io,
-    pin::Pin,
-    task::{Context, Poll},
+    task::{Poll},
 };
-use futures::lock::BiLock;
-use async_trait::async_trait;
 
 use super::{Read2 as ReadEx, Write2 as WriteEx};
-use futures::{AsyncWriteExt, FutureExt};
 
 #[derive(Debug)]
 pub struct ReadHalf<T> {
@@ -26,7 +24,8 @@ impl<T: ReadEx + Send + Unpin> ReadEx for ReadHalf<T> {
             futures::pin_mut!(fut);
             let ret = futures::ready!(fut.poll(cx));
             Poll::Ready(ret)
-        }).await
+        })
+        .await
     }
 }
 
@@ -112,7 +111,7 @@ async fn lock_and_then<'a, T, U, E, F, Fut>(
 
 pub(super) fn split<T>(t: T) -> (ReadHalf<T>, WriteHalf<T>)
 where
-    T: ReadEx + WriteEx + Send + Unpin
+    T: ReadEx + WriteEx + Send + Unpin,
 {
     let (a, b) = BiLock::new(t);
     (ReadHalf { handle: a }, WriteHalf { handle: b })
@@ -123,12 +122,9 @@ impl<T: Unpin> ReadHalf<T> {
     /// together. Succeeds only if the `ReadHalf<T>` and `WriteHalf<T>` are
     /// a matching pair originating from the same call to `AsyncReadExt::split`.
     pub fn reunite(self, other: WriteHalf<T>) -> Result<T, ReuniteError<T>> {
-        self.handle.reunite(other.handle).map_err(|err| {
-            ReuniteError(
-                ReadHalf { handle: err.0 },
-                WriteHalf { handle: err.1 }
-            )
-        })
+        self.handle
+            .reunite(other.handle)
+            .map_err(|err| ReuniteError(ReadHalf { handle: err.0 }, WriteHalf { handle: err.1 }))
     }
 }
 
@@ -152,7 +148,8 @@ impl<W: WriteEx + Send + Unpin> WriteEx for WriteHalf<W> {
             futures::pin_mut!(fut);
             let ret = futures::ready!(fut.poll(cx));
             Poll::Ready(ret)
-        }).await
+        })
+        .await
     }
 
     async fn flush2(&mut self) -> io::Result<()> {
@@ -164,7 +161,8 @@ impl<W: WriteEx + Send + Unpin> WriteEx for WriteHalf<W> {
             futures::pin_mut!(fut);
             let ret = futures::ready!(fut.poll(cx));
             Poll::Ready(ret)
-        }).await
+        })
+        .await
     }
 
     async fn close2(&mut self) -> io::Result<()> {
@@ -176,7 +174,8 @@ impl<W: WriteEx + Send + Unpin> WriteEx for WriteHalf<W> {
             futures::pin_mut!(fut);
             let ret = futures::ready!(fut.poll(cx));
             Poll::Ready(ret)
-        }).await
+        })
+        .await
     }
 }
 
@@ -186,15 +185,16 @@ pub struct ReuniteError<T>(pub ReadHalf<T>, pub WriteHalf<T>);
 
 impl<T> fmt::Debug for ReuniteError<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("ReuniteError")
-            .field(&"...")
-            .finish()
+        f.debug_tuple("ReuniteError").field(&"...").finish()
     }
 }
 
 impl<T> fmt::Display for ReuniteError<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "tried to reunite a ReadHalf and WriteHalf that don't form a pair")
+        write!(
+            f,
+            "tried to reunite a ReadHalf and WriteHalf that don't form a pair"
+        )
     }
 }
 

@@ -5,14 +5,16 @@ use async_std::{
 use futures::prelude::*;
 use log::info;
 
-use yamux::{Config, Connection, Mode};
 use libp2p_traits::{Read2, Write2};
+use yamux::{Config, Connection, Mode};
 
 use libp2p_core::identity::Keypair;
-use secio::{handshake::Config as SecioConfig};
+use secio::handshake::Config as SecioConfig;
 
 fn main() {
-    env_logger::builder().filter_level(log::LevelFilter::Trace).init();
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Trace)
+        .init();
     if std::env::args().nth(1) == Some("server".to_string()) {
         info!("Starting server ......");
         run_server();
@@ -32,8 +34,7 @@ fn run_server() {
         while let Ok((socket, _)) = listener.accept().await {
             let config = config.clone();
             task::spawn(async move {
-                let (handle, _, _) = config.handshake(socket).await
-                    .expect("handshake");
+                let (handle, _, _) = config.handshake(socket).await.expect("handshake");
                 let mut conn = Connection::new(handle, Config::default(), Mode::Server);
 
                 while let Ok(Some(mut stream)) = conn.next_stream().await {
@@ -46,7 +47,10 @@ fn run_server() {
                                 info!("stream({}) closed", stream.id());
                                 break;
                             }
-                            stream.write_all2(buf[..n].as_ref()).await.expect("write stream");
+                            stream
+                                .write_all2(buf[..n].as_ref())
+                                .await
+                                .expect("write stream");
                         }
                     });
                 }
@@ -60,7 +64,9 @@ fn run_client() {
     let config = SecioConfig::new(key);
 
     task::block_on(async move {
-        let socket = TcpStream::connect("127.0.0.1:12345").await.expect("connect");
+        let socket = TcpStream::connect("127.0.0.1:12345")
+            .await
+            .expect("connect");
         info!("[client] connected to server: {:?}", socket.peer_addr());
         let (handle, _, _) = config.handshake(socket).await.expect("handshake");
 

@@ -15,7 +15,7 @@ use crate::{
 };
 use control::Control;
 use libp2p_traits::{
-    ext::split::{ReadHalf, WriteHalf},
+    ext::split::{WriteHalf},
     Read2, ReadExt2, Write2,
 };
 use nohash_hasher::IntMap;
@@ -137,7 +137,7 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
 
         let (reader, writer) = socket.split2();
         let reader = io::IO::new(id, reader);
-        let mut reader =
+        let reader =
             futures::stream::unfold(reader, |mut io| async { Some((io.recv_frame().await, io)) });
         let reader = Box::pin(reader);
 
@@ -239,8 +239,6 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
                 }
             }
         }
-
-        Err(ConnectionError::Closed)
     }
 
     async fn on_frame(&mut self, frame: Frame) -> Result<()> {
@@ -267,7 +265,7 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
 
                 log::info!("{}: new inbound {} of {}", self.id, stream, self);
                 if let Some(sender) = self.accept_stream.take() {
-                    sender.send(Ok(stream));
+                    sender.send(Ok(stream)).expect("send err");
                 } else {
                     self.pending_streams.push(stream);
                 }
@@ -276,7 +274,7 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
                 let stream_id = frame.header().stream_id();
                 // if stream is closed, ignore frame
                 if let Some(stream_sender) = self.streams.get_mut(&stream_id) {
-                    stream_sender.send(frame.body().to_vec()).await;
+                    stream_sender.send(frame.body().to_vec()).await.expect("send err");
                 }
             }
             Tag::Reset | Tag::Close => {
@@ -351,12 +349,12 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
                     .await
                     .or(Err(ConnectionError::Closed))?;
 
-                reply.send(Ok(stream));
+                reply.send(Ok(stream)).expect("send err");
             }
             Some(ControlCommand::AcceptStream(reply)) => {
                 if !self.pending_streams.is_empty() {
                     if let Some(stream) = self.pending_streams.pop() {
-                        reply.send(Ok(stream));
+                        reply.send(Ok(stream)).expect("send err");
                     }
                     return Ok(());
                 }

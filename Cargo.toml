@@ -20,6 +20,7 @@ libp2p-traits = { path = "traits", version = "0.1.0", package = "libp2p-traits" 
 yamux = { path = "protocols/yamux", version = "0.1.0", package = "yamux" }
 mplex = { path = "protocols/mplex", version = "0.1.0", package = "mplex" }
 secio = { path = "protocols/secio", version = "0.1.0", package = "secio" }
+pnet = { path = "protocols/pnet", version = "0.1.0", package = "pnet" }
 multiaddr = { path = "multiaddr", package = "parity-multiaddr", version = "0.9.1" }
 libp2p-core = { path = "core", version = "0.1.0", package = "libp2p-core" }
 libp2p-swarm = { path = "swarm", version = "0.1.0", package = "libp2p-swarm" }
@@ -60,17 +61,16 @@ members = [
   "protocols/yamux",
   "protocols/mplex",
   "protocols/secio",
+  "protocols/pnet",
   "core",
   "transports/tcp",
   "multiaddr",
   "swarm",
 ]
-exclude = [
-  "protocols/discovery",
-  "protocols/identify",
-  "protocols/ping",
-]
 
 [[example]]
 name = "secio_simple"
 path = "protocols/secio/examples/secio_simple.rs"
+[[example]]
+name = "simple"
+path = "examples/simple.rs"

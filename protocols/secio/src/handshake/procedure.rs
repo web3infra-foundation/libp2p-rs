@@ -2,7 +2,7 @@
 ///
 /// Some panic logic has been removed, some error handling has been removed, and an error has been added.
 ///
-use log::{debug, trace, info};
+use log::{debug, info, trace};
 use std::cmp::Ordering;
 
 use crate::{
@@ -10,16 +10,15 @@ use crate::{
     crypto::{cipher::CipherType, new_stream, BoxStreamCipher, CryptoMode},
     error::SecioError,
     exchange,
-    Config,
     handshake::handshake_context::HandshakeContext,
     handshake_proto::Exchange,
-    Digest, EphemeralPublicKey,
+    Config, Digest, EphemeralPublicKey,
 };
 
 use libp2p_core::identity::*;
 use libp2p_core::PublicKey;
 
-use libp2p_traits::{Write2, Read2};
+use libp2p_traits::{Read2, Write2};
 use prost::Message;
 
 /// Performs a handshake on the given socket.
@@ -215,7 +214,10 @@ where
         .await?;
     secure_stream.verify_nonce().await?;
 
-    info!("handshake for {:?} successfully done!", pub_ephemeral_context.state.remote.local.nonce);
+    info!(
+        "handshake for {:?} successfully done!",
+        pub_ephemeral_context.state.remote.local.nonce
+    );
 
     Ok((
         secure_stream,

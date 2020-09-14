@@ -18,14 +18,13 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_trait::async_trait;
-use libp2p_traits::{Read2, Write2};
-use std::io;
-use crate::upgrade::ProtocolName;
 use crate::muxing::StreamMuxer;
 use crate::transport::TransportError;
+use crate::upgrade::ProtocolName;
+use async_trait::async_trait;
 use futures::future::BoxFuture;
-
+use libp2p_traits::{Read2, Write2};
+use std::io;
 
 #[derive(Debug, Copy, Clone)]
 pub enum EitherOutput<A, B> {
@@ -113,13 +112,16 @@ where
 }
 
 #[derive(Debug, Clone)]
-pub enum EitherName<A, B> { A(A), B(B) }
+pub enum EitherName<A, B> {
+    A(A),
+    B(B),
+}
 
 impl<A: ProtocolName, B: ProtocolName> ProtocolName for EitherName<A, B> {
     fn protocol_name(&self) -> &[u8] {
         match self {
             EitherName::A(a) => a.protocol_name(),
-            EitherName::B(b) => b.protocol_name()
+            EitherName::B(b) => b.protocol_name(),
         }
     }
 }
