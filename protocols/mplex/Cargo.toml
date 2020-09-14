@@ -27,7 +27,7 @@ criterion = "0.3"
 async-std = "1.6"
 
 [dev-dependencies.secio]
-path = "../../secio"
+path = "../secio"
 
 [dev-dependencies.libp2p-core]
 path = "../../core"

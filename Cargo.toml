@@ -17,9 +17,9 @@ no-default-features = true
 
 [dependencies]
 libp2p-traits = { path = "traits", version = "0.1.0", package = "libp2p-traits" }
-yamux = { path = "yamux", version = "0.1.0", package = "yamux" }
-mplex = { path = "muxer/mplex", version = "0.1.0", package = "mplex" }
-secio = { path = "secio", version = "0.1.0", package = "secio" }
+yamux = { path = "protocols/yamux", version = "0.1.0", package = "yamux" }
+mplex = { path = "protocols/mplex", version = "0.1.0", package = "mplex" }
+secio = { path = "protocols/secio", version = "0.1.0", package = "secio" }
 multiaddr = { path = "multiaddr", package = "parity-multiaddr", version = "0.9.1" }
 libp2p-core = { path = "core", version = "0.1.0", package = "libp2p-core" }
 libp2p-swarm = { path = "swarm", version = "0.1.0", package = "libp2p-swarm" }
@@ -57,9 +57,9 @@ nix = "0.13.0"
 [workspace]
 members = [
   "traits",
-  "yamux",
-  "muxer/mplex",
-  "secio",
+  "protocols/yamux",
+  "protocols/mplex",
+  "protocols/secio",
   "core",
   "transports/tcp",
   "multiaddr",
@@ -73,4 +73,4 @@ exclude = [
 
 [[example]]
 name = "secio_simple"
-path = "secio/examples/secio_simple.rs"
+path = "protocols/secio/examples/secio_simple.rs"
