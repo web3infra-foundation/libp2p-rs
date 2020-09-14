@@ -32,6 +32,7 @@ libp2p-traits = { path = "../../traits", version = "0.1.0", package = "libp2p-tr
 async-trait = "0.1"
 log = "0.4.8"
 async-std = "1.6"
+bytes = "0.5.6"
 
 [dependencies.futures]
 version = "0.3.4"
