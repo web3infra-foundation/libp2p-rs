@@ -41,8 +41,7 @@ where
 
     pub async fn read_uvarint(&mut self) -> io::Result<u32> {
         let mut buf: [u8; U32_LEN] = [0; U32_LEN];
-        let mut pos = 0;
-        for _ in 0..U32_LEN {
+        for (pos, _) in (0..U32_LEN).enumerate() {
             self.read_byte(&mut buf[pos..pos + 1]).await?;
             if buf[pos] < 0x80 {
                 // MSB is not set, indicating the end of the length prefix.
@@ -52,7 +51,6 @@ where
                 })?;
                 return Ok(len);
             }
-            pos += 1;
         }
         Ok(0)
     }
