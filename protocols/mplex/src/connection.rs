@@ -181,6 +181,10 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
 
         self.is_closed = true;
 
+        if let Some(sender) = self.accept_stream.take() {
+            sender.send(Err(ConnectionError::Closed));
+        }
+
         // Close and drain the control command receiver.
         if !self.control_receiver.stream().is_terminated() {
             if self.control_receiver.is_paused() {
