@@ -35,7 +35,7 @@ pub trait Read2 {
     /// use futures_lite::*;
     /// use std::fs::File;
     ///
-    /// # blocking::block_on(async {
+    /// # future::block_on(async {
     /// let mut file = Unblock::new(File::open("a.txt")?);
     ///
     /// let mut buf = vec![0; 1024];
@@ -57,7 +57,7 @@ pub trait Read2 {
     /// ```
     /// use futures_lite::*;
     ///
-    /// # blocking::block_on(async {
+    /// # future::block_on(async {
     /// let mut reader = io::Cursor::new(&b"hello");
     /// let mut contents = vec![0; 3];
     ///
