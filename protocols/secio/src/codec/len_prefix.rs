@@ -48,7 +48,7 @@ where
 
     /// sending a length delimited frame
     pub async fn send_frame(&mut self, frame: &[u8]) -> io::Result<()> {
-        use bytes::{BytesMut, BufMut};
+        use bytes::{BufMut, BytesMut};
         let mut buf = BytesMut::with_capacity(frame.len() + 4);
         buf.put_u32(frame.len() as u32);
         buf.put(frame);

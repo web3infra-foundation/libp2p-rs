@@ -1,4 +1,3 @@
-
 //! This crate implements the [Yamux specification][1].
 //!
 //! It multiplexes independent I/O streams over reliable, ordered connections,
@@ -276,11 +275,11 @@ impl StreamMuxer for Yamux {
             let mut tx = self.0.stream_sender.clone();
             Some(
                 async move {
-                    while let Some(Ok(s)) = incoming.next().await { 
+                    while let Some(Ok(s)) = incoming.next().await {
                         if tx.send(s).await.is_err() {
                             break;
                         }
-                     }
+                    }
                     tx.close_channel();
                 }
                 .boxed(),

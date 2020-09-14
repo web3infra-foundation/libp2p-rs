@@ -275,7 +275,7 @@ fn generate_stream_cipher_and_hmac(
 #[cfg(test)]
 mod tests {
     use super::stretch_key;
-    use crate::{codec::Hmac, handshake::Config, Digest};
+    use crate::{codec::Hmac, Config, Digest};
 
     use async_std::task;
     use bytes::BytesMut;

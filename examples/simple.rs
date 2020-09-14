@@ -1,28 +1,17 @@
 use async_std::task;
 use log;
 
+use libp2p_core::identity::Keypair;
+use libp2p_core::muxing::StreamMuxer;
 use libp2p_core::transport::memory::MemoryTransport;
 use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::transport::{TransportError, TransportListener};
 use libp2p_core::{Multiaddr, Transport};
 use libp2p_traits::{copy, Read2, ReadExt2, Write2};
-
-use futures::future;
-use futures::StreamExt;
-use libp2p_core::identity::Keypair;
-use libp2p_core::muxing::StreamMuxer;
-<<<<<<< HEAD
-use libp2p_core::upgrade::{DummyUpgrader, Selector};
-use mplex;
 use pnet::{PnetConfig, PreSharedKey};
 use secio;
 use std::time::Duration;
 use yamux;
-=======
-use futures::StreamExt;
-use futures::future;
-use std::time::Duration;
->>>>>>> 105c1a71afbb0127d24270b7b6e6ca4236f2ad24
 
 fn main() {
     //env_logger::init();
@@ -81,7 +70,7 @@ fn main() {
 
     // Setup dialer.
     task::block_on(async {
-        task::sleep(Duration::from_secs(3)).await;
+        task::sleep(Duration::from_secs(1)).await;
         for i in 0..2u32 {
             log::info!("start client{}", i);
 
@@ -115,9 +104,9 @@ fn main() {
                     socket.close2().await.unwrap();
                 }
 
-                stream_muxer.close().await;
+                stream_muxer.close().await.expect("close error");
                 Ok::<(), TransportError>(())
-            }).await;
+            }).await.expect("error");
 
             log::info!("client{} exited", i);
         }

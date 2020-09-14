@@ -53,7 +53,9 @@ where
     }
 
     pub fn add_handler(&mut self, proto: TProto, handler: BoxHandler<T>) -> Option<BoxHandler<T>> {
-        self.negotiator.add_protocol(proto.clone()).expect("protocol duplicate");
+        self.negotiator
+            .add_protocol(proto.clone())
+            .expect("protocol duplicate");
         self.handlers.insert(proto, handler)
     }
 
@@ -85,12 +87,12 @@ where
 impl<TProto, T> Default for Muxer<TProto, T>
 where
     TProto: AsRef<[u8]> + Clone + Eq + std::hash::Hash,
-    T: Send + 'static, {
-     fn default() -> Self {
+    T: Send + 'static,
+{
+    fn default() -> Self {
         Self::new()
     }
 }
-
 
 #[cfg(test)]
 mod tests {

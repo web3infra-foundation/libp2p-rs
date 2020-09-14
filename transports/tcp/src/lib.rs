@@ -17,7 +17,7 @@ use libp2p_core::{
     transport::{TransportError, TransportListener},
     Transport,
 };
-use log::{debug};
+use log::debug;
 use socket2::{Domain, Socket, Type};
 use std::{
     convert::TryFrom,
@@ -477,59 +477,10 @@ mod tests {
     use super::multiaddr_to_socketaddr;
     #[cfg(feature = "async-std")]
     use super::TcpConfig;
-    use futures::prelude::*;
-    use libp2p_core::transport::TransportListener;
     use libp2p_core::{
-        multiaddr::{Multiaddr, Protocol},
-        Transport,
+        multiaddr::{Multiaddr}
     };
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-    use std::time::Duration;
-    /*
-        #[test]
-        #[cfg(feature = "async-std")]
-        fn wildcard_expansion() {
-            fn test(addr: Multiaddr) {
-                let mut listener = TcpConfig::new().listen_on(addr).expect("listener");
-
-                // Get the first address.
-                let addr = futures::executor::block_on_stream(listener.by_ref())
-                    .next()
-                    .expect("some event")
-                    .expect("no error")
-                    .into_new_address()
-                    .expect("listen address");
-
-                // Process all initial `NewAddress` events and make sure they
-                // do not contain wildcard address or port.
-                let server = listener
-                    .take_while(|event| match event.as_ref().unwrap() {
-                        ListenerEvent::NewAddress(a) => {
-                            let mut iter = a.iter();
-                            match iter.next().expect("ip address") {
-                                Protocol::Ip4(ip) => assert!(!ip.is_unspecified()),
-                                Protocol::Ip6(ip) => assert!(!ip.is_unspecified()),
-                                other => panic!("Unexpected protocol: {}", other)
-                            }
-                            if let Protocol::Tcp(port) = iter.next().expect("port") {
-                                assert_ne!(0, port)
-                            } else {
-                                panic!("No TCP port in address: {}", a)
-                            }
-                            futures::future::ready(true)
-                        }
-                        _ => futures::future::ready(false)
-                    })
-                    .for_each(|_| futures::future::ready(()));
-
-                let client = TcpConfig::new().dial(addr).expect("dialer");
-                async_std::task::block_on(futures::future::join(server, client)).1.unwrap();
-            }
-
-            test("/ip4/0.0.0.0/tcp/0".parse().unwrap());
-            test("/ip6/::1/tcp/0".parse().unwrap());
-        }
-    */
     #[test]
     fn multiaddr_to_tcp_conversion() {
         use std::net::Ipv6Addr;

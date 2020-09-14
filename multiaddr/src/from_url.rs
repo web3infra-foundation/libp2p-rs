@@ -79,13 +79,14 @@ fn from_url_inner_http_ws(
         return Err(FromUrlErr::BadUrl);
     };
 
-    if !lossy &&  (!url.username().is_empty()
+    if !lossy
+        && (!url.username().is_empty()
             || url.password().is_some()
             || (lost_path && url.path() != "/" && !url.path().is_empty())
             || url.query().is_some()
-            || url.fragment().is_some()){
-            return Err(FromUrlErr::InformationLoss);
-        
+            || url.fragment().is_some())
+    {
+        return Err(FromUrlErr::InformationLoss);
     }
 
     Ok(iter::once(ip)
@@ -101,13 +102,13 @@ fn from_url_inner_path(url: url::Url, lossy: bool) -> std::result::Result<Multia
         _ => unreachable!("We only call this function for one of the given schemes; qed"),
     };
 
-    if !lossy && (!url.username().is_empty()
+    if !lossy
+        && (!url.username().is_empty()
             || url.password().is_some()
             || url.query().is_some()
-            || url.fragment().is_some()){
-        
-            return Err(FromUrlErr::InformationLoss);
-        
+            || url.fragment().is_some())
+    {
+        return Err(FromUrlErr::InformationLoss);
     }
 
     Ok(Multiaddr::from(protocol))

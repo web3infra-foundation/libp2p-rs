@@ -35,11 +35,11 @@ matrix:
       script:
         -  RUSTFLAGS='-F warnings' cargo clippy --all  --verbose
     - stage: Test
-      name: Secio test
+      name: unit test bench test
       os: linux
       script:
-        - cargo test -p secio
-        - cargo bench -p secio
+        - cargo test --all
+        - cargo bench --all
     - stage: Test
       name: Secio simple that rust client connect  go server
       #rust: nightly

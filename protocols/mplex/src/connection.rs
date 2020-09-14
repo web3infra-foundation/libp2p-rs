@@ -14,10 +14,7 @@ use crate::{
     pause::Pausable,
 };
 use control::Control;
-use libp2p_traits::{
-    ext::split::{WriteHalf},
-    Read2, ReadExt2, Write2,
-};
+use libp2p_traits::{ext::split::WriteHalf, Read2, ReadExt2, Write2};
 use nohash_hasher::IntMap;
 use std::fmt;
 use std::pin::Pin;
@@ -182,7 +179,7 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
         self.is_closed = true;
 
         if let Some(sender) = self.accept_stream.take() {
-            sender.send(Err(ConnectionError::Closed));
+            sender.send(Err(ConnectionError::Closed)).expect("send err");
         }
 
         // Close and drain the control command receiver.
@@ -278,7 +275,10 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
                 let stream_id = frame.header().stream_id();
                 // if stream is closed, ignore frame
                 if let Some(stream_sender) = self.streams.get_mut(&stream_id) {
-                    stream_sender.send(frame.body().to_vec()).await.expect("send err");
+                    stream_sender
+                        .send(frame.body().to_vec())
+                        .await
+                        .expect("send err");
                 }
             }
             Tag::Reset | Tag::Close => {

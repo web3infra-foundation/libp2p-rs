@@ -1,4 +1,3 @@
-
 //! # Multistream-select Protocol Negotiation
 //!
 //! This crate implements the `multistream-select` protocol, which is the protocol
@@ -52,7 +51,6 @@
 //! for a listener not supporting one of the intermediate protocols.
 //! See [`dialer_select_proto`](self::dialer_select_proto).
 
-
 // mod dialer_select;
 mod length_delimited;
 // mod listener_select;
@@ -60,7 +58,6 @@ pub mod muxer;
 mod negotiator;
 mod protocol;
 mod tests;
-
 
 pub use self::negotiator::{NegotiationError, Negotiator};
 pub use self::protocol::{ProtocolError, Version};
@@ -72,4 +69,3 @@ pub(self) use libp2p_traits::Write2 as WriteEx;
 
 #[cfg(test)]
 pub(self) use tests::Memory;
-

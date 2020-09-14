@@ -29,8 +29,8 @@ where
 
     fn protocol_info(&self) -> Vec<Self::Info> {
         let mut v = Vec::default();
-        v.extend(self.0.protocol_info().into_iter().map( EitherName::A));
-        v.extend(self.1.protocol_info().into_iter().map( EitherName::B));
+        v.extend(self.0.protocol_info().into_iter().map(EitherName::A));
+        v.extend(self.1.protocol_info().into_iter().map(EitherName::B));
         v
     }
 }

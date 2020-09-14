@@ -1,11 +1,6 @@
 use async_trait::async_trait;
 use futures::lock::BiLock;
-use std::{
-    fmt,
-    future::Future,
-    io,
-    task::{Poll},
-};
+use std::{fmt, future::Future, io, task::Poll};
 
 use super::{Read2 as ReadEx, Write2 as WriteEx};
 

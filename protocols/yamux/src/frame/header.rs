@@ -12,7 +12,7 @@ use futures::future::Either;
 use std::fmt;
 
 /// The message frame header.
-#[derive(Clone, Debug, PartialEq,Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Header<T> {
     version: Version,
     tag: Tag,
@@ -282,7 +282,7 @@ pub const CONNECTION_ID: StreamId = StreamId(0);
 /// The ID of a stream.
 ///
 /// The value 0 denotes no particular stream but the whole session.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash,PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct StreamId(u32);
 
 impl StreamId {
