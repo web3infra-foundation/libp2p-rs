@@ -27,6 +27,12 @@ impl Config {
     }
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// A Yamux connection.
 ///
 /// This implementation isn't capable of detecting when the underlying socket changes its address,
@@ -82,7 +88,7 @@ impl<C: Read2 + Write2 + Unpin + Send + 'static> StreamMuxer for Mplex<C> {
         if let Some(mut conn) = self.conn.take() {
             return Some(
                 async move {
-                    while let Ok(_) = conn.next_stream().await {}
+                    while conn.next_stream().await.is_ok() {}
                     info!("connection is closed");
                 }
                 .boxed(),
