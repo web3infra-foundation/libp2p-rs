@@ -61,12 +61,8 @@ impl AddrBook {
 #[cfg(test)]
 mod tests {
     use crate::peerstore::AddrBook;
-    use crate::{identity, Multiaddr, PeerId};
+    use crate::{PeerId};
     use std::time::Duration;
-    use std::{
-        convert::TryFrom as _,
-        hash::{self, Hasher as _},
-    };
 
     #[test]
     fn addr_book_basic() {
