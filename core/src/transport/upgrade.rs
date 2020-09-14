@@ -69,7 +69,7 @@ where
     inner: InnerListener,
     mux: Multistream<TMux>,
     sec: Multistream<TSec>,
-    futures: FuturesUnordered<Pin<Box<Future<Output = Result<TMux::Output, TransportError>> + Send>>>,
+    futures: FuturesUnordered<Pin<Box<dyn Future<Output = Result<TMux::Output, TransportError>> + Send>>>,
     limit: Option<NonZeroUsize>,
     // TODO: add threshold support here
 }
@@ -139,7 +139,7 @@ where
                         futures_timer::Delay::new(Duration::from_secs(3)).await;
 
                         let sec_socket = sec.select_inbound(elem).await?;
-                        mux.select_outbound(sec_socket).await
+                        mux.select_inbound(sec_socket).await
 
                     }.boxed());
                 }

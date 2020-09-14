@@ -50,12 +50,12 @@ fn main() {
 
                     task::spawn(async move {
                         let mut msg = vec![0; 4096];
-                        loop {
-                            let n = stream.read2(&mut msg).await?;
-                            stream.write2(&msg[..n]).await?;
-                        }
-                        // let (rx, tx) = stream.split2();
-                        // copy(rx, tx).await?;
+                        // loop {
+                        //     let n = stream.read2(&mut msg).await?;
+                        //     stream.write2(&msg[..n]).await?;
+                        // }
+                        let (rx, tx) = stream.split2();
+                        copy(rx, tx).await?;
                         Ok::<(), std::io::Error>(())
                     });
                 }
@@ -90,7 +90,7 @@ fn main() {
                     task::spawn(task);
                 }
 
-                for j in 0..2u32 {
+                for j in 0..1u32 {
                     let mut socket = stream_muxer.open_stream().await?;
 
                     log::info!("client{} got a new substream {:?}", i, socket);
@@ -102,10 +102,10 @@ fn main() {
                     socket.close2().await?;
                 }
                 Ok::<(), TransportError>(())
-            }).await;
+            });
         }
 
-        //loop{}
+        loop{}
     });
 }
 
