@@ -46,25 +46,29 @@ fn main() {
             }
 
             // spawn a task for handling this connection/stream-muxer
-            //task::spawn(async move {
-            loop {
-                let stream = stream_muxer.accept_stream().await.unwrap();
-                log::info!("server accepted a new substream {:?}", stream);
+            task::spawn(async move {
+                loop {
+                    if let Ok(stream) = stream_muxer.accept_stream().await {
+                        log::info!("server accepted a new substream {:?}", stream);
+                        task::spawn(async {
+                            let (rx, tx) = stream.split2();
+                            copy(rx, tx).await?;
+                            Ok::<(), std::io::Error>(())
+                        });
+                    } else {
+                        log::warn!("stream_muxer {:?} closed", stream_muxer);
+                        break;
+                    }
+                }
 
-                task::spawn(async {
-                    let (rx, tx) = stream.split2();
-                    copy(rx, tx).await?;
-                    Ok::<(), std::io::Error>(())
-                });
-            }
+                // let mut msg = vec![0; 4096];
+                // loop {
+                //     let n = stream.read2(&mut msg).await?;
+                //     stream.write2(&msg[..n]).await?;
+                // }
 
-            // let mut msg = vec![0; 4096];
-            // loop {
-            //     let n = stream.read2(&mut msg).await?;
-            //     stream.write2(&msg[..n]).await?;
-            // }
-
-            //});
+                //});
+            });
         }
     });
 
