@@ -1,15 +1,15 @@
-use std::{
-    str,
-    sync::atomic::{AtomicUsize, Ordering},
-    time::Duration,
-};
 use async_std::{
     net::{TcpListener, TcpStream},
     task,
 };
 use bytesize::ByteSize;
 use futures::prelude::*;
-use log::{info, warn};
+use log::info;
+use std::{
+    str,
+    sync::atomic::{AtomicUsize, Ordering},
+    time::Duration,
+};
 
 use libp2p_traits::{Read2, Write2};
 
@@ -31,7 +31,6 @@ const LEN: usize = STR.len();
 
 static REQC: AtomicUsize = AtomicUsize::new(0);
 static RESPC: AtomicUsize = AtomicUsize::new(0);
-
 
 fn reqc_incr() -> usize {
     REQC.fetch_add(1, Ordering::Relaxed)
@@ -72,7 +71,7 @@ fn run_server() {
     task::spawn(show_metric());
 
     task::block_on(async move {
-        let mut listener = TcpListener::bind("127.0.0.1:12345").await.unwrap();
+        let listener = TcpListener::bind("127.0.0.1:12345").await.unwrap();
 
         while let Ok((socket, _)) = listener.accept().await {
             info!("accepted a socket: {:?}", socket.peer_addr());
@@ -112,8 +111,8 @@ fn run_client() {
         let sa = socket.peer_addr().unwrap();
         info!("[client] connected to server: {:?}", sa);
 
-        let mut conn = Connection::new(socket, Config::default(), Mode::Client);
-        let mut ctrl = conn.control();
+        let conn = Connection::new(socket, Config::default(), Mode::Client);
+        let ctrl = conn.control();
 
         task::spawn(yamux::into_stream(conn).for_each(|_| future::ready(())));
 

@@ -2,11 +2,9 @@ use async_std::{
     net::{TcpListener, TcpStream},
     task,
 };
-use futures::TryStreamExt;
 use libp2p_traits::{Read2, Write2};
 use log::{error, info};
 use mplex::connection::Connection;
-use std::time::Duration;
 
 fn main() {
     env_logger::init();
@@ -24,7 +22,7 @@ fn run_server() {
         let listener = TcpListener::bind("127.0.0.1:12345").await.unwrap();
         while let Ok((socket, _)) = listener.accept().await {
             task::spawn(async move {
-                let mut muxer_conn = Connection::new(socket);
+                let muxer_conn = Connection::new(socket);
                 let mut ctrl = muxer_conn.control();
 
                 task::spawn(async {
