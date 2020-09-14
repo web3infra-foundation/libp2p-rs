@@ -170,6 +170,17 @@ impl Stream {
             return Ok(0);
         }
 
+        // recover from old code, why delete?
+        // Copy data from stream buffer.
+        let mut shared = self.shared().await;
+
+        // Buffer is empty, let's check if we can expect to read more data.
+        if !shared.state().can_read() {
+            log::info!("{}/{}: eof", self.conn, self.id);
+            return Err(io::ErrorKind::BrokenPipe.into()); // stream has been reset
+        }
+        drop(shared);
+
         if let Some(n) = future::poll_fn::<Option<usize>, _>(|cx| {
             let fut = self.shared();
             futures::pin_mut!(fut);
