@@ -48,6 +48,8 @@ where
 
     /// sending a length delimited frame
     pub async fn send_frame(&mut self, frame: &[u8]) -> io::Result<()> {
+        // write flush can reduce the probability of secuio read failed Because split bug
+        // especially for test case of secuio + muxer
         use bytes::{BufMut, BytesMut};
         let mut buf = BytesMut::with_capacity(frame.len() + 4);
         buf.put_u32(frame.len() as u32);

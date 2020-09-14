@@ -328,7 +328,7 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
         if let Ok(Some(_)) = result {
             return result;
         }
-
+        log::error!("error exit, {:?}", result);
         self.is_closed = true;
 
         // At this point we are either at EOF or encountered an error.
@@ -377,12 +377,14 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
     async fn next(&mut self) -> Result<Option<Stream>> {
         loop {
             self.garbage_collect().await?;
-
             // Select all futures: socket, stream receiver and controller
 
             select! {
                 frame = self.socket.recv_frame().fuse() => {
-                    if let Some(stream) = self.on_frame(Ok(frame.ok())).await? {
+                    // if let Some(stream) = self.on_frame(Ok(frame.ok())).await? {
+                    // recover from old code, why not return err when frame is Err
+                    let frame = frame?;
+                    if let Some(stream) = self.on_frame(Ok(Some(frame))).await? {
                         self.socket
                             .flush()
                             .await
