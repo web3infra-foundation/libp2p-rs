@@ -3,7 +3,7 @@ use std::fmt;
 /// The ID of a stream.
 ///
 /// The value 0 denotes no particular stream but the whole session.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, Eq, PartialOrd, Ord)]
 pub struct StreamID {
     id: u32,
     initiator: bool,
@@ -25,12 +25,18 @@ impl fmt::Display for StreamID {
     }
 }
 
+impl PartialEq for StreamID {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.initiator == other.initiator
+    }
+}
+
 // HashMap insert() required key impl Hash trait
-// impl std::hash::Hash for StreamID {
-//     fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
-//         hasher.write_u32(self.id)
-//     }
-// }
+impl std::hash::Hash for StreamID {
+    fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
+        hasher.write_u32(self.id)
+    }
+}
 impl nohash_hasher::IsEnabled for StreamID {}
 
 /// A tag is the runtime representation of a message type.
