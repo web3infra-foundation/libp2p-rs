@@ -5,6 +5,7 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 
 /// Error types
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Error {
     DataLessThanLen,
     InvalidMultiaddr,
@@ -13,8 +14,6 @@ pub enum Error {
     ParsingError(Box<dyn error::Error + Send + Sync>),
     UnknownProtocolId(u32),
     UnknownProtocolString(String),
-    #[doc(hidden)]
-    __Nonexhaustive,
 }
 
 impl fmt::Display for Error {
@@ -28,8 +27,7 @@ impl fmt::Display for Error {
             Error::UnknownProtocolId(id) => write!(f, "unknown protocol id: {}", id),
             Error::UnknownProtocolString(string) => {
                 write!(f, "unknown protocol string: {}", string)
-            }
-            Error::__Nonexhaustive => f.write_str("__Nonexhaustive"),
+            } //Error::__Nonexhaustive => f.write_str("__Nonexhaustive"),
         }
     }
 }

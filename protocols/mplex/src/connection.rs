@@ -209,7 +209,7 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
         // Close and drain the stream command receiver.
         if !self.stream_receiver.is_terminated() {
             self.stream_receiver.close();
-            while let Some(_) = self.stream_receiver.next().await {
+            while self.stream_receiver.next().await.is_some() {
                 // drop it
                 log::info!("drop stream receiver frame");
             }
