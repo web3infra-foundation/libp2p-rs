@@ -7,7 +7,7 @@ use log::{error, info};
 use mplex::connection::Connection;
 
 fn main() {
-    env_logger::init();
+    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
     if std::env::args().nth(1) == Some("server".to_string()) {
         info!("Starting server ......");
         run_server();
@@ -32,8 +32,8 @@ fn run_server() {
                 });
 
                 while let Ok(mut stream) = ctrl.accept_stream().await {
+                    info!("accepted new stream: {:?}", stream);
                     task::spawn(async move {
-                        info!("accepted new stream: {:?}", stream);
                         let mut buf = [0; 4096];
 
                         loop {
@@ -50,10 +50,6 @@ fn run_server() {
                                 return;
                             };
                         }
-                        // if let Err(e) = stream.close2().await {
-                        //     error!("close failed: {:?}", e);
-                        //     return;
-                        // };
                     });
                 }
             });
@@ -75,11 +71,10 @@ fn run_client() {
         });
 
         let mut handles = Vec::new();
-        for _ in 0..100 {
+        for _ in 0..10 {
             let mut stream = ctrl.clone().open_stream().await.unwrap();
+            info!("C: opened new stream {}", stream.id());
             let handle = task::spawn(async move {
-                info!("C: opened new stream {}", stream.id());
-
                 let data = b"hello world";
 
                 stream.write_all2(data.as_ref()).await.unwrap();
