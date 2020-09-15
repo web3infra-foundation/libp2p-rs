@@ -4,7 +4,6 @@ mod crypt_writer;
 use crypt_writer::CryptWriter;
 use futures::prelude::*;
 use log::trace;
-use pin_project::pin_project;
 use rand::RngCore;
 use salsa20::{
     stream_cipher::{NewStreamCipher, SyncStreamCipher},
@@ -266,9 +265,7 @@ where
 
 /// The result of a handshake. This implements AsyncRead and AsyncWrite and can therefore
 /// be used as base for additional upgrades.
-#[pin_project]
 pub struct PnetOutput<S> {
-    #[pin]
     inner: CryptWriter<S>,
     read_cipher: XSalsa20,
 }

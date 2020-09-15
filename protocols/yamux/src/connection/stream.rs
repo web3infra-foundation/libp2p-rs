@@ -172,7 +172,7 @@ impl Stream {
 
         // recover from old code, why delete?
         // Copy data from stream buffer.
-        let mut shared = self.shared().await;
+        let shared = self.shared().await;
 
         // Buffer is empty, let's check if we can expect to read more data.
         if !shared.state().can_read() {

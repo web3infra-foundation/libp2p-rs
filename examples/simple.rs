@@ -6,6 +6,7 @@ use libp2p_core::muxing::StreamMuxer;
 use libp2p_core::transport::memory::MemoryTransport;
 use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::transport::{TransportError, TransportListener};
+use libp2p_core::upgrade::Selector;
 use libp2p_core::{Multiaddr, Transport};
 use libp2p_traits::{copy, Read2, ReadExt2, Write2};
 use pnet::{PnetConfig, PreSharedKey};
@@ -29,8 +30,11 @@ fn main() {
 
         let sec = secio::Config::new(Keypair::generate_secp256k1());
         //let sec = DummyUpgrader::new();
-        //let mux = Selector::new(yamux::Config::new(), Selector::new(yamux::Config::new(), yamux::Config::new()));
-        let mux = yamux::Config::new();
+        let mux = Selector::new(
+            yamux::Config::new(),
+            Selector::new(yamux::Config::new(), yamux::Config::new()),
+        );
+        //let mux = yamux::Config::new();
         //let mux = mplex::Config::new();
         let psk = "/key/swarm/psk/1.0.0/\n/base16/\n6189c5cf0b87fb800c1a9feeda73c6ab5e998db48fb9e6a978575c770ceef683".parse::<PreSharedKey>().unwrap();
         let pnet = PnetConfig::new(Some(psk));
@@ -84,9 +88,9 @@ fn main() {
 
                 let sec = secio::Config::new(Keypair::generate_secp256k1());
                 //let sec = DummyUpgrader::new();
-                 let mux = yamux::Config::new();
+                //let mux = yamux::Config::new();
                 //let mux = mplex::Config::new();
-                //let mux = Selector::new(yamux::Config::new(), Selector::new(yamux::Config::new(), yamux::Config::new()));
+                let mux = Selector::new(yamux::Config::new(), Selector::new(yamux::Config::new(), yamux::Config::new()));
                 let psk ="/key/swarm/psk/1.0.0/\n/base16/\n6189c5cf0b87fb800c1a9feeda73c6ab5e998db48fb9e6a978575c770ceef683".parse::<PreSharedKey>().unwrap();
                 let pnet=PnetConfig::new(Some(psk));
                 let t2 = TransportUpgrade::new(MemoryTransport::default(),pnet, mux, sec);
