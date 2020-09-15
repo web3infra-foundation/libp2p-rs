@@ -2,14 +2,13 @@ use async_std::{
     net::{TcpListener, TcpStream},
     task,
 };
-use futures::{channel, prelude::*, TryStreamExt};
+use futures::channel;
 use libp2p_traits::{Read2, Write2};
-use mplex::connection::{self, Connection};
+use mplex::connection::Connection;
 
 #[test]
 fn multi_stream() {
     task::block_on(async {
-        let (sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();
         let (addr_sender, addr_receiver) = channel::oneshot::channel::<::std::net::SocketAddr>();
 
         // server
@@ -18,33 +17,44 @@ fn multi_stream() {
             let listener_addr = listener.local_addr().unwrap();
             let _res = addr_sender.send(listener_addr);
             let (socket, _) = listener.accept().await.unwrap();
-            let _ = connection::into_stream(Connection::new(socket))
-                .try_for_each_concurrent(None, |mut stream| async move {
+
+            let muxer_conn = Connection::new(socket);
+            let mut ctrl = muxer_conn.control();
+            task::spawn(async {
+                let mut muxer_conn = muxer_conn;
+                while let Ok(_) = muxer_conn.next_stream().await {}
+            });
+
+            while let Ok(mut stream) = ctrl.accept_stream().await {
+                task::spawn(async move {
                     let mut buf = [0; 4096];
+
                     loop {
                         let n = match stream.read2(&mut buf).await {
                             Ok(num) => num,
-                            Err(e) => {
-                                break;
+                            Err(_e) => {
+                                return;
                             }
                         };
-                        if let Err(e) = stream.write_all2(buf[..n].as_ref()).await {
-                            break;
+                        if let Err(_e) = stream.write_all2(buf[..n].as_ref()).await {
+                            return;
                         };
                     }
-                    Ok(())
-                })
-                .await;
+                });
+            }
         });
 
         // client
         let listener_addr = addr_receiver.await.unwrap();
         let socket = TcpStream::connect(&listener_addr).await.unwrap();
 
-        let conn = Connection::new(socket);
-        let mut ctrl = conn.control();
+        let muxer_conn = Connection::new(socket);
+        let mut ctrl = muxer_conn.control();
 
-        task::spawn(connection::into_stream(conn).for_each(|_| future::ready(())));
+        task::spawn(async {
+            let mut muxer_conn = muxer_conn;
+            while let Ok(_) = muxer_conn.next_stream().await {}
+        });
 
         let mut handles = Vec::new();
         for _ in 0_u32..10 {
