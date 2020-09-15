@@ -30,8 +30,8 @@ fn run_server() {
         while let Ok((socket, _)) = listener.accept().await {
             let config = config.clone();
             task::spawn(async move {
-                let (mut sconn, _, _) = config.handshake(socket).await.unwrap();
-                let mut muxer_conn = Connection::new(sconn);
+                let (sconn, _, _) = config.handshake(socket).await.unwrap();
+                let muxer_conn = Connection::new(sconn);
                 let mut ctrl = muxer_conn.control();
 
                 task::spawn(async {
@@ -59,10 +59,6 @@ fn run_server() {
                                 break;
                             };
                         }
-                        // if let Err(e) = stream.close2().await {
-                        //     error!("close failed: {:?}", e);
-                        //     return;
-                        // };
                     });
                 }
             });
