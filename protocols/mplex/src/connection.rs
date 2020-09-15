@@ -16,6 +16,7 @@ use crate::{
 use control::Control;
 use libp2p_traits::{ext::split::WriteHalf, Read2, ReadExt2, Write2};
 use nohash_hasher::IntMap;
+use std::collections::VecDeque;
 use std::fmt;
 use std::pin::Pin;
 use stream::Stream;
@@ -124,7 +125,7 @@ pub struct Connection<T> {
     control_sender: mpsc::Sender<ControlCommand>,
     control_receiver: Pausable<mpsc::Receiver<ControlCommand>>,
     accept_stream: Option<oneshot::Sender<Result<stream::Stream>>>,
-    pending_streams: Vec<stream::Stream>,
+    pending_streams: VecDeque<stream::Stream>,
 }
 
 impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
@@ -155,7 +156,7 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
             control_sender,
             control_receiver: Pausable::new(control_receiver),
             accept_stream: None,
-            pending_streams: Vec::default(),
+            pending_streams: VecDeque::default(),
         }
     }
 
@@ -268,7 +269,7 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
                 if let Some(sender) = self.accept_stream.take() {
                     sender.send(Ok(stream)).expect("send err");
                 } else {
-                    self.pending_streams.push(stream);
+                    self.pending_streams.push_back(stream);
                 }
             }
             Tag::Message => {
@@ -357,7 +358,7 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
             }
             Some(ControlCommand::AcceptStream(reply)) => {
                 if !self.pending_streams.is_empty() {
-                    if let Some(stream) = self.pending_streams.pop() {
+                    if let Some(stream) = self.pending_streams.pop_front() {
                         reply.send(Ok(stream)).expect("send err");
                     }
                     return Ok(());
