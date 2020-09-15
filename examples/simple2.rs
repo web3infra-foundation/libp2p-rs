@@ -1,21 +1,21 @@
 use async_std::task;
-use log::{info, error};
+use log::{error, info};
 
-use libp2p_core::{Multiaddr, Transport};
 use libp2p_core::transport::upgrade::TransportUpgrade;
-use libp2p_core::transport::{TransportListener, TransportError};
-use libp2p_traits::{Write2, Read2, ReadExt2, copy};
+use libp2p_core::transport::{TransportError, TransportListener};
+use libp2p_core::{Multiaddr, Transport};
 use libp2p_tcp::TcpConfig;
+use libp2p_traits::{copy, Read2, ReadExt2, Write2};
 
+use futures::future;
+use futures::StreamExt;
+use libp2p_core::identity::Keypair;
+use libp2p_core::muxing::StreamMuxer;
+use libp2p_core::upgrade::{DummyUpgrader, Selector};
+use mplex;
 use pnet::{PnetConfig, PreSharedKey};
 use secio;
 use yamux;
-use mplex;
-use libp2p_core::identity::Keypair;
-use libp2p_core::upgrade::{DummyUpgrader, Selector};
-use libp2p_core::muxing::StreamMuxer;
-use futures::StreamExt;
-use futures::future;
 
 fn main() {
     env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
