@@ -60,4 +60,4 @@ branches:
 
 notifications:
   email: false
-  webhook: $DD_WEBHOOK
+  webhooks: $DD_WEBHOOK
