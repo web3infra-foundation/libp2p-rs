@@ -59,5 +59,11 @@ branches:
   only: master
 
 notifications:
-  email: false
-  webhooks: $DD_WEBHOOK
+    webhooks:
+      urls:
+        - https://oapi.dingtalk.com/robot/send?access_token=fc99eb4ea3aa6b97692e253f86beb564af92c70fbf51df833739503eab4eaee0
+      on_success: change # default: always
+      on_failure: always # default: always
+      on_start:   change # default: never
+      on_cancel:  always # default: always
+      on_error:   always # default: always
