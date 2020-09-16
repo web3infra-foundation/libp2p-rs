@@ -8,7 +8,7 @@ rust:
 os:
   - linux
 #  - osx
-#  - windows
+  - windows
 services:
   - docker
 before_script:
