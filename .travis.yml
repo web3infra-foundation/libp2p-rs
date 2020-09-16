@@ -3,12 +3,12 @@ env:
   - RUSTFLAGS='-F warnings'
 rust:
   - stable
-  - nightly
+#  - nightly
 #  - beta
 os:
   - linux
 #  - osx
-  - windows
+#  - windows
 services:
   - docker
 before_script:
@@ -16,7 +16,6 @@ before_script:
   - rustup component add clippy
 script:
   - cargo build --verbose  --all
-  - cargo build --verbose  --example secio_simple
 stages:
   - Check
   - Test
@@ -59,11 +58,4 @@ branches:
   only: master
 
 notifications:
-    webhooks:
-      urls:
-        - https://oapi.dingtalk.com/robot/send?access_token=fc99eb4ea3aa6b97692e253f86beb564af92c70fbf51df833739503eab4eaee0
-      on_success: change # default: always
-      on_failure: always # default: always
-      on_start:   change # default: never
-      on_cancel:  always # default: always
-      on_error:   always # default: always
+  webhooks: https://oapi.dingtalk.com/robot/send?access_token=fc99eb4ea3aa6b97692e253f86beb564af92c70fbf51df833739503eab4eaee0
