@@ -49,6 +49,7 @@ pub mod upgrade;
 //pub mod security;
 //
 // mod optional;
+pub mod protector;
 
 // pub use self::choice::OrTransport;
 // pub use self::memory::MemoryTransport;

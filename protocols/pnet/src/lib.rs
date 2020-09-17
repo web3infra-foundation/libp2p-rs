@@ -2,7 +2,6 @@
 //! the same key.
 mod crypt_writer;
 use crypt_writer::CryptWriter;
-use futures::prelude::*;
 use log::trace;
 use rand::RngCore;
 use salsa20::{
@@ -165,24 +164,26 @@ impl error::Error for KeyParseError {
 #[derive(Debug, Copy, Clone)]
 pub struct PnetConfig {
     /// the PreSharedKey to use for encryption
-    key: Option<PreSharedKey>,
+    key: PreSharedKey,
 }
 
 impl PnetConfig {
-    pub fn new(key: Option<PreSharedKey>) -> Self {
+    pub fn new(key: PreSharedKey) -> Self {
         Self { key }
     }
 }
+
+// impl Default for PnetConfig {
+//     fn default() -> Self {
+//         PnetConfig::new(None)
+//     }
+// }
 
 #[async_trait]
 pub trait Pnet<TSocket> {
     /// Output after the upgrade has been successfully negotiated and the handshake performed.
     type Output: Send;
     async fn handshake(self, mut socket: TSocket) -> Result<Self::Output, PnetError>;
-    /// null key
-    fn has_key(&self) -> bool
-    where
-        Self: Sized;
 }
 
 /// Error when writing or reading private swarms
@@ -223,7 +224,7 @@ impl fmt::Display for PnetError {
 #[async_trait]
 impl<TSocket> Pnet<TSocket> for PnetConfig
 where
-    TSocket: AsyncRead + AsyncWrite + Send + Unpin + 'static,
+    TSocket: Read2 + Write2 + Send + Unpin + 'static,
 {
     type Output = PnetOutput<TSocket>;
     /// upgrade a connection to use pre shared key encryption.
@@ -236,30 +237,17 @@ where
         let mut remote_nonce = [0u8; NONCE_SIZE];
         rand::thread_rng().fill_bytes(&mut local_nonce);
         socket
-            .write_all(&local_nonce)
+            .write_all2(&local_nonce)
             .await
             .map_err(PnetError::HandshakeError)?;
         socket
-            .read_exact(&mut remote_nonce)
+            .read_exact2(&mut remote_nonce)
             .await
             .map_err(PnetError::HandshakeError)?;
         trace!("setting up ciphers");
-        let write_cipher = XSalsa20::new(
-            &self.key.expect("miss pks key info").0.into(),
-            &local_nonce.into(),
-        );
-        let read_cipher = XSalsa20::new(
-            &self.key.expect("miss psk key info").0.into(),
-            &remote_nonce.into(),
-        );
+        let write_cipher = XSalsa20::new(&self.key.0.into(), &local_nonce.into());
+        let read_cipher = XSalsa20::new(&self.key.0.into(), &remote_nonce.into());
         Ok(PnetOutput::new(socket, write_cipher, read_cipher))
-    }
-
-    fn has_key(&self) -> bool
-    where
-        Self: Sized,
-    {
-        self.key.is_some()
     }
 }
 

@@ -2,7 +2,6 @@
 //!
 // TODO: add example
 
-use crate::either::EitherOutput;
 use crate::muxing::StreamMuxer;
 use crate::secure_io::SecureInfo;
 use crate::transport::TransportListener;
@@ -12,35 +11,29 @@ use crate::{transport::TransportError, Multiaddr, Transport};
 use async_trait::async_trait;
 use libp2p_traits::{Read2, Write2};
 use log::trace;
-use pnet::Pnet;
 
 /// A `TransportUpgrade` is a `Transport` that wraps another `Transport` and adds
 /// upgrade capabilities to all inbound and outbound connection attempts.
 ///
 #[derive(Debug, Clone)]
-pub struct TransportUpgrade<InnerTrans, TProtector, TMux, TSec> {
+pub struct TransportUpgrade<InnerTrans, TMux, TSec> {
     inner: InnerTrans,
-    pnet: TProtector,
-    // protector: Option<TProtector>,
     mux: Multistream<TMux>,
     sec: Multistream<TSec>,
 }
 
-impl<InnerTrans, TProtector, TMux, TSec> TransportUpgrade<InnerTrans, TProtector, TMux, TSec>
+impl<InnerTrans, TMux, TSec> TransportUpgrade<InnerTrans, TMux, TSec>
 where
     InnerTrans: Transport,
     InnerTrans::Output: Read2 + Write2 + Unpin,
-    TProtector: Pnet<InnerTrans::Output> + Send + Clone,
-    TProtector::Output: Read2 + Write2 + Unpin,
-    TSec: Upgrader<EitherOutput<TProtector::Output, InnerTrans::Output>> + Send + Clone,
+    TSec: Upgrader<InnerTrans::Output> + Send + Clone,
     TMux: Upgrader<TSec::Output>,
     TMux::Output: StreamMuxer,
 {
     /// Wraps around a `Transport` to add upgrade capabilities.
-    pub fn new(inner: InnerTrans, pnet: TProtector, mux: TMux, sec: TSec) -> Self {
+    pub fn new(inner: InnerTrans, mux: TMux, sec: TSec) -> Self {
         TransportUpgrade {
             inner,
-            pnet,
             sec: Multistream::new(sec),
             mux: Multistream::new(mux),
         }
@@ -48,75 +41,55 @@ where
 }
 
 #[async_trait]
-impl<InnerTrans, TProtector, TMux, TSec> Transport
-    for TransportUpgrade<InnerTrans, TProtector, TMux, TSec>
+impl<InnerTrans, TMux, TSec> Transport for TransportUpgrade<InnerTrans, TMux, TSec>
 where
     InnerTrans: Transport,
     InnerTrans::Output: Read2 + Write2 + Unpin,
-    TProtector: Pnet<InnerTrans::Output> + Send + Clone + Sync,
-    TProtector::Output: Read2 + Write2 + Unpin,
-    TSec: Upgrader<EitherOutput<TProtector::Output, InnerTrans::Output>> + Send + Clone,
+    TSec: Upgrader<InnerTrans::Output> + Send + Clone,
     TSec::Output: SecureInfo + Read2 + Write2 + Unpin,
     TMux: Upgrader<TSec::Output>,
     TMux::Output: StreamMuxer,
 {
     type Output = TMux::Output;
-    type Listener = ListenerUpgrade<InnerTrans::Listener, TProtector, TMux, TSec>;
+    type Listener = ListenerUpgrade<InnerTrans::Listener, TMux, TSec>;
 
     fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
         let inner_listener = self.inner.listen_on(addr)?;
-        let listener = ListenerUpgrade::new(inner_listener, self.pnet, self.mux, self.sec);
+        let listener = ListenerUpgrade::new(inner_listener, self.mux, self.sec);
 
         Ok(listener)
     }
 
     async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
         let socket = self.inner.dial(addr).await?;
-        let maybe_encrypted = match &self.pnet.has_key() {
-            true => match self.pnet.handshake(socket).await {
-                Ok(output) => EitherOutput::A(output),
-                Err(_) => return Err(TransportError::Internal),
-            },
-            false => EitherOutput::B(socket),
-        };
-        let sec_socket = self.sec.select_outbound(maybe_encrypted).await?;
+        let sec_socket = self.sec.select_outbound(socket).await?;
 
         self.mux.select_outbound(sec_socket).await
     }
 }
-pub struct ListenerUpgrade<InnerListener, TProtector, TMux, TSec> {
+pub struct ListenerUpgrade<InnerListener, TMux, TSec> {
     inner: InnerListener,
-    pnet: TProtector,
     mux: Multistream<TMux>,
     sec: Multistream<TSec>,
     // TODO: add threshold support here
 }
 
-impl<InnerListener, TProtector, TMux, TSec> ListenerUpgrade<InnerListener, TProtector, TMux, TSec> {
+impl<InnerListener, TMux, TSec> ListenerUpgrade<InnerListener, TMux, TSec> {
     pub(crate) fn new(
         inner: InnerListener,
-        pnet: TProtector,
         mux: Multistream<TMux>,
         sec: Multistream<TSec>,
     ) -> Self {
-        Self {
-            inner,
-            pnet,
-            mux,
-            sec,
-        }
+        Self { inner, mux, sec }
     }
 }
 
 #[async_trait]
-impl<InnerListener, TProtector, TMux, TSec> TransportListener
-    for ListenerUpgrade<InnerListener, TProtector, TMux, TSec>
+impl<InnerListener, TMux, TSec> TransportListener for ListenerUpgrade<InnerListener, TMux, TSec>
 where
     InnerListener: TransportListener,
     InnerListener::Output: Read2 + Write2 + Unpin,
-    TProtector: Pnet<InnerListener::Output> + Send + Clone + Sync,
-    TProtector::Output: Read2 + Write2 + Unpin,
-    TSec: Upgrader<EitherOutput<TProtector::Output, InnerListener::Output>> + Send + Clone,
+    TSec: Upgrader<InnerListener::Output> + Send + Clone,
     TSec::Output: SecureInfo + Read2 + Write2 + Unpin,
     TMux: Upgrader<TSec::Output>,
     TMux::Output: StreamMuxer,
@@ -125,18 +98,11 @@ where
 
     async fn accept(&mut self) -> Result<Self::Output, TransportError> {
         let stream = self.inner.accept().await?;
-        let maybe_encrypted = match &self.pnet.has_key() {
-            true => match self.pnet.clone().handshake(stream).await {
-                Ok(output) => EitherOutput::A(output),
-                Err(_) => return Err(TransportError::HandshakeError),
-            },
-            false => EitherOutput::B(stream),
-        };
         let sec = self.sec.clone();
 
         trace!("got a new connection, upgrading...");
         //futures_timer::Delay::new(Duration::from_secs(3)).await;
-        let sec_socket = sec.select_inbound(maybe_encrypted).await?;
+        let sec_socket = sec.select_inbound(stream).await?;
 
         let mux = self.mux.clone();
 
@@ -152,6 +118,7 @@ where
 mod tests {
     use super::*;
     use crate::transport::memory::MemoryTransport;
+    use crate::transport::protector::ProtectorTransport;
     use crate::upgrade::dummy::DummyUpgrader;
     use pnet::*;
     #[test]
@@ -163,13 +130,9 @@ mod tests {
         let t1_addr: Multiaddr = format!("/memory/{}", rand_port).parse().unwrap();
         let cloned_t1_addr = t1_addr.clone();
         let psk = "/key/swarm/psk/1.0.0/\n/base16/\n6189c5cf0b87fb800c1a9feeda73c6ab5e998db48fb9e6a978575c770ceef683".parse::<PreSharedKey>().unwrap();
-        let pnet = PnetConfig::new(Some(psk));
-        let t1 = TransportUpgrade::new(
-            MemoryTransport::default(),
-            pnet,
-            DummyUpgrader::new(),
-            DummyUpgrader::new(),
-        );
+        let pnet = PnetConfig::new(psk);
+        let pro_trans = ProtectorTransport::new(MemoryTransport::default(), pnet);
+        let t1 = TransportUpgrade::new(pro_trans, DummyUpgrader::new(), DummyUpgrader::new());
 
         let listener = async move {
             let mut listener = t1.listen_on(t1_addr.clone()).unwrap();
@@ -184,8 +147,7 @@ mod tests {
 
         // Setup dialer.
         let t2 = TransportUpgrade::new(
-            MemoryTransport::default(),
-            pnet,
+            pro_trans.clone(),
             DummyUpgrader::new(),
             DummyUpgrader::new(),
         );
