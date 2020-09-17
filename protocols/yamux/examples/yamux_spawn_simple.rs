@@ -4,8 +4,8 @@ use async_std::{
 };
 use libp2p_traits::{Read2, Write2};
 use log::{error, info};
-use yamux::{Config, Connection, Mode};
 use std::collections::vec_deque::VecDeque;
+use yamux::{Config, Connection, Mode};
 
 fn main() {
     env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();

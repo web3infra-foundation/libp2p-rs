@@ -21,8 +21,8 @@ use nohash_hasher::IntMap;
 use std::collections::VecDeque;
 use std::fmt;
 use std::pin::Pin;
-use stream::Stream;
 use std::time::Duration;
+use stream::Stream;
 
 /// `Control` to `Connection` commands.
 #[derive(Debug)]
