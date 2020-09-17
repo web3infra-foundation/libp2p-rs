@@ -180,7 +180,7 @@ impl Stream {
                     // return Err(io::ErrorKind::BrokenPipe.into()); // stream has been reset
                     return Poll::Ready(Some(0));
                 }
-                log::info!("{}/{}: empty buffer, go pending", self.conn, self.id);
+                log::trace!("{}/{}: empty buffer, go pending", self.conn, self.id);
                 shared.reader = Some(cx.waker().clone());
                 Poll::Pending
             } else {

@@ -36,8 +36,15 @@ fn run_server() {
             task::spawn(async move {
                 let (handle, _, _) = config.handshake(socket).await.expect("handshake");
                 let mut conn = Connection::new(handle, Config::default(), Mode::Server);
+                let mut ctrl = conn.control();
 
-                while let Ok(Some(mut stream)) = conn.next_stream().await {
+                task::spawn(async {
+                    let mut muxer_conn = conn;
+                    while muxer_conn.next_stream().await.is_ok() {}
+                    info!("connection is closed");
+                });
+
+                while let Ok(mut stream) = ctrl.accept_stream().await {
                     task::spawn(async move {
                         info!("S: accepted new stream");
                         let mut buf = [0; 4096];
@@ -73,7 +80,11 @@ fn run_client() {
         let conn = Connection::new(handle, Config::default(), Mode::Client);
         let mut ctrl = conn.control();
 
-        task::spawn(yamux::into_stream(conn).for_each(|_| future::ready(())));
+        task::spawn(async {
+            let mut muxer_conn = conn;
+            while muxer_conn.next_stream().await.is_ok() {}
+            info!("connection is closed");
+        });
 
         let mut stream = ctrl.open_stream().await.unwrap();
         info!("C: opened new stream {}", stream.id());
