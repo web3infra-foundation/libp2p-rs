@@ -57,7 +57,7 @@ fn multi_stream() {
         });
 
         let mut handles = Vec::new();
-        for _ in 0_u32..10 {
+        for _ in 0_u32..100 {
             let mut stream = ctrl.clone().open_stream().await.unwrap();
             let handle = task::spawn(async move {
                 let data = b"hello world";
