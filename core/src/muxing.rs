@@ -36,9 +36,9 @@ use async_trait::async_trait;
 use futures::future::BoxFuture;
 
 #[async_trait]
-pub trait StreamMuxer {
+pub trait StreamMuxer: Send {
     /// Type of the object that represents the raw substream where data can be read and written.
-    type Substream;
+    type Substream: Send;
 
     /// Opens a new outgoing substream, and produces the equivalent to a future that will be
     /// resolved when it becomes available.

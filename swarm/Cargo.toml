@@ -14,8 +14,8 @@ async-std = "1.6"
 futures = "0.3"
 log = "0.4"
 rand = "0.7"
+fnv = "1.0"
 smallvec = "1.0"
-wasm-timer = "0.2"
 void = "1"
 libp2p-core = { version = "0.1.0", path = "../core" }
 
