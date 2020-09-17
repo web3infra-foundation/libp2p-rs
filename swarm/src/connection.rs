@@ -175,11 +175,11 @@ where
     TMuxer: StreamMuxer,
 {
     /// Node that handles the muxer.
-    muxer: TMuxer,
+    pub(crate) muxer: TMuxer,
     /// Handler that processes substreams.
-    substreams: SmallVec<[TMuxer::Substream; 8]>,
+    pub(crate) substreams: SmallVec<[TMuxer::Substream; 8]>,
     /// Direction of this connection
-    dir: Direction,
+    pub(crate) dir: Direction,
 }
 
 impl<TMuxer> fmt::Debug for Connection<TMuxer>
