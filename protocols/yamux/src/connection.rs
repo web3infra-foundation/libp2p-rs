@@ -171,7 +171,6 @@ pub struct Connection<T> {
     control_receiver: Pausable<mpsc::Receiver<ControlCommand>>,
     stream_sender: mpsc::Sender<StreamCommand>,
     stream_receiver: mpsc::Receiver<StreamCommand>,
-    garbage: Vec<StreamId>, // see `Connection::garbage_collect()`
     shutdown: Shutdown,
     is_closed: bool,
 }
@@ -295,7 +294,6 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
                 Mode::Client => 1,
                 Mode::Server => 2,
             },
-            garbage: Vec::new(),
             shutdown: Shutdown::NotStarted,
             is_closed: false,
         }
@@ -556,7 +554,7 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
                     .or(Err(ConnectionError::Closed))?
             }
             Some(StreamCommand::CloseStream { id, ack }) => {
-                log::trace!("{}: closing stream {} of {}", self.id, id, self);
+                log::info!("{}: closing stream {} of {}", self.id, id, self);
                 let mut header = Header::data(id, 0);
                 header.fin();
                 if ack {
@@ -891,11 +889,13 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
     async fn garbage_collect(&mut self) -> Result<()> {
         let conn_id = self.id;
         let win_update_mode = self.config.window_update_mode;
+        let mut garbage = Vec::new();
+
         for stream in self.streams.values_mut() {
             if stream.strong_count() > 1 {
                 continue;
             }
-            log::trace!("{}: removing dropped {}", conn_id, stream);
+            log::info!("{}: removing dropped {}", conn_id, stream);
             let stream_id = stream.id();
             let frame = {
                 let mut shared = stream.shared().await;
@@ -951,9 +951,9 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
                     .await
                     .or(Err(ConnectionError::Closed))?
             }
-            self.garbage.push(stream_id)
+            garbage.push(stream_id)
         }
-        for id in self.garbage.drain(..) {
+        for id in garbage.drain(..) {
             self.streams.remove(&id);
         }
         Ok(())

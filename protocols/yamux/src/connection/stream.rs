@@ -88,7 +88,6 @@ pub struct Stream {
     conn: connection::Id,
     config: Arc<Config>,
     sender: mpsc::Sender<StreamCommand>,
-    pending: Option<Frame<WindowUpdate>>,
     flag: Flag,
     shared: Arc<Mutex<Shared>>,
 }
@@ -98,7 +97,6 @@ impl fmt::Debug for Stream {
         f.debug_struct("Stream")
             .field("id", &self.id.val())
             .field("connection", &self.conn)
-            .field("pending", &self.pending.is_some())
             .finish()
     }
 }
@@ -123,7 +121,6 @@ impl Stream {
             conn,
             config,
             sender,
-            pending: None,
             flag: Flag::None,
             shared: Arc::new(Mutex::new(Shared::new(window, credit))),
         }
@@ -158,7 +155,6 @@ impl Stream {
             conn: self.conn,
             config: self.config.clone(),
             sender: self.sender.clone(),
-            pending: None,
             flag: self.flag,
             shared: self.shared.clone(),
         }
@@ -170,17 +166,6 @@ impl Stream {
             return Ok(0);
         }
 
-        // recover from old code, why delete?
-        // Copy data from stream buffer.
-        let shared = self.shared().await;
-
-        // Buffer is empty, let's check if we can expect to read more data.
-        if !shared.state().can_read() {
-            log::info!("{}/{}: eof", self.conn, self.id);
-            return Err(io::ErrorKind::BrokenPipe.into()); // stream has been reset
-        }
-        drop(shared);
-
         if let Some(n) = future::poll_fn::<Option<usize>, _>(|cx| {
             let fut = self.shared();
             futures::pin_mut!(fut);
@@ -191,11 +176,11 @@ impl Stream {
             // Note: shared will be dropped when it is out of scope
             if shared.buffer.len().unwrap() == 0 {
                 if !shared.state().can_read() {
-                    log::info!("{}/{}: eof", self.conn, self.id);
+                    log::info!("2 {}/{}: eof", self.conn, self.id);
                     // return Err(io::ErrorKind::BrokenPipe.into()); // stream has been reset
                     return Poll::Ready(Some(0));
                 }
-                log::debug!("{}/{}: empty buffer, go pending", self.conn, self.id);
+                log::info!("{}/{}: empty buffer, go pending", self.conn, self.id);
                 shared.reader = Some(cx.waker().clone());
                 Poll::Pending
             } else {
@@ -230,12 +215,12 @@ impl Stream {
         }
 
         if !shared.state().can_read() {
-            log::info!("{}/{}: eof", self.conn, self.id);
+            log::info!("3 {}/{}: eof", self.conn, self.id);
             // return Err(io::ErrorKind::BrokenPipe.into()); // stream has been reset
             return Ok(0);
         }
 
-        log::trace!("{}/{}: read {} bytes", self.conn, self.id, n);
+        log::info!("{}/{}: read {} bytes", self.conn, self.id, n);
 
         // ok to send update window
         if self.config.window_update_mode == WindowUpdateMode::OnRead {
@@ -320,7 +305,7 @@ impl Stream {
         if self.state().await == State::Closed {
             return Ok(());
         }
-        log::trace!("{}/{}: close", self.conn, self.id);
+        log::info!("{}/{}: close", self.conn, self.id);
 
         let ack = if self.flag == Flag::Ack {
             self.flag = Flag::None;

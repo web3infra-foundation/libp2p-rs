@@ -14,7 +14,7 @@ async-trait = "0.1"
 bytes = "0.5.6"
 log = "0.4.8"
 rand = "0.7.2"
-criterion = ""
+futures-timer = "3"
 
 [dependencies.futures]
 version = "0.3.4"

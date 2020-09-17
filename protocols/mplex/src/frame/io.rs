@@ -32,7 +32,7 @@ where
         let header_byte = self.io.read_uvarint().await?;
         let header = header::decode(header_byte)?;
 
-        log::info!("{}: read stream header: {}", self.id, header);
+        log::trace!("{}: read stream header: {}", self.id, header);
 
         // get length
         let len = self.io.read_uvarint().await? as usize;
@@ -53,7 +53,7 @@ where
     T: Write2 + Unpin + Send,
 {
     pub(crate) async fn send_frame(&mut self, frame: &Frame) -> io::Result<()> {
-        log::info!("{}: write stream, header: {}", self.id, frame.header);
+        log::trace!("{}: write stream, header: {}", self.id, frame.header);
 
         let hdr = header::encode(&frame.header);
 
