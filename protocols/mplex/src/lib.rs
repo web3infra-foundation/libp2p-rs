@@ -33,7 +33,7 @@ impl Default for Config {
     }
 }
 
-/// A Yamux connection.
+/// A Mplex connection.
 ///
 /// This implementation isn't capable of detecting when the underlying socket changes its address,
 /// and no [`StreamMuxerEvent::AddressChange`] event is ever emitted.

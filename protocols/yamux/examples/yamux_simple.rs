@@ -9,7 +9,7 @@ use libp2p_traits::{Read2, Write2};
 use yamux::{Config, Connection, Mode};
 
 fn main() {
-    env_logger::init();
+    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
     if std::env::args().nth(1) == Some("server".to_string()) {
         info!("Starting server ......");
         run_server();
@@ -25,17 +25,31 @@ fn run_server() {
 
         while let Ok((socket, _)) = listener.accept().await {
             info!("accepted a socket: {:?}", socket.peer_addr());
-            let _ = yamux::into_stream(Connection::new(socket, Config::default(), Mode::Server))
-                .try_for_each_concurrent(None, |mut stream| async move {
-                    info!("S: accepted new stream");
 
-                    let mut buf = [0; 4096];
-                    loop {
-                        let n = stream.read2(&mut buf).await?;
-                        stream.write_all2(buf[..n].as_ref()).await?;
-                    }
-                })
-                .await;
+            task::spawn(async move {
+                let mut conn = Connection::new(socket, Config::default(), Mode::Server);
+                let mut ctrl = conn.control();
+
+                task::spawn(async {
+                    let mut muxer_conn = conn;
+                    while muxer_conn.next_stream().await.is_ok() {}
+                    info!("connection is closed");
+                });
+
+                while let Ok(mut stream) = ctrl.accept_stream().await {
+                    info!("accepted new stream: {}", stream.id());
+                    task::spawn(async move {
+                        let mut buf = [0; 4096];
+                        loop {
+                            let n = stream.read2(&mut buf).await.unwrap();
+                            if n == 0 {
+                                return;
+                            }
+                            stream.write_all2(buf[..n].as_ref()).await.unwrap();
+                        }
+                    });
+                }
+            });
         }
     });
 }
@@ -48,7 +62,11 @@ fn run_client() {
         let conn = Connection::new(socket, Config::default(), Mode::Client);
         let mut ctrl = conn.control();
 
-        task::spawn(yamux::into_stream(conn).for_each(|_| future::ready(())));
+        task::spawn(async {
+            let mut muxer_conn = conn;
+            while muxer_conn.next_stream().await.is_ok() {}
+            info!("connection is closed");
+        });
 
         let mut stream = ctrl.open_stream().await.unwrap();
         info!("C: opened new stream {}", stream.id());

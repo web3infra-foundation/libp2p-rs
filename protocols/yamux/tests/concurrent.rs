@@ -27,19 +27,37 @@ async fn roundtrip(address: SocketAddr, nstreams: usize, data: Arc<Vec<u8>>) {
 
     let server = async move {
         let socket = listener.accept().await.expect("accept").0;
-        yamux::into_stream(Connection::new(socket, Config::default(), Mode::Server))
-            .try_for_each_concurrent(None, |mut stream| async move {
+        task::spawn(async move {
+            let mut conn = Connection::new(socket, Config::default(), Mode::Server);
+            let mut ctrl = conn.control();
+
+            task::spawn(async {
+                let mut muxer_conn = conn;
+                while muxer_conn.next_stream().await.is_ok() {}
+                log::info!("connection is closed");
+            });
+
+            while let Ok(mut stream) = ctrl.accept_stream().await {
                 log::debug!("S: accepted new stream");
-                let mut len = [0; 4];
-                stream.read_exact2(&mut len).await?;
-                let mut buf = vec![0; u32::from_be_bytes(len) as usize];
-                stream.read_exact2(&mut buf).await?;
-                stream.write_all2(&buf).await?;
-                stream.close2().await?;
-                Ok(())
-            })
-            .await
-            .expect("server works")
+                task::spawn(async move {
+                    let mut len = [0; 4];
+                    if let Err(e) = stream.read_exact2(&mut len).await {
+                        log::error!("{} read failed: {:?}", stream.id(), e);
+                        return;
+                    }
+                    let mut buf = vec![0; u32::from_be_bytes(len) as usize];
+                    if let Err(e) = stream.read_exact2(&mut buf).await {
+                        log::error!("{} read failed: {:?}", stream.id(), e);
+                        return;
+                    }
+                    if let Err(e) = stream.write_all2(&buf).await {
+                        log::error!("{} write failed: {:?}", stream.id(), e);
+                        return;
+                    }
+                    stream.close2().await;
+                });
+            }
+        });
     };
 
     task::spawn(server);
@@ -48,7 +66,12 @@ async fn roundtrip(address: SocketAddr, nstreams: usize, data: Arc<Vec<u8>>) {
     let (tx, rx) = mpsc::unbounded();
     let conn = Connection::new(socket, Config::default(), Mode::Client);
     let mut ctrl = conn.control();
-    task::spawn(yamux::into_stream(conn).for_each(|_| future::ready(())));
+    task::spawn(async {
+        let mut muxer_conn = conn;
+        while muxer_conn.next_stream().await.is_ok() {}
+        log::info!("connection is closed");
+    });
+
     for _ in 0..nstreams {
         let data = data.clone();
         let tx = tx.clone();
@@ -80,8 +103,9 @@ async fn roundtrip(address: SocketAddr, nstreams: usize, data: Arc<Vec<u8>>) {
 
 #[test]
 fn concurrent_streams() {
+    env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();
     let data = Arc::new(vec![0x42; 100 * 1024]);
     let addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 0));
     // TODO 读的地方有问题，超过默认的十个线程会挂住
-    task::block_on(roundtrip(addr, 10, data))
+    task::block_on(roundtrip(addr, 1, data))
 }

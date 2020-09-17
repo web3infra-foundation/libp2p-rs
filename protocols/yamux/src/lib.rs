@@ -26,19 +26,16 @@ pub(crate) mod connection;
 
 use async_trait::async_trait;
 use futures::prelude::*;
-use futures::stream::BoxStream;
-use log::trace;
+use log::{info, trace};
 use std::fmt;
 
-pub use crate::connection::{into_stream, Connection, Control, Mode, Stream};
+pub use crate::connection::{Connection, Control, Mode, Stream};
 pub use crate::error::ConnectionError;
 pub use crate::frame::{
     header::{HeaderDecodeError, StreamId},
     FrameDecodeError,
 };
-use futures::channel::mpsc;
 use futures::future::BoxFuture;
-use futures::{SinkExt, StreamExt, TryStreamExt};
 use libp2p_core::identity::Keypair;
 use libp2p_core::muxing::StreamMuxer;
 use libp2p_core::secure_io::SecureInfo;
@@ -183,45 +180,33 @@ static_assertions::const_assert! {
 ///
 /// This implementation isn't capable of detecting when the underlying socket changes its address,
 /// and no [`StreamMuxerEvent::AddressChange`] event is ever emitted.
-pub struct Yamux(Inner);
+pub struct Yamux<C> {
+    /// The [`futures::stream::Stream`] of incoming substreams.
+    connection: Option<Connection<C>>,
+    /// Handle to control the connection.
+    control: Control,
+}
 
-impl fmt::Debug for Yamux {
+impl<C> fmt::Debug for Yamux<C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("Yamux")
     }
 }
 
-struct Inner {
-    /// The [`futures::stream::Stream`] of incoming substreams.
-    incoming: Option<BoxStream<'static, Result<Stream, TransportError>>>,
-    /// Handle to control the connection.
-    control: Control,
-
-    stream_sender: mpsc::Sender<Stream>,
-    stream_receiver: mpsc::Receiver<Stream>,
-}
-
-impl Yamux {
+impl<C: Read2 + Write2 + Unpin + Send + 'static> Yamux<C> {
     /// Create a new Yamux connection.
-    pub fn new<C>(io: C, mut cfg: Config, mode: Mode) -> Self
-    where
-        C: Read2 + Write2 + Send + Unpin + 'static,
-    {
+    pub fn new(io: C, mut cfg: Config, mode: Mode) -> Self {
         cfg.set_read_after_close(false);
         let conn = Connection::new(io, cfg, mode);
-        let ctrl = conn.control();
-        let (tx, rx) = mpsc::channel(1);
-        let inner = Inner {
-            incoming: Some(into_stream(conn).err_into().boxed()),
-            control: ctrl,
-            stream_sender: tx,
-            stream_receiver: rx,
-        };
-        Yamux(inner)
+        let control = conn.control();
+        Yamux {
+            connection: Some(conn),
+            control,
+        }
     }
 }
 
-impl SecureInfo for Yamux {
+impl<C> SecureInfo for Yamux<C> {
     fn local_peer(&self) -> PeerId {
         unimplemented!()
     }
@@ -240,26 +225,23 @@ impl SecureInfo for Yamux {
 }
 
 #[async_trait]
-impl StreamMuxer for Yamux {
+impl<C: Read2 + Write2 + Unpin + Send + 'static> StreamMuxer for Yamux<C> {
     type Substream = Stream;
 
     async fn open_stream(&mut self) -> Result<Self::Substream, TransportError> {
         trace!("opening a new outbound substream for yamux...");
-        let s = self.0.control.open_stream().await?;
+        let s = self.control.open_stream().await?;
         Ok(s)
     }
 
     async fn accept_stream(&mut self) -> Result<Self::Substream, TransportError> {
-        trace!("waiting for a new inbound substream for yamux...");
-        self.0
-            .stream_receiver
-            .next()
-            .await
-            .ok_or(TransportError::Internal)
+        trace!("opening a new outbound substream for yamux...");
+        let s = self.control.accept_stream().await?;
+        Ok(s)
     }
 
     async fn close(&mut self) -> Result<(), TransportError> {
-        self.0.control.close().await?;
+        self.control.close().await?;
         Ok(())
     }
 
@@ -269,24 +251,16 @@ impl StreamMuxer for Yamux {
     // }
 
     fn task(&mut self) -> Option<BoxFuture<'static, ()>> {
-        if let Some(mut incoming) = self.0.incoming.take() {
-            trace!("starting yamux main loop...");
-
-            let mut tx = self.0.stream_sender.clone();
-            Some(
+        if let Some(mut conn) = self.connection.take() {
+            return Some(
                 async move {
-                    while let Some(Ok(s)) = incoming.next().await {
-                        if tx.send(s).await.is_err() {
-                            break;
-                        }
-                    }
-                    tx.close_channel();
+                    while conn.next_stream().await.is_ok() {}
+                    info!("connection is closed");
                 }
                 .boxed(),
-            )
-        } else {
-            None
+            );
         }
+        None
     }
 }
 
@@ -303,7 +277,7 @@ impl<T> Upgrader<T> for Config
 where
     T: Read2 + Write2 + Send + Unpin + 'static,
 {
-    type Output = Yamux;
+    type Output = Yamux<T>;
 
     async fn upgrade_inbound(
         self,

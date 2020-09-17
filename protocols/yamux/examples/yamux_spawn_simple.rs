@@ -27,7 +27,13 @@ fn run_server() {
                 let mut ctrl = muxer_conn.control();
                 // let mut handles = VecDeque::new();
 
-                while let Ok(Some(mut stream)) = muxer_conn.next_stream().await {
+                task::spawn(async {
+                    let mut muxer_conn = muxer_conn;
+                    while muxer_conn.next_stream().await.is_ok() {}
+                    info!("connection is closed");
+                });
+
+                while let Ok(mut stream) = ctrl.accept_stream().await {
                     info!("accepted new stream: {}", stream.id());
                     let handle = task::spawn(async move {
                         let mut buf = [0; 256];
@@ -71,12 +77,12 @@ fn run_client() {
 
         task::spawn(async {
             let mut muxer_conn = muxer_conn;
-            while let Ok(Some(_)) = muxer_conn.next_stream().await {}
+            while muxer_conn.next_stream().await.is_ok() {}
             info!("connection is closed");
         });
 
         let mut handles = VecDeque::new();
-        for _ in 0..20 {
+        for _ in 0..10 {
             let mut stream = ctrl.clone().open_stream().await.unwrap();
             info!("C: opened new stream {}", stream.id());
             let handle = task::spawn(async move {
