@@ -44,6 +44,15 @@ pub struct Mplex<C> {
     ctrl: Control,
 }
 
+impl<C> Clone for Mplex<C> {
+    fn clone(&self) -> Self {
+        Mplex {
+            conn: None,
+            ctrl: self.ctrl.clone(),
+        }
+    }
+}
+
 impl<C> fmt::Debug for Mplex<C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("Mplex")

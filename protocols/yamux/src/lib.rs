@@ -187,6 +187,15 @@ pub struct Yamux<C> {
     control: Control,
 }
 
+impl<C> Clone for Yamux<C> {
+    fn clone(&self) -> Self {
+        Yamux {
+            connection: None,
+            control: self.control.clone(),
+        }
+    }
+}
+
 impl<C> fmt::Debug for Yamux<C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("Yamux")
