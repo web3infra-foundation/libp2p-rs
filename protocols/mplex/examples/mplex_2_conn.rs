@@ -108,7 +108,8 @@ fn run_client_one_by_one() {
                 }
 
                 ctrl.close().await.expect("close connection");
-            }).await;
+            })
+            .await;
         }
 
         info!("shutdown is completed");
