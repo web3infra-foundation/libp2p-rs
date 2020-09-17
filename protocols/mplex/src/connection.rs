@@ -3,10 +3,12 @@ pub mod stream;
 
 use futures::{
     channel::{mpsc, oneshot},
+    future::{select, Either},
     prelude::*,
     select,
     stream::FusedStream,
 };
+use futures_timer::Delay;
 
 use crate::{
     error::ConnectionError,
@@ -20,6 +22,7 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::pin::Pin;
 use stream::Stream;
+use std::time::Duration;
 
 /// `Control` to `Connection` commands.
 #[derive(Debug)]
@@ -172,7 +175,7 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
         }
 
         let result = self.handle_coming().await;
-        log::error!("error exit, {:?}", result);
+        log::error!("{}: error exit, {:?}", self.id, result);
         // if let Ok(Some(_)) = result {
         //     return result;
         // }
@@ -215,10 +218,6 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
             }
         }
 
-        if let Err(ConnectionError::Closed) = result {
-            return Ok(());
-        }
-
         result
     }
 
@@ -244,7 +243,7 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
     }
 
     async fn on_frame(&mut self, frame: Frame) -> Result<()> {
-        log::trace!("{}: received: {}", self.id, frame.header());
+        log::info!("{}: received: {}", self.id, frame.header());
         match frame.header().tag() {
             Tag::NewStream => {
                 let stream_id = frame.header().stream_id();
@@ -274,12 +273,21 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
             }
             Tag::Message => {
                 let stream_id = frame.header().stream_id();
-                // if stream is closed, ignore frame
+                let mut dropped = false;
+                // If stream is closed, ignore frame
                 if let Some(stream_sender) = self.streams.get_mut(&stream_id) {
-                    stream_sender
-                        .send(frame.body().to_vec())
-                        .await
-                        .expect("send err");
+                    if !stream_sender.is_closed() {
+                        stream_sender
+                            .send(frame.body().to_vec())
+                            .await
+                            .expect("send err");
+                    } else {
+                        dropped = true;
+                    }
+                }
+                // If the stream is dropped, remove sender from streams
+                if dropped {
+                    self.streams.remove(&stream_id);
                 }
             }
             Tag::Reset | Tag::Close => {
@@ -399,6 +407,20 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
         Ok(())
     }
 }
+
+// async fn SendTimeout<F>(future: F, timeout: Duration) -> std::io::Result<()>
+//     where F: Future + Unpin
+// {
+//     let output = select(future, Delay::new(timeout)).await;
+//     match output {
+//         Either::Left((a, b)) => {
+//             Ok(())
+//         }
+//         Either::Right(_) => {
+//             Err(())
+//         }
+//     }
+// }
 
 impl<T> fmt::Display for Connection<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
