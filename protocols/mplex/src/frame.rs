@@ -44,4 +44,12 @@ impl Frame {
             body: Vec::new(),
         }
     }
+
+    // reset frame
+    pub fn reset_frame(stream_id: StreamID) -> Self {
+        Frame {
+            header: Header::new(stream_id, Tag::Reset),
+            body: Vec::new(),
+        }
+    }
 }
