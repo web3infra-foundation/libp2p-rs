@@ -36,9 +36,7 @@ fn main() {
         );
         //let mux = yamux::Config::new();
         //let mux = mplex::Config::new();
-        let psk = "/key/swarm/psk/1.0.0/\n/base16/\n6189c5cf0b87fb800c1a9feeda73c6ab5e998db48fb9e6a978575c770ceef683".parse::<PreSharedKey>().unwrap();
-        let pnet = PnetConfig::new(Some(psk));
-        let t1 = TransportUpgrade::new(MemoryTransport::default(), pnet, mux, sec);
+        let t1 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
         let mut listener = t1.listen_on(listen_addr).unwrap();
 
         loop {
@@ -90,10 +88,11 @@ fn main() {
                 //let sec = DummyUpgrader::new();
                 //let mux = yamux::Config::new();
                 //let mux = mplex::Config::new();
-                let mux = Selector::new(yamux::Config::new(), Selector::new(yamux::Config::new(), yamux::Config::new()));
-                let psk ="/key/swarm/psk/1.0.0/\n/base16/\n6189c5cf0b87fb800c1a9feeda73c6ab5e998db48fb9e6a978575c770ceef683".parse::<PreSharedKey>().unwrap();
-                let pnet=PnetConfig::new(Some(psk));
-                let t2 = TransportUpgrade::new(MemoryTransport::default(),pnet, mux, sec);
+                let mux = Selector::new(
+                    yamux::Config::new(),
+                    Selector::new(yamux::Config::new(), yamux::Config::new()),
+                );
+                let t2 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
                 let mut stream_muxer = t2.dial(addr).await.expect("listener is started already");
 
                 if let Some(task) = stream_muxer.task() {
@@ -114,7 +113,9 @@ fn main() {
 
                 stream_muxer.close().await.expect("close error");
                 Ok::<(), TransportError>(())
-            }).await.expect("error");
+            })
+            .await
+            .expect("error");
 
             log::info!("client{} exited", i);
         }

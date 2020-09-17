@@ -13,7 +13,6 @@ use libp2p_core::identity::Keypair;
 use libp2p_core::muxing::StreamMuxer;
 use libp2p_core::upgrade::{DummyUpgrader, Selector};
 use mplex;
-use pnet::{PnetConfig, PreSharedKey};
 use secio;
 use yamux;
 
@@ -36,9 +35,7 @@ fn run_server() {
     // let mux = yamux::Config::new();
     // let mux = mplex::Config::new();
     let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
-    let psk = "/key/swarm/psk/1.0.0/\n/base16/\n6189c5cf0b87fb800c1a9feeda73c6ab5e998db48fb9e6a978575c770ceef683".parse::<PreSharedKey>().unwrap();
-    let pnet = PnetConfig::new(Some(psk));
-    let tu = TransportUpgrade::new(TcpConfig::default(), pnet, mux, sec);
+    let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
 
     task::block_on(async move {
         let mut listener = tu.listen_on(listen_addr).unwrap();
@@ -84,9 +81,7 @@ fn run_client() {
     // let mux = yamux::Config::new();
     // let mux = mplex::Config::new();
     let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
-    let psk ="/key/swarm/psk/1.0.0/\n/base16/\n6189c5cf0b87fb800c1a9feeda73c6ab5e998db48fb9e6a978575c770ceef683".parse::<PreSharedKey>().unwrap();
-    let pnet = PnetConfig::new(Some(psk));
-    let tu = TransportUpgrade::new(TcpConfig::default(), pnet, mux, sec);
+    let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
 
     task::block_on(async move {
         let mut stream_muxer = tu.dial(addr).await.expect("listener is started already");
