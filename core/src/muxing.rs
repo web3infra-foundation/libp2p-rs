@@ -36,7 +36,7 @@ use async_trait::async_trait;
 use futures::future::BoxFuture;
 
 #[async_trait]
-pub trait StreamMuxer: Send {
+pub trait StreamMuxer: Send + Clone {
     /// Type of the object that represents the raw substream where data can be read and written.
     type Substream: Send;
 

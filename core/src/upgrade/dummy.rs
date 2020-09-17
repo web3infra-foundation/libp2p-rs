@@ -36,6 +36,12 @@ use std::{fmt, io};
 pub struct DummyUpgrader;
 pub struct DummyStream<T>(T);
 
+impl<T> Clone for DummyStream<T> {
+    fn clone(&self) -> Self {
+        unimplemented!()
+    }
+}
+
 impl DummyUpgrader {
     /// Builds a new `DummyUpgrader`.
     pub fn new() -> Self {
