@@ -76,8 +76,15 @@ fn run_server() {
         while let Ok((socket, _)) = listener.accept().await {
             info!("accepted a socket: {:?}", socket.peer_addr());
             let mut conn = Connection::new(socket, Config::default(), Mode::Server);
+            let mut ctrl = conn.control();
             task::spawn(async move {
-                while let Ok(Some(mut stream)) = conn.next_stream().await {
+                task::spawn(async {
+                    let mut muxer_conn = conn;
+                    while muxer_conn.next_stream().await.is_ok() {}
+                    info!("connection is closed");
+                });
+
+                while let Ok(mut stream) = ctrl.accept_stream().await {
                     info!("Server accept a stream from client: id={}", stream.id());
                     task::spawn(async move {
                         let mut data = [0u8; LEN];
@@ -114,7 +121,11 @@ fn run_client() {
         let conn = Connection::new(socket, Config::default(), Mode::Client);
         let ctrl = conn.control();
 
-        task::spawn(yamux::into_stream(conn).for_each(|_| future::ready(())));
+        task::spawn(async {
+            let mut muxer_conn = conn;
+            while muxer_conn.next_stream().await.is_ok() {}
+            info!("connection is closed");
+        });
 
         for _ in 0..num {
             let mut ctrl = ctrl.clone();
@@ -126,7 +137,7 @@ fn run_client() {
 
                 loop {
                     s.read_exact2(&mut data).await.unwrap();
-                    assert_eq!(data.as_ref(), STR.as_bytes());
+                    assert_eq!(&data[..], STR.as_bytes());
                     respc_incr();
 
                     s.write_all2(STR.as_bytes()).await.unwrap();

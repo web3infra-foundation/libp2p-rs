@@ -61,6 +61,9 @@ fn run_server() {
                                 return;
                             }
                         };
+                        if n == 0 {
+                            return;
+                        }
                         // info!("{:?} read {:?}", stream, &buf[..n]);
                         if let Err(e) = stream.write_all2(buf[..n].as_ref()).await {
                             error!("{:?} write failed: {:?}", stream, e);

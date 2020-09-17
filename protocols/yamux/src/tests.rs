@@ -45,7 +45,13 @@ fn prop_send_recv() {
                 let socket = TcpStream::connect(address).await.expect("connect");
                 let connection = Connection::new(socket, Config::default(), Mode::Client);
                 let control = connection.control();
-                task::spawn(crate::into_stream(connection).for_each(|_| future::ready(())));
+
+                task::spawn(async {
+                    let mut muxer_conn = connection;
+                    while muxer_conn.next_stream().await.is_ok() {}
+                    log::info!("connection is closed");
+                });
+
                 send_recv(control, iter.clone()).await.expect("send_recv")
             };
 
@@ -53,6 +59,7 @@ fn prop_send_recv() {
             TestResult::from_bool(result.len() == num_requests && result.into_iter().eq(iter))
         })
     }
+    // env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();
     QuickCheck::new().tests(1).quickcheck(prop as fn(_) -> _)
 }
 
@@ -79,7 +86,12 @@ fn prop_max_streams() {
             let socket = TcpStream::connect(address).await.expect("connect");
             let connection = Connection::new(socket, cfg, Mode::Client);
             let mut control = connection.control();
-            task::spawn(crate::into_stream(connection).for_each(|_| future::ready(())));
+            task::spawn(async {
+                let mut muxer_conn = connection;
+                while muxer_conn.next_stream().await.is_ok() {}
+                log::info!("connection is closed");
+            });
+
             let mut v = Vec::new();
             for _ in 0..max_streams {
                 v.push(control.open_stream().await.expect("open_stream"))
@@ -106,16 +118,18 @@ fn prop_send_recv_half_closed() {
             let server = async {
                 let socket = listener.accept().await.expect("accept").0;
                 let mut connection = Connection::new(socket, Config::default(), Mode::Server);
-                let mut stream = connection
-                    .next_stream()
-                    .await
-                    .expect("S: next_stream")
-                    .expect("S: some stream");
-                task::spawn(crate::into_stream(connection).for_each(|_| future::ready(())));
-                let mut buf = vec![0; msg_len];
-                stream.read_exact2(&mut buf).await.expect("S: read_exact");
-                stream.write_all2(&buf).await.expect("S: send");
-                stream.close2().await.expect("S: close")
+                let mut ctrl = connection.control();
+                task::spawn(async {
+                    let mut muxer_conn = connection;
+                    while muxer_conn.next_stream().await.is_ok() {}
+                    log::info!("connection is closed");
+                });
+                if let Ok(mut stream) = ctrl.accept_stream().await {
+                    let mut buf = vec![0; msg_len];
+                    stream.read_exact2(&mut buf).await.expect("S: read_exact");
+                    stream.write_all2(&buf).await.expect("S: send");
+                    stream.close2().await.expect("S: close")
+                }
             };
 
             // Client should be able to read after shutting down the stream.
@@ -123,7 +137,12 @@ fn prop_send_recv_half_closed() {
                 let socket = TcpStream::connect(address).await.expect("connect");
                 let connection = Connection::new(socket, Config::default(), Mode::Client);
                 let mut control = connection.control();
-                task::spawn(crate::into_stream(connection).for_each(|_| future::ready(())));
+                task::spawn(async {
+                    let mut muxer_conn = connection;
+                    while muxer_conn.next_stream().await.is_ok() {}
+                    log::info!("connection is closed");
+                });
+
                 let mut stream = control.open_stream().await.expect("C: open_stream");
                 stream.write_all2(&msg.0).await.expect("C: send");
                 stream.close2().await.expect("C: close");
@@ -163,14 +182,24 @@ async fn bind() -> io::Result<(TcpListener, SocketAddr)> {
 
 /// For each incoming stream of `c` echo back to the sender.
 async fn repeat_echo(c: Connection<TcpStream>) -> Result<(), ConnectionError> {
-    let c = crate::into_stream(c);
-    c.try_for_each_concurrent(None, |mut stream| async move {
-        let (r, w) = stream.clone().split2();
-        libp2p_traits::copy(r, w).await?;
-        stream.close2().await?;
-        Ok(())
+    let mut ctrl = c.control();
+    task::spawn(async move {
+        task::spawn(async {
+            let mut muxer_conn = c;
+            while muxer_conn.next_stream().await.is_ok() {}
+            log::info!("connection is closed");
+        });
+
+        while let Ok(mut stream) = ctrl.accept_stream().await {
+            task::spawn(async move {
+                let (r, w) = stream.clone().split2();
+                libp2p_traits::copy(r, w).await.unwrap();
+                stream.close2().await.unwrap();
+            });
+        }
     })
-    .await
+    .await;
+    Ok(())
 }
 
 /// For each message in `iter`, open a new stream, send the message and

@@ -96,7 +96,7 @@ pub trait Write2 {
     async fn write_all2(&mut self, buf: &[u8]) -> Result<(), io::Error> {
         let mut buf_piece = buf;
         while !buf_piece.is_empty() {
-            let n = self.write2(buf).await?;
+            let n = self.write2(buf_piece).await?;
             if n == 0 {
                 return Err(io::ErrorKind::WriteZero.into());
             }

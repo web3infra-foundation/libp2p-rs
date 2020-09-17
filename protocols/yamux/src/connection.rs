@@ -112,6 +112,7 @@ pub use control::Control;
 pub use stream::{State, Stream};
 
 use libp2p_traits::{Read2, Write2};
+use std::collections::VecDeque;
 
 /// Arbitrary limit of our internal command channels.
 ///
@@ -171,6 +172,8 @@ pub struct Connection<T> {
     control_receiver: Pausable<mpsc::Receiver<ControlCommand>>,
     stream_sender: mpsc::Sender<StreamCommand>,
     stream_receiver: mpsc::Receiver<StreamCommand>,
+    accept_stream: Option<oneshot::Sender<Result<stream::Stream>>>,
+    pending_streams: VecDeque<stream::Stream>,
     shutdown: Shutdown,
     is_closed: bool,
 }
@@ -180,6 +183,8 @@ pub struct Connection<T> {
 pub(crate) enum ControlCommand {
     /// Open a new stream to the remote end.
     OpenStream(oneshot::Sender<Result<Stream>>),
+    /// Accept a new stream from the remote end.
+    AcceptStream(oneshot::Sender<Result<Stream>>),
     /// Close the whole connection.
     CloseConnection(oneshot::Sender<()>),
 }
@@ -294,6 +299,8 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
                 Mode::Client => 1,
                 Mode::Server => 2,
             },
+            accept_stream: None,
+            pending_streams: VecDeque::default(),
             shutdown: Shutdown::NotStarted,
             is_closed: false,
         }
@@ -315,19 +322,20 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
     ///
     /// Please note that if you poll the returned [`Future`] it *must
     /// not be cancelled* but polled until [`Poll::Ready`] is returned.
-    pub async fn next_stream(&mut self) -> Result<Option<Stream>> {
+    pub async fn next_stream(&mut self) -> Result<()> {
         if self.is_closed {
             log::debug!("{}: connection is closed", self.id);
-            return Ok(None);
+            return Ok(());
         }
 
         let result = self.next().await;
+        log::error!("{}: error exit, {:?}", self.id, result);
 
-        if let Ok(Some(_)) = result {
-            return result;
-        }
-        log::error!("error exit, {:?}", result);
         self.is_closed = true;
+
+        if let Some(sender) = self.accept_stream.take() {
+            sender.send(Err(ConnectionError::Closed)).expect("send err");
+        }
 
         // At this point we are either at EOF or encountered an error.
         // We close all streams and wake up the associated tasks. We also
@@ -341,6 +349,9 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
             while let Some(cmd) = self.control_receiver.next().await {
                 match cmd {
                     ControlCommand::OpenStream(reply) => {
+                        let _ = reply.send(Err(ConnectionError::Closed));
+                    }
+                    ControlCommand::AcceptStream(reply) => {
                         let _ = reply.send(Err(ConnectionError::Closed));
                     }
                     ControlCommand::CloseConnection(reply) => {
@@ -360,9 +371,9 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
             }
         }
 
-        if let Err(ConnectionError::Closed) = result {
-            return Ok(None);
-        }
+        // if let Err(ConnectionError::Closed) = result {
+        //     return Ok(());
+        // }
 
         result
     }
@@ -372,7 +383,7 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
     /// This is called from `Connection::next_stream` instead of being a
     /// public method itself in order to guarantee proper closing in
     /// case of an error or at EOF.
-    async fn next(&mut self) -> Result<Option<Stream>> {
+    async fn next(&mut self) -> Result<()> {
         loop {
             self.garbage_collect().await?;
             // Select all futures: socket, stream receiver and controller
@@ -382,13 +393,7 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
                     // if let Some(stream) = self.on_frame(Ok(frame.ok())).await? {
                     // recover from old code, why not return err when frame is Err
                     let frame = frame?;
-                    if let Some(stream) = self.on_frame(Ok(Some(frame))).await? {
-                        self.socket
-                            .flush()
-                            .await
-                            .or(Err(ConnectionError::Closed))?;
-                        return Ok(Some(stream));
-                    }
+                    self.on_frame(frame).await?;
                 },
                 scmd = self.stream_receiver.next() => {
                     self.on_stream_command(scmd).await?
@@ -397,66 +402,6 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
                     self.on_control_command(ccmd).await?
                 }
             };
-
-            /*
-                        let mut num_terminated = 0;
-
-                        let mut next_inbound_frame = if self.socket.is_terminated() {
-                            num_terminated += 1;
-                            Either::Left(future::pending())
-                        } else {
-                            Either::Right(self.socket.try_next().err_into())
-                        };
-
-                        let mut next_stream_command = if self.stream_receiver.is_terminated() {
-                            num_terminated += 1;
-                            Either::Left(future::pending())
-                        } else {
-                            Either::Right(self.stream_receiver.next())
-                        };
-
-                        let mut next_control_command = if self.control_receiver.is_terminated() {
-                            num_terminated += 1;
-                            Either::Left(future::pending())
-                        } else {
-                            Either::Right(self.control_receiver.next())
-                        };
-                        if num_terminated == 3 {
-                            log::debug!("{}: socket and channels are terminated", self.id);
-                            return Err(ConnectionError::Closed);
-                        }
-
-                        let next_item = future::poll_fn(move |cx: &mut Context| {
-                            let a = next_stream_command.poll_unpin(cx);
-                            let b = next_control_command.poll_unpin(cx);
-                            let c = next_inbound_frame.poll_unpin(cx);
-                            if a.is_pending() && b.is_pending() && c.is_pending() {
-                                return Poll::Pending;
-                            }
-                            Poll::Ready((a, b, c))
-                        });
-
-                        let (stream_command, control_command, inbound_frame) = next_item.await;
-
-                        if let Poll::Ready(cmd) = control_command {
-                            self.on_control_command(cmd).await?
-                        }
-
-                        if let Poll::Ready(cmd) = stream_command {
-                            self.on_stream_command(cmd).await?
-                        }
-
-                        if let Poll::Ready(frame) = inbound_frame {
-                            if let Some(stream) = self.on_frame(frame).await? {
-                                self.socket
-                                    .get_mut()
-                                    .flush()
-                                    .await
-                                    .or(Err(ConnectionError::Closed))?;
-                                return Ok(Some(stream));
-                            }
-                        }
-            */
 
             self.socket.flush().await.or(Err(ConnectionError::Closed))?
         }
@@ -516,6 +461,17 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
                             .await
                             .or(Err(ConnectionError::Closed))?
                     }
+                }
+            }
+            Some(ControlCommand::AcceptStream(reply)) => {
+                if !self.pending_streams.is_empty() {
+                    if let Some(stream) = self.pending_streams.pop_front() {
+                        reply.send(Ok(stream)).expect("send err");
+                    }
+                    return Ok(());
+                }
+                if self.accept_stream.is_none() {
+                    self.accept_stream = Some(reply);
                 }
             }
             Some(ControlCommand::CloseConnection(reply)) => {
@@ -598,66 +554,54 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
     /// and return a corresponding error, which terminates the connection.
     /// Otherwise we process the frame and potentially return a new `Stream`
     /// if one was opened by the remote.
-    async fn on_frame(&mut self, frame: Result<Option<Frame<()>>>) -> Result<Option<Stream>> {
-        match frame {
-            Ok(Some(frame)) => {
-                log::trace!("{}: received: {}", self.id, frame.header());
-                let action = match frame.header().tag() {
-                    Tag::Data => self.on_data(frame.into_data()).await,
-                    Tag::WindowUpdate => self.on_window_update(&frame.into_window_update()).await,
-                    Tag::Ping => self.on_ping(&frame.into_ping()),
-                    Tag::GoAway => return Err(ConnectionError::Closed),
-                };
-                match action {
-                    Action::None => {}
-                    Action::New(stream) => {
-                        log::trace!("{}: new inbound {} of {}", self.id, stream, self);
-                        return Ok(Some(stream));
-                    }
-                    Action::Update(f) => {
-                        log::trace!("{}/{}: sending update", self.id, f.header().stream_id());
-                        self.socket
-                            .send_frame(&f)
-                            .await
-                            .or(Err(ConnectionError::Closed))?
-                    }
-                    Action::Ping(f) => {
-                        log::trace!("{}/{}: pong", self.id, f.header().stream_id());
-                        self.socket
-                            .send_frame(&f)
-                            .await
-                            .or(Err(ConnectionError::Closed))?
-                    }
-                    Action::Reset(f) => {
-                        log::trace!("{}/{}: sending reset", self.id, f.header().stream_id());
-                        self.socket
-                            .send_frame(&f)
-                            .await
-                            .or(Err(ConnectionError::Closed))?
-                    }
-                    Action::Terminate(f) => {
-                        log::trace!("{}: sending term", self.id);
-                        self.socket
-                            .send_frame(&f)
-                            .await
-                            .or(Err(ConnectionError::Closed))?
-                    }
+    async fn on_frame(&mut self, frame: Frame<()>) -> Result<()> {
+        log::trace!("{}: received: {}", self.id, frame.header());
+        let action = match frame.header().tag() {
+            Tag::Data => self.on_data(frame.into_data()).await,
+            Tag::WindowUpdate => self.on_window_update(&frame.into_window_update()).await,
+            Tag::Ping => self.on_ping(&frame.into_ping()),
+            Tag::GoAway => return Err(ConnectionError::Closed),
+        };
+        match action {
+            Action::None => {}
+            Action::New(stream) => {
+                log::trace!("{}: new inbound {} of {}", self.id, stream, self);
+                if let Some(sender) = self.accept_stream.take() {
+                    sender.send(Ok(stream)).expect("send err");
+                } else {
+                    self.pending_streams.push_back(stream);
                 }
-                Ok(None)
             }
-            Ok(None) => {
-                log::debug!("{}: socket eof", self.id);
-                Err(ConnectionError::Closed)
+            Action::Update(f) => {
+                log::trace!("{}/{}: sending update", self.id, f.header().stream_id());
+                self.socket
+                    .send_frame(&f)
+                    .await
+                    .or(Err(ConnectionError::Closed))?
             }
-            Err(e) if e.io_kind() == Some(std::io::ErrorKind::ConnectionReset) => {
-                log::debug!("{}: connection reset", self.id);
-                Err(ConnectionError::Closed)
+            Action::Ping(f) => {
+                log::trace!("{}/{}: pong", self.id, f.header().stream_id());
+                self.socket
+                    .send_frame(&f)
+                    .await
+                    .or(Err(ConnectionError::Closed))?
             }
-            Err(e) => {
-                log::error!("{}: socket error: {}", self.id, e);
-                Err(e)
+            Action::Reset(f) => {
+                log::trace!("{}/{}: sending reset", self.id, f.header().stream_id());
+                self.socket
+                    .send_frame(&f)
+                    .await
+                    .or(Err(ConnectionError::Closed))?
+            }
+            Action::Terminate(f) => {
+                log::trace!("{}: sending term", self.id);
+                self.socket
+                    .send_frame(&f)
+                    .await
+                    .or(Err(ConnectionError::Closed))?
             }
         }
+        Ok(())
     }
 
     async fn on_data(&mut self, frame: Frame<Data>) -> Action {
@@ -985,16 +929,16 @@ impl<T> Drop for Connection<T> {
     }
 }
 
-/// Turn a Yamux [`Connection`] into a [`futures::Stream`].
-pub fn into_stream<T>(c: Connection<T>) -> impl futures::stream::Stream<Item = Result<Stream>>
-where
-    T: Read2 + Write2 + Unpin + Send,
-{
-    futures::stream::unfold(c, |mut c| async {
-        match c.next_stream().await {
-            Ok(None) => None,
-            Ok(Some(stream)) => Some((Ok(stream), c)),
-            Err(e) => Some((Err(e), c)),
-        }
-    })
-}
+// /// Turn a Yamux [`Connection`] into a [`futures::Stream`].
+// pub fn into_stream<T>(c: Connection<T>) -> impl futures::stream::Stream<Item = Result<Stream>>
+// where
+//     T: Read2 + Write2 + Unpin + Send,
+// {
+//     futures::stream::unfold(c, |mut c| async {
+//         match c.next_stream().await {
+//             Ok(None) => None,
+//             Ok(Some(stream)) => Some((Ok(stream), c)),
+//             Err(e) => Some((Err(e), c)),
+//         }
+//     })
+// }
