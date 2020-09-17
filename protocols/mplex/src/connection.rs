@@ -3,12 +3,10 @@ pub mod stream;
 
 use futures::{
     channel::{mpsc, oneshot},
-    future::{select, Either},
     prelude::*,
     select,
     stream::FusedStream,
 };
-use futures_timer::Delay;
 
 use crate::{
     error::ConnectionError,
@@ -21,7 +19,6 @@ use nohash_hasher::IntMap;
 use std::collections::VecDeque;
 use std::fmt;
 use std::pin::Pin;
-use std::time::Duration;
 use stream::Stream;
 
 /// `Control` to `Connection` commands.
