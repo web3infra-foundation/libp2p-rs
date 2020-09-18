@@ -2,7 +2,6 @@ use async_std::{
     net::{TcpListener, TcpStream},
     task,
 };
-use futures::prelude::*;
 use log::info;
 
 use libp2p_traits::{Read2, Write2};
@@ -27,7 +26,7 @@ fn run_server() {
             info!("accepted a socket: {:?}", socket.peer_addr());
 
             task::spawn(async move {
-                let mut conn = Connection::new(socket, Config::default(), Mode::Server);
+                let conn = Connection::new(socket, Config::default(), Mode::Server);
                 let mut ctrl = conn.control();
 
                 task::spawn(async {
