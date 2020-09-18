@@ -3,7 +3,6 @@ use async_std::{
     task,
 };
 use bytesize::ByteSize;
-use futures::prelude::*;
 use log::info;
 use std::{
     str,
@@ -75,7 +74,7 @@ fn run_server() {
 
         while let Ok((socket, _)) = listener.accept().await {
             info!("accepted a socket: {:?}", socket.peer_addr());
-            let mut conn = Connection::new(socket, Config::default(), Mode::Server);
+            let conn = Connection::new(socket, Config::default(), Mode::Server);
             let mut ctrl = conn.control();
             task::spawn(async move {
                 task::spawn(async {
