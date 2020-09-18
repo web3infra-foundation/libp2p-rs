@@ -28,7 +28,7 @@ async fn roundtrip(address: SocketAddr, nstreams: usize, data: Arc<Vec<u8>>) {
     let server = async move {
         let socket = listener.accept().await.expect("accept").0;
         task::spawn(async move {
-            let mut conn = Connection::new(socket, Config::default(), Mode::Server);
+            let conn = Connection::new(socket, Config::default(), Mode::Server);
             let mut ctrl = conn.control();
 
             task::spawn(async {
@@ -54,7 +54,10 @@ async fn roundtrip(address: SocketAddr, nstreams: usize, data: Arc<Vec<u8>>) {
                         log::error!("{} write failed: {:?}", stream.id(), e);
                         return;
                     }
-                    stream.close2().await;
+                    if let Err(e) = stream.close2().await {
+                        log::error!("{} close failed: {:?}", stream.id(), e);
+                        return;
+                    }
                 });
             }
         });

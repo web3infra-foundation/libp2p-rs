@@ -13,7 +13,6 @@ use async_std::{
     net::{TcpListener, TcpStream},
     task,
 };
-use futures::{future, prelude::*};
 use libp2p_traits::{Read2, ReadExt2, Write2};
 use quickcheck::{Arbitrary, Gen, QuickCheck, TestResult};
 use rand::Rng;
@@ -117,7 +116,7 @@ fn prop_send_recv_half_closed() {
             // Server should be able to write on a stream shutdown by the client.
             let server = async {
                 let socket = listener.accept().await.expect("accept").0;
-                let mut connection = Connection::new(socket, Config::default(), Mode::Server);
+                let connection = Connection::new(socket, Config::default(), Mode::Server);
                 let mut ctrl = connection.control();
                 task::spawn(async {
                     let mut muxer_conn = connection;

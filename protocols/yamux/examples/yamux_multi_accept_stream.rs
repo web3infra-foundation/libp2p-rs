@@ -24,7 +24,7 @@ fn run_server() {
         while let Ok((socket, _)) = listener.accept().await {
             task::spawn(async move {
                 let muxer_conn = Connection::new(socket, Config::default(), Mode::Server);
-                let mut ctrl = muxer_conn.control();
+                let ctrl = muxer_conn.control();
                 // let mut handles = VecDeque::new();
 
                 task::spawn(async {
@@ -33,36 +33,43 @@ fn run_server() {
                     info!("connection is closed");
                 });
 
-                while let Ok(mut stream) = ctrl.accept_stream().await {
-                    info!("accepted new stream: {}", stream.id());
-                    let _handle = task::spawn(async move {
-                        let mut buf = [0; 256];
-
-                        loop {
-                            let n = match stream.read2(&mut buf).await {
-                                Ok(num) => num,
-                                Err(e) => {
-                                    error!("{} read failed: {:?}", stream.id(), e);
-                                    return;
+                let mut handles = VecDeque::new();
+                for i in 0..3 {
+                    let mut ctrl = ctrl.clone();
+                    let handle = task::spawn(async move {
+                        while let Ok(mut stream) = ctrl.accept_stream().await {
+                            info!("{} accepted new stream: {}", i, stream.id());
+                            task::spawn(async move {
+                                let mut buf = [0; 256];
+                                loop {
+                                    let n = match stream.read2(&mut buf).await {
+                                        Ok(num) => num,
+                                        Err(e) => {
+                                            error!("{} read failed: {:?}", stream.id(), e);
+                                            return;
+                                        }
+                                    };
+                                    info!("{} read {} bytes", stream.id(), n);
+                                    if n == 0 {
+                                        return;
+                                    }
+                                    // info!("{} read {:?}", stream.id(), &buf[..n]);
+                                    if let Err(e) = stream.write_all2(buf[..n].as_ref()).await {
+                                        error!("{} write failed: {:?}", stream.id(), e);
+                                        return;
+                                    };
+                                    // stream.close2().await.expect("close stream");
                                 }
-                            };
-                            info!("{} read {} bytes", stream.id(), n);
-                            if n == 0 {
-                                break;
-                            }
-                            // info!("{} read {:?}", stream.id(), &buf[..n]);
-                            if let Err(e) = stream.write_all2(buf[..n].as_ref()).await {
-                                error!("{} write failed: {:?}", stream.id(), e);
-                                return;
-                            };
-                            // stream.close2().await.expect("close stream");
+                            });
                         }
+                        error!("{} accept stream failed, exit now", i);
                     });
-                    // handles.push_back(handle);
+                    handles.push_back(handle);
                 }
-                // while let Some(handle) = handles.pop_front() {
-                //     handle.await;
-                // }
+
+                while let Some(handle) = handles.pop_front() {
+                    handle.await;
+                }
             });
         }
     });

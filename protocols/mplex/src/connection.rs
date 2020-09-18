@@ -3,10 +3,12 @@ pub mod stream;
 
 use futures::{
     channel::{mpsc, oneshot},
+    future::{select, Either},
     prelude::*,
     select,
     stream::FusedStream,
 };
+use futures_timer::Delay;
 
 use crate::{
     error::ConnectionError,
@@ -19,6 +21,7 @@ use nohash_hasher::IntMap;
 use std::collections::VecDeque;
 use std::fmt;
 use std::pin::Pin;
+use std::time::Duration;
 use stream::Stream;
 
 /// `Control` to `Connection` commands.
@@ -109,6 +112,7 @@ impl Shutdown {
 /// Since each `mpsc::Sender` gets a guaranteed slot in a channel the
 /// actual upper bound is this value + number of clones.
 const MAX_COMMAND_BACKLOG: usize = 32;
+const RECEIVE_TIMEOUT: Duration = Duration::from_secs(5);
 
 type Result<T> = std::result::Result<T, ConnectionError>;
 
@@ -124,7 +128,7 @@ pub struct Connection<T> {
     stream_receiver: mpsc::Receiver<StreamCommand>,
     control_sender: mpsc::Sender<ControlCommand>,
     control_receiver: Pausable<mpsc::Receiver<ControlCommand>>,
-    accept_stream: Option<oneshot::Sender<Result<stream::Stream>>>,
+    accept_stream_senders: VecDeque<oneshot::Sender<Result<stream::Stream>>>,
     pending_streams: VecDeque<stream::Stream>,
 }
 
@@ -155,7 +159,7 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
             stream_receiver,
             control_sender,
             control_receiver: Pausable::new(control_receiver),
-            accept_stream: None,
+            accept_stream_senders: VecDeque::default(),
             pending_streams: VecDeque::default(),
         }
     }
@@ -173,13 +177,10 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
 
         let result = self.handle_coming().await;
         log::error!("{}: error exit, {:?}", self.id, result);
-        // if let Ok(Some(_)) = result {
-        //     return result;
-        // }
 
         self.is_closed = true;
 
-        if let Some(sender) = self.accept_stream.take() {
+        while let Some(sender) = self.accept_stream_senders.pop_front() {
             sender.send(Err(ConnectionError::Closed)).expect("send err");
         }
 
@@ -262,7 +263,7 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
                 );
 
                 log::info!("{}: new inbound {} of {}", self.id, stream, self);
-                if let Some(sender) = self.accept_stream.take() {
+                if let Some(sender) = self.accept_stream_senders.pop_front() {
                     sender.send(Ok(stream)).expect("send err");
                 } else {
                     self.pending_streams.push_back(stream);
@@ -274,10 +275,17 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
                 // If stream is closed, ignore frame
                 if let Some(stream_sender) = self.streams.get_mut(&stream_id) {
                     if !stream_sender.is_closed() {
-                        stream_sender
-                            .send(frame.body().to_vec())
-                            .await
-                            .expect("send err");
+                        let sender = stream_sender.send(frame.body().to_vec());
+                        if send_channel_timeout(sender, RECEIVE_TIMEOUT).await.is_err() {
+                            // reset stream
+                            log::error!("stream {} send timeout, Reset it", stream_id);
+                            dropped = true;
+                            let frame = Frame::reset_frame(stream_id);
+                            self.writer
+                                .send_frame(&frame)
+                                .await
+                                .or(Err(ConnectionError::Closed))?;
+                        }
                     } else {
                         dropped = true;
                     }
@@ -305,7 +313,7 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
                 self.writer
                     .send_frame(&frame)
                     .await
-                    .or(Err(ConnectionError::Closed))?
+                    .or(Err(ConnectionError::Closed))?;
             }
             Some(StreamCommand::CloseStream(id)) => {
                 log::info!("{}: closing stream {} of {}", self.id, id, self);
@@ -362,14 +370,10 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
                 reply.send(Ok(stream)).expect("send err");
             }
             Some(ControlCommand::AcceptStream(reply)) => {
-                if !self.pending_streams.is_empty() {
-                    if let Some(stream) = self.pending_streams.pop_front() {
-                        reply.send(Ok(stream)).expect("send err");
-                    }
-                    return Ok(());
-                }
-                if self.accept_stream.is_none() {
-                    self.accept_stream = Some(reply);
+                if let Some(stream) = self.pending_streams.pop_front() {
+                    reply.send(Ok(stream)).expect("send err");
+                } else {
+                    self.accept_stream_senders.push_back(reply);
                 }
             }
             Some(ControlCommand::CloseConnection(reply)) => {
@@ -405,19 +409,16 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
     }
 }
 
-// async fn SendTimeout<F>(future: F, timeout: Duration) -> std::io::Result<()>
-//     where F: Future + Unpin
-// {
-//     let output = select(future, Delay::new(timeout)).await;
-//     match output {
-//         Either::Left((a, b)) => {
-//             Ok(())
-//         }
-//         Either::Right(_) => {
-//             Err(())
-//         }
-//     }
-// }
+async fn send_channel_timeout<F>(future: F, timeout: Duration) -> std::io::Result<()>
+where
+    F: Future + Unpin,
+{
+    let output = select(future, Delay::new(timeout)).await;
+    match output {
+        Either::Left((_, _)) => Ok(()),
+        Either::Right(_) => Err(std::io::ErrorKind::TimedOut.into()),
+    }
+}
 
 impl<T> fmt::Display for Connection<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
