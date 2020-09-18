@@ -2,16 +2,14 @@ use async_std::task;
 use log::{error, info};
 
 use libp2p_core::transport::upgrade::TransportUpgrade;
-use libp2p_core::transport::{TransportError, TransportListener};
+use libp2p_core::transport::TransportListener;
 use libp2p_core::{Multiaddr, Transport};
 use libp2p_tcp::TcpConfig;
-use libp2p_traits::{copy, Read2, ReadExt2, Write2};
+use libp2p_traits::{Read2, Write2};
 
-use futures::future;
-use futures::StreamExt;
 use libp2p_core::identity::Keypair;
 use libp2p_core::muxing::StreamMuxer;
-use libp2p_core::upgrade::{DummyUpgrader, Selector};
+use libp2p_core::upgrade::Selector;
 use mplex;
 use secio;
 use yamux;
