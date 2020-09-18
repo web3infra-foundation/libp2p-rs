@@ -128,7 +128,7 @@ pub struct Connection<T> {
     stream_receiver: mpsc::Receiver<StreamCommand>,
     control_sender: mpsc::Sender<ControlCommand>,
     control_receiver: Pausable<mpsc::Receiver<ControlCommand>>,
-    accept_stream: Option<oneshot::Sender<Result<stream::Stream>>>,
+    accept_stream_senders: VecDeque<oneshot::Sender<Result<stream::Stream>>>,
     pending_streams: VecDeque<stream::Stream>,
 }
 
@@ -159,7 +159,7 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
             stream_receiver,
             control_sender,
             control_receiver: Pausable::new(control_receiver),
-            accept_stream: None,
+            accept_stream_senders: VecDeque::default(),
             pending_streams: VecDeque::default(),
         }
     }
@@ -180,7 +180,7 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
 
         self.is_closed = true;
 
-        if let Some(sender) = self.accept_stream.take() {
+        while let Some(sender) = self.accept_stream_senders.pop_front() {
             sender.send(Err(ConnectionError::Closed)).expect("send err");
         }
 
@@ -263,7 +263,7 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
                 );
 
                 log::info!("{}: new inbound {} of {}", self.id, stream, self);
-                if let Some(sender) = self.accept_stream.take() {
+                if let Some(sender) = self.accept_stream_senders.pop_front() {
                     sender.send(Ok(stream)).expect("send err");
                 } else {
                     self.pending_streams.push_back(stream);
@@ -370,14 +370,10 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
                 reply.send(Ok(stream)).expect("send err");
             }
             Some(ControlCommand::AcceptStream(reply)) => {
-                if !self.pending_streams.is_empty() {
-                    if let Some(stream) = self.pending_streams.pop_front() {
-                        reply.send(Ok(stream)).expect("send err");
-                    }
-                    return Ok(());
-                }
-                if self.accept_stream.is_none() {
-                    self.accept_stream = Some(reply);
+                if let Some(stream) = self.pending_streams.pop_front() {
+                    reply.send(Ok(stream)).expect("send err");
+                } else {
+                    self.accept_stream_senders.push_back(reply);
                 }
             }
             Some(ControlCommand::CloseConnection(reply)) => {
