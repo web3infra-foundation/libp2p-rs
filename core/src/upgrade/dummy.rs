@@ -34,6 +34,7 @@ use std::{fmt, io};
 ///
 /// Useful for testing purposes.
 pub struct DummyUpgrader;
+
 pub struct DummyStream<T>(T);
 
 impl<T> Clone for DummyStream<T> {
@@ -41,6 +42,13 @@ impl<T> Clone for DummyStream<T> {
         unimplemented!()
     }
 }
+
+impl<T> fmt::Debug for DummyStream<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("DummyStream")
+    }
+}
+
 
 impl DummyUpgrader {
     /// Builds a new `DummyUpgrader`.
