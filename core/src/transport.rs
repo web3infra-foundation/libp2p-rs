@@ -89,7 +89,7 @@ pub trait Transport: Send {
     /// Typically the output contains at least a handle to a data stream (i.e. a
     /// connection or a substream multiplexer on top of a connection) that
     /// provides APIs for sending and receiving data through the connection.
-    type Output: Send;
+    type Output: ConnectionInfo;
 
     /// A stream of [`Output`](Transport::Output)s for inbound connections.
     ///
@@ -246,6 +246,9 @@ pub trait TransportListener: Send {
 
 pub struct Incoming<'a, T>(&'a mut T);
 
+/// Implements Stream for Listener
+///
+///
 impl<'a, T> Stream for Incoming<'a, T>
 where
     T: TransportListener,
@@ -259,6 +262,14 @@ where
         let socket = futures::ready!(future.poll(cx))?;
         Poll::Ready(Some(Ok(socket)))
     }
+}
+
+/// The trait for the connection, which is bound by Transport::Output
+/// mark as 'Send' due to Transport::Output must be 'Send'
+///
+pub trait ConnectionInfo: Send {
+    fn local_multiaddr(&self) -> Multiaddr;
+    fn remote_multiaddr(&self) -> Multiaddr;
 }
 
 /// Event produced by [`Transport::Listener`]s.

@@ -21,9 +21,9 @@
 use crate::identity::Keypair;
 use crate::muxing::StreamMuxer;
 use crate::secure_io::SecureInfo;
-use crate::transport::TransportError;
+use crate::transport::{TransportError, ConnectionInfo};
 use crate::upgrade::{UpgradeInfo, Upgrader};
-use crate::{PeerId, PublicKey};
+use crate::{PeerId, PublicKey, Multiaddr};
 use async_trait::async_trait;
 use futures::future::BoxFuture;
 use libp2p_traits::{Read2, Write2};
@@ -128,7 +128,7 @@ impl<T: Send + Write2> Write2 for DummyStream<T> {
 }
 
 #[async_trait]
-impl<T: Send> StreamMuxer for DummyStream<T> {
+impl<T: ConnectionInfo> StreamMuxer for DummyStream<T> {
     type Substream = ();
 
     async fn open_stream(&mut self) -> Result<Self::Substream, TransportError> {
@@ -148,6 +148,18 @@ impl<T: Send> StreamMuxer for DummyStream<T> {
     }
 }
 
+impl<T: ConnectionInfo> ConnectionInfo for DummyStream<T> {
+    fn local_multiaddr(&self) -> Multiaddr {
+        self.0.local_multiaddr()
+    }
+
+    fn remote_multiaddr(&self) -> Multiaddr {
+        self.0.remote_multiaddr()
+    }
+}
+
+/// A fake implementation of SecureInfo for DummyStream<T>
+/// required by StreamMuxer: SecureInfo + ...
 impl<T> SecureInfo for DummyStream<T> {
     fn local_peer(&self) -> PeerId {
         PeerId::random()
@@ -162,6 +174,6 @@ impl<T> SecureInfo for DummyStream<T> {
     }
 
     fn remote_pub_key(&self) -> PublicKey {
-        unimplemented!()
+        Keypair::generate_ed25519().public()
     }
 }

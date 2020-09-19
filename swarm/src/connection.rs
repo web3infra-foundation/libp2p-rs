@@ -228,6 +228,16 @@ where
         }
     }
 
+    /// local_addr is the multiaddr on our side of the connection
+    pub fn local_addr(&self) -> Multiaddr {
+        self.muxer.local_multiaddr()
+    }
+
+    /// remote_addr is the multiaddr on the remote side of the connection
+    pub fn remote_addr(&self) -> Multiaddr {
+        self.muxer.remote_multiaddr()
+    }
+
     /// local_peer is the Peer on our side of the connection
     pub fn local_peer(&self) -> PeerId {
         self.muxer.local_peer()

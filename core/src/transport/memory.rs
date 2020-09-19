@@ -1,17 +1,19 @@
-use crate::transport::TransportListener;
+use crate::transport::{TransportListener, ConnectionInfo};
 use crate::{transport::TransportError, Transport};
 use async_trait::async_trait;
 use fnv::FnvHashMap;
-use futures::{channel::mpsc, prelude::*, task::Context, task::Poll};
+use futures::{channel::mpsc, prelude::*, task::Context, task::Poll, AsyncWriteExt, AsyncReadExt};
 use futures::{SinkExt, StreamExt};
 use lazy_static::lazy_static;
 use multiaddr::{Multiaddr, Protocol};
 use parking_lot::Mutex;
 use rw_stream_sink::RwStreamSink;
 use std::{collections::hash_map::Entry, io, num::NonZeroU64, pin::Pin};
+use libp2p_traits::{Read2, Write2};
+use futures::io::Error;
 
 lazy_static! {
-    static ref HUB: Mutex<FnvHashMap<NonZeroU64, mpsc::Sender<Channel<Vec<u8>>>>> =
+    static ref HUB: Mutex<FnvHashMap<NonZeroU64, mpsc::Sender<Channel>>> =
         Mutex::new(FnvHashMap::default());
 }
 
@@ -19,42 +21,9 @@ lazy_static! {
 #[derive(Debug, Copy, Clone, Default)]
 pub struct MemoryTransport;
 
-/// Connection to a `MemoryTransport` currently being opened.
-pub struct DialFuture {
-    sender: mpsc::Sender<Channel<Vec<u8>>>,
-    channel_to_send: Option<Channel<Vec<u8>>>,
-    channel_to_return: Option<Channel<Vec<u8>>>,
-}
-
-impl Future for DialFuture {
-    type Output = Result<Channel<Vec<u8>>, TransportError>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        match self.sender.poll_ready(cx) {
-            Poll::Pending => return Poll::Pending,
-            Poll::Ready(Ok(())) => {}
-            Poll::Ready(Err(_)) => return Poll::Ready(Err(TransportError::Unreachable)),
-        }
-
-        let channel_to_send = self
-            .channel_to_send
-            .take()
-            .expect("Future should not be polled again once complete");
-        match self.sender.start_send(channel_to_send) {
-            Err(_) => return Poll::Ready(Err(TransportError::Unreachable)),
-            Ok(()) => {}
-        }
-
-        Poll::Ready(Ok(self
-            .channel_to_return
-            .take()
-            .expect("Future should not be polled again once complete")))
-    }
-}
-
 #[async_trait]
 impl Transport for MemoryTransport {
-    type Output = Channel<Vec<u8>>;
+    type Output = Channel;
     type Listener = Listener;
 
     fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
@@ -118,14 +87,26 @@ impl Transport for MemoryTransport {
 
         let (a_tx, a_rx) = mpsc::channel(4096);
         let (b_tx, b_rx) = mpsc::channel(4096);
-        let channel_to_send = RwStreamSink::new(Chan {
-            incoming: a_rx,
-            outgoing: b_tx,
-        });
-        let channel_to_return = RwStreamSink::new(Chan {
-            incoming: b_rx,
-            outgoing: a_tx,
-        });
+
+        let la = Multiaddr::empty();
+        let ra = addr;
+
+        let channel_to_send = Channel {
+            io: RwStreamSink::new(Chan {
+                incoming: a_rx,
+                outgoing: b_tx,
+            }),
+            la: la.clone(),
+            ra: ra.clone(),
+        };
+        let channel_to_return = Channel {
+            io: RwStreamSink::new(Chan {
+                incoming: b_rx,
+                outgoing: a_tx,
+            }),
+            la: la.clone(),
+            ra: ra.clone(),
+        };
         sender
             .send(channel_to_send)
             .await
@@ -141,12 +122,12 @@ pub struct Listener {
     /// The address we are listening on.
     addr: Multiaddr,
     /// Receives incoming connections.
-    receiver: mpsc::Receiver<Channel<Vec<u8>>>,
+    receiver: mpsc::Receiver<Channel>,
 }
 
 #[async_trait]
 impl TransportListener for Listener {
-    type Output = Channel<Vec<u8>>;
+    type Output = Channel;
 
     async fn accept(&mut self) -> Result<Self::Output, TransportError> {
         self.receiver
@@ -186,8 +167,33 @@ fn parse_memory_addr(a: &Multiaddr) -> Result<u64, ()> {
 
 /// A channel represents an established, in-memory, logical connection between two endpoints.
 ///
-/// Implements `AsyncRead` and `AsyncWrite`.
-pub type Channel<T> = RwStreamSink<Chan<T>>;
+/// Implements `Read2` and `Write2`.
+pub struct Channel {
+    io: RwStreamSink<Chan<Vec<u8>>>,
+    la: Multiaddr,
+    ra: Multiaddr,
+}
+
+#[async_trait]
+impl Read2 for Channel {
+    async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
+        self.io.read(buf).await
+    }
+}
+#[async_trait]
+impl Write2 for Channel {
+    async fn write2(&mut self, buf: &[u8]) -> Result<usize, Error> {
+        self.io.write(buf).await
+    }
+
+    async fn flush2(&mut self) -> Result<(), Error> {
+        self.io.flush().await
+    }
+
+    async fn close2(&mut self) -> Result<(), Error> {
+        self.io.close().await
+    }
+}
 
 /// A channel represents an established, in-memory, logical connection between two endpoints.
 ///
@@ -235,9 +241,13 @@ impl<T> Sink<T> for Chan<T> {
     }
 }
 
-impl<T: AsRef<[u8]>> Into<RwStreamSink<Chan<T>>> for Chan<T> {
-    fn into(self) -> RwStreamSink<Chan<T>> {
-        RwStreamSink::new(self)
+impl ConnectionInfo for Channel {
+    fn local_multiaddr(&self) -> Multiaddr {
+        self.la.clone()
+    }
+
+    fn remote_multiaddr(&self) -> Multiaddr {
+        self.ra.clone()
     }
 }
 
@@ -323,14 +333,6 @@ mod tests {
 
         let listener = async move {
             let mut listener = t1.listen_on(t1_addr.clone()).unwrap();
-
-            // kingwel, TBD  upgrade memory transport
-
-            // let upgrade = listener.filter_map(|ev| futures::future::ready(
-            //     ListenerEvent::into_upgrade(ev.unwrap())
-            // )).next().await.unwrap();
-
-            // let mut socket = upgrade.0.await.unwrap();
 
             let mut socket = listener.accept().await.unwrap();
 
