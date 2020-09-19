@@ -18,13 +18,16 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use crate::muxing::StreamMuxer;
-use crate::transport::TransportError;
-use crate::upgrade::ProtocolName;
+use std::io;
 use async_trait::async_trait;
 use futures::future::BoxFuture;
 use libp2p_traits::{Read2, Write2};
-use std::io;
+use crate::muxing::StreamMuxer;
+use crate::transport::TransportError;
+use crate::upgrade::ProtocolName;
+use crate::secure_io::SecureInfo;
+use crate::identity::Keypair;
+use crate::{PublicKey, PeerId};
 
 #[derive(Debug, Copy, Clone)]
 pub enum EitherOutput<A, B> {
@@ -70,6 +73,40 @@ where
         match self {
             EitherOutput::A(a) => Write2::close2(a).await,
             EitherOutput::B(b) => Write2::close2(b).await,
+        }
+    }
+}
+
+impl<A, B> SecureInfo for EitherOutput<A, B>
+where
+    A: SecureInfo,
+    B: SecureInfo,
+{
+    fn local_peer(&self) -> PeerId {
+        match self {
+            EitherOutput::A(a) => a.local_peer(),
+            EitherOutput::B(b) => b.local_peer(),
+        }
+    }
+
+    fn remote_peer(&self) -> PeerId {
+        match self {
+            EitherOutput::A(a) => a.remote_peer(),
+            EitherOutput::B(b) => b.remote_peer(),
+        }
+    }
+
+    fn local_priv_key(&self) -> Keypair {
+        match self {
+            EitherOutput::A(a) => a.local_priv_key(),
+            EitherOutput::B(b) => b.local_priv_key(),
+        }
+    }
+
+    fn remote_pub_key(&self) -> PublicKey {
+        match self {
+            EitherOutput::A(a) => a.remote_pub_key(),
+            EitherOutput::B(b) => b.remote_pub_key(),
         }
     }
 }
