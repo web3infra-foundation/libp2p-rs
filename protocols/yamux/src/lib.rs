@@ -198,7 +198,10 @@ impl<C> Clone for Yamux<C> {
 
 impl<C> fmt::Debug for Yamux<C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("Yamux")
+        //f.write_str("Yamux Connection {}")
+        f.debug_struct("Yamux")
+            .field("control", &self.control)
+            .finish()
     }
 }
 
