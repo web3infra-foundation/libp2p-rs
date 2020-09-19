@@ -7,6 +7,7 @@ use libp2p_core::PublicKey;
 use smallvec::SmallVec;
 use std::hash::Hash;
 use std::{error::Error, fmt, io};
+use async_std::task::JoinHandle;
 
 /// The direction of a peer-to-peer communication channel.
 #[derive(Debug, Clone, PartialEq)]
@@ -168,18 +169,31 @@ pub enum Event<T> {
     AddressChange(Multiaddr),
 }
 
+pub type ConnectionId = usize;
+
 /// A multiplexed connection to a peer with associated `Substream`s.
 #[allow(dead_code)]
-pub struct Connection<TMuxer>
-where
-    TMuxer: StreamMuxer,
+pub struct Connection<TMuxer: StreamMuxer>
 {
+    /// The unique ID for a connection
+    pub(crate) id: usize,
     /// Node that handles the muxer.
     pub(crate) muxer: TMuxer,
     /// Handler that processes substreams.
     pub(crate) substreams: SmallVec<[TMuxer::Substream; 8]>,
     /// Direction of this connection
     pub(crate) dir: Direction,
+
+    /// The task handle of this connection, returned by task::Spawn
+    /// handle.await() when closing a connection
+    pub(crate) handle: JoinHandle<()>,
+}
+
+impl<TMuxer: StreamMuxer> PartialEq for Connection<TMuxer>
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
 }
 
 impl<TMuxer> fmt::Debug for Connection<TMuxer>
@@ -204,11 +218,13 @@ where
 {
     /// Builds a new `Connection` from the given substream multiplexer
     /// and connection handler.
-    pub fn new(muxer: TMuxer, dir: Direction) -> Self {
+    pub fn new(id: ConnectionId, muxer: TMuxer, dir: Direction, handle: JoinHandle<()>) -> Self {
         Connection {
+            id,
             muxer,
             dir,
             substreams: Default::default(),
+            handle,
         }
     }
 
@@ -394,21 +410,5 @@ impl std::error::Error for PendingConnectionError {
             PendingConnectionError::InvalidPeerId => None,
             PendingConnectionError::ConnectionLimit(..) => None,
         }
-    }
-}
-
-/// Connection identifier.
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ConnectionId(usize);
-
-#[allow(dead_code)]
-impl ConnectionId {
-    /// Creates a `ConnectionId` from a non-negative integer.
-    ///
-    /// This is primarily useful for creating connection IDs
-    /// in test environments. There is in general no guarantee
-    /// that all connection IDs are based on non-negative integers.
-    pub fn new(id: usize) -> Self {
-        ConnectionId(id)
     }
 }
