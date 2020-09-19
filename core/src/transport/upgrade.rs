@@ -4,7 +4,7 @@
 
 use crate::muxing::StreamMuxer;
 use crate::secure_io::SecureInfo;
-use crate::transport::TransportListener;
+use crate::transport::{TransportListener, ConnectionInfo};
 use crate::upgrade::multistream::Multistream;
 use crate::upgrade::Upgrader;
 use crate::{transport::TransportError, Multiaddr, Transport};
@@ -25,8 +25,9 @@ pub struct TransportUpgrade<InnerTrans, TMux, TSec> {
 impl<InnerTrans, TMux, TSec> TransportUpgrade<InnerTrans, TMux, TSec>
 where
     InnerTrans: Transport,
-    InnerTrans::Output: Read2 + Write2 + Unpin,
+    InnerTrans::Output: ConnectionInfo + Read2 + Write2 + Unpin,
     TSec: Upgrader<InnerTrans::Output> + Send + Clone,
+    TSec::Output: SecureInfo + Read2 + Write2 + Unpin,
     TMux: Upgrader<TSec::Output>,
     TMux::Output: StreamMuxer,
 {
@@ -44,7 +45,7 @@ where
 impl<InnerTrans, TMux, TSec> Transport for TransportUpgrade<InnerTrans, TMux, TSec>
 where
     InnerTrans: Transport,
-    InnerTrans::Output: Read2 + Write2 + Unpin,
+    InnerTrans::Output: ConnectionInfo + Read2 + Write2 + Unpin,
     TSec: Upgrader<InnerTrans::Output> + Send + Clone,
     TSec::Output: SecureInfo + Read2 + Write2 + Unpin,
     TMux: Upgrader<TSec::Output>,
@@ -88,7 +89,7 @@ impl<InnerListener, TMux, TSec> ListenerUpgrade<InnerListener, TMux, TSec> {
 impl<InnerListener, TMux, TSec> TransportListener for ListenerUpgrade<InnerListener, TMux, TSec>
 where
     InnerListener: TransportListener,
-    InnerListener::Output: Read2 + Write2 + Unpin,
+    InnerListener::Output: ConnectionInfo + Read2 + Write2 + Unpin,
     TSec: Upgrader<InnerListener::Output> + Send + Clone,
     TSec::Output: SecureInfo + Read2 + Write2 + Unpin,
     TMux: Upgrader<TSec::Output>,

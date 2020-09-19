@@ -405,7 +405,7 @@ where
     async fn on_event(&mut self, event: SwarmEvent<TTrans::Output, <TTrans::Output as StreamMuxer>::Substream>) -> Result<()> {
         match event {
             SwarmEvent::ListenerClosed { addresses, reason } => {},
-            SwarmEvent::ConnectionEstablished { mut stream_muxer, direction, local_addr, send_back_addr, pending_request } => {
+            SwarmEvent::ConnectionEstablished { stream_muxer, direction, local_addr, send_back_addr, pending_request } => {
                 // clone the connection
                 let mut sm = stream_muxer.clone();
                 self.handle_new_connection(stream_muxer, direction).await;

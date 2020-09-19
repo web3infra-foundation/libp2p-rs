@@ -23,11 +23,11 @@ use async_trait::async_trait;
 use futures::future::BoxFuture;
 use libp2p_traits::{Read2, Write2};
 use crate::muxing::StreamMuxer;
-use crate::transport::TransportError;
+use crate::transport::{TransportError, ConnectionInfo};
 use crate::upgrade::ProtocolName;
 use crate::secure_io::SecureInfo;
 use crate::identity::Keypair;
-use crate::{PublicKey, PeerId};
+use crate::{PublicKey, PeerId, Multiaddr};
 
 #[derive(Debug, Copy, Clone)]
 pub enum EitherOutput<A, B> {
@@ -114,8 +114,8 @@ where
 #[async_trait]
 impl<A, B> StreamMuxer for EitherOutput<A, B>
 where
-    A: StreamMuxer + Send,
-    B: StreamMuxer + Send,
+    A: StreamMuxer,
+    B: StreamMuxer,
 {
     type Substream = EitherOutput<A::Substream, B::Substream>;
 
@@ -144,6 +144,26 @@ where
         match self {
             EitherOutput::A(a) => a.task(),
             EitherOutput::B(b) => b.task(),
+        }
+    }
+}
+
+impl<A, B> ConnectionInfo for EitherOutput<A, B>
+    where
+        A: ConnectionInfo,
+        B: ConnectionInfo,
+{
+    fn local_multiaddr(&self) -> Multiaddr {
+        match self {
+            EitherOutput::A(a) => a.local_multiaddr(),
+            EitherOutput::B(b) => b.local_multiaddr(),
+        }
+    }
+
+    fn remote_multiaddr(&self) -> Multiaddr {
+        match self {
+            EitherOutput::A(a) => a.remote_multiaddr(),
+            EitherOutput::B(b) => b.remote_multiaddr(),
         }
     }
 }

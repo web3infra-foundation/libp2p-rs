@@ -28,6 +28,7 @@ use std::{
     task::{Context, Poll},
     time::Duration,
 };
+use libp2p_core::transport::ConnectionInfo;
 
 /// Represents the configuration for a TCP/IP transport capability for libp2p.
 ///
@@ -173,7 +174,11 @@ impl Transport for TcpConfig {
 
         let stream = TcpStream::connect(&socket_addr).await?;
         apply_config(&self, &stream)?;
-        Ok(TcpTransStream { inner: stream })
+
+        // figure out the local sock address
+        let local_addr = stream.local_addr()?;
+        let la = ip_to_multiaddr(local_addr.ip(), local_addr.port());
+        Ok(TcpTransStream { inner: stream, la, ra: addr })
     }
 }
 
@@ -199,9 +204,13 @@ impl TransportListener for TcpTransListener {
     type Output = TcpTransStream;
 
     async fn accept(&mut self) -> Result<Self::Output, TransportError> {
-        let (stream, _) = self.inner.accept().await?;
+        let (stream, sock_addr) = self.inner.accept().await?;
         apply_config(&self.config, &stream)?;
-        Ok(TcpTransStream { inner: stream })
+
+        let local_addr = stream.local_addr()?;
+        let la = ip_to_multiaddr(local_addr.ip(), local_addr.port());
+        let ra = ip_to_multiaddr(sock_addr.ip(), sock_addr.port());
+        Ok(TcpTransStream { inner: stream, la, ra })
     }
 
     fn multi_addr(&self) -> Multiaddr {
@@ -302,6 +311,18 @@ impl TcpListenStream {
 #[derive(Debug)]
 pub struct TcpTransStream {
     inner: TcpStream,
+    la: Multiaddr,
+    ra: Multiaddr,
+}
+
+impl ConnectionInfo for TcpTransStream {
+    fn local_multiaddr(&self) -> Multiaddr {
+        self.la.clone()
+    }
+
+    fn remote_multiaddr(&self) -> Multiaddr {
+        self.ra.clone()
+    }
 }
 
 impl Drop for TcpTransStream {

@@ -5,6 +5,7 @@ use crate::{
 use async_trait::async_trait;
 use libp2p_traits::{Read2, Write2};
 use pnet::{Pnet, PnetConfig, PnetOutput};
+use crate::transport::ConnectionInfo;
 
 #[derive(Debug, Copy, Clone)]
 pub struct ProtectorTransport<InnerTrans> {
@@ -72,5 +73,15 @@ where
 
     fn multi_addr(&self) -> Multiaddr {
         self.inner.multi_addr()
+    }
+}
+
+// TODO: move this to pnet folder
+impl<S: ConnectionInfo> ConnectionInfo for PnetOutput<S> {
+    fn local_multiaddr(&self) -> Multiaddr {
+        unimplemented!()
+    }
+    fn remote_multiaddr(&self) -> Multiaddr {
+        unimplemented!()
     }
 }

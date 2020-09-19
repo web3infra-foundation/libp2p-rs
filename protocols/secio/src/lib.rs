@@ -10,11 +10,11 @@ use crate::{
 };
 
 use libp2p_core::identity::Keypair;
-use libp2p_core::{PeerId, PublicKey};
+use libp2p_core::{PeerId, PublicKey, Multiaddr};
 
 use crate::codec::secure_stream::SecureStream;
 use libp2p_core::secure_io::SecureInfo;
-use libp2p_core::transport::TransportError;
+use libp2p_core::transport::{TransportError, ConnectionInfo};
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
 use libp2p_traits::{Read2, Write2};
 use std::io;
@@ -142,18 +142,21 @@ impl UpgradeInfo for Config {
 
 async fn make_secure_output<T>(config: Config, socket: T) -> Result<SecioOutput<T>, TransportError>
 where
-    T: Read2 + Write2 + Send + Unpin + 'static,
+    T: ConnectionInfo + Read2 + Write2 + Send + Unpin + 'static,
 {
     // TODO: to be more elegant, local private key could be returned by handshake()
     let pri_key = config.key.clone();
+    let la = socket.local_multiaddr();
+    let ra = socket.remote_multiaddr();
 
-    let (stream, remote_pub_key, ephemeral_public_key) = config.handshake(socket).await?;
+    let (stream, remote_pub_key, _ephemeral_public_key) = config.handshake(socket).await?;
     let output = SecioOutput {
         stream,
+        la,
+        ra,
         local_priv_key: pri_key.clone(),
         local_peer_id: pri_key.public().into(),
         remote_pub_key: remote_pub_key.clone(),
-        ephemeral_public_key,
         remote_peer_id: remote_pub_key.into(),
     };
     Ok(output)
@@ -162,7 +165,7 @@ where
 #[async_trait]
 impl<T> Upgrader<T> for Config
 where
-    T: Read2 + Write2 + Send + Unpin + 'static,
+    T: ConnectionInfo + Read2 + Write2 + Send + Unpin + 'static,
 {
     type Output = SecioOutput<T>;
 
@@ -187,16 +190,28 @@ where
 pub struct SecioOutput<S> {
     /// The encrypted stream.
     pub stream: SecureStream<S>,
+    /// The local multiaddr of the connection
+    la: Multiaddr,
+    /// The remote multiaddr of the connection
+    ra: Multiaddr,
     /// The private key of the local
     pub local_priv_key: Keypair,
     /// For convenience, the local peer ID, generated from local pub key
     pub local_peer_id: PeerId,
     /// The public key of the remote.
     pub remote_pub_key: PublicKey,
-    /// Ephemeral public key used during the negotiation.
-    pub ephemeral_public_key: Vec<u8>,
     /// For convenience, put a PeerId here, which is actually calculated from remote_key
     pub remote_peer_id: PeerId,
+}
+
+impl<S: ConnectionInfo> ConnectionInfo for SecioOutput<S> {
+    fn local_multiaddr(&self) -> Multiaddr {
+        self.la.clone()
+    }
+
+    fn remote_multiaddr(&self) -> Multiaddr {
+        self.ra.clone()
+    }
 }
 
 impl<S> SecureInfo for SecioOutput<S> {

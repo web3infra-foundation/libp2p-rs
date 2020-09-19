@@ -39,9 +39,9 @@ use futures::future::BoxFuture;
 use libp2p_core::identity::Keypair;
 use libp2p_core::muxing::StreamMuxer;
 use libp2p_core::secure_io::SecureInfo;
-use libp2p_core::transport::TransportError;
+use libp2p_core::transport::{TransportError, ConnectionInfo};
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
-use libp2p_core::{PeerId, PublicKey};
+use libp2p_core::{PeerId, PublicKey, Multiaddr};
 use libp2p_traits::{Read2, Write2};
 
 const DEFAULT_CREDIT: u32 = 256 * 1024; // as per yamux specification
@@ -185,6 +185,21 @@ pub struct Yamux<C> {
     connection: Option<Connection<C>>,
     /// Handle to control the connection.
     control: Control,
+    /// The secure&connection info provided by underlying socket.
+    /// The socket is moved into Connection, so we have to make a copy of these information
+    ///
+    /// The local multiaddr of this connection
+    pub la: Multiaddr,
+    /// The remote multiaddr of this connection
+    pub ra: Multiaddr,
+    /// The private key of the local
+    pub local_priv_key: Keypair,
+    /// For convenience, the local peer ID, generated from local pub key
+    pub local_peer_id: PeerId,
+    /// The public key of the remote.
+    pub remote_pub_key: PublicKey,
+    /// For convenience, put a PeerId here, which is actually calculated from remote_key
+    pub remote_peer_id: PeerId,
 }
 
 impl<C> Clone for Yamux<C> {
@@ -192,6 +207,12 @@ impl<C> Clone for Yamux<C> {
         Yamux {
             connection: None,
             control: self.control.clone(),
+            la: self.la.clone(),
+            ra: self.ra.clone(),
+            local_priv_key: self.local_priv_key.clone(),
+            local_peer_id: self.local_peer_id.clone(),
+            remote_pub_key: self.remote_pub_key.clone(),
+            remote_peer_id: self.remote_peer_id.clone()
         }
     }
 }
@@ -205,34 +226,58 @@ impl<C> fmt::Debug for Yamux<C> {
     }
 }
 
-impl<C: Read2 + Write2 + Unpin + Send + 'static> Yamux<C> {
+impl<C: ConnectionInfo + SecureInfo + Read2 + Write2 + Unpin + Send + 'static> Yamux<C> {
     /// Create a new Yamux connection.
     pub fn new(io: C, mut cfg: Config, mode: Mode) -> Self {
         cfg.set_read_after_close(false);
+
+        // `io` will be moved into Connection soon, make a copy of the secure info
+        let local_priv_key = io.local_priv_key();
+        let local_peer_id = io.local_peer();
+        let remote_pub_key= io.remote_pub_key();
+        let remote_peer_id= io.remote_peer();
+        let la = io.local_multiaddr();
+        let ra = io.remote_multiaddr();
+
         let conn = Connection::new(io, cfg, mode);
         let control = conn.control();
         Yamux {
             connection: Some(conn),
             control,
+            la,
+            ra,
+            local_priv_key,
+            local_peer_id,
+            remote_pub_key,
+            remote_peer_id,
         }
     }
 }
 
 impl<C> SecureInfo for Yamux<C> {
     fn local_peer(&self) -> PeerId {
-        unimplemented!()
+        self.local_peer_id.clone()
     }
 
     fn remote_peer(&self) -> PeerId {
-        unimplemented!()
+        self.remote_peer_id.clone()
     }
 
     fn local_priv_key(&self) -> Keypair {
-        unimplemented!()
+        self.local_priv_key.clone()
     }
 
     fn remote_pub_key(&self) -> PublicKey {
-        unimplemented!()
+        self.remote_pub_key.clone()
+    }
+}
+
+impl<C: Send> ConnectionInfo for Yamux<C> {
+    fn local_multiaddr(&self) -> Multiaddr {
+        self.la.clone()
+    }
+    fn remote_multiaddr(&self) -> Multiaddr {
+        self.ra.clone()
     }
 }
 
@@ -287,7 +332,7 @@ impl UpgradeInfo for Config {
 #[async_trait]
 impl<T> Upgrader<T> for Config
 where
-    T: Read2 + Write2 + Send + Unpin + 'static,
+    T: ConnectionInfo + SecureInfo + Read2 + Write2 + Send + Unpin + 'static,
 {
     type Output = Yamux<T>;
 
