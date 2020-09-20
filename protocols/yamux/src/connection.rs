@@ -135,7 +135,7 @@ pub enum Mode {
 ///
 /// Randomly generated, this is mainly intended to improve log output.
 #[derive(Clone, Copy)]
-pub(crate) struct Id(u32, Mode);
+pub struct Id(u32, Mode);
 
 impl Id {
     /// Create a random connection ID.
@@ -304,6 +304,11 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
             shutdown: Shutdown::NotStarted,
             is_closed: false,
         }
+    }
+
+    /// Returns the id of the connection
+    pub fn id(&self) -> Id {
+        self.id.clone()
     }
 
     /// Get a controller for this connection.

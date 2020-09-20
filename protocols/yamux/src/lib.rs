@@ -29,7 +29,7 @@ use futures::prelude::*;
 use log::{info, trace};
 use std::fmt;
 
-pub use crate::connection::{Connection, Control, Mode, Stream};
+pub use crate::connection::{Connection, Control, Mode, Stream, Id};
 pub use crate::error::ConnectionError;
 pub use crate::frame::{
     header::{HeaderDecodeError, StreamId},
@@ -185,6 +185,8 @@ pub struct Yamux<C> {
     connection: Option<Connection<C>>,
     /// Handle to control the connection.
     control: Control,
+    /// For debug purpose
+    id: Id,
     /// The secure&connection info provided by underlying socket.
     /// The socket is moved into Connection, so we have to make a copy of these information
     ///
@@ -207,6 +209,7 @@ impl<C> Clone for Yamux<C> {
         Yamux {
             connection: None,
             control: self.control.clone(),
+            id: self.id.clone(),
             la: self.la.clone(),
             ra: self.ra.clone(),
             local_priv_key: self.local_priv_key.clone(),
@@ -219,9 +222,8 @@ impl<C> Clone for Yamux<C> {
 
 impl<C> fmt::Debug for Yamux<C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        //f.write_str("Yamux Connection {}")
         f.debug_struct("Yamux")
-            .field("control", &self.control)
+            .field("Id", &self.id)
             .finish()
     }
 }
@@ -240,10 +242,12 @@ impl<C: ConnectionInfo + SecureInfo + Read2 + Write2 + Unpin + Send + 'static> Y
         let ra = io.remote_multiaddr();
 
         let conn = Connection::new(io, cfg, mode);
+        let id = conn.id();
         let control = conn.control();
         Yamux {
             connection: Some(conn),
             control,
+            id,
             la,
             ra,
             local_priv_key,
