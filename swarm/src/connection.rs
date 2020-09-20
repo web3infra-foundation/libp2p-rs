@@ -186,7 +186,7 @@ pub struct Connection<TMuxer: StreamMuxer>
 
     /// The task handle of this connection, returned by task::Spawn
     /// handle.await() when closing a connection
-    pub(crate) handle: JoinHandle<()>,
+    pub(crate) handle: Option<JoinHandle<()>>,
 }
 
 impl<TMuxer: StreamMuxer> PartialEq for Connection<TMuxer>
@@ -203,8 +203,9 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Connection")
+            .field("id", &self.id)
             .field("muxer", &self.muxer)
-            .field("substreams", &self.substreams)
+            .field("dir", &self.dir)
             .finish()
     }
 }
@@ -218,15 +219,18 @@ where
 {
     /// Builds a new `Connection` from the given substream multiplexer
     /// and connection handler.
-    pub fn new(id: ConnectionId, muxer: TMuxer, dir: Direction, handle: JoinHandle<()>) -> Self {
+    pub fn new(id: ConnectionId, muxer: TMuxer, dir: Direction) -> Self {
         Connection {
             id,
             muxer,
             dir,
             substreams: Default::default(),
-            handle,
+            handle: None,
         }
     }
+
+    /// Returns the unique Id of the connection
+    pub fn id(&self) -> ConnectionId { self.id }
 
     /// local_addr is the multiaddr on our side of the connection
     pub fn local_addr(&self) -> Multiaddr {

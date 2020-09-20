@@ -923,7 +923,7 @@ impl<T> Connection<T> {
 
 impl<T> Drop for Connection<T> {
     fn drop(&mut self) {
-        log::info!("connection dropped");
+        log::trace!("{:?} dropped", self.id);
         // probably we don't have to call drop_all_... , since all streams will be
         // cleaned up when the underlying socket is down
         //self.drop_all_streams();

@@ -316,7 +316,7 @@ impl<C: Read2 + Write2 + Unpin + Send + 'static> StreamMuxer for Yamux<C> {
             return Some(
                 async move {
                     while conn.next_stream().await.is_ok() {}
-                    info!("connection is closed");
+                    info!("{:?} background-task exiting...", conn.id());
                 }
                 .boxed(),
             );
