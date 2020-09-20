@@ -101,18 +101,9 @@ pub enum SwarmEvent<TStreamMuxer, TSubstream> {
         stream_muxer: TStreamMuxer,
         /// Direction of the connection
         direction: Direction,
-        /// Local connection address.
-        local_addr: Multiaddr,
-        /// Address used to send back data to the remote.
-        send_back_addr: Multiaddr,
         /// The pending reply channel
         reply: Option<oneshot::Sender<Result<()>>>
-
-
-
-
-/*        /// Endpoint of the connection that has been opened.
-        endpoint: ConnectedPoint,
+/*
         /// Number of established connections to this peer, including the one that has just been
         /// opened.
         num_established: NonZeroU32,
@@ -122,9 +113,7 @@ pub enum SwarmEvent<TStreamMuxer, TSubstream> {
         /// The connection, stream muxer
         stream_muxer: TStreamMuxer,
         conn_id: ConnectionId,
-/*        /// Endpoint of the connection that has been closed.
-        endpoint: ConnectedPoint,
-        /// Number of other remaining connections to this same peer.
+/*
         num_established: u32,
         // /// Reason for the disconnection.
         // cause: ConnectionError<NodeHandlerWrapperError<THandleErr>>,
@@ -203,11 +192,6 @@ pub enum SwarmEvent<TStreamMuxer, TSubstream> {
         /// Reason for the closure. Contains `Ok(())` if the stream produced `None`, or `Err`
         /// if the stream produced an error.
         reason: TransportError,
-    },
-    /// One of the listeners reported a non-fatal error.
-    ListenerError {
-        /// The listener error.
-        error: io::Error,
     },
     /// A new dialing attempt has been initiated.
     ///
@@ -484,7 +468,8 @@ where
 
             for conn in conns {
                 conn.muxer.close().await;
-                //conn.handle.await;
+                // wait for accept-task and bg-task to exit
+                conn.handle.as_mut().unwrap().await;
             }
         }
 
@@ -492,7 +477,6 @@ where
         Ok(())
     }
 
-    // TODO: find a better way to handle multiple addresses of PeerId
     async fn on_new_stream(&mut self, peer_id: PeerId, reply: oneshot::Sender<Result<<TTrans::Output as StreamMuxer>::Substream>>) -> Result<()> {
         if let Some(conn) = self.get_best_conn(&peer_id) {
             // well, we have a connection, simply open a new stream
@@ -555,16 +539,13 @@ where
                 let r = listener.accept().await;
                 match r {
                     Ok(muxer) => {
-                        let remote_peer = muxer.remote_peer();
-
-                        // to verify if remote peer id matches its public key
+                        // dont have to verify if remote peer id matches its public key
+                        // always accept any incoming connection
 
                         // send muxer back to Swarm main task
                         tx.send(SwarmEvent::ConnectionEstablished {
                             stream_muxer: muxer,
                             direction: Direction::Inbound,
-                            local_addr: Multiaddr::empty(),
-                            send_back_addr: Multiaddr::empty(),
                             reply: None
                         }).await;
                     }
@@ -611,8 +592,6 @@ where
                         tx.send(SwarmEvent::ConnectionEstablished {
                             stream_muxer,
                             direction: Direction::Outbound,
-                            local_addr: Multiaddr::empty(),
-                            send_back_addr: addr,
                             reply,
                         }).await;
                     } else {
@@ -643,14 +622,15 @@ where
     /// Starts a dialing task
     /// reply is optional, it might be 'None' when dialer is initiated internally
     pub fn start_dialer(&mut self, peer_id: PeerId, reply: Option<oneshot::Sender<Result<()>>>) -> Result<()>{
-        log::trace!("dialer, looking for peer id={:?}", peer_id);
+        log::trace!("dialer, looking for {:?}", peer_id);
+
+        // TODO: find a better way to handle multiple addresses of PeerId
         if let Some(addrs) = self.peers.addrs.get_addr(&peer_id) {
             // TODO: handle multiple addresses
 
             // TODO: add dial limiter...
 
             let addr = addrs.first().expect("must have one").clone();
-
             self.dial_peer_with_addr(peer_id, addr, reply);
 
             Ok(())
@@ -794,14 +774,10 @@ where
         self.banned_peers.remove(peer_id.as_ref());
     }
 
-    fn add_connection(&mut self, conn_id: ConnectionId, stream_muxer: TTrans::Output, dir: Direction, handle: JoinHandle<()>) {
-        let remote_peer_id = stream_muxer.remote_peer();
+    fn add_connection(&mut self, conn: Connection<TTrans::Output>) {
+        let remote_peer_id = conn.remote_peer();
 
-        // build a Connection
-        let conn = Connection::new(conn_id, stream_muxer, dir, handle);
-
-        // mamage to append to the hashmap
-
+        // append to the hashmap
         let conns = self.established.entry(remote_peer_id).or_default();
         conns.push(conn);
 
@@ -816,27 +792,46 @@ where
         // TODO: return the connection
     }
 
+    // Assign a unique connection Id
+    fn assign_conn_id(&mut self) -> ConnectionId {
+        self.next_connection_id += 1;
+        self.next_connection_id
+    }
+
     /// Handles a new connection
     ///
     /// start a Task for accepting new sub-stream from the connection
     pub async fn handle_new_connection(&mut self, stream_muxer: TTrans::Output, dir: Direction) -> Result<()> {
-
         log::trace!("handle_new_connection: {:?} Dir={:?}", stream_muxer, dir);
 
-        // clone the connection, then insert to the hashmap
-        let conn = stream_muxer.clone();
-        self.next_connection_id += 1;
-        let conn_id = self.next_connection_id;
+        // clone the stream_muxer, and then wrap into Connection, task_handle will be assigned later
+        let mut conn = Connection::new(self.assign_conn_id(), stream_muxer.clone(), dir);
+
+        // TODO: filtering the multiaddr, Err = AddrFiltered(addr)
+
+        /*        raddr := tc.RemoteMultiaddr()
+                if s.Filters.AddrBlocked(raddr) {
+                    tc.Close()
+                    return nil, ErrAddrFiltered
+                }
+
+                p := tc.RemotePeer()
+
+                // Add the public key.
+                if pk := tc.RemotePublicKey(); pk != nil {
+                    s.peers.AddPubKey(p, pk)
+                }
+        */
+        // TODO: add remote pubkey to keystore
 
 
         let mut tx = self.event_sender.clone();
+        let conn_id = conn.id();
         let handle = task::spawn(async move {
             let mut stream_muxer = stream_muxer;
 
-            // TODO: re-org these two tasks
-            if let Some(muxer_task) = stream_muxer.task() {
-                task::spawn(muxer_task);
-            }
+            // start the background task of the stream_muxer, the handle can be await'ed by us
+            let task_handle = stream_muxer.task().map(|task| task::spawn(task));
             loop {
                 let r = stream_muxer.accept_stream().await;
                 match r {
@@ -857,30 +852,18 @@ where
                     }
                 }
             }
+
+            // As stream_muxer is closed, we wait for its task_handle
+            if let Some(handle) = task_handle {
+                handle.await;
+            }
         });
 
-
-        // TODO: filtering the multiaddr, Err = AddrFiltered(addr)
-
-        // TODO: add remote pubkey to keystore
-
-
-/*        raddr := tc.RemoteMultiaddr()
-        if s.Filters.AddrBlocked(raddr) {
-            tc.Close()
-            return nil, ErrAddrFiltered
-        }
-
-        p := tc.RemotePeer()
-
-        // Add the public key.
-        if pk := tc.RemotePublicKey(); pk != nil {
-            s.peers.AddPubKey(p, pk)
-        }
-*/
+        // now we have the handle, move it into Connection
+        conn.handle = Some(handle);
 
         // insert to the hashmap of connections
-        self.add_connection(conn_id,conn, dir, handle);
+        self.add_connection(conn);
 
         Ok(())
     }
@@ -891,24 +874,37 @@ where
     /// start a Task for accepting new sub-stream from the connection
     pub async fn handle_close_connection(&mut self, stream_muxer: TTrans::Output, conn_id: ConnectionId) -> Result<()> {
 
+        log::info!("before close {:?}", self.established);
+
         log::trace!("handle_close_connection: {:?} ConnectionId={:?}", stream_muxer, conn_id);
 
         let remote_peer_id = stream_muxer.remote_peer();
 
         if let Some(conns) = self.established.get_mut(&remote_peer_id) {
-            // for conn in conns {
-            //     if conn.id == conn_id {
-            //         // wait for the Task
-            //         &conn.handle.await;
-            //     }
+
+            // let x = conns.iter_mut().find(|c| c.id == conn_id);
+            // if let Some(c) = x {
+            //     c.handle.as_mut().unwrap().await;
             // }
 
-            log::info!("removing connection {}", conn_id);
-            conns.retain(|conn| conn.id == conn_id);
+            let mut index: usize = 0;
+            for conn in conns.iter_mut() {
+                if conn.id == conn_id {
+                    // wait for the Task
+                    log::trace!("about to remove connection {:?} at index={}", conn, index);
+                    break;
+                }
+                index += 1;
+            }
+
+            conns.remove(index);
 
         } else {
             log::warn!("shouldn't happen");
         }
+
+        log::info!("after close {:?}", self.established);
+
         Ok(())
     }
 
