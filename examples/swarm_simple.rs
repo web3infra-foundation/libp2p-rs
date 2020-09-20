@@ -36,7 +36,7 @@ fn main() {
 
 
 lazy_static! {
-    static ref SERVER_KEY: Keypair = Keypair::generate_secp256k1();
+    static ref SERVER_KEY: Keypair = Keypair::generate_ed25519_fixed();
 }
 
 fn run_server() {
@@ -86,6 +86,7 @@ fn run_client() {
     swarm.start();
 
     task::block_on(async move {
+        control.new_connection(&remote_peer_id).await.unwrap();
         let stream = control.new_stream(&remote_peer_id).await.unwrap();
 
         info!("shutdown is completed");
