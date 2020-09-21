@@ -387,7 +387,7 @@ where
 
         match event {
             SwarmEvent::ListenerClosed { addresses, reason } => {},
-            SwarmEvent::ConnectionEstablished { stream_muxer, direction, local_addr, send_back_addr, reply } => {
+            SwarmEvent::ConnectionEstablished { stream_muxer, direction, reply } => {
                 let r = self.handle_new_connection(stream_muxer, direction).await;
                 if let Some(reply) = reply {
                     reply.send(r);
