@@ -61,6 +61,7 @@ members = [
   "protocols/yamux",
   "protocols/mplex",
   "protocols/secio",
+  "protocols/plaintext",
   "core",
   "transports/tcp",
   "multiaddr",
