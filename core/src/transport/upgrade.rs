@@ -118,10 +118,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pnet::*;
     use crate::transport::memory::MemoryTransport;
     use crate::transport::protector::ProtectorTransport;
     use crate::upgrade::dummy::DummyUpgrader;
-    use crate::pnet::*;
     #[test]
     fn communicating_between_dialer_and_listener() {
         let msg = [1, 2, 3];

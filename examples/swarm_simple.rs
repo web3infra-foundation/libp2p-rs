@@ -1,13 +1,13 @@
 use async_std::task;
-use log::{info};
+use log::info;
 use std::time::Duration;
 #[macro_use]
 extern crate lazy_static;
+use libp2p_core::identity::Keypair;
 use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::{Multiaddr, PeerId};
 use libp2p_swarm::Swarm;
 use libp2p_tcp::TcpConfig;
-use libp2p_core::identity::Keypair;
 use secio;
 use yamux;
 

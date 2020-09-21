@@ -40,7 +40,7 @@ mod network;
 mod registry;
 
 use crate::connection::{ConnectedPoint, Connection, ConnectionId, ConnectionLimit, Direction};
-use crate::network::{NetworkInfo};
+use crate::network::NetworkInfo;
 
 use crate::control::{Control, SwarmControlCmd};
 use async_std::task;
@@ -383,7 +383,10 @@ where
         log::trace!("got an Swarm event={:?}", event);
 
         match event {
-            SwarmEvent::ListenerClosed { addresses:_, reason:_ } => {}
+            SwarmEvent::ListenerClosed {
+                addresses: _,
+                reason: _,
+            } => {}
             SwarmEvent::ConnectionEstablished {
                 stream_muxer,
                 direction,
@@ -391,23 +394,23 @@ where
             } => {
                 let r = self.handle_new_connection(stream_muxer, direction).await;
                 if let Some(reply) = reply {
-                   let _= reply.send(r);
+                    let _ = reply.send(r);
                 }
             }
             SwarmEvent::ConnectionClosed {
                 stream_muxer,
                 conn_id,
             } => {
-                let _= self.handle_close_connection(stream_muxer, conn_id).await;
+                let _ = self.handle_close_connection(stream_muxer, conn_id).await;
             }
             SwarmEvent::OutgoingConnectionError {
-                peer_id:_,
-                remote_addr:_,
+                peer_id: _,
+                remote_addr: _,
                 error,
                 reply,
             } => {
                 if let Some(reply) = reply {
-                    let _= reply.send(Err(error));
+                    let _ = reply.send(Err(error));
                 }
                 // handle the pending NewStream request
                 // if let Some(id) = pending_request {
@@ -438,23 +441,21 @@ where
         match cmd {
             SwarmControlCmd::NewConnection(peer_id, reply) => {
                 // got the peer_id, start the dialer for it
-                let _=  self.on_new_connection(peer_id, reply).await;
+                let _ = self.on_new_connection(peer_id, reply).await;
             }
             SwarmControlCmd::CloseConnection(peer_id, reply) => {
                 // got the peer_id, close all connections to the peer
-                let _=  self.on_close_connection(peer_id, reply).await;
+                let _ = self.on_close_connection(peer_id, reply).await;
             }
             SwarmControlCmd::NewStream(peer_id, reply) => {
                 // got the peer_id, try opening a new sub stream
-                let _= self.on_new_stream(peer_id, reply).await;
+                let _ = self.on_new_stream(peer_id, reply).await;
             }
             SwarmControlCmd::CloseSwarm => {
                 log::info!("closing the swarm...");
-                let _=  self.event_sender.close_channel();
-            }
-
-            // TODO:
-            //_ => {}
+                let _ = self.event_sender.close_channel();
+            } // TODO:
+              //_ => {}
         }
 
         Ok(())
@@ -467,10 +468,10 @@ where
     ) -> Result<()> {
         // return if we already have the connection, otherwise, start dialing
         if let Some(_conn) = self.get_best_conn(&peer_id) {
-            let _= reply.send(Ok(()));
+            let _ = reply.send(Ok(()));
         } else {
             // Note: reply moved
-            let _= self.start_dialer(peer_id, Some(reply));
+            let _ = self.start_dialer(peer_id, Some(reply));
         }
         Ok(())
     }
@@ -484,13 +485,13 @@ where
             // TODO: to check if this connection is being closed
 
             for conn in conns {
-                let _= conn.muxer.close().await;
+                let _ = conn.muxer.close().await;
                 // wait for accept-task and bg-task to exit
                 conn.handle.as_mut().unwrap().await;
             }
         }
 
-        let _=  reply.send(Ok(()));
+        let _ = reply.send(Ok(()));
         Ok(())
     }
 
@@ -502,9 +503,9 @@ where
         if let Some(conn) = self.get_best_conn(&peer_id) {
             // well, we have a connection, simply open a new stream
             let r = conn.muxer.open_stream().await.map_err(|e| e.into());
-            let _= reply.send(r);
+            let _ = reply.send(r);
         } else {
-            let _=  reply.send(Err(SwarmError::NoConnection(peer_id)));
+            let _ = reply.send(Err(SwarmError::NoConnection(peer_id)));
         }
         Ok(())
     }
@@ -561,19 +562,21 @@ where
                         // always accept any incoming connection
 
                         // send muxer back to Swarm main task
-                        let _=  tx.send(SwarmEvent::ConnectionEstablished {
-                            stream_muxer: muxer,
-                            direction: Direction::Inbound,
-                            reply: None,
-                        })
-                        .await;
+                        let _ = tx
+                            .send(SwarmEvent::ConnectionEstablished {
+                                stream_muxer: muxer,
+                                direction: Direction::Inbound,
+                                reply: None,
+                            })
+                            .await;
                     }
                     Err(err) => {
-                        let _=   tx.send(SwarmEvent::ListenerClosed {
-                            addresses: vec![],
-                            reason: err,
-                        })
-                        .await;
+                        let _ = tx
+                            .send(SwarmEvent::ListenerClosed {
+                                addresses: vec![],
+                                reason: err,
+                            })
+                            .await;
                     }
                 }
             }
@@ -615,12 +618,13 @@ where
                     // test if the PeerId matches expectation, otherwise,
                     // it is a bad outgoing connection
                     if peer_id == stream_muxer.remote_peer() {
-                        let _=  tx.send(SwarmEvent::ConnectionEstablished {
-                            stream_muxer,
-                            direction: Direction::Outbound,
-                            reply,
-                        })
-                        .await;
+                        let _ = tx
+                            .send(SwarmEvent::ConnectionEstablished {
+                                stream_muxer,
+                                direction: Direction::Outbound,
+                                reply,
+                            })
+                            .await;
                     } else {
                         let wrong_id = stream_muxer.remote_peer();
                         log::info!(
@@ -629,25 +633,27 @@ where
                             peer_id,
                             wrong_id
                         );
-                        let _=  tx.send(SwarmEvent::OutgoingConnectionError {
-                            peer_id,
-                            remote_addr: addr,
-                            error: SwarmError::InvalidPeerId(wrong_id),
-                            reply,
-                        })
-                        .await;
+                        let _ = tx
+                            .send(SwarmEvent::OutgoingConnectionError {
+                                peer_id,
+                                remote_addr: addr,
+                                error: SwarmError::InvalidPeerId(wrong_id),
+                                reply,
+                            })
+                            .await;
                         // close this connection
-                        let _= stream_muxer.close().await;
+                        let _ = stream_muxer.close().await;
                     }
                 }
                 Err(err) => {
-                    let _= tx.send(SwarmEvent::OutgoingConnectionError {
-                        peer_id,
-                        remote_addr: addr,
-                        error: SwarmError::Transport(err),
-                        reply,
-                    })
-                    .await;
+                    let _ = tx
+                        .send(SwarmEvent::OutgoingConnectionError {
+                            peer_id,
+                            remote_addr: addr,
+                            error: SwarmError::Transport(err),
+                            reply,
+                        })
+                        .await;
                 }
             }
         });
@@ -882,14 +888,15 @@ where
                 let r = stream_muxer.accept_stream().await;
                 match r {
                     Ok(stream) => {
-                        let _=  tx.send(SwarmEvent::StreamOpened { stream }).await;
+                        let _ = tx.send(SwarmEvent::StreamOpened { stream }).await;
                     }
                     Err(_err) => {
-                        let _=  tx.send(SwarmEvent::ConnectionClosed {
-                            stream_muxer,
-                            conn_id,
-                        })
-                        .await;
+                        let _ = tx
+                            .send(SwarmEvent::ConnectionClosed {
+                                stream_muxer,
+                                conn_id,
+                            })
+                            .await;
 
                         // something happened, break the loop then exit the Task
                         break;
