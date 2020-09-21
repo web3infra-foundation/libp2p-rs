@@ -7,7 +7,7 @@ use libp2p_core::upgrade::DummyUpgrader;
 use libp2p_core::{Multiaddr, Transport};
 use libp2p_traits::{Read2, Write2};
 use log;
-use pnet::{PnetConfig, PreSharedKey};
+use libp2p_core::pnet::{PnetConfig, PreSharedKey};
 
 
 fn main() {
