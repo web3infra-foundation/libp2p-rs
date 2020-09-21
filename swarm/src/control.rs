@@ -12,24 +12,23 @@ use crate::SwarmError;
 use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
-    ready,
 };
 use libp2p_core::PeerId;
 
 type Result<T> = std::result::Result<T, SwarmError>;
 
-
-
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum SwarmControlCmd<TSubstream> {
-    /// Open a new stream to the remote end.
+    /// Open a connection to the remote peer.
+    NewConnection(PeerId, oneshot::Sender<Result<()>>),
+    /// Close any connection to the remote peer.
+    CloseConnection(PeerId, oneshot::Sender<Result<()>>),
+    /// Open a new stream to the remote peer.
     NewStream(PeerId, oneshot::Sender<Result<TSubstream>>),
     /// Close the whole connection.
-    NewConnection(oneshot::Sender<()>),
-    /// Close the whole connection.
-    CloseSwarm(oneshot::Sender<()>),
+    CloseSwarm,
 }
-
 
 /// The `Swarm` controller.
 ///
@@ -56,33 +55,34 @@ impl<TSubstream> Clone for Control<TSubstream> {
 
 impl<TSubstream> Control<TSubstream> {
     pub(crate) fn new(sender: mpsc::Sender<SwarmControlCmd<TSubstream>>) -> Self {
-        Control {
-            sender,
-        }
+        Control { sender }
+    }
+
+    /// make a connection to the remote.
+    pub async fn new_connection(&mut self, peerd_id: &PeerId) -> Result<()> {
+        let (tx, rx) = oneshot::channel();
+        self.sender
+            .send(SwarmControlCmd::NewConnection(peerd_id.clone(), tx))
+            .await?;
+        rx.await?
     }
 
     /// Open a new stream to the remote.
     pub async fn new_stream(&mut self, peerd_id: &PeerId) -> Result<TSubstream> {
         let (tx, rx) = oneshot::channel();
-        self.sender.send(SwarmControlCmd::NewStream(peerd_id.clone(), tx)).await?;
+        self.sender
+            .send(SwarmControlCmd::NewStream(peerd_id.clone(), tx))
+            .await?;
         rx.await?
     }
 
     /// Close the connection.
     pub async fn close(&mut self) -> Result<()> {
-        let (tx, rx) = oneshot::channel();
-        if self
-            .sender
-            .send(SwarmControlCmd::CloseSwarm(tx))
-            .await
-            .is_err()
-        {
+        // SwarmControlCmd::CloseSwarm doesn't need a response from Swarm
+        if self.sender.send(SwarmControlCmd::CloseSwarm).await.is_err() {
             // The receiver is closed which means the connection is already closed.
             return Ok(());
         }
-        // A dropped `oneshot::Sender` means the `Connection` is gone,
-        // so we do not treat receive errors differently here.
-        let _ = rx.await;
         Ok(())
     }
 }

@@ -1,4 +1,4 @@
-use crate::transport::{Transport, TransportError, TransportListener};
+use crate::transport::{ConnectionInfo, Transport, TransportError, TransportListener};
 use crate::Multiaddr;
 use async_trait::async_trait;
 use std::fmt;
@@ -63,3 +63,13 @@ impl TransportListener for DummyListener {
 }
 
 pub struct DummyStream(());
+
+impl ConnectionInfo for DummyStream {
+    fn local_multiaddr(&self) -> Multiaddr {
+        unimplemented!()
+    }
+
+    fn remote_multiaddr(&self) -> Multiaddr {
+        unimplemented!()
+    }
+}

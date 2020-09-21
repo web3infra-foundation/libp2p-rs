@@ -1,10 +1,11 @@
+use crate::pnet::{Pnet, PnetConfig, PnetOutput};
+use crate::transport::ConnectionInfo;
 use crate::{
     transport::{TransportError, TransportListener},
     Multiaddr, Transport,
 };
 use async_trait::async_trait;
 use libp2p_traits::{Read2, Write2};
-use pnet::{Pnet, PnetConfig, PnetOutput};
 
 #[derive(Debug, Copy, Clone)]
 pub struct ProtectorTransport<InnerTrans> {
@@ -23,7 +24,7 @@ impl<InnerTrans> ProtectorTransport<InnerTrans> {
 impl<InnerTrans> Transport for ProtectorTransport<InnerTrans>
 where
     InnerTrans: Transport,
-    InnerTrans::Output: Read2 + Write2 + Unpin + 'static,
+    InnerTrans::Output: ConnectionInfo + Read2 + Write2 + Unpin + 'static,
 {
     type Output = PnetOutput<InnerTrans::Output>;
     type Listener = ProtectorListener<InnerTrans::Listener>;
@@ -38,7 +39,7 @@ where
         let socket = self.inner.dial(addr).await?;
         match self.pnet.handshake(socket).await {
             Ok(output) => Ok(output),
-            Err(_) => Err(TransportError::Internal),
+            Err(_) => Err(TransportError::HandshakeError),
         }
     }
 }
@@ -58,7 +59,7 @@ impl<InnerListener> ProtectorListener<InnerListener> {
 impl<InnerListener> TransportListener for ProtectorListener<InnerListener>
 where
     InnerListener: TransportListener,
-    InnerListener::Output: Read2 + Write2 + Unpin + 'static,
+    InnerListener::Output: ConnectionInfo + Read2 + Write2 + Unpin + 'static,
 {
     type Output = PnetOutput<InnerListener::Output>;
 

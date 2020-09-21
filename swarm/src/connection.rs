@@ -1,4 +1,5 @@
 use crate::{Multiaddr, PeerId};
+use async_std::task::JoinHandle;
 use libp2p_core::identity::Keypair;
 use libp2p_core::muxing::StreamMuxer;
 use libp2p_core::secure_io::SecureInfo;
@@ -168,18 +169,29 @@ pub enum Event<T> {
     AddressChange(Multiaddr),
 }
 
+pub type ConnectionId = usize;
+
 /// A multiplexed connection to a peer with associated `Substream`s.
 #[allow(dead_code)]
-pub struct Connection<TMuxer>
-where
-    TMuxer: StreamMuxer,
-{
+pub struct Connection<TMuxer: StreamMuxer> {
+    /// The unique ID for a connection
+    pub(crate) id: usize,
     /// Node that handles the muxer.
     pub(crate) muxer: TMuxer,
     /// Handler that processes substreams.
     pub(crate) substreams: SmallVec<[TMuxer::Substream; 8]>,
     /// Direction of this connection
     pub(crate) dir: Direction,
+
+    /// The task handle of this connection, returned by task::Spawn
+    /// handle.await() when closing a connection
+    pub(crate) handle: Option<JoinHandle<()>>,
+}
+
+impl<TMuxer: StreamMuxer> PartialEq for Connection<TMuxer> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
 }
 
 impl<TMuxer> fmt::Debug for Connection<TMuxer>
@@ -189,8 +201,9 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Connection")
+            .field("id", &self.id)
             .field("muxer", &self.muxer)
-            .field("substreams", &self.substreams)
+            .field("dir", &self.dir)
             .finish()
     }
 }
@@ -204,12 +217,29 @@ where
 {
     /// Builds a new `Connection` from the given substream multiplexer
     /// and connection handler.
-    pub fn new(muxer: TMuxer, dir: Direction) -> Self {
+    pub fn new(id: ConnectionId, muxer: TMuxer, dir: Direction) -> Self {
         Connection {
+            id,
             muxer,
             dir,
             substreams: Default::default(),
+            handle: None,
         }
+    }
+
+    /// Returns the unique Id of the connection
+    pub fn id(&self) -> ConnectionId {
+        self.id
+    }
+
+    /// local_addr is the multiaddr on our side of the connection
+    pub fn local_addr(&self) -> Multiaddr {
+        self.muxer.local_multiaddr()
+    }
+
+    /// remote_addr is the multiaddr on the remote side of the connection
+    pub fn remote_addr(&self) -> Multiaddr {
+        self.muxer.remote_multiaddr()
     }
 
     /// local_peer is the Peer on our side of the connection
@@ -394,21 +424,5 @@ impl std::error::Error for PendingConnectionError {
             PendingConnectionError::InvalidPeerId => None,
             PendingConnectionError::ConnectionLimit(..) => None,
         }
-    }
-}
-
-/// Connection identifier.
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ConnectionId(usize);
-
-#[allow(dead_code)]
-impl ConnectionId {
-    /// Creates a `ConnectionId` from a non-negative integer.
-    ///
-    /// This is primarily useful for creating connection IDs
-    /// in test environments. There is in general no guarantee
-    /// that all connection IDs are based on non-negative integers.
-    pub fn new(id: usize) -> Self {
-        ConnectionId(id)
     }
 }

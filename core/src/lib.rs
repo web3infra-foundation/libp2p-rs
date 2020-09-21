@@ -34,4 +34,4 @@ pub mod either;
 
 pub mod peerstore;
 
-pub use pnet;
+pub mod pnet;

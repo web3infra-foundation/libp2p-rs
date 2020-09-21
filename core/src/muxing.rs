@@ -31,14 +31,15 @@
 //! The upgrade process will take ownership of the connection, which makes it possible for the
 //! implementation of `StreamMuxer` to control everything that happens on the wire.
 
-use crate::transport::TransportError;
+use crate::secure_io::SecureInfo;
+use crate::transport::{ConnectionInfo, TransportError};
 use async_trait::async_trait;
 use futures::future::BoxFuture;
 
 #[async_trait]
-pub trait StreamMuxer: Send + Clone {
+pub trait StreamMuxer: ConnectionInfo + SecureInfo + Send + Clone + std::fmt::Debug {
     /// Type of the object that represents the raw substream where data can be read and written.
-    type Substream: Send;
+    type Substream: Send + std::fmt::Debug;
 
     /// Opens a new outgoing substream, and produces the equivalent to a future that will be
     /// resolved when it becomes available.

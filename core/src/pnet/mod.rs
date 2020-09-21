@@ -18,6 +18,8 @@ use std::{
     str::FromStr,
 };
 
+use crate::transport::ConnectionInfo;
+use crate::Multiaddr;
 use async_trait::async_trait;
 use libp2p_traits::{Read2, Write2};
 
@@ -224,7 +226,7 @@ impl fmt::Display for PnetError {
 #[async_trait]
 impl<TSocket> Pnet<TSocket> for PnetConfig
 where
-    TSocket: Read2 + Write2 + Send + Unpin + 'static,
+    TSocket: ConnectionInfo + Read2 + Write2 + Send + Unpin + 'static,
 {
     type Output = PnetOutput<TSocket>;
     /// upgrade a connection to use pre shared key encryption.
@@ -301,6 +303,15 @@ where
     }
     async fn close2(&mut self) -> io::Result<()> {
         self.inner.close2().await
+    }
+}
+
+impl<S: ConnectionInfo> ConnectionInfo for PnetOutput<S> {
+    fn local_multiaddr(&self) -> Multiaddr {
+        self.inner.local_multiaddr()
+    }
+    fn remote_multiaddr(&self) -> Multiaddr {
+        self.inner.remote_multiaddr()
     }
 }
 

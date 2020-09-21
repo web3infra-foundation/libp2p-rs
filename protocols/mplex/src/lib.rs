@@ -9,7 +9,7 @@ use log::{info, trace};
 use std::fmt;
 
 use libp2p_core::muxing::StreamMuxer;
-use libp2p_core::transport::TransportError;
+use libp2p_core::transport::{ConnectionInfo, TransportError};
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
 use libp2p_traits::{Read2, Write2};
 
@@ -17,6 +17,9 @@ use crate::connection::Connection;
 use connection::{control::Control, stream::Stream};
 use error::ConnectionError;
 use futures::future::BoxFuture;
+use libp2p_core::identity::Keypair;
+use libp2p_core::secure_io::SecureInfo;
+use libp2p_core::{Multiaddr, PeerId, PublicKey};
 
 #[derive(Clone)]
 pub struct Config {}
@@ -42,6 +45,21 @@ pub struct Mplex<C> {
     conn: Option<Connection<C>>,
     /// Handle to control the connection.
     ctrl: Control,
+    /// The secure&connection info provided by underlying socket.
+    /// The socket is moved into Connection, so we have to make a copy of these information
+    ///
+    /// The local multiaddr of this connection
+    pub la: Multiaddr,
+    /// The remote multiaddr of this connection
+    pub ra: Multiaddr,
+    /// The private key of the local
+    pub local_priv_key: Keypair,
+    /// For convenience, the local peer ID, generated from local pub key
+    pub local_peer_id: PeerId,
+    /// The public key of the remote.
+    pub remote_pub_key: PublicKey,
+    /// For convenience, put a PeerId here, which is actually calculated from remote_key
+    pub remote_peer_id: PeerId,
 }
 
 impl<C> Clone for Mplex<C> {
@@ -49,6 +67,12 @@ impl<C> Clone for Mplex<C> {
         Mplex {
             conn: None,
             ctrl: self.ctrl.clone(),
+            la: self.la.clone(),
+            ra: self.ra.clone(),
+            local_priv_key: self.local_priv_key.clone(),
+            local_peer_id: self.local_peer_id.clone(),
+            remote_pub_key: self.remote_pub_key.clone(),
+            remote_peer_id: self.remote_peer_id.clone(),
         }
     }
 }
@@ -59,14 +83,55 @@ impl<C> fmt::Debug for Mplex<C> {
     }
 }
 
-impl<C: Read2 + Write2 + Unpin + Send + 'static> Mplex<C> {
-    pub fn new(socket: C) -> Self {
-        let conn = Connection::new(socket);
+impl<C: ConnectionInfo + SecureInfo + Read2 + Write2 + Unpin + Send + 'static> Mplex<C> {
+    pub fn new(io: C) -> Self {
+        // `io` will be moved into Connection soon, make a copy of the connection & secure info
+        let la = io.local_multiaddr();
+        let ra = io.remote_multiaddr();
+        let local_priv_key = io.local_priv_key();
+        let local_peer_id = io.local_peer();
+        let remote_pub_key = io.remote_pub_key();
+        let remote_peer_id = io.remote_peer();
+
+        let conn = Connection::new(io);
         let ctrl = conn.control();
         Mplex {
             conn: Some(conn),
             ctrl,
+            la,
+            ra,
+            local_priv_key,
+            local_peer_id,
+            remote_pub_key,
+            remote_peer_id,
         }
+    }
+}
+
+impl<C: Send> ConnectionInfo for Mplex<C> {
+    fn local_multiaddr(&self) -> Multiaddr {
+        self.la.clone()
+    }
+    fn remote_multiaddr(&self) -> Multiaddr {
+        self.ra.clone()
+    }
+}
+
+impl<C> SecureInfo for Mplex<C> {
+    fn local_peer(&self) -> PeerId {
+        self.local_peer_id.clone()
+    }
+
+    fn remote_peer(&self) -> PeerId {
+        self.remote_peer_id.clone()
+    }
+
+    fn local_priv_key(&self) -> Keypair {
+        self.local_priv_key.clone()
+    }
+
+    fn remote_pub_key(&self) -> PublicKey {
+        self.remote_pub_key.clone()
     }
 }
 
@@ -118,7 +183,7 @@ impl UpgradeInfo for Config {
 #[async_trait]
 impl<T> Upgrader<T> for Config
 where
-    T: Read2 + Write2 + Send + Unpin + 'static,
+    T: ConnectionInfo + SecureInfo + Read2 + Write2 + Send + Unpin + 'static,
 {
     type Output = Mplex<T>;
 
