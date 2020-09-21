@@ -18,6 +18,7 @@ use libp2p_core::PeerId;
 type Result<T> = std::result::Result<T, SwarmError>;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum SwarmControlCmd<TSubstream> {
     /// Open a connection to the remote peer.
     NewConnection(PeerId, oneshot::Sender<Result<()>>),

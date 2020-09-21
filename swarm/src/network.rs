@@ -17,6 +17,7 @@ pub struct NetworkInfo {
 /// connection limits, a connection event buffer size of 32, and a
 /// `notify_handler` buffer size of 8.
 #[derive(Default)]
+#[allow(dead_code)]
 pub struct NetworkConfig {
     /// Note that the `ManagerConfig`s task command buffer always provides
     /// one "free" slot per task. Thus the given total `notify_handler_buffer_size`
@@ -27,7 +28,7 @@ pub struct NetworkConfig {
     max_established_per_peer: Option<usize>,
     max_outgoing_per_peer: Option<usize>,
 }
-
+#[allow(dead_code)]
 impl NetworkConfig {
     pub fn set_incoming_limit(&mut self, n: usize) -> &mut Self {
         self.max_incoming = Some(n);

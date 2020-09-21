@@ -337,7 +337,7 @@ mod tests {
             let mut socket = listener.accept().await.unwrap();
 
             let mut buf = [0; 3];
-            socket.read_exact(&mut buf).await.unwrap();
+            socket.read_exact2(&mut buf).await.unwrap();
 
             assert_eq!(buf, msg);
         };
@@ -347,7 +347,7 @@ mod tests {
         let t2 = MemoryTransport::default();
         let dialer = async move {
             let mut socket = t2.dial(cloned_t1_addr).await.unwrap();
-            socket.write_all(&msg).await.unwrap();
+            socket.write_all2(&msg).await.unwrap();
         };
 
         // Wait for both to finish.
