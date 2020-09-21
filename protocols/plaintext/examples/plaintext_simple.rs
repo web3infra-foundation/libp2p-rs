@@ -1,7 +1,7 @@
 use async_std::task;
 use env_logger;
 use libp2p_core::identity::Keypair;
-use log::{info, LevelFilter};
+use log::info;
 
 use libp2p_plaintext::PlainTextConfig;
 use libp2p_traits::{Read2, Write2};
