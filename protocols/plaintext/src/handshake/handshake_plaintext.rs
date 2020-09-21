@@ -5,7 +5,7 @@ use crate::structs_proto::Exchange;
 use crate::PlainTextConfig;
 use libp2p_core::{PeerId, PublicKey};
 use libp2p_traits::{Read2, Write2};
-use log::{error, info};
+use log::error;
 use prost::Message;
 use std::io;
 
@@ -44,9 +44,9 @@ where
 
     let remote_state = remote_context.state;
 
-    info!("Remote ID: {:?}", remote_state.clone().peer_id);
-
-    info!("Local ID: {:?}", local_id.clone());
+    // info!("Remote ID: {:?}", remote_state.clone().peer_id);
+    //
+    // info!("Local ID: {:?}", local_id.clone());
 
     if remote_state.clone().public_key.into_peer_id() == local_id {
         return Err(PlaintextError::ConnectSelf);

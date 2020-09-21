@@ -4,7 +4,7 @@ mod handshake;
 mod secure_stream;
 
 use crate::error::PlaintextError;
-use crate::handshake::handshake::Remote;
+use crate::handshake::handshake_plaintext::Remote;
 use crate::secure_stream::SecureStream;
 use libp2p_core::identity::Keypair;
 use libp2p_core::secure_io::SecureInfo;
@@ -40,7 +40,7 @@ impl PlainTextConfig {
     where
         T: Read2 + Write2 + Send + 'static,
     {
-        handshake::handshake::handshake(socket, self).await
+        handshake::handshake_plaintext::handshake(socket, self).await
     }
 }
 
