@@ -42,6 +42,11 @@ pub enum Keypair {
 }
 
 impl Keypair {
+    /// Generate a fixed Ed25519 keypair, used for test only.
+    pub fn generate_ed25519_fixed() -> Keypair {
+        Keypair::Ed25519(ed25519::Keypair::generate_fixed())
+    }
+
     /// Generate a new Ed25519 keypair.
     pub fn generate_ed25519() -> Keypair {
         Keypair::Ed25519(ed25519::Keypair::generate())

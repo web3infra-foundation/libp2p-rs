@@ -41,7 +41,7 @@ impl fmt::Display for AddrBook {
 
 impl AddrBook {
     pub fn add_addr(&mut self, peer_id: &PeerId, addr: Multiaddr, _ttl: Duration) {
-        if let Some(entry) = self.book.get_mut(peer_id.as_ref()) {
+        if let Some(entry) = self.book.get_mut(peer_id) {
             if !entry.contains(&addr) {
                 entry.push(addr);
             }
@@ -51,10 +51,10 @@ impl AddrBook {
         }
     }
     pub fn del_peer(&mut self, peer_id: &PeerId) {
-        self.book.remove(peer_id.as_ref());
+        self.book.remove(peer_id);
     }
     pub fn get_addr(&self, peer_id: &PeerId) -> Option<&SmallVec<[Multiaddr; 4]>> {
-        self.book.get(peer_id.as_ref())
+        self.book.get(peer_id)
     }
 }
 
@@ -75,6 +75,12 @@ mod tests {
             "/memory/123456".parse().unwrap(),
             Duration::from_secs(1),
         );
+
+        assert_eq!(
+            ab.get_addr(&peer_id).unwrap().first(),
+            Some(&"/memory/123456".parse().unwrap())
+        );
+
         ab.add_addr(
             &peer_id,
             "/memory/654321".parse().unwrap(),

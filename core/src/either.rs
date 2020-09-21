@@ -18,9 +18,12 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+use crate::identity::Keypair;
 use crate::muxing::StreamMuxer;
-use crate::transport::TransportError;
+use crate::secure_io::SecureInfo;
+use crate::transport::{ConnectionInfo, TransportError};
 use crate::upgrade::ProtocolName;
+use crate::{Multiaddr, PeerId, PublicKey};
 use async_trait::async_trait;
 use futures::future::BoxFuture;
 use libp2p_traits::{Read2, Write2};
@@ -74,11 +77,45 @@ where
     }
 }
 
+impl<A, B> SecureInfo for EitherOutput<A, B>
+where
+    A: SecureInfo,
+    B: SecureInfo,
+{
+    fn local_peer(&self) -> PeerId {
+        match self {
+            EitherOutput::A(a) => a.local_peer(),
+            EitherOutput::B(b) => b.local_peer(),
+        }
+    }
+
+    fn remote_peer(&self) -> PeerId {
+        match self {
+            EitherOutput::A(a) => a.remote_peer(),
+            EitherOutput::B(b) => b.remote_peer(),
+        }
+    }
+
+    fn local_priv_key(&self) -> Keypair {
+        match self {
+            EitherOutput::A(a) => a.local_priv_key(),
+            EitherOutput::B(b) => b.local_priv_key(),
+        }
+    }
+
+    fn remote_pub_key(&self) -> PublicKey {
+        match self {
+            EitherOutput::A(a) => a.remote_pub_key(),
+            EitherOutput::B(b) => b.remote_pub_key(),
+        }
+    }
+}
+
 #[async_trait]
 impl<A, B> StreamMuxer for EitherOutput<A, B>
 where
-    A: StreamMuxer + Send,
-    B: StreamMuxer + Send,
+    A: StreamMuxer,
+    B: StreamMuxer,
 {
     type Substream = EitherOutput<A::Substream, B::Substream>;
 
@@ -107,6 +144,26 @@ where
         match self {
             EitherOutput::A(a) => a.task(),
             EitherOutput::B(b) => b.task(),
+        }
+    }
+}
+
+impl<A, B> ConnectionInfo for EitherOutput<A, B>
+where
+    A: ConnectionInfo,
+    B: ConnectionInfo,
+{
+    fn local_multiaddr(&self) -> Multiaddr {
+        match self {
+            EitherOutput::A(a) => a.local_multiaddr(),
+            EitherOutput::B(b) => b.local_multiaddr(),
+        }
+    }
+
+    fn remote_multiaddr(&self) -> Multiaddr {
+        match self {
+            EitherOutput::A(a) => a.remote_multiaddr(),
+            EitherOutput::B(b) => b.remote_multiaddr(),
         }
     }
 }

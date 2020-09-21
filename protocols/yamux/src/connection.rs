@@ -135,7 +135,7 @@ pub enum Mode {
 ///
 /// Randomly generated, this is mainly intended to improve log output.
 #[derive(Clone, Copy)]
-pub(crate) struct Id(u32, Mode);
+pub struct Id(u32, Mode);
 
 impl Id {
     /// Create a random connection ID.
@@ -304,6 +304,11 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
             shutdown: Shutdown::NotStarted,
             is_closed: false,
         }
+    }
+
+    /// Returns the id of the connection
+    pub fn id(&self) -> Id {
+        self.id
     }
 
     /// Get a controller for this connection.
@@ -918,7 +923,7 @@ impl<T> Connection<T> {
 
 impl<T> Drop for Connection<T> {
     fn drop(&mut self) {
-        log::info!("connection dropped");
+        log::trace!("{:?} dropped", self.id);
         // probably we don't have to call drop_all_... , since all streams will be
         // cleaned up when the underlying socket is down
         //self.drop_all_streams();
