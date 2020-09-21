@@ -3,13 +3,16 @@ use log::info;
 use std::time::Duration;
 #[macro_use]
 extern crate lazy_static;
+
+use libp2p_traits::{Read2, Write2};
 use libp2p_core::identity::Keypair;
 use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::{Multiaddr, PeerId};
-use libp2p_swarm::Swarm;
+use libp2p_swarm::{Swarm, DummyProtocolHandler};
 use libp2p_tcp::TcpConfig;
 use secio;
 use yamux;
+use libp2p_core::upgrade::UpgradeInfo;
 
 //use libp2p_swarm::Swarm::network::NetworkConfig;
 
@@ -37,8 +40,10 @@ fn run_server() {
     // let mux = mplex::Config::new();
     //let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
+    let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()));
 
-    let mut swarm = Swarm::new(tu, 100, PeerId::from_public_key(keys.public()));
+    let dummy_handler = Box::new(DummyProtocolHandler::new());
+    swarm.add_protocol_handler(dummy_handler);
 
     info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
 
@@ -61,7 +66,11 @@ fn run_client() {
     //let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
 
-    let mut swarm = Swarm::new(tu, 100, PeerId::from_public_key(keys.public()));
+    let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()));
+
+    let dummy_handler = Box::new(DummyProtocolHandler::new());
+    swarm.add_protocol_handler(dummy_handler);
+
     let mut control = swarm.control();
 
     let remote_peer_id = PeerId::from_public_key(SERVER_KEY.public());
@@ -78,7 +87,14 @@ fn run_client() {
 
     task::block_on(async move {
         control.new_connection(&remote_peer_id).await.unwrap();
-        let _stream = control.new_stream(&remote_peer_id).await.unwrap();
+        let mut stream = control.new_stream(&remote_peer_id).await.unwrap();
+
+        log::info!("stream {:?} opened, writing something...", stream);
+
+        stream.write_all2(b"hello").await;
+
+        task::sleep(Duration::from_secs(3)).await;
+
 
         info!("shutdown is completed");
     });

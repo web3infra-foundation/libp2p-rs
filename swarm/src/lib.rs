@@ -38,11 +38,13 @@ mod connection;
 mod control;
 mod network;
 mod registry;
+mod protocol_handler;
 
-use crate::connection::{ConnectedPoint, Connection, ConnectionId, ConnectionLimit, Direction};
-use crate::network::NetworkInfo;
+pub use protocol_handler::DummyProtocolHandler;
 
-use crate::control::{Control, SwarmControlCmd};
+use smallvec::SmallVec;
+use std::collections::HashSet;
+use std::{error, fmt, hash::Hash};
 use async_std::task;
 use fnv::FnvHashMap;
 use futures::channel::{mpsc, oneshot};
@@ -52,10 +54,16 @@ use libp2p_core::peerstore::PeerStore;
 use libp2p_core::secure_io::SecureInfo;
 use libp2p_core::transport::TransportListener;
 use libp2p_core::{muxing::StreamMuxer, transport::TransportError, Multiaddr, PeerId, Transport};
-use registry::Addresses;
-use smallvec::SmallVec;
-use std::collections::HashSet;
-use std::{error, fmt, hash::Hash};
+use libp2p_core::multistream::muxer::Muxer;
+use libp2p_core::upgrade::ProtocolName;
+use libp2p_core::multistream::Negotiator;
+use libp2p_traits::{copy, Read2, ReadExt2, Write2};
+
+use crate::registry::Addresses;
+use crate::control::{Control, SwarmControlCmd};
+use crate::protocol_handler::{ProtocolHandler, BoxHandler};
+use crate::connection::{ConnectedPoint, Connection, ConnectionId, ConnectionLimit, Direction};
+use crate::network::NetworkInfo;
 
 type Result<T> = std::result::Result<T, SwarmError>;
 
@@ -119,6 +127,8 @@ pub enum SwarmEvent<TStreamMuxer, TSubstream> {
     StreamOpened {
         /// The substream
         stream: TSubstream,
+        /// The direction of the substream
+        dir: Direction,
     },
     /// A substream has been closed.
     StreamClosed {
@@ -199,19 +209,23 @@ pub enum SwarmEvent<TStreamMuxer, TSubstream> {
     Dialing(PeerId),
 }
 
+type ProtocolId = &'static [u8];
+
 /// Contains the state of the network, plus the way it should behave.
-pub struct Swarm<TTrans, THandler>
+pub struct Swarm<TTrans>
 where
     TTrans: Transport + Clone,
     TTrans::Output: StreamMuxer,
-    //    THandler: IntoProtocolsHandler,
-    //    TConnInfo: ConnectionInfo<PeerId = PeerId>,
 {
     pub peers: PeerStore,
+    
+    //muxer: Negotiator<TProto>,
 
+    protocol_handlers: FnvHashMap<ProtocolId, BoxHandler<<TTrans::Output as StreamMuxer>::Substream>>,
+
+    /// The Transport
     transport: TTrans,
-    #[allow(dead_code)]
-    handler: THandler,
+
     /// The local peer ID.
     local_peer_id: PeerId,
 
@@ -274,17 +288,14 @@ where
 // {
 // }
 #[allow(dead_code)]
-impl<TTrans, THandler> Swarm<TTrans, THandler>
+impl<TTrans> Swarm<TTrans>
 where
-    THandler: Send + 'static,
     TTrans: Transport + Clone + 'static,
     TTrans::Listener: 'static,
     TTrans::Output: StreamMuxer + SecureInfo,
-    //TTrans::Listener::Output : StreamMuxer + SecureInfo,
+    <TTrans::Output as StreamMuxer>::Substream: Read2 + Write2 + Send + Unpin,
 
-    // TInEvent: Clone + Send + 'static,
-    // TOutEvent: Send + 'static,
-    // TConnInfo: ConnectionInfo<PeerId = PeerId> + fmt::Debug + Clone + Send + 'static,
+
     //THandler: IntoProtocolsHandler + Send + 'static,
     //THandler::Handler: ProtocolsHandler<InEvent = TInEvent, OutEvent = TOutEvent, Error = THandleErr>,
     //THandleErr: error::Error + Send + 'static,
@@ -292,7 +303,6 @@ where
     /// Builds a new `Swarm`.
     pub fn new(
         transport: TTrans,
-        handler: THandler,
         local_peer_id: PeerId,
         //_config: NetworkConfig,
     ) -> Self
@@ -311,9 +321,10 @@ where
         let (ctrl_tx, ctrl_rx) = mpsc::channel(0);
         Swarm {
             peers: PeerStore::default(),
+            //muxer: Negotiator::default(),
+            protocol_handlers: Default::default(),
             transport,
             local_peer_id,
-            handler,
             // listeners: SmallVec::with_capacity(16),
             // next_id: ListenerId(1),
             supported_protocols: Default::default(),
@@ -328,6 +339,14 @@ where
             ctrl_sender: ctrl_tx,
             next_connection_id: 0,
         }
+    }
+
+    pub fn add_protocol_handler(&mut self, p: BoxHandler<<TTrans::Output as StreamMuxer>::Substream>) {
+        log::trace!("adding protocol handler: {:?}", p.protocol_info().iter().map(|n|n.protocol_name_str()).collect::<Vec<_>>());
+        p.protocol_info().iter().for_each(|pid| {
+            self.protocol_handlers.insert(pid, p.clone());
+        });
+        //self.protocol_handlers.insert(, p);
     }
 
     /// Get a controller for Swarm.
@@ -422,6 +441,10 @@ where
                 //     }
                 // }
             }
+            SwarmEvent::StreamOpened { stream, dir } => {
+                self.handle_stream_opened(stream, dir).await;
+            },
+
 
             // TODO: handle other messages
             e => {
@@ -502,8 +525,22 @@ where
     ) -> Result<()> {
         if let Some(conn) = self.get_best_conn(&peer_id) {
             // well, we have a connection, simply open a new stream
-            let r = conn.muxer.open_stream().await.map_err(|e| e.into());
-            let _ = reply.send(r);
+            let stream = conn.muxer.open_stream().await.unwrap();
+
+            let protocols = self.protocol_handlers.keys();
+            let negotiator = Negotiator::new_with_protocols(protocols);
+            let (r, stream) = negotiator.select_one(stream).await.unwrap();
+
+            log::trace!("client protocol negotiated at: {}", r.protocol_name_str());
+
+            // TODO: why have to clone it???
+            let r = r.clone();
+            //
+            let mut handler = self.protocol_handlers.remove(r.clone()).unwrap();
+            //handler.handle(stream, r);
+
+
+            let _ = reply.send(Ok(stream));
         } else {
             let _ = reply.send(Err(SwarmError::NoConnection(peer_id)));
         }
@@ -764,6 +801,15 @@ where
             self.listeners.iter().flat_map(|l| l.addresses.iter())
         }
     */
+/*
+    /// Set a handler for sub streams, with a protocol id
+    ///
+    /// , f: F)
+    //     where F: FnMut(<TTrans::Output as StreamMuxer>::Substream
+    fn set_stream_handler<F>(&mut self, pid: TProto)
+    {
+        self.muxer.add_handler(pid, Box::new(f));
+    }*/
 
     /// Returns an iterator that produces the list of addresses that other nodes can use to reach
     /// us.
@@ -888,7 +934,7 @@ where
                 let r = stream_muxer.accept_stream().await;
                 match r {
                     Ok(stream) => {
-                        let _ = tx.send(SwarmEvent::StreamOpened { stream }).await;
+                        let _ = tx.send(SwarmEvent::StreamOpened { stream, dir: Direction::Inbound }).await;
                     }
                     Err(_err) => {
                         let _ = tx
@@ -915,6 +961,39 @@ where
 
         // insert to the hashmap of connections
         self.add_connection(conn);
+
+        Ok(())
+    }
+
+    pub async fn handle_stream_opened(
+        &mut self,
+        stream: <TTrans::Output as StreamMuxer>::Substream,
+        dir: Direction,
+    ) -> Result<()> {
+        log::trace!(
+            "handle_stream_opened: stream={:?}{:?}",
+            stream,
+            dir
+        );
+
+        // run stream handler for incoming substream
+        if dir == Direction::Inbound {
+            let protocols = self.protocol_handlers.keys();
+            let negotiator = Negotiator::new_with_protocols(protocols);
+            let (r, stream) = negotiator.negotiate(stream).await.unwrap();
+
+            log::trace!("server protocol negotiated at: {}", r.protocol_name_str());
+
+            // TODO: why have to clone it???
+            let r = r.clone();
+            //
+            let mut handler = self.protocol_handlers.remove(r.clone()).unwrap();
+
+            task::spawn(async move {
+                handler.handle(stream, r).await;
+            });
+
+        }
 
         Ok(())
     }

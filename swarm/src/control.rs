@@ -14,6 +14,7 @@ use futures::{
     prelude::*,
 };
 use libp2p_core::PeerId;
+use libp2p_traits::{Read2, Write2};
 
 type Result<T> = std::result::Result<T, SwarmError>;
 
@@ -53,7 +54,9 @@ impl<TSubstream> Clone for Control<TSubstream> {
     }
 }
 
-impl<TSubstream> Control<TSubstream> {
+impl<TSubstream> Control<TSubstream>
+where TSubstream: Read2 + Write2
+{
     pub(crate) fn new(sender: mpsc::Sender<SwarmControlCmd<TSubstream>>) -> Self {
         Control { sender }
     }
