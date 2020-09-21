@@ -1,23 +1,13 @@
 use async_std::task;
-use log::{error, info};
+use log::{info};
 use std::time::Duration;
 #[macro_use]
 extern crate lazy_static;
-
 use libp2p_core::transport::upgrade::TransportUpgrade;
-use libp2p_core::transport::{TransportError, TransportListener};
-use libp2p_core::{Multiaddr, PeerId, Transport};
-
+use libp2p_core::{Multiaddr, PeerId};
 use libp2p_swarm::Swarm;
 use libp2p_tcp::TcpConfig;
-use libp2p_traits::{copy, Read2, ReadExt2, Write2};
-
-use futures::future;
-use futures::StreamExt;
 use libp2p_core::identity::Keypair;
-use libp2p_core::muxing::StreamMuxer;
-use libp2p_core::upgrade::{DummyUpgrader, Selector};
-use mplex;
 use secio;
 use yamux;
 
@@ -52,7 +42,7 @@ fn run_server() {
 
     info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
 
-    let control = swarm.control();
+    let _control = swarm.control();
 
     swarm.listen_on(listen_addr).unwrap();
 
@@ -64,7 +54,7 @@ fn run_server() {
 fn run_client() {
     let keys = Keypair::generate_secp256k1();
 
-    let addr: Multiaddr = "/ip4/127.0.0.1/tcp/8086".parse().unwrap();
+    let _addr: Multiaddr = "/ip4/127.0.0.1/tcp/8086".parse().unwrap();
     let sec = secio::Config::new(keys.clone());
     let mux = yamux::Config::new();
     // let mux = mplex::Config::new();
@@ -88,7 +78,7 @@ fn run_client() {
 
     task::block_on(async move {
         control.new_connection(&remote_peer_id).await.unwrap();
-        let stream = control.new_stream(&remote_peer_id).await.unwrap();
+        let _stream = control.new_stream(&remote_peer_id).await.unwrap();
 
         info!("shutdown is completed");
     });

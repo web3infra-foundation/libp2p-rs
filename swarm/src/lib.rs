@@ -40,11 +40,10 @@ mod network;
 mod registry;
 
 use crate::connection::{ConnectedPoint, Connection, ConnectionId, ConnectionLimit, Direction};
-use crate::network::{NetworkConfig, NetworkInfo};
+use crate::network::{NetworkInfo};
 
 use crate::control::{Control, SwarmControlCmd};
 use async_std::task;
-use async_std::task::JoinHandle;
 use fnv::FnvHashMap;
 use futures::channel::{mpsc, oneshot};
 use futures::future::Either;
@@ -56,8 +55,7 @@ use libp2p_core::{muxing::StreamMuxer, transport::TransportError, Multiaddr, Pee
 use registry::Addresses;
 use smallvec::SmallVec;
 use std::collections::HashSet;
-use std::num::NonZeroU32;
-use std::{error, fmt, hash::Hash, io};
+use std::{error, fmt, hash::Hash};
 
 type Result<T> = std::result::Result<T, SwarmError>;
 
@@ -248,6 +246,7 @@ where
     established: FnvHashMap<PeerId, Vec<Connection<TTrans::Output>>>,
 
     /// The pending connections that are currently being negotiated.
+    #[allow(dead_code)]
     pending: FnvHashMap<PeerId, Connection<TTrans::Output>>,
     //
     // /// Pending event to be delivered to connection handlers
@@ -274,7 +273,7 @@ where
 //     TConnInfo: ConnectionInfo<PeerId = PeerId>,
 // {
 // }
-
+#[allow(dead_code)]
 impl<TTrans, THandler> Swarm<TTrans, THandler>
 where
     THandler: Send + 'static,
@@ -384,7 +383,7 @@ where
         log::trace!("got an Swarm event={:?}", event);
 
         match event {
-            SwarmEvent::ListenerClosed { addresses, reason } => {}
+            SwarmEvent::ListenerClosed { addresses:_, reason:_ } => {}
             SwarmEvent::ConnectionEstablished {
                 stream_muxer,
                 direction,
@@ -392,23 +391,23 @@ where
             } => {
                 let r = self.handle_new_connection(stream_muxer, direction).await;
                 if let Some(reply) = reply {
-                    reply.send(r);
+                   let _= reply.send(r);
                 }
             }
             SwarmEvent::ConnectionClosed {
                 stream_muxer,
                 conn_id,
             } => {
-                self.handle_close_connection(stream_muxer, conn_id).await;
+                let _= self.handle_close_connection(stream_muxer, conn_id).await;
             }
             SwarmEvent::OutgoingConnectionError {
-                peer_id,
-                remote_addr,
+                peer_id:_,
+                remote_addr:_,
                 error,
                 reply,
             } => {
                 if let Some(reply) = reply {
-                    reply.send(Err(error));
+                    let _= reply.send(Err(error));
                 }
                 // handle the pending NewStream request
                 // if let Some(id) = pending_request {
@@ -439,23 +438,23 @@ where
         match cmd {
             SwarmControlCmd::NewConnection(peer_id, reply) => {
                 // got the peer_id, start the dialer for it
-                self.on_new_connection(peer_id, reply).await;
+                let _=  self.on_new_connection(peer_id, reply).await;
             }
             SwarmControlCmd::CloseConnection(peer_id, reply) => {
                 // got the peer_id, close all connections to the peer
-                self.on_close_connection(peer_id, reply).await;
+                let _=  self.on_close_connection(peer_id, reply).await;
             }
             SwarmControlCmd::NewStream(peer_id, reply) => {
                 // got the peer_id, try opening a new sub stream
-                self.on_new_stream(peer_id, reply).await;
+                let _= self.on_new_stream(peer_id, reply).await;
             }
             SwarmControlCmd::CloseSwarm => {
                 log::info!("closing the swarm...");
-                self.event_sender.close_channel();
+                let _=  self.event_sender.close_channel();
             }
 
             // TODO:
-            _ => {}
+            //_ => {}
         }
 
         Ok(())
@@ -467,11 +466,11 @@ where
         reply: oneshot::Sender<Result<()>>,
     ) -> Result<()> {
         // return if we already have the connection, otherwise, start dialing
-        if let Some(conn) = self.get_best_conn(&peer_id) {
-            reply.send(Ok(()));
+        if let Some(_conn) = self.get_best_conn(&peer_id) {
+            let _= reply.send(Ok(()));
         } else {
             // Note: reply moved
-            self.start_dialer(peer_id, Some(reply));
+            let _= self.start_dialer(peer_id, Some(reply));
         }
         Ok(())
     }
@@ -485,13 +484,13 @@ where
             // TODO: to check if this connection is being closed
 
             for conn in conns {
-                conn.muxer.close().await;
+                let _= conn.muxer.close().await;
                 // wait for accept-task and bg-task to exit
                 conn.handle.as_mut().unwrap().await;
             }
         }
 
-        reply.send(Ok(()));
+        let _=  reply.send(Ok(()));
         Ok(())
     }
 
@@ -503,9 +502,9 @@ where
         if let Some(conn) = self.get_best_conn(&peer_id) {
             // well, we have a connection, simply open a new stream
             let r = conn.muxer.open_stream().await.map_err(|e| e.into());
-            reply.send(r);
+            let _= reply.send(r);
         } else {
-            reply.send(Err(SwarmError::NoConnection(peer_id)));
+            let _=  reply.send(Err(SwarmError::NoConnection(peer_id)));
         }
         Ok(())
     }
@@ -562,7 +561,7 @@ where
                         // always accept any incoming connection
 
                         // send muxer back to Swarm main task
-                        tx.send(SwarmEvent::ConnectionEstablished {
+                        let _=  tx.send(SwarmEvent::ConnectionEstablished {
                             stream_muxer: muxer,
                             direction: Direction::Inbound,
                             reply: None,
@@ -570,7 +569,7 @@ where
                         .await;
                     }
                     Err(err) => {
-                        tx.send(SwarmEvent::ListenerClosed {
+                        let _=   tx.send(SwarmEvent::ListenerClosed {
                             addresses: vec![],
                             reason: err,
                         })
@@ -616,7 +615,7 @@ where
                     // test if the PeerId matches expectation, otherwise,
                     // it is a bad outgoing connection
                     if peer_id == stream_muxer.remote_peer() {
-                        tx.send(SwarmEvent::ConnectionEstablished {
+                        let _=  tx.send(SwarmEvent::ConnectionEstablished {
                             stream_muxer,
                             direction: Direction::Outbound,
                             reply,
@@ -630,7 +629,7 @@ where
                             peer_id,
                             wrong_id
                         );
-                        tx.send(SwarmEvent::OutgoingConnectionError {
+                        let _=  tx.send(SwarmEvent::OutgoingConnectionError {
                             peer_id,
                             remote_addr: addr,
                             error: SwarmError::InvalidPeerId(wrong_id),
@@ -638,11 +637,11 @@ where
                         })
                         .await;
                         // close this connection
-                        stream_muxer.close().await;
+                        let _= stream_muxer.close().await;
                     }
                 }
                 Err(err) => {
-                    tx.send(SwarmEvent::OutgoingConnectionError {
+                    let _= tx.send(SwarmEvent::OutgoingConnectionError {
                         peer_id,
                         remote_addr: addr,
                         error: SwarmError::Transport(err),
@@ -681,7 +680,7 @@ where
     /// Tries to initiate a dialing attempt to the given peer.
     ///
     pub async fn dial_peer(&mut self, peer_id: PeerId) -> Result<()> {
-        if let Some(conn) = self.get_best_conn(&peer_id) {
+        if let Some(_conn) = self.get_best_conn(&peer_id) {
             Ok(())
         } else {
             self.start_dialer(peer_id, None)
@@ -878,15 +877,15 @@ where
             let mut stream_muxer = stream_muxer;
 
             // start the background task of the stream_muxer, the handle can be await'ed by us
-            let task_handle = stream_muxer.task().map(|task| task::spawn(task));
+            let task_handle = stream_muxer.task().map(task::spawn);
             loop {
                 let r = stream_muxer.accept_stream().await;
                 match r {
                     Ok(stream) => {
-                        tx.send(SwarmEvent::StreamOpened { stream }).await;
+                        let _=  tx.send(SwarmEvent::StreamOpened { stream }).await;
                     }
-                    Err(err) => {
-                        tx.send(SwarmEvent::ConnectionClosed {
+                    Err(_err) => {
+                        let _=  tx.send(SwarmEvent::ConnectionClosed {
                             stream_muxer,
                             conn_id,
                         })

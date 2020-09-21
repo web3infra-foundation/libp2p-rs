@@ -209,7 +209,7 @@ impl<C> Clone for Yamux<C> {
         Yamux {
             connection: None,
             control: self.control.clone(),
-            id: self.id.clone(),
+            id: self.id,
             la: self.la.clone(),
             ra: self.ra.clone(),
             local_priv_key: self.local_priv_key.clone(),

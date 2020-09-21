@@ -308,7 +308,7 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
 
     /// Returns the id of the connection
     pub fn id(&self) -> Id {
-        self.id.clone()
+        self.id
     }
 
     /// Get a controller for this connection.
