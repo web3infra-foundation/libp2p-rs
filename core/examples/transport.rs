@@ -1,14 +1,13 @@
 use async_std::task;
+use libp2p_core::pnet::{PnetConfig, PreSharedKey};
 use libp2p_core::transport::memory::MemoryTransport;
 use libp2p_core::transport::protector::ProtectorTransport;
 use libp2p_core::transport::upgrade::TransportUpgrade;
-use libp2p_core::transport::{TransportListener};
+use libp2p_core::transport::TransportListener;
 use libp2p_core::upgrade::DummyUpgrader;
 use libp2p_core::{Multiaddr, Transport};
 use libp2p_traits::{Read2, Write2};
 use log;
-use libp2p_core::pnet::{PnetConfig, PreSharedKey};
-
 
 fn main() {
     env_logger::init();
@@ -41,11 +40,7 @@ fn main() {
         task::spawn(async move {
             log::info!("start client{}", i);
 
-            let t2 = TransportUpgrade::new(
-                pro_trans,
-                DummyUpgrader::new(),
-                DummyUpgrader::new(),
-            );
+            let t2 = TransportUpgrade::new(pro_trans, DummyUpgrader::new(), DummyUpgrader::new());
             let mut socket = t2.dial(addr).await.unwrap();
 
             let mut msg = [0; 5];

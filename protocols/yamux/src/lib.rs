@@ -29,7 +29,7 @@ use futures::prelude::*;
 use log::{info, trace};
 use std::fmt;
 
-pub use crate::connection::{Connection, Control, Mode, Stream, Id};
+pub use crate::connection::{Connection, Control, Id, Mode, Stream};
 pub use crate::error::ConnectionError;
 pub use crate::frame::{
     header::{HeaderDecodeError, StreamId},
@@ -39,9 +39,9 @@ use futures::future::BoxFuture;
 use libp2p_core::identity::Keypair;
 use libp2p_core::muxing::StreamMuxer;
 use libp2p_core::secure_io::SecureInfo;
-use libp2p_core::transport::{TransportError, ConnectionInfo};
+use libp2p_core::transport::{ConnectionInfo, TransportError};
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
-use libp2p_core::{PeerId, PublicKey, Multiaddr};
+use libp2p_core::{Multiaddr, PeerId, PublicKey};
 use libp2p_traits::{Read2, Write2};
 
 const DEFAULT_CREDIT: u32 = 256 * 1024; // as per yamux specification
@@ -215,16 +215,14 @@ impl<C> Clone for Yamux<C> {
             local_priv_key: self.local_priv_key.clone(),
             local_peer_id: self.local_peer_id.clone(),
             remote_pub_key: self.remote_pub_key.clone(),
-            remote_peer_id: self.remote_peer_id.clone()
+            remote_peer_id: self.remote_peer_id.clone(),
         }
     }
 }
 
 impl<C> fmt::Debug for Yamux<C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Yamux")
-            .field("Id", &self.id)
-            .finish()
+        f.debug_struct("Yamux").field("Id", &self.id).finish()
     }
 }
 
@@ -236,8 +234,8 @@ impl<C: ConnectionInfo + SecureInfo + Read2 + Write2 + Unpin + Send + 'static> Y
         // `io` will be moved into Connection soon, make a copy of the secure info
         let local_priv_key = io.local_priv_key();
         let local_peer_id = io.local_peer();
-        let remote_pub_key= io.remote_pub_key();
-        let remote_peer_id= io.remote_peer();
+        let remote_pub_key = io.remote_pub_key();
+        let remote_peer_id = io.remote_peer();
         let la = io.local_multiaddr();
         let ra = io.remote_multiaddr();
 

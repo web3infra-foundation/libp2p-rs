@@ -12,6 +12,7 @@ use async_std::net::{TcpListener, TcpStream};
 use async_trait::async_trait;
 use futures::prelude::*;
 use futures_timer::Delay;
+use libp2p_core::transport::ConnectionInfo;
 use libp2p_core::{
     multiaddr::{Multiaddr, Protocol},
     transport::{TransportError, TransportListener},
@@ -28,7 +29,6 @@ use std::{
     task::{Context, Poll},
     time::Duration,
 };
-use libp2p_core::transport::ConnectionInfo;
 
 /// Represents the configuration for a TCP/IP transport capability for libp2p.
 ///
@@ -178,7 +178,11 @@ impl Transport for TcpConfig {
         // figure out the local sock address
         let local_addr = stream.local_addr()?;
         let la = ip_to_multiaddr(local_addr.ip(), local_addr.port());
-        Ok(TcpTransStream { inner: stream, la, ra: addr })
+        Ok(TcpTransStream {
+            inner: stream,
+            la,
+            ra: addr,
+        })
     }
 }
 
@@ -210,7 +214,11 @@ impl TransportListener for TcpTransListener {
         let local_addr = stream.local_addr()?;
         let la = ip_to_multiaddr(local_addr.ip(), local_addr.port());
         let ra = ip_to_multiaddr(sock_addr.ip(), sock_addr.port());
-        Ok(TcpTransStream { inner: stream, la, ra })
+        Ok(TcpTransStream {
+            inner: stream,
+            la,
+            ra,
+        })
     }
 
     fn multi_addr(&self) -> Multiaddr {

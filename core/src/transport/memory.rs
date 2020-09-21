@@ -1,16 +1,16 @@
-use crate::transport::{TransportListener, ConnectionInfo};
+use crate::transport::{ConnectionInfo, TransportListener};
 use crate::{transport::TransportError, Transport};
 use async_trait::async_trait;
 use fnv::FnvHashMap;
-use futures::{channel::mpsc, prelude::*, task::Context, task::Poll, AsyncWriteExt, AsyncReadExt};
+use futures::io::Error;
+use futures::{channel::mpsc, prelude::*, task::Context, task::Poll, AsyncReadExt, AsyncWriteExt};
 use futures::{SinkExt, StreamExt};
 use lazy_static::lazy_static;
+use libp2p_traits::{Read2, Write2};
 use multiaddr::{Multiaddr, Protocol};
 use parking_lot::Mutex;
 use rw_stream_sink::RwStreamSink;
 use std::{collections::hash_map::Entry, io, num::NonZeroU64, pin::Pin};
-use libp2p_traits::{Read2, Write2};
-use futures::io::Error;
 
 lazy_static! {
     static ref HUB: Mutex<FnvHashMap<NonZeroU64, mpsc::Sender<Channel>>> =

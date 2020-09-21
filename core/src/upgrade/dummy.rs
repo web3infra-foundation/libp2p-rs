@@ -21,9 +21,9 @@
 use crate::identity::Keypair;
 use crate::muxing::StreamMuxer;
 use crate::secure_io::SecureInfo;
-use crate::transport::{TransportError, ConnectionInfo};
+use crate::transport::{ConnectionInfo, TransportError};
 use crate::upgrade::{UpgradeInfo, Upgrader};
-use crate::{PeerId, PublicKey, Multiaddr};
+use crate::{Multiaddr, PeerId, PublicKey};
 use async_trait::async_trait;
 use futures::future::BoxFuture;
 use libp2p_traits::{Read2, Write2};
@@ -48,7 +48,6 @@ impl<T> fmt::Debug for DummyStream<T> {
         f.write_str("DummyStream")
     }
 }
-
 
 impl DummyUpgrader {
     /// Builds a new `DummyUpgrader`.

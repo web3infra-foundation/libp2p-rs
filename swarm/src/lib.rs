@@ -35,33 +35,31 @@
 
 //mod behaviour;
 mod connection;
+mod control;
 mod network;
 mod registry;
-mod control;
 
 use crate::connection::{ConnectedPoint, Connection, ConnectionId, ConnectionLimit, Direction};
 use crate::network::{NetworkConfig, NetworkInfo};
 
+use crate::control::{Control, SwarmControlCmd};
+use async_std::task;
+use async_std::task::JoinHandle;
+use fnv::FnvHashMap;
+use futures::channel::{mpsc, oneshot};
+use futures::future::Either;
+use futures::prelude::*;
 use libp2p_core::peerstore::PeerStore;
 use libp2p_core::secure_io::SecureInfo;
 use libp2p_core::transport::TransportListener;
 use libp2p_core::{muxing::StreamMuxer, transport::TransportError, Multiaddr, PeerId, Transport};
 use registry::Addresses;
+use smallvec::SmallVec;
+use std::collections::HashSet;
 use std::num::NonZeroU32;
 use std::{error, fmt, hash::Hash, io};
-use std::collections::HashSet;
-use futures::channel::{mpsc, oneshot};
-use futures::prelude::*;
-use futures::future::Either;
-use smallvec::SmallVec;
-use fnv::FnvHashMap;
-use async_std::task;
-use crate::control::{Control, SwarmControlCmd};
-use async_std::task::JoinHandle;
-
 
 type Result<T> = std::result::Result<T, SwarmError>;
-
 
 /// The ID of a single listener.
 ///
@@ -102,22 +100,23 @@ pub enum SwarmEvent<TStreamMuxer, TSubstream> {
         /// Direction of the connection
         direction: Direction,
         /// The pending reply channel
-        reply: Option<oneshot::Sender<Result<()>>>
-/*
-        /// Number of established connections to this peer, including the one that has just been
-        /// opened.
-        num_established: NonZeroU32,
-*/    },
+        reply: Option<oneshot::Sender<Result<()>>>, /*
+                                                            /// Number of established connections to this peer, including the one that has just been
+                                                            /// opened.
+                                                            num_established: NonZeroU32,
+                                                    */
+    },
     /// A connection with the given peer has been closed.
     ConnectionClosed {
         /// The connection, stream muxer
         stream_muxer: TStreamMuxer,
         conn_id: ConnectionId,
-/*
-        num_established: u32,
-        // /// Reason for the disconnection.
-        // cause: ConnectionError<NodeHandlerWrapperError<THandleErr>>,
-*/    },
+        /*
+                num_established: u32,
+                // /// Reason for the disconnection.
+                // cause: ConnectionError<NodeHandlerWrapperError<THandleErr>>,
+        */
+    },
     /// A new substream arrived.
     StreamOpened {
         /// The substream
@@ -150,7 +149,7 @@ pub enum SwarmEvent<TStreamMuxer, TSubstream> {
         /// The error that happened when dialing
         error: SwarmError,
         /// The pending reply channel
-        reply: Option<oneshot::Sender<Result<()>>>
+        reply: Option<oneshot::Sender<Result<()>>>,
     },
     /// We connected to a peer, but we immediately closed the connection because that peer is banned.
     BannedPeer {
@@ -221,15 +220,15 @@ where
     /// The next connection ID to assign.
     next_connection_id: ConnectionId,
 
-/*    /// The next listener ID to assign.
-    next_id: ListenerId,
+    /*    /// The next listener ID to assign.
+        next_id: ListenerId,
 
-*/    /*
-        /// Handles which nodes to connect to and how to handle the events sent back by the protocol
-        /// handlers.
-        behaviour: TBehaviour,
+    */    /*
+            /// Handles which nodes to connect to and how to handle the events sent back by the protocol
+            /// handlers.
+            behaviour: TBehaviour,
 
-    */
+        */
     /// List of protocols that the behaviour says it supports.
     #[allow(dead_code)]
     supported_protocols: SmallVec<[Vec<u8>; 16]>,
@@ -255,11 +254,12 @@ where
     // /// (or dropped if the peer disconnected) before the `behaviour`
     // /// can be polled again.
     // pending_event: Option<(PeerId, PendingNotifyHandler, TInEvent)>
-
     /// Swarm will listen on this channel, waiting for events generated from underlying transport
-    event_receiver: mpsc::Receiver<SwarmEvent<TTrans::Output, <TTrans::Output as StreamMuxer>::Substream>>,
+    event_receiver:
+        mpsc::Receiver<SwarmEvent<TTrans::Output, <TTrans::Output as StreamMuxer>::Substream>>,
     /// The Swarm event sender wil be cloned and then taken by underlying parts
-    event_sender: mpsc::Sender<SwarmEvent<TTrans::Output, <TTrans::Output as StreamMuxer>::Substream>>,
+    event_sender:
+        mpsc::Sender<SwarmEvent<TTrans::Output, <TTrans::Output as StreamMuxer>::Substream>>,
 
     /// Swarm will listen on this channel, for external control commands
     ctrl_receiver: mpsc::Receiver<SwarmControlCmd<<TTrans::Output as StreamMuxer>::Substream>>,
@@ -282,7 +282,6 @@ where
     TTrans::Listener: 'static,
     TTrans::Output: StreamMuxer + SecureInfo,
     //TTrans::Listener::Output : StreamMuxer + SecureInfo,
-
 
     // TInEvent: Clone + Send + 'static,
     // TOutEvent: Send + 'static,
@@ -318,7 +317,6 @@ where
             handler,
             // listeners: SmallVec::with_capacity(16),
             // next_id: ListenerId(1),
-
             supported_protocols: Default::default(),
             listened_addrs: Default::default(),
             external_addrs: Default::default(),
@@ -338,17 +336,13 @@ where
         Control::new(self.ctrl_sender.clone())
     }
 
-
     /// Makes progress for Swarm
     /// in general, it should be spawned in a Task
     pub async fn next(&mut self) -> Result<()> {
-
         // TODO: check if terminated??
 
         // handle messages, which makes actual progress for Swarm
         self.handle_messages().await?;
-
-
 
         Ok(())
     }
@@ -358,7 +352,8 @@ where
     /// invoked from `next_stream`
     async fn handle_messages(&mut self) -> Result<()> {
         loop {
-            let either = future::select(self.event_receiver.next(), self.ctrl_receiver.next()).await;
+            let either =
+                future::select(self.event_receiver.next(), self.ctrl_receiver.next()).await;
             match either {
                 Either::Left((evt, _)) => {
                     if let Some(evt) = evt {
@@ -368,7 +363,7 @@ where
                         log::debug!("Swarm event channel is closed, closing down...");
                         return Err(SwarmError::Closing(1));
                     }
-                },
+                }
                 Either::Right((cmd, _)) => {
                     if let Some(cmd) = cmd {
                         self.on_command(cmd).await?;
@@ -377,26 +372,41 @@ where
                         log::debug!("Swarm control channel is closed, closing down...");
                         return Err(SwarmError::Closing(2));
                     }
-                },
+                }
             }
         }
     }
 
-    async fn on_event(&mut self, event: SwarmEvent<TTrans::Output, <TTrans::Output as StreamMuxer>::Substream>) -> Result<()> {
+    async fn on_event(
+        &mut self,
+        event: SwarmEvent<TTrans::Output, <TTrans::Output as StreamMuxer>::Substream>,
+    ) -> Result<()> {
         log::trace!("got an Swarm event={:?}", event);
 
         match event {
-            SwarmEvent::ListenerClosed { addresses, reason } => {},
-            SwarmEvent::ConnectionEstablished { stream_muxer, direction, reply } => {
+            SwarmEvent::ListenerClosed { addresses, reason } => {}
+            SwarmEvent::ConnectionEstablished {
+                stream_muxer,
+                direction,
+                reply,
+            } => {
                 let r = self.handle_new_connection(stream_muxer, direction).await;
                 if let Some(reply) = reply {
                     reply.send(r);
                 }
-            },
-            SwarmEvent::ConnectionClosed { stream_muxer, conn_id } => {
+            }
+            SwarmEvent::ConnectionClosed {
+                stream_muxer,
+                conn_id,
+            } => {
                 self.handle_close_connection(stream_muxer, conn_id).await;
-            },
-            SwarmEvent::OutgoingConnectionError { peer_id, remote_addr, error, reply } => {
+            }
+            SwarmEvent::OutgoingConnectionError {
+                peer_id,
+                remote_addr,
+                error,
+                reply,
+            } => {
                 if let Some(reply) = reply {
                     reply.send(Err(error));
                 }
@@ -411,19 +421,19 @@ where
                 // }
             }
 
-
             // TODO: handle other messages
             e => {
                 log::warn!("TODO: unhandled swarm events {:?}", e);
-            },
+            }
         }
-
 
         Ok(())
     }
 
-    async fn on_command(&mut self, cmd: SwarmControlCmd<<TTrans::Output as StreamMuxer>::Substream>) -> Result<()> {
-
+    async fn on_command(
+        &mut self,
+        cmd: SwarmControlCmd<<TTrans::Output as StreamMuxer>::Substream>,
+    ) -> Result<()> {
         log::trace!("got a Swarm control command={:?}", cmd);
 
         match cmd {
@@ -451,7 +461,11 @@ where
         Ok(())
     }
 
-    async fn on_new_connection(&mut self, peer_id: PeerId, reply: oneshot::Sender<Result<()>>) -> Result<()> {
+    async fn on_new_connection(
+        &mut self,
+        peer_id: PeerId,
+        reply: oneshot::Sender<Result<()>>,
+    ) -> Result<()> {
         // return if we already have the connection, otherwise, start dialing
         if let Some(conn) = self.get_best_conn(&peer_id) {
             reply.send(Ok(()));
@@ -462,7 +476,11 @@ where
         Ok(())
     }
 
-    async fn on_close_connection(&mut self, peer_id: PeerId, reply: oneshot::Sender<Result<()>>) -> Result<()> {
+    async fn on_close_connection(
+        &mut self,
+        peer_id: PeerId,
+        reply: oneshot::Sender<Result<()>>,
+    ) -> Result<()> {
         if let Some(conns) = self.established.get_mut(&peer_id) {
             // TODO: to check if this connection is being closed
 
@@ -477,7 +495,11 @@ where
         Ok(())
     }
 
-    async fn on_new_stream(&mut self, peer_id: PeerId, reply: oneshot::Sender<Result<<TTrans::Output as StreamMuxer>::Substream>>) -> Result<()> {
+    async fn on_new_stream(
+        &mut self,
+        peer_id: PeerId,
+        reply: oneshot::Sender<Result<<TTrans::Output as StreamMuxer>::Substream>>,
+    ) -> Result<()> {
         if let Some(conn) = self.get_best_conn(&peer_id) {
             // well, we have a connection, simply open a new stream
             let r = conn.muxer.open_stream().await.map_err(|e| e.into());
@@ -494,10 +516,7 @@ where
         // well, self 'move' explicitly,
         let mut swarm = self;
 
-        task::spawn(async move {
-           while let Ok(()) = swarm.next().await {
-           }
-        });
+        task::spawn(async move { while let Ok(()) = swarm.next().await {} });
     }
 
     /// Returns the transport passed when building this object.
@@ -546,11 +565,16 @@ where
                         tx.send(SwarmEvent::ConnectionEstablished {
                             stream_muxer: muxer,
                             direction: Direction::Inbound,
-                            reply: None
-                        }).await;
+                            reply: None,
+                        })
+                        .await;
                     }
                     Err(err) => {
-                        tx.send(SwarmEvent::ListenerClosed { addresses: vec![], reason: err }).await;
+                        tx.send(SwarmEvent::ListenerClosed {
+                            addresses: vec![],
+                            reason: err,
+                        })
+                        .await;
                     }
                 }
             }
@@ -558,22 +582,27 @@ where
         Ok(())
     }
 
-/*    /// Remove some listener.
-    ///
-    /// Returns `Ok(())` if there was a listener with this ID.
-    pub fn remove_listener(&mut self, id: ListenerId) -> Result<()> {
-        if let Some(i) = self.listeners.iter().position(|l| l.id == id) {
-            self.listeners.remove(i);
-            Ok(())
-        } else {
-            Err(SwarmError::Internal)
+    /*    /// Remove some listener.
+        ///
+        /// Returns `Ok(())` if there was a listener with this ID.
+        pub fn remove_listener(&mut self, id: ListenerId) -> Result<()> {
+            if let Some(i) = self.listeners.iter().position(|l| l.id == id) {
+                self.listeners.remove(i);
+                Ok(())
+            } else {
+                Err(SwarmError::Internal)
+            }
         }
-    }
-*/
+    */
     /// Tries to dial the given address.
     ///
     /// Returns an error if the address is not supported.
-    fn dial_peer_with_addr(&mut self, peer_id: PeerId, addr: Multiaddr, reply: Option<oneshot::Sender<Result<()>>>) {
+    fn dial_peer_with_addr(
+        &mut self,
+        peer_id: PeerId,
+        addr: Multiaddr,
+        reply: Option<oneshot::Sender<Result<()>>>,
+    ) {
         // TODO: add dial limiter...
 
         log::trace!("dialing addr={:?}, expecting {:?}", addr, peer_id);
@@ -584,8 +613,6 @@ where
             let r = transport.dial(addr.clone()).await;
             match r {
                 Ok(mut stream_muxer) => {
-
-
                     // test if the PeerId matches expectation, otherwise,
                     // it is a bad outgoing connection
                     if peer_id == stream_muxer.remote_peer() {
@@ -593,27 +620,35 @@ where
                             stream_muxer,
                             direction: Direction::Outbound,
                             reply,
-                        }).await;
+                        })
+                        .await;
                     } else {
                         let wrong_id = stream_muxer.remote_peer();
-                        log::info!("bad connection, peerid mismatch conn={:?} wanted={:?} got={:?}", stream_muxer, peer_id, wrong_id);
+                        log::info!(
+                            "bad connection, peerid mismatch conn={:?} wanted={:?} got={:?}",
+                            stream_muxer,
+                            peer_id,
+                            wrong_id
+                        );
                         tx.send(SwarmEvent::OutgoingConnectionError {
                             peer_id,
                             remote_addr: addr,
                             error: SwarmError::InvalidPeerId(wrong_id),
                             reply,
-                        }).await;
+                        })
+                        .await;
                         // close this connection
                         stream_muxer.close().await;
                     }
-                },
+                }
                 Err(err) => {
                     tx.send(SwarmEvent::OutgoingConnectionError {
                         peer_id,
                         remote_addr: addr,
                         error: SwarmError::Transport(err),
                         reply,
-                    }).await;
+                    })
+                    .await;
                 }
             }
         });
@@ -621,7 +656,11 @@ where
 
     /// Starts a dialing task
     /// reply is optional, it might be 'None' when dialer is initiated internally
-    pub fn start_dialer(&mut self, peer_id: PeerId, reply: Option<oneshot::Sender<Result<()>>>) -> Result<()>{
+    pub fn start_dialer(
+        &mut self,
+        peer_id: PeerId,
+        reply: Option<oneshot::Sender<Result<()>>>,
+    ) -> Result<()> {
         log::trace!("dialer, looking for {:?}", peer_id);
 
         // TODO: find a better way to handle multiple addresses of PeerId
@@ -656,7 +695,9 @@ where
 
         log::trace!("trying to get the best connnection for {:?}", peer_id);
 
-        self.established.iter().for_each(|(k,v)| log::info!("{:?}={:?}", k, v) );
+        self.established
+            .iter()
+            .for_each(|(k, v)| log::info!("{:?}={:?}", k, v));
 
         //let v = self.established.get_mut(peer_id).unwrap();
 
@@ -781,7 +822,10 @@ where
         let conns = self.established.entry(remote_peer_id).or_default();
         conns.push(conn);
 
-        log::trace!("connection added to hashmap, total={}", self.established.len());
+        log::trace!(
+            "connection added to hashmap, total={}",
+            self.established.len()
+        );
 
         // TODO: we have a connection to the specified peer_id, now cancel all pending attempts
 
@@ -801,7 +845,11 @@ where
     /// Handles a new connection
     ///
     /// start a Task for accepting new sub-stream from the connection
-    pub async fn handle_new_connection(&mut self, stream_muxer: TTrans::Output, dir: Direction) -> Result<()> {
+    pub async fn handle_new_connection(
+        &mut self,
+        stream_muxer: TTrans::Output,
+        dir: Direction,
+    ) -> Result<()> {
         log::trace!("handle_new_connection: {:?} Dir={:?}", stream_muxer, dir);
 
         // clone the stream_muxer, and then wrap into Connection, task_handle will be assigned later
@@ -824,7 +872,6 @@ where
         */
         // TODO: add remote pubkey to keystore
 
-
         let mut tx = self.event_sender.clone();
         let conn_id = conn.id();
         let handle = task::spawn(async move {
@@ -836,16 +883,14 @@ where
                 let r = stream_muxer.accept_stream().await;
                 match r {
                     Ok(stream) => {
-                        tx.send(SwarmEvent::StreamOpened {
-                            stream,
-                        }).await;
-
-                    },
+                        tx.send(SwarmEvent::StreamOpened { stream }).await;
+                    }
                     Err(err) => {
                         tx.send(SwarmEvent::ConnectionClosed {
                             stream_muxer,
                             conn_id,
-                        }).await;
+                        })
+                        .await;
 
                         // something happened, break the loop then exit the Task
                         break;
@@ -868,20 +913,25 @@ where
         Ok(())
     }
 
-
     /// Handles closing a connection
     ///
     /// start a Task for accepting new sub-stream from the connection
-    pub async fn handle_close_connection(&mut self, stream_muxer: TTrans::Output, conn_id: ConnectionId) -> Result<()> {
-
+    pub async fn handle_close_connection(
+        &mut self,
+        stream_muxer: TTrans::Output,
+        conn_id: ConnectionId,
+    ) -> Result<()> {
         log::info!("before close {:?}", self.established);
 
-        log::trace!("handle_close_connection: {:?} ConnectionId={:?}", stream_muxer, conn_id);
+        log::trace!(
+            "handle_close_connection: {:?} ConnectionId={:?}",
+            stream_muxer,
+            conn_id
+        );
 
         let remote_peer_id = stream_muxer.remote_peer();
 
         if let Some(conns) = self.established.get_mut(&remote_peer_id) {
-
             // let x = conns.iter_mut().find(|c| c.id == conn_id);
             // if let Some(c) = x {
             //     c.handle.as_mut().unwrap().await;
@@ -898,7 +948,6 @@ where
             }
 
             conns.remove(index);
-
         } else {
             log::warn!("shouldn't happen");
         }
@@ -907,7 +956,6 @@ where
 
         Ok(())
     }
-
 }
 
 /// Connections to notify of a pending event.
@@ -922,7 +970,6 @@ enum PendingNotifyHandler {
     Any(SmallVec<[ConnectionId; 10]>),
     All(SmallVec<[ConnectionId; 10]>),
 }
-
 
 /// The possible failures of [`Swarm`].
 #[derive(Debug)]
@@ -947,8 +994,6 @@ pub enum SwarmError {
     /// Contains a TransportError.
     Transport(TransportError),
 
-
-
     /// Internal, tentatively for convenience
     Internal,
 }
@@ -957,9 +1002,17 @@ impl fmt::Display for SwarmError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SwarmError::ConnectionLimit(err) => write!(f, "Swarm Dial error: {}", err),
-            SwarmError::NoAddresses(peer_id) => write!(f, "Swarm Dial error: no addresses for peer{:?}.", peer_id),
-            SwarmError::NoConnection(peer_id) => write!(f, "Swarm Stream error: no connections for peer{:?}.", peer_id),
-            SwarmError::InvalidPeerId(peer_id) => write!(f, "Swarm Dial error: invalid peer id{:?}.", peer_id),
+            SwarmError::NoAddresses(peer_id) => {
+                write!(f, "Swarm Dial error: no addresses for peer{:?}.", peer_id)
+            }
+            SwarmError::NoConnection(peer_id) => write!(
+                f,
+                "Swarm Stream error: no connections for peer{:?}.",
+                peer_id
+            ),
+            SwarmError::InvalidPeerId(peer_id) => {
+                write!(f, "Swarm Dial error: invalid peer id{:?}.", peer_id)
+            }
             SwarmError::Transport(err) => write!(f, "Swarm Transport error: {}.", err),
             SwarmError::Internal => write!(f, "Swarm internal error."),
             SwarmError::Closing(s) => write!(f, "Swarm channel closed source={}.", s),
@@ -1000,9 +1053,6 @@ impl From<oneshot::Canceled> for SwarmError {
         SwarmError::Internal
     }
 }
-
-
-
 
 #[cfg(test)]
 mod tests {}
