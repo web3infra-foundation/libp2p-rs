@@ -9,7 +9,7 @@ use log::{info, trace};
 use std::fmt;
 
 use libp2p_core::muxing::StreamMuxer;
-use libp2p_core::transport::{TransportError, ConnectionInfo};
+use libp2p_core::transport::{ConnectionInfo, TransportError};
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
 use libp2p_traits::{Read2, Write2};
 
@@ -17,9 +17,9 @@ use crate::connection::Connection;
 use connection::{control::Control, stream::Stream};
 use error::ConnectionError;
 use futures::future::BoxFuture;
-use libp2p_core::{Multiaddr, PeerId, PublicKey};
-use libp2p_core::secure_io::SecureInfo;
 use libp2p_core::identity::Keypair;
+use libp2p_core::secure_io::SecureInfo;
+use libp2p_core::{Multiaddr, PeerId, PublicKey};
 
 #[derive(Clone)]
 pub struct Config {}
@@ -72,7 +72,7 @@ impl<C> Clone for Mplex<C> {
             local_priv_key: self.local_priv_key.clone(),
             local_peer_id: self.local_peer_id.clone(),
             remote_pub_key: self.remote_pub_key.clone(),
-            remote_peer_id: self.remote_peer_id.clone()
+            remote_peer_id: self.remote_peer_id.clone(),
         }
     }
 }
@@ -90,8 +90,8 @@ impl<C: ConnectionInfo + SecureInfo + Read2 + Write2 + Unpin + Send + 'static> M
         let ra = io.remote_multiaddr();
         let local_priv_key = io.local_priv_key();
         let local_peer_id = io.local_peer();
-        let remote_pub_key= io.remote_pub_key();
-        let remote_peer_id= io.remote_peer();
+        let remote_pub_key = io.remote_pub_key();
+        let remote_peer_id = io.remote_peer();
 
         let conn = Connection::new(io);
         let ctrl = conn.control();
@@ -109,7 +109,9 @@ impl<C: ConnectionInfo + SecureInfo + Read2 + Write2 + Unpin + Send + 'static> M
 }
 
 impl<C: Send> ConnectionInfo for Mplex<C> {
-    fn local_multiaddr(&self) -> Multiaddr { self.la.clone() }
+    fn local_multiaddr(&self) -> Multiaddr {
+        self.la.clone()
+    }
     fn remote_multiaddr(&self) -> Multiaddr {
         self.ra.clone()
     }

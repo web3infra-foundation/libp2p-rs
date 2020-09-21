@@ -17,8 +17,6 @@ use libp2p_core::PeerId;
 
 type Result<T> = std::result::Result<T, SwarmError>;
 
-
-
 #[derive(Debug)]
 pub enum SwarmControlCmd<TSubstream> {
     /// Open a connection to the remote peer.
@@ -30,7 +28,6 @@ pub enum SwarmControlCmd<TSubstream> {
     /// Close the whole connection.
     CloseSwarm,
 }
-
 
 /// The `Swarm` controller.
 ///
@@ -57,34 +54,31 @@ impl<TSubstream> Clone for Control<TSubstream> {
 
 impl<TSubstream> Control<TSubstream> {
     pub(crate) fn new(sender: mpsc::Sender<SwarmControlCmd<TSubstream>>) -> Self {
-        Control {
-            sender,
-        }
+        Control { sender }
     }
 
     /// make a connection to the remote.
     pub async fn new_connection(&mut self, peerd_id: &PeerId) -> Result<()> {
         let (tx, rx) = oneshot::channel();
-        self.sender.send(SwarmControlCmd::NewConnection(peerd_id.clone(), tx)).await?;
+        self.sender
+            .send(SwarmControlCmd::NewConnection(peerd_id.clone(), tx))
+            .await?;
         rx.await?
     }
 
     /// Open a new stream to the remote.
     pub async fn new_stream(&mut self, peerd_id: &PeerId) -> Result<TSubstream> {
         let (tx, rx) = oneshot::channel();
-        self.sender.send(SwarmControlCmd::NewStream(peerd_id.clone(), tx)).await?;
+        self.sender
+            .send(SwarmControlCmd::NewStream(peerd_id.clone(), tx))
+            .await?;
         rx.await?
     }
 
     /// Close the connection.
     pub async fn close(&mut self) -> Result<()> {
         // SwarmControlCmd::CloseSwarm doesn't need a response from Swarm
-        if self
-            .sender
-            .send(SwarmControlCmd::CloseSwarm)
-            .await
-            .is_err()
-        {
+        if self.sender.send(SwarmControlCmd::CloseSwarm).await.is_err() {
             // The receiver is closed which means the connection is already closed.
             return Ok(());
         }

@@ -1,16 +1,16 @@
 use async_std::task;
-use std::time::Duration;
 use log::{error, info};
+use std::time::Duration;
 #[macro_use]
 extern crate lazy_static;
 
 use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::transport::{TransportError, TransportListener};
-use libp2p_core::{Multiaddr, Transport, PeerId};
+use libp2p_core::{Multiaddr, PeerId, Transport};
 
-use libp2p_traits::{copy, Read2, ReadExt2, Write2};
-use libp2p_tcp::TcpConfig;
 use libp2p_swarm::Swarm;
+use libp2p_tcp::TcpConfig;
+use libp2p_traits::{copy, Read2, ReadExt2, Write2};
 
 use futures::future;
 use futures::StreamExt;
@@ -33,7 +33,6 @@ fn main() {
         run_client();
     }
 }
-
 
 lazy_static! {
     static ref SERVER_KEY: Keypair = Keypair::generate_ed25519_fixed();
@@ -60,7 +59,6 @@ fn run_server() {
     swarm.start();
 
     loop {}
-
 }
 
 fn run_client() {
@@ -80,8 +78,11 @@ fn run_client() {
 
     info!("about to connect to {:?}", remote_peer_id);
 
-    swarm.peers.addrs.add_addr(&remote_peer_id, "/ip4/127.0.0.1/tcp/8086".parse().unwrap(), Duration::default());
-
+    swarm.peers.addrs.add_addr(
+        &remote_peer_id,
+        "/ip4/127.0.0.1/tcp/8086".parse().unwrap(),
+        Duration::default(),
+    );
 
     swarm.start();
 

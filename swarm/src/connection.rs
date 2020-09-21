@@ -1,4 +1,5 @@
 use crate::{Multiaddr, PeerId};
+use async_std::task::JoinHandle;
 use libp2p_core::identity::Keypair;
 use libp2p_core::muxing::StreamMuxer;
 use libp2p_core::secure_io::SecureInfo;
@@ -7,7 +8,6 @@ use libp2p_core::PublicKey;
 use smallvec::SmallVec;
 use std::hash::Hash;
 use std::{error::Error, fmt, io};
-use async_std::task::JoinHandle;
 
 /// The direction of a peer-to-peer communication channel.
 #[derive(Debug, Clone, PartialEq)]
@@ -173,8 +173,7 @@ pub type ConnectionId = usize;
 
 /// A multiplexed connection to a peer with associated `Substream`s.
 #[allow(dead_code)]
-pub struct Connection<TMuxer: StreamMuxer>
-{
+pub struct Connection<TMuxer: StreamMuxer> {
     /// The unique ID for a connection
     pub(crate) id: usize,
     /// Node that handles the muxer.
@@ -189,8 +188,7 @@ pub struct Connection<TMuxer: StreamMuxer>
     pub(crate) handle: Option<JoinHandle<()>>,
 }
 
-impl<TMuxer: StreamMuxer> PartialEq for Connection<TMuxer>
-{
+impl<TMuxer: StreamMuxer> PartialEq for Connection<TMuxer> {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
@@ -230,7 +228,9 @@ where
     }
 
     /// Returns the unique Id of the connection
-    pub fn id(&self) -> ConnectionId { self.id }
+    pub fn id(&self) -> ConnectionId {
+        self.id
+    }
 
     /// local_addr is the multiaddr on our side of the connection
     pub fn local_addr(&self) -> Multiaddr {

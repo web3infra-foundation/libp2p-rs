@@ -1,11 +1,11 @@
+use crate::pnet::{Pnet, PnetConfig, PnetOutput};
+use crate::transport::ConnectionInfo;
 use crate::{
     transport::{TransportError, TransportListener},
     Multiaddr, Transport,
 };
 use async_trait::async_trait;
 use libp2p_traits::{Read2, Write2};
-use crate::pnet::{Pnet, PnetConfig, PnetOutput};
-use crate::transport::ConnectionInfo;
 
 #[derive(Debug, Copy, Clone)]
 pub struct ProtectorTransport<InnerTrans> {

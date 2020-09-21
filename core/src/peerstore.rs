@@ -76,7 +76,10 @@ mod tests {
             Duration::from_secs(1),
         );
 
-        assert_eq!(ab.get_addr(&peer_id).unwrap().first(), Some(&"/memory/123456".parse().unwrap()));
+        assert_eq!(
+            ab.get_addr(&peer_id).unwrap().first(),
+            Some(&"/memory/123456".parse().unwrap())
+        );
 
         ab.add_addr(
             &peer_id,

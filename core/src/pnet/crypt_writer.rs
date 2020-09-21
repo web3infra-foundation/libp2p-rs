@@ -1,11 +1,11 @@
+use crate::transport::ConnectionInfo;
+use crate::Multiaddr;
 use async_trait::async_trait;
 use futures::io;
 use libp2p_traits::{Read2, Write2};
 use log::trace;
 use salsa20::{stream_cipher::SyncStreamCipher, XSalsa20};
 use std::fmt;
-use crate::transport::ConnectionInfo;
-use crate::{Multiaddr};
 
 /// A writer that encrypts and forwards to an inner writer
 pub struct CryptWriter<W> {
@@ -72,7 +72,7 @@ where
 
 impl<W: ConnectionInfo> ConnectionInfo for CryptWriter<W> {
     fn local_multiaddr(&self) -> Multiaddr {
-       self.inner.local_multiaddr()
+        self.inner.local_multiaddr()
     }
     fn remote_multiaddr(&self) -> Multiaddr {
         self.inner.remote_multiaddr()
