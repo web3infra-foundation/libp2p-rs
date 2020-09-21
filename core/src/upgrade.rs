@@ -100,7 +100,7 @@ impl<T: AsRef<[u8]>> ProtocolName for T {
     }
 }
 
-pub trait UpgradeInfo {
+pub trait UpgradeInfo: Send {
     /// Opaque type representing a negotiable protocol.
     type Info: ProtocolName + Clone + Send + Sync + std::fmt::Debug;
 
@@ -112,7 +112,7 @@ pub trait UpgradeInfo {
 /// or both.
 /// Possible upgrade on a connection or substream.
 #[async_trait]
-pub trait Upgrader<C>: UpgradeInfo + Send + Clone {
+pub trait Upgrader<C>: UpgradeInfo + Clone {
     /// Output after the upgrade has been successfully negotiated and the handshake performed.
     type Output: Send;
 
