@@ -38,9 +38,13 @@ mod connection;
 mod control;
 mod network;
 mod registry;
-mod protocol_handler;
+mod substream;
+mod muxer;
+
+pub mod protocol_handler;
 
 pub use protocol_handler::DummyProtocolHandler;
+pub use muxer::Muxer;
 
 use smallvec::SmallVec;
 use std::collections::HashSet;
@@ -54,14 +58,12 @@ use libp2p_core::peerstore::PeerStore;
 use libp2p_core::secure_io::SecureInfo;
 use libp2p_core::transport::TransportListener;
 use libp2p_core::{muxing::StreamMuxer, transport::TransportError, Multiaddr, PeerId, Transport};
-use libp2p_core::multistream::muxer::Muxer;
 use libp2p_core::upgrade::ProtocolName;
 use libp2p_core::multistream::Negotiator;
-use libp2p_traits::{copy, Read2, ReadExt2, Write2};
+use libp2p_traits::{Read2, Write2};
 
 use crate::registry::Addresses;
 use crate::control::{Control, SwarmControlCmd};
-use crate::protocol_handler::{ProtocolHandler, BoxHandler};
 use crate::connection::{ConnectedPoint, Connection, ConnectionId, ConnectionLimit, Direction};
 use crate::network::NetworkInfo;
 
@@ -106,11 +108,12 @@ pub enum SwarmEvent<TStreamMuxer, TSubstream> {
         /// Direction of the connection
         direction: Direction,
         /// The pending reply channel
-        reply: Option<oneshot::Sender<Result<()>>>, /*
-                                                            /// Number of established connections to this peer, including the one that has just been
-                                                            /// opened.
-                                                            num_established: NonZeroU32,
-                                                    */
+        reply: Option<oneshot::Sender<Result<()>>>, 
+/*
+        /// Number of established connections to this peer, including the one that has just been
+        /// opened.
+        num_established: NonZeroU32,
+*/
     },
     /// A connection with the given peer has been closed.
     ConnectionClosed {
@@ -123,10 +126,23 @@ pub enum SwarmEvent<TStreamMuxer, TSubstream> {
                 // cause: ConnectionError<NodeHandlerWrapperError<THandleErr>>,
         */
     },
-    /// A new substream arrived.
-    StreamOpened {
+    /// A new incoming substream arrived.
+    InboundStream {
         /// The substream
         stream: TSubstream,
+    },
+    /// A new outgoing substream opened.
+    OutboundStream {
+        /// The substream.
+        stream: TSubstream,
+        /// The preferred protocols.
+        pids: Vec<ProtocolId>,
+        /// The reply channel. The outbound stream might be opened from controller,
+        /// which requires a reply message sent back
+        reply: Option<oneshot::Sender<Result<TSubstream>>>,
+    },
+    /// A new substream arrived.
+    StreamOpened {
         /// The direction of the substream
         dir: Direction,
     },
@@ -219,9 +235,9 @@ where
 {
     pub peers: PeerStore,
     
-    //muxer: Negotiator<TProto>,
+    muxer: Muxer<<TTrans::Output as StreamMuxer>::Substream>,
 
-    protocol_handlers: FnvHashMap<ProtocolId, BoxHandler<<TTrans::Output as StreamMuxer>::Substream>>,
+    //protocol_handlers: FnvHashMap<ProtocolId, BoxHandler<<TTrans::Output as StreamMuxer>::Substream>>,
 
     /// The Transport
     transport: TTrans,
@@ -304,6 +320,7 @@ where
     pub fn new(
         transport: TTrans,
         local_peer_id: PeerId,
+        muxer: Muxer<<TTrans::Output as StreamMuxer>::Substream>
         //_config: NetworkConfig,
     ) -> Self
 // where
@@ -322,7 +339,7 @@ where
         Swarm {
             peers: PeerStore::default(),
             //muxer: Negotiator::default(),
-            protocol_handlers: Default::default(),
+            muxer,
             transport,
             local_peer_id,
             // listeners: SmallVec::with_capacity(16),
@@ -341,13 +358,13 @@ where
         }
     }
 
-    pub fn add_protocol_handler(&mut self, p: BoxHandler<<TTrans::Output as StreamMuxer>::Substream>) {
-        log::trace!("adding protocol handler: {:?}", p.protocol_info().iter().map(|n|n.protocol_name_str()).collect::<Vec<_>>());
-        p.protocol_info().iter().for_each(|pid| {
-            self.protocol_handlers.insert(pid, p.clone());
-        });
-        //self.protocol_handlers.insert(, p);
-    }
+    // pub fn add_protocol_handler(&mut self, p: BoxHandler<<TTrans::Output as StreamMuxer>::Substream>) {
+    //     log::trace!("adding protocol handler: {:?}", p.protocol_info().iter().map(|n|n.protocol_name_str()).collect::<Vec<_>>());
+    //     p.protocol_info().iter().for_each(|pid| {
+    //         self.protocol_handlers.insert(pid, p.clone());
+    //     });
+    //     //self.protocol_handlers.insert(, p);
+    // }
 
     /// Get a controller for Swarm.
     pub fn control(&self) -> Control<<TTrans::Output as StreamMuxer>::Substream> {
@@ -412,9 +429,8 @@ where
                 reply,
             } => {
                 let r = self.handle_new_connection(stream_muxer, direction).await;
-                if let Some(reply) = reply {
-                    let _ = reply.send(r);
-                }
+                // send back result if reply is something
+                reply.map(|reply| reply.send(r));
             }
             SwarmEvent::ConnectionClosed {
                 stream_muxer,
@@ -428,21 +444,17 @@ where
                 error,
                 reply,
             } => {
-                if let Some(reply) = reply {
-                    let _ = reply.send(Err(error));
-                }
-                // handle the pending NewStream request
-                // if let Some(id) = pending_request {
-                //     log::trace!("pending NewStream request id={:?}", id);
-                //     if let Some(reply) = self.pending_new_stream.remove(&id) {
-                //         log::trace!("got pending request id={:?}, matched", id);
-                //         log::trace!("sending error back the client e={:?}", error);
-                //         reply.send(Err(SwarmError::from(error)));
-                //     }
-                // }
+                reply.map(|reply| reply.send(Err(error)));
             }
-            SwarmEvent::StreamOpened { stream, dir } => {
-                self.handle_stream_opened(stream, dir).await;
+            SwarmEvent::InboundStream { stream} => {
+                let _ = self.handle_inbound_stream(stream).await;
+            },
+            SwarmEvent::OutboundStream { stream, pids, reply } => {
+                let r = self.handle_outbound_stream(stream, pids).await;
+                // send back result if reply is something
+                reply.map(|reply| reply.send(r));
+            },
+            SwarmEvent::StreamOpened { dir: _ } => {
             },
 
 
@@ -470,9 +482,9 @@ where
                 // got the peer_id, close all connections to the peer
                 let _ = self.on_close_connection(peer_id, reply).await;
             }
-            SwarmControlCmd::NewStream(peer_id, reply) => {
+            SwarmControlCmd::NewStream(peer_id, pids, reply) => {
                 // got the peer_id, try opening a new sub stream
-                let _ = self.on_new_stream(peer_id, reply).await;
+                let _ = self.on_new_stream(peer_id, pids, reply).await;
             }
             SwarmControlCmd::CloseSwarm => {
                 log::info!("closing the swarm...");
@@ -521,26 +533,29 @@ where
     async fn on_new_stream(
         &mut self,
         peer_id: PeerId,
+        pids: Vec<ProtocolId>,
         reply: oneshot::Sender<Result<<TTrans::Output as StreamMuxer>::Substream>>,
     ) -> Result<()> {
         if let Some(conn) = self.get_best_conn(&peer_id) {
             // well, we have a connection, simply open a new stream
-            let stream = conn.muxer.open_stream().await.unwrap();
+            // Seems a bit wired that we send an event to ourselves. It is because
+            // we want to keep consistency when someday we'd like to make dialing for
+            // NoConnection case which requires we send an event from a dialer Task
+            let r = conn.muxer.open_stream().await;
+            match r {
+                Ok(stream) => {
 
-            let protocols = self.protocol_handlers.keys();
-            let negotiator = Negotiator::new_with_protocols(protocols);
-            let (r, stream) = negotiator.select_one(stream).await.unwrap();
-
-            log::trace!("client protocol negotiated at: {}", r.protocol_name_str());
-
-            // TODO: why have to clone it???
-            let r = r.clone();
-            //
-            let mut handler = self.protocol_handlers.remove(r.clone()).unwrap();
-            //handler.handle(stream, r);
-
-
-            let _ = reply.send(Ok(stream));
+                    // send an event to its self
+                    log::trace!("stream opened directly {:?}", stream);
+                    let mut tx = self.event_sender.clone();
+                    task::spawn(async move {
+                        let _ = tx.send(SwarmEvent::OutboundStream { stream, pids, reply: Some(reply) }).await;
+                    });
+                }
+                Err(err) => {
+                    let _ = reply.send(Err(err.into()));
+                }
+            }
         } else {
             let _ = reply.send(Err(SwarmError::NoConnection(peer_id)));
         }
@@ -925,6 +940,7 @@ where
 
         let mut tx = self.event_sender.clone();
         let conn_id = conn.id();
+
         let handle = task::spawn(async move {
             let mut stream_muxer = stream_muxer;
 
@@ -934,7 +950,7 @@ where
                 let r = stream_muxer.accept_stream().await;
                 match r {
                     Ok(stream) => {
-                        let _ = tx.send(SwarmEvent::StreamOpened { stream, dir: Direction::Inbound }).await;
+                        let _ = tx.send(SwarmEvent::InboundStream { stream }).await;
                     }
                     Err(_err) => {
                         let _ = tx
@@ -965,37 +981,38 @@ where
         Ok(())
     }
 
-    pub async fn handle_stream_opened(
+    pub async fn handle_inbound_stream(
         &mut self,
         stream: <TTrans::Output as StreamMuxer>::Substream,
-        dir: Direction,
     ) -> Result<()> {
-        log::trace!(
-            "handle_stream_opened: stream={:?}{:?}",
-            stream,
-            dir
-        );
+        log::trace!("handle_inbound_stream: multistream selection for inbound stream={:?}", stream);
 
-        // run stream handler for incoming substream
-        if dir == Direction::Inbound {
-            let protocols = self.protocol_handlers.keys();
-            let negotiator = Negotiator::new_with_protocols(protocols);
-            let (r, stream) = negotiator.negotiate(stream).await.unwrap();
+        // now it's time to do multistream multiplexing for inbound stream
+        let (mut handler, stream, proto) = self.muxer.select_inbound(stream).await?;
 
-            log::trace!("server protocol negotiated at: {}", r.protocol_name_str());
-
-            // TODO: why have to clone it???
-            let r = r.clone();
-            //
-            let mut handler = self.protocol_handlers.remove(r.clone()).unwrap();
-
-            task::spawn(async move {
-                handler.handle(stream, r).await;
-            });
-
-        }
+        // TODO: do something on the connection hashmap??
+        task::spawn(async move {
+             handler.handle(stream, proto).await;
+        });
 
         Ok(())
+    }
+
+
+    pub async fn handle_outbound_stream(
+        &mut self,
+        stream: <TTrans::Output as StreamMuxer>::Substream,
+        pids: Vec<ProtocolId>,
+    ) -> Result<<TTrans::Output as StreamMuxer>::Substream> {
+        log::trace!("handle_outbound_stream: multistream selection for outbound stream={:?}", stream);
+
+        // now it's time to do multistream multiplexing for sub stream
+        let negotiator = Negotiator::new_with_protocols(            pids);
+        let (proto, stream) = negotiator.select_one(stream).await.map_err(|e|SwarmError::Transport(e.into()))?;
+
+        log::info!("select_outbound {:?}", proto.protocol_name_str());
+
+        Ok(stream)
     }
 
     /// Handles closing a connection
@@ -1116,6 +1133,12 @@ impl error::Error for SwarmError {
             SwarmError::Internal => None,
             SwarmError::Closing(_) => None,
         }
+    }
+}
+
+impl From<std::io::Error> for SwarmError {
+    fn from(err: std::io::Error) -> Self {
+        SwarmError::Transport(TransportError::IoError(err))
     }
 }
 

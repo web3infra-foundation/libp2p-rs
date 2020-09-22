@@ -8,11 +8,10 @@ use libp2p_traits::{Read2, Write2};
 use libp2p_core::identity::Keypair;
 use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::{Multiaddr, PeerId};
-use libp2p_swarm::{Swarm, DummyProtocolHandler};
+use libp2p_swarm::{Swarm, DummyProtocolHandler, Muxer};
 use libp2p_tcp::TcpConfig;
 use secio;
 use yamux;
-use libp2p_core::upgrade::UpgradeInfo;
 
 //use libp2p_swarm::Swarm::network::NetworkConfig;
 
@@ -40,10 +39,12 @@ fn run_server() {
     // let mux = mplex::Config::new();
     //let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
-    let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()));
 
+    let mut muxer = Muxer::new();
     let dummy_handler = Box::new(DummyProtocolHandler::new());
-    swarm.add_protocol_handler(dummy_handler);
+    muxer.add_protocol_handler(dummy_handler);
+
+    let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer);
 
     info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
 
@@ -66,10 +67,12 @@ fn run_client() {
     //let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
 
-    let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()));
+    let mut muxer = Muxer::new();
+    // let dummy_handler = Box::new(DummyProtocolHandler::new());
+    // muxer.add_protocol_handler(dummy_handler);
 
-    let dummy_handler = Box::new(DummyProtocolHandler::new());
-    swarm.add_protocol_handler(dummy_handler);
+    let mut swarm = Swarm::new(tu,PeerId::from_public_key(keys.public()), muxer);
+
 
     let mut control = swarm.control();
 
@@ -86,8 +89,8 @@ fn run_client() {
     swarm.start();
 
     task::block_on(async move {
-        control.new_connection(&remote_peer_id).await.unwrap();
-        let mut stream = control.new_stream(&remote_peer_id).await.unwrap();
+        control.new_connection(remote_peer_id.clone()).await.unwrap();
+        let mut stream = control.new_stream(remote_peer_id, vec!(b"/dummy/2.0.0")).await.unwrap();
 
         log::info!("stream {:?} opened, writing something...", stream);
 
