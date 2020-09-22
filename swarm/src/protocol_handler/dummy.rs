@@ -19,15 +19,12 @@
 // DEALINGS IN THE SOFTWARE.
 
 use async_trait::async_trait;
-//use crate::NegotiatedSubstream;
+use libp2p_core::upgrade::{UpgradeInfo, ProtocolName};
 use crate::protocol_handler::{ProtocolHandler, BoxHandler};
-use libp2p_core::upgrade::{UpgradeInfo};
-use std::task::{Context, Poll};
-use void::Void;
 use crate::SwarmError;
 
 /// Implementation of `ProtocolHandler` that doesn't handle anything.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct DummyProtocolHandler {
 }
 
@@ -38,26 +35,20 @@ impl DummyProtocolHandler {
     }
 }
 
-impl Default for DummyProtocolHandler {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl UpgradeInfo for DummyProtocolHandler {
     type Info = &'static [u8];
     fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![b"/dummy_protocol/1.0.0", b"/dummy_protocol/2.0.0"]
+        vec![b"/dummy/1.0.0", b"/dummy/2.0.0"]
     }
 }
 
 #[async_trait]
-impl<C: Send + 'static> ProtocolHandler<C> for DummyProtocolHandler {
+impl<C: Send + std::fmt::Debug + 'static> ProtocolHandler<C> for DummyProtocolHandler {
 
     async fn handle(&mut self, stream: C, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
-        loop {}
+        log::trace!("Dummy Protocol handling inbound {:?} {:?}", stream, info.protocol_name_str());
+        Ok(())
     }
-
     fn box_clone(&self) -> BoxHandler<C> {
         Box::new(self.clone())
     }
