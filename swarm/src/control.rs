@@ -8,13 +8,13 @@
 // at https://www.apache.org/licenses/LICENSE-2.0 and a copy of the MIT license
 // at https://opensource.org/licenses/MIT.
 
-use crate::SwarmError;
 use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
 };
 use libp2p_core::PeerId;
 use libp2p_traits::{Read2, Write2};
+use crate::{SwarmError, ProtocolId};
 
 type Result<T> = std::result::Result<T, SwarmError>;
 
@@ -25,8 +25,8 @@ pub enum SwarmControlCmd<TSubstream> {
     NewConnection(PeerId, oneshot::Sender<Result<()>>),
     /// Close any connection to the remote peer.
     CloseConnection(PeerId, oneshot::Sender<Result<()>>),
-    /// Open a new stream to the remote peer.
-    NewStream(PeerId, oneshot::Sender<Result<TSubstream>>),
+    /// Open a new stream specified with protocol Ids to the remote peer.
+    NewStream(PeerId, Vec<ProtocolId>, oneshot::Sender<Result<TSubstream>>),
     /// Close the whole connection.
     CloseSwarm,
 }
@@ -62,7 +62,7 @@ where TSubstream: Read2 + Write2
     }
 
     /// make a connection to the remote.
-    pub async fn new_connection(&mut self, peerd_id: &PeerId) -> Result<()> {
+    pub async fn new_connection(&mut self, peerd_id: PeerId) -> Result<()> {
         let (tx, rx) = oneshot::channel();
         self.sender
             .send(SwarmControlCmd::NewConnection(peerd_id.clone(), tx))
@@ -71,10 +71,10 @@ where TSubstream: Read2 + Write2
     }
 
     /// Open a new stream to the remote.
-    pub async fn new_stream(&mut self, peerd_id: &PeerId) -> Result<TSubstream> {
+    pub async fn new_stream(&mut self, peerd_id: PeerId, pids: Vec<ProtocolId>) -> Result<TSubstream> {
         let (tx, rx) = oneshot::channel();
         self.sender
-            .send(SwarmControlCmd::NewStream(peerd_id.clone(), tx))
+            .send(SwarmControlCmd::NewStream(peerd_id.clone(), pids, tx))
             .await?;
         rx.await?
     }

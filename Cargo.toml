@@ -62,6 +62,7 @@ members = [
   "protocols/mplex",
   "protocols/secio",
   "protocols/plaintext",
+  "protocols/ping",
   "core",
   "transports/tcp",
   "multiaddr",
