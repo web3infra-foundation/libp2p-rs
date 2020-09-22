@@ -288,14 +288,14 @@ impl<C: Read2 + Write2 + Unpin + Send + 'static> StreamMuxer for Yamux<C> {
     type Substream = Stream;
 
     async fn open_stream(&mut self) -> Result<Self::Substream, TransportError> {
-        trace!("opening a new outbound substream for yamux...");
         let s = self.control.open_stream().await?;
+        trace!("a new outbound substream {:?} opened for yamux... ", s);
         Ok(s)
     }
 
     async fn accept_stream(&mut self) -> Result<Self::Substream, TransportError> {
-        trace!("opening a new outbound substream for yamux...");
         let s = self.control.accept_stream().await?;
+        trace!("a new inbound substream {:?} accepted for yamux...", s);
         Ok(s)
     }
 
