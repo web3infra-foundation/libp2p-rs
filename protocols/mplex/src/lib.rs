@@ -8,7 +8,7 @@ use futures::FutureExt;
 use log::{info, trace};
 use std::fmt;
 
-use libp2p_core::muxing::StreamMuxer;
+use libp2p_core::muxing::{StreamMuxer, StreamInfo};
 use libp2p_core::transport::{ConnectionInfo, TransportError};
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
 use libp2p_traits::{Read2, Write2};
@@ -132,6 +132,13 @@ impl<C> SecureInfo for Mplex<C> {
 
     fn remote_pub_key(&self) -> PublicKey {
         self.remote_pub_key.clone()
+    }
+}
+
+/// StreamInfo for Mplex::Stream
+impl StreamInfo for Stream {
+    fn id(&self) -> usize {
+        self.id() as usize
     }
 }
 

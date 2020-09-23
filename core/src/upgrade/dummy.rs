@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::identity::Keypair;
-use crate::muxing::StreamMuxer;
+use crate::muxing::{StreamMuxer, StreamInfo};
 use crate::secure_io::SecureInfo;
 use crate::transport::{ConnectionInfo, TransportError};
 use crate::upgrade::{UpgradeInfo, Upgrader};
@@ -124,6 +124,10 @@ impl<T: Send + Write2> Write2 for DummyStream<T> {
     async fn close2(&mut self) -> io::Result<()> {
         self.0.close2().await
     }
+}
+
+impl StreamInfo for () {
+    fn id(&self) -> usize { 0 }
 }
 
 #[async_trait]

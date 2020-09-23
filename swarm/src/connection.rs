@@ -8,6 +8,7 @@ use libp2p_core::PublicKey;
 use smallvec::SmallVec;
 use std::hash::Hash;
 use std::{error::Error, fmt, io};
+use crate::substream::StreamId;
 
 /// The direction of a peer-to-peer communication channel.
 #[derive(Debug, Clone, PartialEq)]
@@ -180,7 +181,8 @@ pub struct Connection<TMuxer: StreamMuxer> {
     /// Node that handles the stream_muxer.
     stream_muxer: TMuxer,
     /// Handler that processes substreams.
-    pub(crate) substreams: SmallVec<[TMuxer::Substream; 8]>,
+    //pub(crate) substreams: SmallVec<[TMuxer::Substream; 8]>,
+    substreams: SmallVec<[StreamId; 8]>,
     /// Direction of this connection
     dir: Direction,
 
@@ -203,8 +205,9 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Connection")
             .field("id", &self.id)
-            .field("stream_muxer", &self.stream_muxer)
+            .field("muxer", &self.stream_muxer)
             .field("dir", &self.dir)
+            .field("subs", &self.substreams)
             .finish()
     }
 }
@@ -247,7 +250,7 @@ where
     pub async fn close(&mut self) -> Result<(), SwarmError> {
         self.stream_muxer.close().await.map_err(|e|e.into())
     }
-    /// Opens a new sub stream
+    /// Opens a new raw stream
     pub(crate) async fn open_stream(&mut self) -> Result<TMuxer::Substream, SwarmError> {
         self.stream_muxer.open_stream().await.map_err(|e|e.into())
     }
@@ -284,35 +287,25 @@ where
         self.stream_muxer.local_priv_key()
     }
 
-    /// remote_pub_key is the public key of the peer on the remote side
+    /// remote_pub_key is the public key of the peer on the remote side.
     pub fn remote_pub_key(&self) -> PublicKey {
         self.stream_muxer.remote_pub_key()
     }
 
-    fn add_stream(&mut self, ss: TMuxer::Substream, _dir: Endpoint) -> Result<(), ()> {
-        self.substreams.push(ss);
-
-        // TODO: generate STREAM_OPENED event
-
-        Ok(())
+    /// Adds a substream id to the list.
+    pub(crate) fn add_stream(&mut self, sid: StreamId) {
+        log::trace!("{:?} adding sub stream {:?}", self, sid);
+        self.substreams.push(sid);
+    }
+    /// Removes a substream id from the list.
+    pub(crate) fn del_stream(&mut self, sid: StreamId) {
+        log::trace!("{:?} removing sub stream {:?}", self, sid);
+        self.substreams.retain(|id| id != &sid);
     }
 
-    /// new_stream returns a new Stream from this connection
-    ///
-    pub async fn new_stream(&mut self) -> Result<TMuxer::Substream, TransportError> {
-        let ss = self.stream_muxer.open_stream().await?;
-        //self.add_stream(ss.clone(), Endpoint::Dialer);
-
-        Ok(ss)
-    }
-
-    /// new_stream returns a new Stream from this connection
-    ///
-    pub async fn accept_stream(&mut self) -> Result<TMuxer::Substream, TransportError> {
-        let ss = self.stream_muxer.accept_stream().await?;
-        //self.add_stream(ss.clone(), Endpoint::Listener);
-
-        Ok(ss)
+    /// Returns how many substreams in the list.
+    pub(crate) fn num_streams(&self) -> usize {
+        self.substreams.len()
     }
 }
 

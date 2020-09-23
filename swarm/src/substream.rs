@@ -3,25 +3,34 @@ use async_trait::async_trait;
 use libp2p_traits::{Read2, Write2};
 
 use crate::ProtocolId;
-use crate::connection::ConnectionId;
+use crate::connection::{ConnectionId, Direction};
+use libp2p_core::muxing::StreamInfo;
 
-#[derive(Debug)]
+
+/// The Id of sub stream
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct StreamId(usize);
+
+#[derive(Debug, Clone)]
 pub struct Substream<TStream> {
     /// The inner sub stream, created by the StreamMuxer
     inner: TStream,
     /// The protocol of this sub stream
     protocol: ProtocolId,
+    /// The direction of the sub stream
+    dir: Direction,
     /// The connection ID of the sub stream
     /// IT can be used to back track to the stream muxer
-    connection_id: ConnectionId,
+    cid: ConnectionId,
 }
 
-impl<TStream> Substream<TStream> {
-    pub(crate) fn new(inner: TStream, protocol: ProtocolId, connection_id: ConnectionId) -> Self {
+impl<TStream: StreamInfo> Substream<TStream> {
+    pub(crate) fn new(inner: TStream, dir: Direction, protocol: ProtocolId, cid: ConnectionId) -> Self {
         Self {
             inner,
             protocol,
-            connection_id,
+            dir,
+            cid,
         }
     }
     /// Returns the protocol of the sub stream
@@ -29,8 +38,16 @@ impl<TStream> Substream<TStream> {
         self.protocol
     }
     /// Returns the connection id of the sub stream
-    pub fn connection_id(&self) -> ConnectionId {
-        self.connection_id
+    pub fn cid(&self) -> ConnectionId {
+        self.cid
+    }
+    /// Returns the sub stream Id
+    pub fn id(&self) -> StreamId {
+        StreamId(self.inner.id())
+    }
+    /// Returns the inner sub stream
+    pub fn stream(self) -> TStream {
+        self.inner
     }
 }
 

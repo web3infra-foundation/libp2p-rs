@@ -1,19 +1,20 @@
 use fnv::FnvHashMap;
+use libp2p_traits::{Read2, Write2};
 use libp2p_core::multistream::Negotiator;
 use libp2p_core::upgrade::ProtocolName;
-use libp2p_traits::{Read2, Write2};
+use libp2p_core::transport::TransportError;
 use crate::ProtocolId;
 use crate::protocol_handler::BoxHandler;
-use libp2p_core::transport::TransportError;
+use crate::substream::Substream;
 
 
 /// Muxer that uses multistream-select to select and handle protocols.
 ///
-pub struct Muxer<TSubstream> {
-    protocol_handlers: FnvHashMap<ProtocolId, BoxHandler<TSubstream>>,
+pub struct Muxer<TRaw> {
+    protocol_handlers: FnvHashMap<ProtocolId, BoxHandler<Substream<TRaw>>>,
 }
 
-impl<TSubstream> Clone for Muxer<TSubstream> {
+impl<TRaw> Clone for Muxer<TRaw> {
     fn clone(&self) -> Self {
         Muxer {
             protocol_handlers: self.protocol_handlers.clone(),
@@ -21,7 +22,7 @@ impl<TSubstream> Clone for Muxer<TSubstream> {
     }
 }
 
-impl<TSubstream> Muxer<TSubstream> {
+impl<TRaw> Muxer<TRaw> {
     /// Add `Muxer` on top of any `ProtoclHandler`·
     ///
     /// The protocols supported by the first element have a higher priority.
@@ -32,25 +33,23 @@ impl<TSubstream> Muxer<TSubstream> {
     }
 }
 
-impl<TSubstream> Muxer<TSubstream> {
-    pub fn add_protocol_handler(&mut self, p: BoxHandler<TSubstream>) {
+impl<TRaw> Muxer<TRaw> {
+    pub fn add_protocol_handler(&mut self, p: BoxHandler<Substream<TRaw>>) {
         log::trace!("adding protocol handler: {:?}", p.protocol_info().iter().map(|n|n.protocol_name_str()).collect::<Vec<_>>());
         p.protocol_info().iter().for_each(|pid| {
             self.protocol_handlers.insert(pid, p.clone());
         });
     }
 
-    pub(crate) async fn select_inbound(&mut self, socket: TSubstream) -> Result<(BoxHandler<TSubstream>, TSubstream, ProtocolId), TransportError>
+    pub(crate) async fn select_inbound(&mut self, socket: TRaw) -> Result<(BoxHandler<Substream<TRaw>>, TRaw, ProtocolId), TransportError>
         where
-            TSubstream: Read2 + Write2 + Send + Unpin,
+            TRaw: Read2 + Write2 + Send + Unpin,
     {
-        //let protocols = self.protocol_handlers.keys();
-        let negotiator = Negotiator::new_with_protocols(vec![b"/dummy/2.0.0"]);
+        let protocols = self.protocol_handlers.keys();
+        let negotiator = Negotiator::new_with_protocols(protocols);
 
         let (proto, socket) = negotiator.negotiate(socket).await?;
-        //let proto = b"www";
-
-        let handler = self.protocol_handlers.get_mut(proto.as_ref()).unwrap().clone();
+        let handler = self.protocol_handlers.clone().get_mut(proto.as_ref()).unwrap().clone();
 
         log::info!("select_inbound {:?}", proto.protocol_name_str());
 
