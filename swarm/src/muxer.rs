@@ -41,15 +41,21 @@ impl<TRaw> Muxer<TRaw> {
         });
     }
 
+    pub(crate) fn supported_protocols(&self) -> impl IntoIterator<Item=ProtocolId> + '_ {
+        self.protocol_handlers.keys()
+            .into_iter()
+            .map(|k| k.clone())
+    }
+
     pub(crate) async fn select_inbound(&mut self, socket: TRaw) -> Result<(BoxHandler<Substream<TRaw>>, TRaw, ProtocolId), TransportError>
         where
             TRaw: Read2 + Write2 + Send + Unpin,
     {
-        let protocols = self.protocol_handlers.keys();
+        let protocols = self.supported_protocols();
         let negotiator = Negotiator::new_with_protocols(protocols);
 
         let (proto, socket) = negotiator.negotiate(socket).await?;
-        let handler = self.protocol_handlers.clone().get_mut(proto.as_ref()).unwrap().clone();
+        let handler = self.protocol_handlers.get_mut(proto.as_ref()).unwrap().clone();
 
         log::info!("select_inbound {:?}", proto.protocol_name_str());
 

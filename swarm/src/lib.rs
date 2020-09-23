@@ -119,34 +119,32 @@ pub enum SwarmEvent<TStreamMuxer, TSubstream> {
     },
     /// A connection with the given peer has been closed.
     ConnectionClosed {
+        /// The connection Id of the sub stream.
         cid: ConnectionId,
-        /*
-                num_established: u32,
-                // /// Reason for the disconnection.
-                // cause: ConnectionError<NodeHandlerWrapperError<THandleErr>>,
-        */
-    },
-    /// A stream failed to negotiate protocl woth peer
-    StreamError {
-        /// The connection Id of the sub stream
-        cid: ConnectionId,
-        ///
+        /// The cause of the error.
         error: TransportError,
     },
-    /// A new substream arrived.
-    StreamOpened {
-        /// The direction of the substream
-        dir: Direction,
-        /// The connection Id of the sub stream
+    /// A stream failed to negotiate protocol with peer.
+    StreamError {
+        /// The connection Id of the sub stream.
         cid: ConnectionId,
-        /// The substream Id
+        /// The cause of the error.
+        error: TransportError,
+    },
+    /// A new substream opened.
+    StreamOpened {
+        /// The direction of the substream.
+        dir: Direction,
+        /// The connection Id of the sub stream.
+        cid: ConnectionId,
+        /// The substream Id.
         sid: StreamId,
     },
     /// A substream has been closed.
     StreamClosed {
-        /// The connection Id of the sub stream
+        /// The connection Id of the sub stream.
         cid: ConnectionId,
-        /// The substream Id
+        /// The substream Id.
         sid: StreamId,
     },
     /// An error happened on a connection during its initial handshake.
@@ -249,10 +247,6 @@ where
         behaviour: TBehaviour,
 
     */
-    /// List of protocols that the behaviour says it supports.
-    #[allow(dead_code)]
-    supported_protocols: SmallVec<[Vec<u8>; 16]>,
-
     /// List of multiaddresses we're listening on.
     listened_addrs: SmallVec<[Multiaddr; 8]>,
 
@@ -338,7 +332,6 @@ where
             // listeners: SmallVec::with_capacity(16),
             // next_id: ListenerId(1),
             next_connection_id: 0,
-            supported_protocols: Default::default(),
             listened_addrs: Default::default(),
             external_addrs: Default::default(),
             banned_peers: Default::default(),
@@ -351,14 +344,6 @@ where
             ctrl_sender: ctrl_tx,
         }
     }
-
-    // pub fn add_protocol_handler(&mut self, p: BoxHandler<<TTrans::Output as StreamMuxer>::Substream>) {
-    //     log::trace!("adding protocol handler: {:?}", p.protocol_info().iter().map(|n|n.protocol_name_str()).collect::<Vec<_>>());
-    //     p.protocol_info().iter().for_each(|pid| {
-    //         self.protocol_handlers.insert(pid, p.clone());
-    //     });
-    //     //self.protocol_handlers.insert(, p);
-    // }
 
     fn assign_connection_id(&mut self) -> usize {
         self.next_connection_id += 1;
@@ -428,7 +413,7 @@ where
             } => {
                 let _ = self.handle_new_connection(stream_muxer, direction).await;
             }
-            SwarmEvent::ConnectionClosed { cid } => {
+            SwarmEvent::ConnectionClosed { cid, error: _ } => {
                 let _ = self.handle_close_connection(cid).await;
             }
             SwarmEvent::OutgoingConnectionError {
@@ -464,19 +449,24 @@ where
             SwarmControlCmd::NewConnection(peer_id, reply) => {
                 // got the peer_id, start the dialer for it
                 let _ = self.on_new_connection(peer_id, reply).await;
-            }
+            },
             SwarmControlCmd::CloseConnection(peer_id, reply) => {
                 // got the peer_id, close all connections to the peer
                 let _ = self.on_close_connection(peer_id, reply).await;
-            }
+            },
             SwarmControlCmd::NewStream(peer_id, pids, reply) => {
                 // got the peer_id, try opening a new sub stream
                 let _ = self.on_new_stream(peer_id, pids, reply).await;
+            },
+            SwarmControlCmd::NetworkInfo(reply) => {
+                // got the peer_id, try opening a new sub stream
+                let _ = self.on_retrieve_networkinfo(reply).await;
             }
             SwarmControlCmd::CloseSwarm => {
                 log::info!("closing the swarm...");
                 let _ = self.event_sender.close_channel();
-            } // TODO:
+            },
+            // TODO:
               //_ => {}
         }
 
@@ -575,6 +565,15 @@ where
         Ok(())
     }
 
+    ///
+    async fn on_retrieve_networkinfo(
+        &mut self,
+        reply: oneshot::Sender<Result<NetworkInfo>>,
+    ) -> Result<()> {
+        let _ = reply.send(Ok(self.network_info()));
+        Ok(())
+    }
+
     /// Starts Swarm background task
     /// handling the internal events and external controls
     pub fn start(self) {
@@ -592,15 +591,17 @@ where
     /// Returns information about the [`Network`] underlying the `Swarm`.
     pub fn network_info(&self) -> NetworkInfo {
         // TODO: add stats later on
-        let num_connections_established = 0; //self.pool.num_established();
+        let num_connections_established = self.connections_by_id.len();
         let num_connections_pending = 0; //self.pool.num_pending();
         let num_connections = num_connections_established + num_connections_pending;
-        let num_peers = 0; //self.pool.num_connected();
+        let num_peers = self.connections_by_peer.len();
+        let num_active_streams = self.connections_by_id.iter().fold(0, |acc, (_k, v)| acc + v.num_streams());
         NetworkInfo {
             num_peers,
             num_connections,
             num_connections_established,
             num_connections_pending,
+            num_active_streams,
         }
     }
 
@@ -1007,8 +1008,8 @@ where
                             }
                         }
                     }
-                    Err(_err) => {
-                        let _ = tx.send(SwarmEvent::ConnectionClosed { cid }).await;
+                    Err(error) => {
+                        let _ = tx.send(SwarmEvent::ConnectionClosed { cid, error }).await;
                         // something happened, break the loop then exit the Task
                         break;
                     }
