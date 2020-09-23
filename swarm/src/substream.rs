@@ -3,23 +3,34 @@ use async_trait::async_trait;
 use libp2p_traits::{Read2, Write2};
 
 use crate::ProtocolId;
+use crate::connection::ConnectionId;
 
 #[derive(Debug)]
 pub struct Substream<TStream> {
+    /// The inner sub stream, created by the StreamMuxer
     inner: TStream,
+    /// The protocol of this sub stream
     protocol: ProtocolId,
+    /// The connection ID of the sub stream
+    /// IT can be used to back track to the stream muxer
+    connection_id: ConnectionId,
 }
 
 impl<TStream> Substream<TStream> {
-    fn new(inner: TStream, protocol: ProtocolId) -> Self {
+    pub(crate) fn new(inner: TStream, protocol: ProtocolId, connection_id: ConnectionId) -> Self {
         Self {
             inner,
             protocol,
+            connection_id,
         }
     }
-
-    fn protocol(&self) -> ProtocolId {
+    /// Returns the protocol of the sub stream
+    pub fn protocol(&self) -> ProtocolId {
         self.protocol
+    }
+    /// Returns the connection id of the sub stream
+    pub fn connection_id(&self) -> ConnectionId {
+        self.connection_id
     }
 }
 
