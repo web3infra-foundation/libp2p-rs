@@ -177,8 +177,8 @@ pub struct ConnectionId(usize);
 pub struct Connection<TMuxer: StreamMuxer> {
     /// The unique ID for a connection
     id: ConnectionId,
-    /// Node that handles the muxer.
-    muxer: TMuxer,
+    /// Node that handles the stream_muxer.
+    stream_muxer: TMuxer,
     /// Handler that processes substreams.
     pub(crate) substreams: SmallVec<[TMuxer::Substream; 8]>,
     /// Direction of this connection
@@ -203,7 +203,7 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Connection")
             .field("id", &self.id)
-            .field("muxer", &self.muxer)
+            .field("stream_muxer", &self.stream_muxer)
             .field("dir", &self.dir)
             .finish()
     }
@@ -218,10 +218,10 @@ where
 {
     /// Builds a new `Connection` from the given substream multiplexer
     /// and connection handler.
-    pub fn new(id: usize, muxer: TMuxer, dir: Direction) -> Self {
+    pub fn new(id: usize, stream_muxer: TMuxer, dir: Direction) -> Self {
         Connection {
             id: ConnectionId(id),
-            muxer,
+            stream_muxer,
             dir,
             substreams: Default::default(),
             handle: None,
@@ -234,8 +234,8 @@ where
     }
 
     /// Returns a copy of the stream_muxer
-    pub fn muxer(&self) -> TMuxer {
-        self.muxer.clone()
+    pub fn stream_muxer(&self) -> TMuxer {
+        self.stream_muxer.clone()
     }
 
     /// Sets the task handle of the connection
@@ -243,13 +243,13 @@ where
         self.handle = Some(handle);
     }
 
-    /// Closes the inner muxer
+    /// Closes the inner stream_muxer
     pub async fn close(&mut self) -> Result<(), SwarmError> {
-        self.muxer.close().await.map_err(|e|e.into())
+        self.stream_muxer.close().await.map_err(|e|e.into())
     }
     /// Opens a new sub stream
     pub(crate) async fn open_stream(&mut self) -> Result<TMuxer::Substream, SwarmError> {
-        self.muxer.open_stream().await.map_err(|e|e.into())
+        self.stream_muxer.open_stream().await.map_err(|e|e.into())
     }
     /// Waits for task exiting
     pub(crate) async fn wait(&mut self) -> Result<(), SwarmError> {
@@ -261,32 +261,32 @@ where
 
     /// local_addr is the multiaddr on our side of the connection
     pub fn local_addr(&self) -> Multiaddr {
-        self.muxer.local_multiaddr()
+        self.stream_muxer.local_multiaddr()
     }
 
     /// remote_addr is the multiaddr on the remote side of the connection
     pub fn remote_addr(&self) -> Multiaddr {
-        self.muxer.remote_multiaddr()
+        self.stream_muxer.remote_multiaddr()
     }
 
     /// local_peer is the Peer on our side of the connection
     pub fn local_peer(&self) -> PeerId {
-        self.muxer.local_peer()
+        self.stream_muxer.local_peer()
     }
 
     /// remote_peer is the Peer on the remote side
     pub fn remote_peer(&self) -> PeerId {
-        self.muxer.remote_peer()
+        self.stream_muxer.remote_peer()
     }
 
     /// local_priv_key is the public key of the peer on this side
     pub fn local_priv_key(&self) -> Keypair {
-        self.muxer.local_priv_key()
+        self.stream_muxer.local_priv_key()
     }
 
     /// remote_pub_key is the public key of the peer on the remote side
     pub fn remote_pub_key(&self) -> PublicKey {
-        self.muxer.remote_pub_key()
+        self.stream_muxer.remote_pub_key()
     }
 
     fn add_stream(&mut self, ss: TMuxer::Substream, _dir: Endpoint) -> Result<(), ()> {
@@ -300,7 +300,7 @@ where
     /// new_stream returns a new Stream from this connection
     ///
     pub async fn new_stream(&mut self) -> Result<TMuxer::Substream, TransportError> {
-        let ss = self.muxer.open_stream().await?;
+        let ss = self.stream_muxer.open_stream().await?;
         //self.add_stream(ss.clone(), Endpoint::Dialer);
 
         Ok(ss)
@@ -309,7 +309,7 @@ where
     /// new_stream returns a new Stream from this connection
     ///
     pub async fn accept_stream(&mut self) -> Result<TMuxer::Substream, TransportError> {
-        let ss = self.muxer.accept_stream().await?;
+        let ss = self.stream_muxer.accept_stream().await?;
         //self.add_stream(ss.clone(), Endpoint::Listener);
 
         Ok(ss)
