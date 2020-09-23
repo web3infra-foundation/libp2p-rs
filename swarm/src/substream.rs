@@ -1,17 +1,18 @@
-use std::io;
+use std::{io, fmt};
 use async_trait::async_trait;
 use libp2p_traits::{Read2, Write2};
 
 use crate::ProtocolId;
 use crate::connection::{ConnectionId, Direction};
 use libp2p_core::muxing::StreamInfo;
+use libp2p_core::upgrade::ProtocolName;
 
 
 /// The Id of sub stream
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StreamId(usize);
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Substream<TStream> {
     /// The inner sub stream, created by the StreamMuxer
     inner: TStream,
@@ -22,6 +23,17 @@ pub struct Substream<TStream> {
     /// The connection ID of the sub stream
     /// IT can be used to back track to the stream muxer
     cid: ConnectionId,
+}
+
+impl<TStream: fmt::Debug> fmt::Debug for Substream<TStream> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Substream")
+            .field("inner", &self.inner)
+            .field("protocol", &self.protocol.protocol_name_str())
+            .field("dir", &self.dir)
+            .field("cid", &self.cid)
+            .finish()
+    }
 }
 
 impl<TStream: StreamInfo> Substream<TStream> {
