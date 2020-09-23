@@ -37,7 +37,7 @@ pub use crate::frame::{
 };
 use futures::future::BoxFuture;
 use libp2p_core::identity::Keypair;
-use libp2p_core::muxing::StreamMuxer;
+use libp2p_core::muxing::{StreamMuxer, StreamInfo};
 use libp2p_core::secure_io::SecureInfo;
 use libp2p_core::transport::{ConnectionInfo, TransportError};
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
@@ -280,6 +280,13 @@ impl<C: Send> ConnectionInfo for Yamux<C> {
     }
     fn remote_multiaddr(&self) -> Multiaddr {
         self.ra.clone()
+    }
+}
+
+/// StreamInfo for Yamux::Stream
+impl StreamInfo for Stream {
+    fn id(&self) -> usize {
+        self.id().val() as usize
     }
 }
 

@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::identity::Keypair;
-use crate::muxing::StreamMuxer;
+use crate::muxing::{StreamMuxer, StreamInfo};
 use crate::secure_io::SecureInfo;
 use crate::transport::{ConnectionInfo, TransportError};
 use crate::upgrade::ProtocolName;
@@ -111,11 +111,26 @@ where
     }
 }
 
+impl<A, B> StreamInfo for EitherOutput<A, B>
+where
+    A: StreamInfo,
+    B: StreamInfo,
+{
+    fn id(&self) -> usize {
+        match self {
+            EitherOutput::A(a) => a.id(),
+            EitherOutput::B(b) => b.id(),
+        }
+    }
+}
+
 #[async_trait]
 impl<A, B> StreamMuxer for EitherOutput<A, B>
 where
     A: StreamMuxer,
     B: StreamMuxer,
+    A::Substream: StreamInfo,
+    B::Substream: StreamInfo,
 {
     type Substream = EitherOutput<A::Substream, B::Substream>;
 
