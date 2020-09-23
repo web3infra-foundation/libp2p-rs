@@ -15,6 +15,7 @@ use futures::{
 use libp2p_core::PeerId;
 use libp2p_traits::{Read2, Write2};
 use crate::{SwarmError, ProtocolId};
+use crate::network::NetworkInfo;
 
 type Result<T> = std::result::Result<T, SwarmError>;
 
@@ -29,6 +30,8 @@ pub enum SwarmControlCmd<TSubstream> {
     NewStream(PeerId, Vec<ProtocolId>, oneshot::Sender<Result<TSubstream>>),
     /// Close the whole connection.
     CloseSwarm,
+    /// Retrieve network information of Swarm
+    NetworkInfo(oneshot::Sender<Result<NetworkInfo>>),
 }
 
 /// The `Swarm` controller.
@@ -75,6 +78,14 @@ where TSubstream: Read2 + Write2
         let (tx, rx) = oneshot::channel();
         self.sender
             .send(SwarmControlCmd::NewStream(peerd_id.clone(), pids, tx))
+            .await?;
+        rx.await?
+    }
+    /// Retrieve network statistics from Swarm.
+    pub async fn retrieve_networkinfo(&mut self) -> Result<NetworkInfo> {
+        let (tx, rx) = oneshot::channel();
+        self.sender
+            .send(SwarmControlCmd::NetworkInfo(tx))
             .await?;
         rx.await?
     }

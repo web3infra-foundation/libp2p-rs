@@ -9,6 +9,8 @@ pub struct NetworkInfo {
     pub num_connections_pending: usize,
     /// The total number of established connections.
     pub num_connections_established: usize,
+    /// The total number of active sub streams.
+    pub num_active_streams: usize,
 }
 
 /// The (optional) configuration for a [`Network`].
