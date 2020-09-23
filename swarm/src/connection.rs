@@ -1,4 +1,4 @@
-use crate::{Multiaddr, PeerId};
+use crate::{Multiaddr, PeerId, SwarmError};
 use async_std::task::JoinHandle;
 use libp2p_core::identity::Keypair;
 use libp2p_core::muxing::StreamMuxer;
@@ -169,23 +169,24 @@ pub enum Event<T> {
     AddressChange(Multiaddr),
 }
 
-pub type ConnectionId = usize;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ConnectionId(usize);
 
 /// A multiplexed connection to a peer with associated `Substream`s.
 #[allow(dead_code)]
 pub struct Connection<TMuxer: StreamMuxer> {
     /// The unique ID for a connection
-    pub(crate) id: usize,
+    id: ConnectionId,
     /// Node that handles the muxer.
-    pub(crate) muxer: TMuxer,
+    muxer: TMuxer,
     /// Handler that processes substreams.
     pub(crate) substreams: SmallVec<[TMuxer::Substream; 8]>,
     /// Direction of this connection
-    pub(crate) dir: Direction,
+    dir: Direction,
 
     /// The task handle of this connection, returned by task::Spawn
     /// handle.await() when closing a connection
-    pub(crate) handle: Option<JoinHandle<()>>,
+    handle: Option<JoinHandle<()>>,
 }
 
 impl<TMuxer: StreamMuxer> PartialEq for Connection<TMuxer> {
@@ -217,9 +218,9 @@ where
 {
     /// Builds a new `Connection` from the given substream multiplexer
     /// and connection handler.
-    pub fn new(id: ConnectionId, muxer: TMuxer, dir: Direction) -> Self {
+    pub fn new(id: usize, muxer: TMuxer, dir: Direction) -> Self {
         Connection {
-            id,
+            id: ConnectionId(id),
             muxer,
             dir,
             substreams: Default::default(),
@@ -230,6 +231,32 @@ where
     /// Returns the unique Id of the connection
     pub fn id(&self) -> ConnectionId {
         self.id
+    }
+
+    /// Returns a copy of the stream_muxer
+    pub fn muxer(&self) -> TMuxer {
+        self.muxer.clone()
+    }
+
+    /// Sets the task handle of the connection
+    pub fn set_handle(&mut self, handle: JoinHandle<()>) {
+        self.handle = Some(handle);
+    }
+
+    /// Closes the inner muxer
+    pub async fn close(&mut self) -> Result<(), SwarmError> {
+        self.muxer.close().await.map_err(|e|e.into())
+    }
+    /// Opens a new sub stream
+    pub(crate) async fn open_stream(&mut self) -> Result<TMuxer::Substream, SwarmError> {
+        self.muxer.open_stream().await.map_err(|e|e.into())
+    }
+    /// Waits for task exiting
+    pub(crate) async fn wait(&mut self) -> Result<(), SwarmError> {
+        if let Some(h) = self.handle.take() {
+            h.await;
+        }
+        Ok(())
     }
 
     /// local_addr is the multiaddr on our side of the connection
