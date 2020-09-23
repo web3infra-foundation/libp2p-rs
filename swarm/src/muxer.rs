@@ -44,8 +44,8 @@ impl<TSubstream> Muxer<TSubstream> {
         where
             TSubstream: Read2 + Write2 + Send + Unpin,
     {
-        //let protocols: Vec<_> = self.protocol_handlers.keys().clone().collect();
-        let negotiator = Negotiator::new_with_protocols(vec![b""]);
+        //let protocols = self.protocol_handlers.keys();
+        let negotiator = Negotiator::new_with_protocols(vec![b"/dummy/2.0.0"]);
 
         let (proto, socket) = negotiator.negotiate(socket).await?;
         //let proto = b"www";

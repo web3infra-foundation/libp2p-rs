@@ -547,7 +547,7 @@ where
             // well, we have a connection, simply open a new stream
             let r = connection.open_stream().await;
             match r {
-                Ok(stream) => {
+                Ok(raw_stream) => {
 
                     // in order to prevent the main loop from blocking,
                     // spawn a new task to do prorocol selection
@@ -557,7 +557,7 @@ where
                     task::spawn(async move {
                         // now it's time to do protocol multiplexing for sub stream
                         let negotiator = Negotiator::new_with_protocols(            pids);
-                        let result = negotiator.select_one(stream).await;
+                        let result = negotiator.select_one(raw_stream).await;
 
                         let response = match result {
                             Ok((proto, raw_stream)) => {
