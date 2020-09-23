@@ -110,16 +110,14 @@ pub enum SwarmEvent<TStreamMuxer, TSubstream> {
         /// The pending reply channel
         reply: Option<oneshot::Sender<Result<()>>>, 
 /*
-        /// Number of established connections to this peer, including the one that has just been
+        /// Number of connections_by_peer connections to this peer, including the one that has just been
         /// opened.
         num_established: NonZeroU32,
 */
     },
     /// A connection with the given peer has been closed.
     ConnectionClosed {
-        /// The connection, stream muxer
-        stream_muxer: TStreamMuxer,
-        conn_id: ConnectionId,
+        connection_id: ConnectionId,
         /*
                 num_established: u32,
                 // /// Reason for the disconnection.
@@ -128,11 +126,15 @@ pub enum SwarmEvent<TStreamMuxer, TSubstream> {
     },
     /// A new incoming substream arrived.
     InboundStream {
+        /// The connection Id of the sub stream
+        connection_id: ConnectionId,
         /// The substream
         stream: TSubstream,
     },
     /// A new outgoing substream opened.
     OutboundStream {
+        /// The connection Id of the sub stream
+        connection_id: ConnectionId,
         /// The substream.
         stream: TSubstream,
         /// The preferred protocols.
@@ -245,13 +247,10 @@ where
     /// The local peer ID.
     local_peer_id: PeerId,
 
-    /// The next connection ID to assign.
-    next_connection_id: ConnectionId,
+    /// The next listener ID to assign.
+    next_connection_id: usize,
 
-    /*    /// The next listener ID to assign.
-        next_id: ListenerId,
-
-    */    /*
+        /*
             /// Handles which nodes to connect to and how to handle the events sent back by the protocol
             /// handlers.
             behaviour: TBehaviour,
@@ -271,9 +270,11 @@ where
     /// List of nodes for which we deny any incoming connection.
     banned_peers: HashSet<PeerId>,
 
-    /// The established connections of each peer that are currently considered
-    /// established
-    established: FnvHashMap<PeerId, Vec<Connection<TTrans::Output>>>,
+    /// The all connections_by_peer connections organized by their Ids
+    connections_by_id: FnvHashMap<ConnectionId, Connection<TTrans::Output>>,
+    /// The all connections_by_peer connections by  peer Id
+    /// THere might be more than one connections for a remote peer
+    connections_by_peer: FnvHashMap<PeerId, Vec<ConnectionId>>,
 
     /// The pending connections that are currently being negotiated.
     #[allow(dead_code)]
@@ -344,17 +345,18 @@ where
             local_peer_id,
             // listeners: SmallVec::with_capacity(16),
             // next_id: ListenerId(1),
+            next_connection_id: 0,
             supported_protocols: Default::default(),
             listened_addrs: Default::default(),
             external_addrs: Default::default(),
             banned_peers: Default::default(),
-            established: Default::default(),
+            connections_by_id: Default::default(),
+            connections_by_peer: Default::default(),
             pending: Default::default(),
             event_receiver: event_rx,
             event_sender: event_tx,
             ctrl_receiver: ctrl_rx,
             ctrl_sender: ctrl_tx,
-            next_connection_id: 0,
         }
     }
 
@@ -365,6 +367,11 @@ where
     //     });
     //     //self.protocol_handlers.insert(, p);
     // }
+
+    fn assign_connection_id(&mut self) -> usize {
+        self.next_connection_id += 1;
+        self.next_connection_id
+    }
 
     /// Get a controller for Swarm.
     pub fn control(&self) -> Control<<TTrans::Output as StreamMuxer>::Substream> {
@@ -416,7 +423,7 @@ where
         &mut self,
         event: SwarmEvent<TTrans::Output, <TTrans::Output as StreamMuxer>::Substream>,
     ) -> Result<()> {
-        log::trace!("got an Swarm event={:?}", event);
+        log::trace!("Swarm event={:?}", event);
 
         match event {
             SwarmEvent::ListenerClosed {
@@ -433,10 +440,9 @@ where
                 reply.map(|reply| reply.send(r));
             }
             SwarmEvent::ConnectionClosed {
-                stream_muxer,
-                conn_id,
+                connection_id,
             } => {
-                let _ = self.handle_close_connection(stream_muxer, conn_id).await;
+                let _ = self.handle_close_connection(connection_id).await;
             }
             SwarmEvent::OutgoingConnectionError {
                 peer_id: _,
@@ -446,10 +452,10 @@ where
             } => {
                 reply.map(|reply| reply.send(Err(error)));
             }
-            SwarmEvent::InboundStream { stream} => {
+            SwarmEvent::InboundStream { connection_id, stream } => {
                 let _ = self.handle_inbound_stream(stream).await;
             },
-            SwarmEvent::OutboundStream { stream, pids, reply } => {
+            SwarmEvent::OutboundStream { connection_id, stream, pids, reply } => {
                 let r = self.handle_outbound_stream(stream, pids).await;
                 // send back result if reply is something
                 reply.map(|reply| reply.send(r));
@@ -471,7 +477,7 @@ where
         &mut self,
         cmd: SwarmControlCmd<<TTrans::Output as StreamMuxer>::Substream>,
     ) -> Result<()> {
-        log::trace!("got a Swarm control command={:?}", cmd);
+        log::trace!("Swarm control command={:?}", cmd);
 
         match cmd {
             SwarmControlCmd::NewConnection(peer_id, reply) => {
@@ -516,13 +522,14 @@ where
         peer_id: PeerId,
         reply: oneshot::Sender<Result<()>>,
     ) -> Result<()> {
-        if let Some(conns) = self.established.get_mut(&peer_id) {
+        if let Some(ids) = self.connections_by_peer.get(&peer_id) {
             // TODO: to check if this connection is being closed
-
-            for conn in conns {
-                let _ = conn.muxer.close().await;
-                // wait for accept-task and bg-task to exit
-                conn.handle.as_mut().unwrap().await;
+            for id in ids {
+                if let Some(connection) = self.connections_by_id.get_mut(&id) {
+                    let _ = connection.close().await;
+                    // wait for accept-task and bg-task to exit
+                    let _ = connection.wait().await;
+                }
             }
         }
 
@@ -536,20 +543,21 @@ where
         pids: Vec<ProtocolId>,
         reply: oneshot::Sender<Result<<TTrans::Output as StreamMuxer>::Substream>>,
     ) -> Result<()> {
-        if let Some(conn) = self.get_best_conn(&peer_id) {
+        if let Some(connection) = self.get_best_conn(&peer_id) {
             // well, we have a connection, simply open a new stream
             // Seems a bit wired that we send an event to ourselves. It is because
             // we want to keep consistency when someday we'd like to make dialing for
             // NoConnection case which requires we send an event from a dialer Task
-            let r = conn.muxer.open_stream().await;
+            let r = connection.open_stream().await;
             match r {
                 Ok(stream) => {
 
                     // send an event to its self
                     log::trace!("stream opened directly {:?}", stream);
+                    let connection_id = connection.id();
                     let mut tx = self.event_sender.clone();
                     task::spawn(async move {
-                        let _ = tx.send(SwarmEvent::OutboundStream { stream, pids, reply: Some(reply) }).await;
+                        let _ = tx.send(SwarmEvent::OutboundStream { connection_id, stream, pids, reply: Some(reply) }).await;
                     });
                 }
                 Err(err) => {
@@ -752,29 +760,36 @@ where
 
         log::trace!("trying to get the best connnection for {:?}", peer_id);
 
-        self.established
+        self.connections_by_peer
             .iter()
             .for_each(|(k, v)| log::info!("{:?}={:?}", k, v));
 
-        //let v = self.established.get_mut(peer_id).unwrap();
+        //let v = self.connections_by_peer.get_mut(peer_id).unwrap();
 
-        if let Some(conns) = self.established.get_mut(peer_id) {
+        if let Some(ids) = self.connections_by_peer.get(peer_id) {
             // TODO: to check if this connection is being closed
 
             let mut len = 0;
-            for conn in conns {
-                if conn.substreams.len() >= len {
-                    len = conn.substreams.len();
-                    best = Some(conn);
+            for id in ids.iter() {
+                if let Some(connection) = self.connections_by_id.get(id) {
+                    if connection.substreams.len() >= len {
+                        len = connection.substreams.len();
+                        best = Some(id);
+                    }
                 }
             }
         }
-        best
+
+        if let Some(id)= best {
+            self.connections_by_id.get_mut(id)
+        } else {
+            None
+        }
     }
 
     fn is_connected(&self, peer_id: &PeerId) -> bool {
         // TODO: check if the connection is being closed??
-        self.established.get(peer_id).map_or(0, |v| v.len()) > 0
+        self.connections_by_peer.get(peer_id).map_or(0, |v| v.len()) > 0
     }
 
     /*
@@ -881,16 +896,20 @@ where
         self.banned_peers.remove(peer_id.as_ref());
     }
 
-    fn add_connection(&mut self, conn: Connection<TTrans::Output>) {
-        let remote_peer_id = conn.remote_peer();
+    fn add_connection(&mut self, connection: Connection<TTrans::Output>) {
+        let connection_id = connection.id();
+        let remote_peer_id = connection.remote_peer();
+        
+        // append to the by_id hashmap
+        self.connections_by_id.insert(connection_id, connection);
 
-        // append to the hashmap
-        let conns = self.established.entry(remote_peer_id).or_default();
-        conns.push(conn);
+        // append to the by peer hashmap
+        let conns = self.connections_by_peer.entry(remote_peer_id).or_default();
+        conns.push(connection_id);
 
         log::trace!(
             "connection added to hashmap, total={}",
-            self.established.len()
+            self.connections_by_id.len()
         );
 
         // TODO: we have a connection to the specified peer_id, now cancel all pending attempts
@@ -902,12 +921,6 @@ where
         // TODO: return the connection
     }
 
-    // Assign a unique connection Id
-    fn assign_conn_id(&mut self) -> ConnectionId {
-        self.next_connection_id += 1;
-        self.next_connection_id
-    }
-
     /// Handles a new connection
     ///
     /// start a Task for accepting new sub-stream from the connection
@@ -916,10 +929,10 @@ where
         stream_muxer: TTrans::Output,
         dir: Direction,
     ) -> Result<()> {
-        log::trace!("handle_new_connection: {:?} Dir={:?}", stream_muxer, dir);
+        log::trace!("handle_new_connection: {:?} {:?}", stream_muxer, dir);
 
         // clone the stream_muxer, and then wrap into Connection, task_handle will be assigned later
-        let mut conn = Connection::new(self.assign_conn_id(), stream_muxer.clone(), dir);
+        let mut connection = Connection::new(self.assign_connection_id(), stream_muxer.clone(), dir);
 
         // TODO: filtering the multiaddr, Err = AddrFiltered(addr)
 
@@ -939,24 +952,23 @@ where
         // TODO: add remote pubkey to keystore
 
         let mut tx = self.event_sender.clone();
-        let conn_id = conn.id();
-
+        let connection_id = connection.id();
+        // Note we have to use the original copy of the stream muxer to start the task,
+        // instead of the cloned one which doesn't have the task handle at all
         let handle = task::spawn(async move {
             let mut stream_muxer = stream_muxer;
-
             // start the background task of the stream_muxer, the handle can be await'ed by us
             let task_handle = stream_muxer.task().map(task::spawn);
             loop {
                 let r = stream_muxer.accept_stream().await;
                 match r {
                     Ok(stream) => {
-                        let _ = tx.send(SwarmEvent::InboundStream { stream }).await;
+                        let _ = tx.send(SwarmEvent::InboundStream { connection_id, stream }).await;
                     }
                     Err(_err) => {
                         let _ = tx
                             .send(SwarmEvent::ConnectionClosed {
-                                stream_muxer,
-                                conn_id,
+                                connection_id,
                             })
                             .await;
 
@@ -967,16 +979,20 @@ where
             }
 
             // As stream_muxer is closed, we wait for its task_handle
-            if let Some(handle) = task_handle {
-                handle.await;
+            if let Some(h) = task_handle {
+                h.await;
             }
         });
 
         // now we have the handle, move it into Connection
-        conn.handle = Some(handle);
+        connection.set_handle(handle);
 
         // insert to the hashmap of connections
-        self.add_connection(conn);
+        // there might be a race condition:
+        // the spawned connection task might have exited for some reason, before we add connection
+        // to the hashmap. No problem at all, we finally add connection before handling ConnectionClose
+        // event.
+        self.add_connection(connection);
 
         Ok(())
     }
@@ -1020,41 +1036,37 @@ where
     /// start a Task for accepting new sub-stream from the connection
     pub async fn handle_close_connection(
         &mut self,
-        stream_muxer: TTrans::Output,
-        conn_id: ConnectionId,
+        connection_id: ConnectionId,
     ) -> Result<()> {
-        log::info!("before close {:?}", self.established);
+        log::info!("before close {:?}", self.connections_by_id);
+        log::info!("before close {:?}", self.connections_by_peer);
 
-        log::trace!(
-            "handle_close_connection: {:?} ConnectionId={:?}",
-            stream_muxer,
-            conn_id
-        );
+        log::trace!("handle_close_connection: {:?}", connection_id);
 
-        let remote_peer_id = stream_muxer.remote_peer();
+        // first, try to retrieve the Connection by looking up 'connections_by_id'
+        if let Some(connection) = self.connections_by_id.remove(&connection_id) {
+            let remote_peer_id = connection.remote_peer();
+            if let Some(ids) = self.connections_by_peer.get_mut(&remote_peer_id) {
+                //let a = ids.into_iter().filter(|&id| id != &connection_id).collect::<Vec<ConnectionId>>();
+                let mut index = 0;
+                for id in ids.iter() {
+                    if id == &connection_id {
 
-        if let Some(conns) = self.established.get_mut(&remote_peer_id) {
-            // let x = conns.iter_mut().find(|c| c.id == conn_id);
-            // if let Some(c) = x {
-            //     c.handle.as_mut().unwrap().await;
-            // }
-
-            let mut index: usize = 0;
-            for conn in conns.iter_mut() {
-                if conn.id == conn_id {
-                    // wait for the Task
-                    log::trace!("about to remove connection {:?} at index={}", conn, index);
-                    break;
+                        break;
+                    }
+                    index += 1;
                 }
-                index += 1;
-            }
+                ids.remove(index);
 
-            conns.remove(index);
+            } else {
+                log::warn!("shouldn't happen, PeerId={:?}", remote_peer_id);
+            }
         } else {
-            log::warn!("shouldn't happen");
+            log::info!("shouldn't happen, wired connection {:?}", connection_id);
         }
 
-        log::info!("after close {:?}", self.established);
+        log::info!("after close {:?}", self.connections_by_id);
+        log::info!("after close {:?}", self.connections_by_peer);
 
         Ok(())
     }
