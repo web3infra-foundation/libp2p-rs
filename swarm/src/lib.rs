@@ -142,6 +142,8 @@ pub enum SwarmEvent<TStreamMuxer, TSubstream> {
     },
     /// A substream has been closed.
     StreamClosed {
+        /// The direction of the substream.
+        dir: Direction,
         /// The connection Id of the sub stream.
         cid: ConnectionId,
         /// The substream Id.
@@ -411,10 +413,10 @@ where
                 stream_muxer,
                 direction,
             } => {
-                let _ = self.handle_new_connection(stream_muxer, direction).await;
+                let _ = self.handle_new_connection(stream_muxer, direction);
             }
             SwarmEvent::ConnectionClosed { cid, error: _ } => {
-                let _ = self.handle_close_connection(cid).await;
+                let _ = self.handle_close_connection(cid);
             }
             SwarmEvent::OutgoingConnectionError {
                 peer_id: _,
@@ -427,7 +429,10 @@ where
                 // TODO: add statistics
             }
             SwarmEvent::StreamOpened { dir, cid, sid } => {
-                let _ = self.handle_stream_opened(dir, cid, sid).await;
+                let _ = self.handle_stream_opened(dir, cid, sid);
+            },
+            SwarmEvent::StreamClosed { dir, cid, sid } => {
+                let _ = self.handle_stream_closed(dir, cid, sid);
             }
 
             // TODO: handle other messages
@@ -457,6 +462,10 @@ where
             SwarmControlCmd::NewStream(peer_id, pids, reply) => {
                 // got the peer_id, try opening a new sub stream
                 let _ = self.on_new_stream(peer_id, pids, reply).await;
+            },
+            SwarmControlCmd::CloseStream(stream, reply) => {
+                // got the peer_id, try opening a new sub stream
+                let _ = self.on_close_stream(stream, reply).await;
             },
             SwarmControlCmd::NetworkInfo(reply) => {
                 // got the peer_id, try opening a new sub stream
@@ -565,6 +574,22 @@ where
         Ok(())
     }
 
+    async fn on_close_stream(
+        &mut self,
+        substream: Substream<<TTrans::Output as StreamMuxer>::Substream>,
+        reply: oneshot::Sender<Result<()>>,
+    ) -> Result<()> {
+        let cid = substream.cid();
+        let sid = substream.id();
+        // self.event_sender.send(SwarmEvent::StreamClosed {
+        //     dir: Direction::Outbound,
+        //     cid,
+        //     sid,
+        // }).await;
+        self.handle_stream_closed(Direction::Outbound, cid, sid);
+        let _ = reply.send(Ok(()));
+        Ok(())
+    }
     ///
     async fn on_retrieve_networkinfo(
         &mut self,
@@ -933,7 +958,7 @@ where
     /// Handles a new connection
     ///
     /// start a Task for accepting new sub-stream from the connection
-    pub async fn handle_new_connection(
+    fn handle_new_connection(
         &mut self,
         stream_muxer: TTrans::Output,
         dir: Direction,
@@ -999,7 +1024,11 @@ where
                                     .await;
 
                                 // anyway, start handler task
-                                task::spawn(async move { handler.handle(stream, proto).await });
+                                let mut tx = tx.clone();
+                                task::spawn(async move {
+                                    handler.handle(stream, proto).await;
+                                    let _ = tx.send(SwarmEvent::StreamClosed { dir: Direction::Inbound, cid, sid }).await;
+                                });
 
                                 // TODO: hook the task handle to the Substream, so that it can wait for exiting the task
                             }
@@ -1035,14 +1064,14 @@ where
         Ok(())
     }
 
-    pub async fn handle_stream_opened(
+    fn handle_stream_opened(
         &mut self,
         dir: Direction,
         cid: ConnectionId,
         sid: StreamId,
     ) -> Result<()> {
         log::trace!("handle_stream_opened: {:?} {:?}/{:?}", dir, cid, sid);
-        // add stream id to connection substream list
+        // add stream id to the connection substream list
         self.connections_by_id
             .get_mut(&cid)
             .map(|c| c.add_stream(sid));
@@ -1050,10 +1079,25 @@ where
         Ok(())
     }
 
+    fn handle_stream_closed(
+        &mut self,
+        dir: Direction,
+        cid: ConnectionId,
+        sid: StreamId,
+    ) -> Result<()> {
+        log::trace!("handle_stream_closed: {:?} {:?}/{:?}", dir, cid, sid);
+        // delete stream id from the connection substream list
+        self.connections_by_id
+            .get_mut(&cid)
+            .map(|c| c.del_stream(sid));
+
+        Ok(())
+    }
+
     /// Handles closing a connection
     ///
     /// start a Task for accepting new sub-stream from the connection
-    pub async fn handle_close_connection(&mut self, cid: ConnectionId) -> Result<()> {
+    fn handle_close_connection(&mut self, cid: ConnectionId) -> Result<()> {
         log::info!("before close {:?}", self.connections_by_id);
         log::info!("before close {:?}", self.connections_by_peer);
 
