@@ -17,6 +17,7 @@ async-trait = "0.1"
 log = "0.4.1"
 rand = "0.7.2"
 futures-timer = "3"
+futures = "0.3"
 
 [dev-dependencies]
 async-std = "1.6.2"
