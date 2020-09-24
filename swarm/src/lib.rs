@@ -45,6 +45,7 @@ pub mod protocol_handler;
 
 pub use muxer::Muxer;
 pub use protocol_handler::DummyProtocolHandler;
+pub use control::Control;
 
 use async_std::task;
 use fnv::FnvHashMap;
@@ -63,7 +64,7 @@ use std::collections::HashSet;
 use std::{error, fmt, hash::Hash};
 
 use crate::connection::{ConnectedPoint, Connection, ConnectionId, ConnectionLimit, Direction};
-use crate::control::{Control, SwarmControlCmd};
+use crate::control::{SwarmControlCmd};
 use crate::network::NetworkInfo;
 use crate::registry::Addresses;
 use crate::substream::{StreamId, Substream};
@@ -582,7 +583,7 @@ where
     ) -> Result<()> {
         let cid = substream.cid();
         let sid = substream.id();
-        self.event_sender.send(SwarmEvent::StreamClosed {
+        let _= self.event_sender.send(SwarmEvent::StreamClosed {
             dir: Direction::Outbound,
             cid,
             sid,
@@ -1027,7 +1028,7 @@ where
                                 // anyway, start handler task
                                 let mut tx = tx.clone();
                                 task::spawn(async move {
-                                    handler.handle(stream, proto).await;
+                                    let _ = handler.handle(stream, proto).await;
                                     let _ = tx.send(SwarmEvent::StreamClosed { dir: Direction::Inbound, cid, sid }).await;
                                 });
 

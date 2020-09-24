@@ -65,6 +65,7 @@ fn run_server() {
             let mut msg = vec![0; 4096];
             loop {
                 let n = stream.read2(&mut msg).await?;
+                log::info!("received: {:?}", &msg[..n]);
                 stream.write2(&msg[..n]).await?;
             }
         }

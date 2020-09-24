@@ -21,15 +21,19 @@
 use async_trait::async_trait;
 use rand::{distributions, prelude::*};
 use futures_timer::Delay;
+use futures::future::{select, Either};
 use std::collections::VecDeque;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::num::NonZeroU32;
-use libp2p_core::upgrade::{ProtocolName, UpgradeInfo};
-use libp2p_swarm::SwarmError;
-use libp2p_swarm::protocol_handler::{ProtocolHandler, BoxHandler};
-use std::fmt;
+use std::{fmt, io};
 use std::error::Error;
 use libp2p_traits::{Read2, Write2};
+use libp2p_core::upgrade::{ProtocolName, UpgradeInfo};
+use libp2p_swarm::{SwarmError, Control};
+use libp2p_swarm::protocol_handler::{ProtocolHandler, BoxHandler};
+use libp2p_core::PeerId;
+use libp2p_core::transport::TransportError;
+use futures::FutureExt;
 
 
 /// The configuration for outbound pings.
@@ -157,30 +161,91 @@ impl Error for PingFailure {
 /// and answering ping queries.
 ///
 /// If the remote doesn't respond, produces an error that closes the connection.
-#[derive(Debug, Clone)]
-pub struct PingHandler {
+///
+///
+///
+///
+///
+pub struct PingService {
     /// Configuration options.
     config: PingConfig,
-/*    /// The timer for when to send the next ping.
+    /// The timer for when to send the next ping.
     next_ping: Delay,
     /// The pending results from inbound or outbound pings, ready
     /// to be `poll()`ed.
-    pending_results: VecDeque<PingResult>,*/
+    pending_results: VecDeque<PingResult>,
     /// The number of consecutive ping failures that occurred.
     failures: u32,
 }
 
-impl PingHandler {
+async fn ping2() -> u32 {
+    4
+}
+
+
+impl PingService {
     /// Builds a new `PingHandler` with the given configuration.
     pub fn new(config: PingConfig) -> Self {
-        PingHandler {
+        PingService {
             config,
-            // next_ping: Delay::new(Duration::new(0, 0)),
-            // pending_results: VecDeque::with_capacity(2),
+            next_ping: Delay::new(Duration::new(0, 0)),
+            pending_results: VecDeque::with_capacity(2),
             failures: 0,
         }
     }
+
+    pub async fn start<T: Read2 + Write2 + Send>(&self, peer_id: PeerId, mut control: Control<T>) {
+
+        let mut stream = control.new_stream(peer_id, vec!(b"")).await.unwrap();
+
+        let ping = self.ping(&mut stream);
+        futures::pin_mut!(ping);
+
+        let output = select(ping, Delay::new(Duration::from_secs(5))).await;
+        //let output = select(self.ping(&mut stream), self.ping(&mut stream)).await;
+        let r = match output {
+            Either::Left((r, _)) => {
+                log::trace!("ping returned");
+                r.map_err(|e| e.into())
+            }
+            Either::Right(_) => {
+                log::trace!("ping timeout first");
+                Err(TransportError::Timeout)
+            }
+        };
+
+    }
+
+
+    async fn ping<T: Read2 + Write2 + Send>(&self, stream: &mut T) -> Result<Duration, io::Error> {
+        let payload: [u8; PING_SIZE] = thread_rng().sample(distributions::Standard);
+        log::trace!("Preparing ping payload {:?}", payload);
+
+        stream.write_all2(&payload).await?;
+        stream.close2().await?;
+        let started = Instant::now();
+
+        let mut recv_payload = [0u8; PING_SIZE];
+        stream.read_exact2(&mut recv_payload).await?;
+        if recv_payload == payload {
+            Ok(started.elapsed())
+        } else {
+            Err(io::Error::new(io::ErrorKind::InvalidData, "Ping payload mismatch"))
+        }
+    }
 }
+
+
+
+
+
+
+
+/// Protocol handler that handles pinging the remote at a regular period
+/// and answering ping queries.
+///
+#[derive(Debug, Clone)]
+pub struct PingHandler;
 
 
 /// Represents a prototype for an upgrade to handle the ping protocol.
@@ -220,11 +285,13 @@ where
     /// Simply wait for any thing that coming in then send back
     async fn handle(&mut self, mut stream: C, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
         log::trace!("Ping Protocol handling on {:?}", stream);
-        let mut msg = vec![0; 4096];
-        loop {
-            let n = stream.read2(&mut msg).await?;
-            stream.write2(&msg[..n]).await?;
+
+        let mut payload = [0u8; PING_SIZE];
+        while let Ok(_) = stream.read_exact2(&mut payload).await {
+            stream.write_all2(&payload).await?;
         }
+        stream.close2().await?;
+
         Ok(())
     }
     fn box_clone(&self) -> BoxHandler<C> {
