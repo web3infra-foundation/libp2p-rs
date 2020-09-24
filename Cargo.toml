@@ -27,6 +27,7 @@ libp2p-swarm = { path = "swarm", version = "0.1.0", package = "libp2p-swarm" }
 
 
 async-std = { version = "1.6", features = ["attributes", "unstable"] }
+async-trait = "0.1"
 futures = { version = "0.3.5" }
 pin-project-lite = "0.1"
 log = "0.4"
