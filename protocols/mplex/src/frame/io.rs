@@ -6,7 +6,7 @@ use crate::frame::length_delimited::LengthDelimited;
 use crate::frame::Frame;
 use libp2p_traits::{Read2, Write2};
 
-const MAX_MESSAGE_SIZE: usize = 1 << 20;
+const MAX_MESSAGE_SIZE: u32 = 1 << 20;
 
 pub struct IO<T> {
     id: Id,
@@ -35,15 +35,20 @@ where
         log::trace!("{}: read stream header: {}", self.id, header);
 
         // get length
-        let len = self.io.read_uvarint().await? as usize;
+        let len = self.io.read_uvarint().await?;
         if len > MAX_MESSAGE_SIZE {
             return Err(FrameDecodeError::FrameTooLarge(len as usize));
         }
+        if len == 0 {
+            return Ok(Frame {
+                header,
+                body: Vec::new(),
+            });
+        }
 
         // get body
-        let mut body = vec![0; len];
+        let mut body = vec![0; len as usize];
         self.io.read_body(&mut body).await?;
-
         Ok(Frame { header, body })
     }
 }
@@ -53,12 +58,20 @@ where
     T: Write2 + Unpin + Send,
 {
     pub(crate) async fn send_frame(&mut self, frame: &Frame) -> io::Result<()> {
-        log::trace!("{}: write stream, header: {}", self.id, frame.header);
+        log::trace!(
+            "{}: write stream, header: {}, len {}",
+            self.id,
+            frame.header,
+            frame.body.len()
+        );
 
         let hdr = header::encode(&frame.header);
 
         self.io.write_header(hdr).await?;
-        self.io.write_body(&frame.body).await?;
+        self.io.write_length(frame.body.len() as u32).await?;
+        if !frame.body.is_empty() {
+            self.io.write_body(&frame.body).await?;
+        }
         self.io.flush().await
     }
 

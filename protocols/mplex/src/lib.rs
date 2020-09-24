@@ -14,7 +14,7 @@ use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
 use libp2p_traits::{Read2, Write2};
 
 use crate::connection::Connection;
-use connection::{control::Control, stream::Stream};
+use connection::{Id, control::Control, stream::Stream};
 use error::ConnectionError;
 use futures::future::BoxFuture;
 use libp2p_core::identity::Keypair;
@@ -45,6 +45,8 @@ pub struct Mplex<C> {
     conn: Option<Connection<C>>,
     /// Handle to control the connection.
     ctrl: Control,
+    /// For debug purpose
+    id: Id,
     /// The secure&connection info provided by underlying socket.
     /// The socket is moved into Connection, so we have to make a copy of these information
     ///
@@ -67,19 +69,20 @@ impl<C> Clone for Mplex<C> {
         Mplex {
             conn: None,
             ctrl: self.ctrl.clone(),
+            id: self.id,
             la: self.la.clone(),
             ra: self.ra.clone(),
             local_priv_key: self.local_priv_key.clone(),
             local_peer_id: self.local_peer_id.clone(),
             remote_pub_key: self.remote_pub_key.clone(),
-            remote_peer_id: self.remote_peer_id.clone(),
+            remote_peer_id: self.remote_peer_id.clone()
         }
     }
 }
 
 impl<C> fmt::Debug for Mplex<C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("Mplex")
+        f.debug_struct("Mplex").field("Id", &self.id).finish()
     }
 }
 
@@ -94,10 +97,12 @@ impl<C: ConnectionInfo + SecureInfo + Read2 + Write2 + Unpin + Send + 'static> M
         let remote_peer_id = io.remote_peer();
 
         let conn = Connection::new(io);
+        let id = conn.id();
         let ctrl = conn.control();
         Mplex {
             conn: Some(conn),
             ctrl,
+            id,
             la,
             ra,
             local_priv_key,

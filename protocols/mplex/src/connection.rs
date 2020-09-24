@@ -48,7 +48,7 @@ pub(crate) enum StreamCommand {
 ///
 /// Randomly generated, this is mainly intended to improve log output.
 #[derive(Clone, Copy)]
-pub(crate) struct Id(u32);
+pub struct Id(u32);
 
 impl Id {
     /// Create a random connection ID.
@@ -128,7 +128,7 @@ pub struct Connection<T> {
     stream_receiver: mpsc::Receiver<StreamCommand>,
     control_sender: mpsc::Sender<ControlCommand>,
     control_receiver: Pausable<mpsc::Receiver<ControlCommand>>,
-    accept_stream_senders: VecDeque<oneshot::Sender<Result<stream::Stream>>>,
+    waiting_stream_sender: Option<oneshot::Sender<Result<stream::Stream>>>,
     pending_streams: VecDeque<stream::Stream>,
 }
 
@@ -159,9 +159,13 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
             stream_receiver,
             control_sender,
             control_receiver: Pausable::new(control_receiver),
-            accept_stream_senders: VecDeque::default(),
+            waiting_stream_sender: None,
             pending_streams: VecDeque::default(),
         }
+    }
+    /// Returns the id of the connection
+    pub fn id(&self) -> Id {
+        self.id
     }
 
     // The param of control must be
@@ -180,7 +184,7 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
 
         self.is_closed = true;
 
-        while let Some(sender) = self.accept_stream_senders.pop_front() {
+        if let Some(sender) = self.waiting_stream_sender.take() {
             sender.send(Err(ConnectionError::Closed)).expect("send err");
         }
 
@@ -263,7 +267,7 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
                 );
 
                 log::info!("{}: new inbound {} of {}", self.id, stream, self);
-                if let Some(sender) = self.accept_stream_senders.pop_front() {
+                if let Some(sender) = self.waiting_stream_sender.take() {
                     sender.send(Ok(stream)).expect("send err");
                 } else {
                     self.pending_streams.push_back(stream);
@@ -370,10 +374,15 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
                 reply.send(Ok(stream)).expect("send err");
             }
             Some(ControlCommand::AcceptStream(reply)) => {
+                if self.waiting_stream_sender.is_some() {
+                    reply.send(Err(ConnectionError::Closed)).expect("send err");
+                    return Ok(());
+                }
+
                 if let Some(stream) = self.pending_streams.pop_front() {
                     reply.send(Ok(stream)).expect("send err");
                 } else {
-                    self.accept_stream_senders.push_back(reply);
+                    self.waiting_stream_sender = Some(reply);
                 }
             }
             Some(ControlCommand::CloseConnection(reply)) => {
