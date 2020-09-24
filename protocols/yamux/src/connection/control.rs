@@ -15,7 +15,6 @@ use futures::{
     prelude::*,
 };
 
-
 type Result<T> = std::result::Result<T, ConnectionError>;
 
 /// The Yamux `Connection` controller.
@@ -42,9 +41,7 @@ impl Clone for Control {
 
 impl Control {
     pub(crate) fn new(sender: mpsc::Sender<ControlCommand>) -> Self {
-        Control {
-            sender,
-        }
+        Control { sender }
     }
 
     /// Open a new stream to the remote.

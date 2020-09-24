@@ -172,7 +172,7 @@ pub struct Connection<T> {
     control_receiver: Pausable<mpsc::Receiver<ControlCommand>>,
     stream_sender: mpsc::Sender<StreamCommand>,
     stream_receiver: mpsc::Receiver<StreamCommand>,
-    accept_stream_senders: VecDeque<oneshot::Sender<Result<stream::Stream>>>,
+    waiting_stream_sender: Option<oneshot::Sender<Result<stream::Stream>>>,
     pending_streams: VecDeque<stream::Stream>,
     shutdown: Shutdown,
     is_closed: bool,
@@ -299,7 +299,7 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
                 Mode::Client => 1,
                 Mode::Server => 2,
             },
-            accept_stream_senders: VecDeque::default(),
+            waiting_stream_sender: None,
             pending_streams: VecDeque::default(),
             shutdown: Shutdown::NotStarted,
             is_closed: false,
@@ -308,7 +308,7 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
 
     /// Returns the id of the connection
     pub fn id(&self) -> Id {
-        self.id.clone()
+        self.id
     }
 
     /// Get a controller for this connection.
@@ -338,7 +338,7 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
 
         self.is_closed = true;
 
-        while let Some(sender) = self.accept_stream_senders.pop_front() {
+        if let Some(sender) = self.waiting_stream_sender.take() {
             sender.send(Err(ConnectionError::Closed)).expect("send err");
         }
 
@@ -469,10 +469,15 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
                 }
             }
             Some(ControlCommand::AcceptStream(reply)) => {
+                if self.waiting_stream_sender.is_some() {
+                    reply.send(Err(ConnectionError::Closed)).expect("send err");
+                    return Ok(());
+                }
+
                 if let Some(stream) = self.pending_streams.pop_front() {
                     reply.send(Ok(stream)).expect("send err");
                 } else {
-                    self.accept_stream_senders.push_back(reply);
+                    self.waiting_stream_sender = Some(reply);
                 }
             }
             Some(ControlCommand::CloseConnection(reply)) => {
@@ -567,7 +572,7 @@ impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
             Action::None => {}
             Action::New(stream) => {
                 log::trace!("{}: new inbound {} of {}", self.id, stream, self);
-                if let Some(sender) = self.accept_stream_senders.pop_front() {
+                if let Some(sender) = self.waiting_stream_sender.take() {
                     sender.send(Ok(stream)).expect("send err");
                 } else {
                     self.pending_streams.push_back(stream);
