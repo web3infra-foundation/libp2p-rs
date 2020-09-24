@@ -1,14 +1,11 @@
-use bytes::{BufMut, BytesMut};
 use libp2p_traits::{Read2, Write2};
-use std::convert::TryFrom;
 use std::io::{self, ErrorKind};
 
 const U32_LEN: usize = 5;
 
 pub struct LengthDelimited<T> {
     inner: T,
-    max_frame_size: usize,
-    write_buffer: BytesMut,
+    max_frame_size: u32,
 }
 
 impl<R> LengthDelimited<R>
@@ -17,11 +14,10 @@ where
 {
     /// Creates a new I/O resource for reading and writing unsigned-varint
     /// length delimited frames.
-    pub fn new(inner: R, max_frame_size: usize) -> LengthDelimited<R> {
+    pub fn new(inner: R, max_frame_size: u32) -> LengthDelimited<R> {
         LengthDelimited {
             inner,
             max_frame_size,
-            write_buffer: BytesMut::with_capacity(max_frame_size as usize),
         }
     }
 }
@@ -68,31 +64,24 @@ where
     pub async fn write_header(&mut self, hdr: u32) -> io::Result<()> {
         let mut uvi_buf = unsigned_varint::encode::u32_buffer();
         let header_byte = unsigned_varint::encode::u32(hdr, &mut uvi_buf);
-        self.write_buffer.reserve(header_byte.len());
-        self.write_buffer.put(header_byte);
+        self.inner.write_all2(header_byte).await
+    }
 
-        Ok(())
+    pub async fn write_length(&mut self, length: u32) -> io::Result<()> {
+        if length > self.max_frame_size {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Maximum frame size exceeded.",
+            ));
+        }
+
+        let mut uvi_buf = unsigned_varint::encode::u32_buffer();
+        let uvi_len = unsigned_varint::encode::u32(length, &mut uvi_buf);
+        self.inner.write_all2(uvi_len).await
     }
 
     pub async fn write_body(&mut self, data: &[u8]) -> io::Result<()> {
-        let len = match u32::try_from(data.len()) {
-            Ok(len) if len <= self.max_frame_size as u32 => len,
-            _ => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Maximum frame size exceeded.",
-                ))
-            }
-        };
-
-        // assemble
-        let mut uvi_buf = unsigned_varint::encode::u32_buffer();
-        let uvi_len = unsigned_varint::encode::u32(len, &mut uvi_buf);
-        self.write_buffer.reserve(len as usize + uvi_len.len());
-        self.write_buffer.put(uvi_len);
-        self.write_buffer.put(data);
-
-        Ok(())
+        self.inner.write_all2(data).await
     }
 }
 
@@ -101,10 +90,7 @@ where
     T: Write2 + Send,
 {
     pub(crate) async fn flush(&mut self) -> io::Result<()> {
-        self.inner.write_all2(&self.write_buffer).await?;
-        self.inner.flush2().await?;
-        self.write_buffer.clear();
-        Ok(())
+        self.inner.flush2().await
     }
 
     pub(crate) async fn close(&mut self) -> io::Result<()> {

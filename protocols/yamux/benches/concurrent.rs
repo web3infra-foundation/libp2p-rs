@@ -11,7 +11,7 @@
 use async_std::task;
 use criterion::{criterion_group, criterion_main, Criterion};
 use futures::{channel::mpsc, future, prelude::*, ready};
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{Read2, ReadExt2, Write2};
 use std::{
     fmt, io,
     pin::Pin,
@@ -49,6 +49,7 @@ impl AsRef<[u8]> for Bytes {
 }
 
 fn concurrent(c: &mut Criterion) {
+    // env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();
     let params = &[
         Params {
             streams: 1,
@@ -124,27 +125,25 @@ async fn roundtrip(nstreams: usize, nmessages: usize, data: Bytes, send_all: boo
     let client = client.into_async_read();
 
     let server = async move {
-        yamux::into_stream(Connection::new(server, Config::default(), Mode::Server))
-            .try_for_each_concurrent(None, |mut stream| async move {
-                /*
-                {
-                    let (mut r, mut w) = futures::io::AsyncReadExt::split(&mut stream);
-                    futures::io::copy(&mut r, &mut w).await?;
-                }
-                 */
-                let mut buf = vec![0; 512];
-                loop {
-                    let n = stream.read2(&mut buf).await?;
-                    if n == 0 {
-                        break;
-                    }
-                    stream.write_all2(&buf[..n]).await?;
-                }
-                stream.close2().await?;
-                Ok(())
-            })
-            .await
-            .expect("server works")
+        task::spawn(async move {
+            let conn = Connection::new(server, Config::default(), Mode::Server);
+            let mut ctrl = conn.control();
+
+            task::spawn(async {
+                let mut muxer_conn = conn;
+                while muxer_conn.next_stream().await.is_ok() {}
+                log::info!("connection is closed");
+            });
+
+            while let Ok(mut stream) = ctrl.accept_stream().await {
+                log::debug!("S: accepted new stream");
+                task::spawn(async move {
+                    let (r, w) = stream.clone().split2();
+                    libp2p_traits::copy(r, w).await.unwrap();
+                    stream.close2().await.unwrap();
+                });
+            }
+        });
     };
 
     task::spawn(server);
@@ -152,7 +151,12 @@ async fn roundtrip(nstreams: usize, nmessages: usize, data: Bytes, send_all: boo
     let (tx, rx) = mpsc::unbounded();
     let conn = Connection::new(client, Config::default(), Mode::Client);
     let mut ctrl = conn.control();
-    task::spawn(yamux::into_stream(conn).for_each(|_| future::ready(())));
+
+    task::spawn(async {
+        let mut muxer_conn = conn;
+        while muxer_conn.next_stream().await.is_ok() {}
+        log::info!("connection is closed");
+    });
 
     for _ in 0..nstreams {
         let data = data.clone();
@@ -160,6 +164,7 @@ async fn roundtrip(nstreams: usize, nmessages: usize, data: Bytes, send_all: boo
         let mut ctrl = ctrl.clone();
         task::spawn(async move {
             let mut stream = ctrl.open_stream().await?;
+            log::debug!("C: opened new stream {}", stream.id());
             if send_all {
                 // Send `nmessages` messages and receive `nmessages` messages.
                 for _ in 0..nmessages {
