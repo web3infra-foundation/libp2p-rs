@@ -275,10 +275,10 @@ where
     // pending_event: Option<(PeerId, PendingNotifyHandler, TInEvent)>
     /// Swarm will listen on this channel, waiting for events generated from underlying transport
     event_receiver:
-        mpsc::Receiver<SwarmEvent<TTrans::Output, <TTrans::Output as StreamMuxer>::Substream>>,
+        mpsc::UnboundedReceiver<SwarmEvent<TTrans::Output, <TTrans::Output as StreamMuxer>::Substream>>,
     /// The Swarm event sender wil be cloned and then taken by underlying parts
     event_sender:
-        mpsc::Sender<SwarmEvent<TTrans::Output, <TTrans::Output as StreamMuxer>::Substream>>,
+        mpsc::UnboundedSender<SwarmEvent<TTrans::Output, <TTrans::Output as StreamMuxer>::Substream>>,
 
     /// Swarm will listen on this channel, for external control commands
     ctrl_receiver:
@@ -323,7 +323,8 @@ where
     //     TTransport::ListenerUpgrade: Send + 'static,
     //     TTransport::Dial: Send + 'static,
     {
-        let (event_tx, event_rx) = mpsc::channel(0);
+        // unbounded channel for events, so that we can send a message to ourselves
+        let (event_tx, event_rx) = mpsc::unbounded();
         let (ctrl_tx, ctrl_rx) = mpsc::channel(0);
         Swarm {
             peers: PeerStore::default(),
@@ -581,12 +582,12 @@ where
     ) -> Result<()> {
         let cid = substream.cid();
         let sid = substream.id();
-        // self.event_sender.send(SwarmEvent::StreamClosed {
-        //     dir: Direction::Outbound,
-        //     cid,
-        //     sid,
-        // }).await;
-        self.handle_stream_closed(Direction::Outbound, cid, sid);
+        self.event_sender.send(SwarmEvent::StreamClosed {
+            dir: Direction::Outbound,
+            cid,
+            sid,
+        }).await;
+        //self.handle_stream_closed(Direction::Outbound, cid, sid);
         let _ = reply.send(Ok(()));
         Ok(())
     }
