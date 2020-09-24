@@ -37,18 +37,8 @@
 //! >           connection with a remote. In order to handle a protocol that requires knowledge of
 //! >           the network as a whole, see the `NetworkBehaviour` trait.
 
-mod dummy;
-// mod map_in;
-// mod map_out;
-// mod node_handler;
-// mod one_shot;
-// mod select;
-// pub mod multi;
-
-pub use self::{dummy::DummyProtocolHandler};
-
 use async_trait::async_trait;
-use libp2p_core::upgrade::UpgradeInfo;
+use libp2p_core::upgrade::{UpgradeInfo, ProtocolName};
 use crate::SwarmError;
 
 
@@ -79,6 +69,42 @@ impl<C> Clone for BoxHandler<C> {
         self.box_clone()
     }
 }
+
+
+/// Dummy protocol handler, test purpose
+///
+/// Implementation of `ProtocolHandler` that doesn't handle anything.
+#[derive(Clone, Default)]
+pub struct DummyProtocolHandler {
+}
+
+impl DummyProtocolHandler {
+    pub fn new() -> Self {
+        DummyProtocolHandler {
+        }
+    }
+}
+
+impl UpgradeInfo for DummyProtocolHandler {
+    type Info = &'static [u8];
+    fn protocol_info(&self) -> Vec<Self::Info> {
+        vec![b"/dummy/1.0.0", b"/dummy/2.0.0"]
+    }
+}
+
+#[async_trait]
+impl<C: Send + std::fmt::Debug + 'static> ProtocolHandler<C> for DummyProtocolHandler {
+
+    async fn handle(&mut self, stream: C, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+        log::trace!("Dummy Protocol handling inbound {:?} {:?}", stream, info.protocol_name_str());
+        Ok(())
+    }
+    fn box_clone(&self) -> BoxHandler<C> {
+        Box::new(self.clone())
+    }
+}
+
+
 
 /*
 
