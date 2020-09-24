@@ -4,7 +4,7 @@
 
 use crate::muxing::StreamMuxer;
 use crate::secure_io::SecureInfo;
-use crate::transport::{TransportListener, ConnectionInfo};
+use crate::transport::{ConnectionInfo, TransportListener};
 use crate::upgrade::multistream::Multistream;
 use crate::upgrade::Upgrader;
 use crate::{transport::TransportError, Multiaddr, Transport};
@@ -118,10 +118,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pnet::*;
     use crate::transport::memory::MemoryTransport;
     use crate::transport::protector::ProtectorTransport;
     use crate::upgrade::dummy::DummyUpgrader;
-    use pnet::*;
     #[test]
     fn communicating_between_dialer_and_listener() {
         let msg = [1, 2, 3];

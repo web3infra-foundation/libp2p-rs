@@ -1,16 +1,16 @@
-use crate::transport::{TransportListener, ConnectionInfo};
+use crate::transport::{ConnectionInfo, TransportListener};
 use crate::{transport::TransportError, Transport};
 use async_trait::async_trait;
 use fnv::FnvHashMap;
-use futures::{channel::mpsc, prelude::*, task::Context, task::Poll, AsyncWriteExt, AsyncReadExt};
+use futures::io::Error;
+use futures::{channel::mpsc, prelude::*, task::Context, task::Poll, AsyncReadExt, AsyncWriteExt};
 use futures::{SinkExt, StreamExt};
 use lazy_static::lazy_static;
+use libp2p_traits::{Read2, Write2};
 use multiaddr::{Multiaddr, Protocol};
 use parking_lot::Mutex;
 use rw_stream_sink::RwStreamSink;
 use std::{collections::hash_map::Entry, io, num::NonZeroU64, pin::Pin};
-use libp2p_traits::{Read2, Write2};
-use futures::io::Error;
 
 lazy_static! {
     static ref HUB: Mutex<FnvHashMap<NonZeroU64, mpsc::Sender<Channel>>> =
@@ -337,7 +337,7 @@ mod tests {
             let mut socket = listener.accept().await.unwrap();
 
             let mut buf = [0; 3];
-            socket.read_exact(&mut buf).await.unwrap();
+            socket.read_exact2(&mut buf).await.unwrap();
 
             assert_eq!(buf, msg);
         };
@@ -347,7 +347,7 @@ mod tests {
         let t2 = MemoryTransport::default();
         let dialer = async move {
             let mut socket = t2.dial(cloned_t1_addr).await.unwrap();
-            socket.write_all(&msg).await.unwrap();
+            socket.write_all2(&msg).await.unwrap();
         };
 
         // Wait for both to finish.

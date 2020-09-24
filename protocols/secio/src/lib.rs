@@ -10,11 +10,11 @@ use crate::{
 };
 
 use libp2p_core::identity::Keypair;
-use libp2p_core::{PeerId, PublicKey, Multiaddr};
+use libp2p_core::{Multiaddr, PeerId, PublicKey};
 
 use crate::codec::secure_stream::SecureStream;
 use libp2p_core::secure_io::SecureInfo;
-use libp2p_core::transport::{TransportError, ConnectionInfo};
+use libp2p_core::transport::{ConnectionInfo, TransportError};
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
 use libp2p_traits::{Read2, Write2};
 use std::io;

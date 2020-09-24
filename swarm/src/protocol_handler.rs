@@ -37,203 +37,76 @@
 //! >           connection with a remote. In order to handle a protocol that requires knowledge of
 //! >           the network as a whole, see the `NetworkBehaviour` trait.
 
-mod dummy;
-mod map_in;
-mod map_out;
-mod node_handler;
-mod one_shot;
-mod select;
-pub mod multi;
+use async_trait::async_trait;
+use libp2p_core::upgrade::{UpgradeInfo, ProtocolName};
+use crate::SwarmError;
 
-pub use crate::upgrade::{
-    InboundUpgradeSend,
-    OutboundUpgradeSend,
-    UpgradeInfoSend,
-};
 
-use libp2p_core::{
-    ConnectedPoint,
-    Multiaddr,
-    PeerId,
-    upgrade::{self, UpgradeError},
-};
-use std::{cmp::Ordering, error, fmt, task::Context, task::Poll, time::Duration};
-use wasm_timer::Instant;
-
-pub use dummy::DummyProtocolsHandler;
-pub use map_in::MapInEvent;
-pub use map_out::MapOutEvent;
-pub use node_handler::{NodeHandlerWrapper, NodeHandlerWrapperBuilder, NodeHandlerWrapperError};
-pub use one_shot::{OneShotHandler, OneShotHandlerConfig};
-pub use select::{IntoProtocolsHandlerSelect, ProtocolsHandlerSelect};
-
-/// A handler for a set of protocols used on a connection with a remote.
-///
-/// This trait should be implemented for a type that maintains the state for
-/// the execution of a specific protocol with a remote.
-///
-/// # Handling a protocol
-///
-/// Communication with a remote over a set of protocols is initiated in one of two ways:
-///
-///   1. Dialing by initiating a new outbound substream. In order to do so,
-///      [`ProtocolsHandler::poll()`] must return an [`ProtocolsHandlerEvent::OutboundSubstreamRequest`],
-///      providing an instance of [`libp2p_core::upgrade::OutboundUpgrade`] that is used to negotiate the
-///      protocol(s). Upon success, [`ProtocolsHandler::inject_fully_negotiated_outbound`]
-///      is called with the final output of the upgrade.
-///
-///   2. Listening by accepting a new inbound substream. When a new inbound substream
-///      is created on a connection, [`ProtocolsHandler::listen_protocol`] is called
-///      to obtain an instance of [`libp2p_core::upgrade::InboundUpgrade`] that is used to
-///      negotiate the protocol(s). Upon success,
-///      [`ProtocolsHandler::inject_fully_negotiated_inbound`] is called with the final
-///      output of the upgrade.
-///
-/// # Connection Keep-Alive
-///
-/// A `ProtocolsHandler` can influence the lifetime of the underlying connection
-/// through [`ProtocolsHandler::connection_keep_alive`]. That is, the protocol
-/// implemented by the handler can include conditions for terminating the connection.
-/// The lifetime of successfully negotiated substreams is fully controlled by the handler.
-///
-/// Implementors of this trait should keep in mind that the connection can be closed at any time.
-/// When a connection is closed gracefully, the substreams used by the handler may still
-/// continue reading data until the remote closes its side of the connection.
-pub trait ProtocolsHandler: Send + 'static {
-    /// Custom event that can be received from the outside.
-    type InEvent: Send + 'static;
-    /// Custom event that can be produced by the handler and that will be returned to the outside.
-    type OutEvent: Send + 'static;
-    /// The type of errors returned by [`ProtocolsHandler::poll`].
-    type Error: error::Error + Send + 'static;
-    /// The inbound upgrade for the protocol(s) used by the handler.
-    type InboundProtocol: InboundUpgradeSend + Send + 'static;
-    /// The outbound upgrade for the protocol(s) used by the handler.
-    type OutboundProtocol: OutboundUpgradeSend;
-    /// The type of additional information passed to an `OutboundSubstreamRequest`.
-    type OutboundOpenInfo: Send + 'static;
-
-    /// The [`InboundUpgrade`](libp2p_core::upgrade::InboundUpgrade) to apply on inbound
-    /// substreams to negotiate the desired protocols.
+/// Common trait for upgrades that can be applied on inbound substreams, outbound substreams,
+/// or both.
+/// Possible upgrade on a connection or substream.
+#[async_trait]
+pub trait ProtocolHandler<C>: UpgradeInfo {
+    /// After we have determined that the remote supports one of the protocols we support, this
+    /// method is called to start handling the inbound. Swarm will start invoking this method
+    /// in a newly spawned task.
     ///
-    /// > **Note**: The returned `InboundUpgrade` should always accept all the generally
-    /// >           supported protocols, even if in a specific context a particular one is
-    /// >           not supported, (eg. when only allowing one substream at a time for a protocol).
-    /// >           This allows a remote to put the list of supported protocols in a cache.
-    fn listen_protocol(&self) -> SubstreamProtocol<Self::InboundProtocol>;
-
-    /// Injects the output of a successful upgrade on a new inbound substream.
-    fn inject_fully_negotiated_inbound(
+    /// The `info` is the identifier of the protocol, as produced by `protocol_info`.
+    async fn handle(
         &mut self,
-        protocol: <Self::InboundProtocol as InboundUpgradeSend>::Output
-    );
+        stream: C,
+        info: <Self as UpgradeInfo>::Info,
+    ) -> Result<(), SwarmError>;
+    /// This is to provide a clone method for the trait object.
+    fn box_clone(&self) -> BoxHandler<C>;
+}
 
-    /// Injects the output of a successful upgrade on a new outbound substream.
-    ///
-    /// The second argument is the information that was previously passed to
-    /// [`ProtocolsHandlerEvent::OutboundSubstreamRequest`].
-    fn inject_fully_negotiated_outbound(
-        &mut self,
-        protocol: <Self::OutboundProtocol as OutboundUpgradeSend>::Output,
-        info: Self::OutboundOpenInfo
-    );
+pub type BoxHandler<C> = Box<dyn ProtocolHandler<C, Info = &'static [u8]> + Send + Sync>;
 
-    /// Injects an event coming from the outside in the handler.
-    fn inject_event(&mut self, event: Self::InEvent);
 
-    /// Notifies the handler of a change in the address of the remote.
-    fn inject_address_change(&mut self, _new_address: &Multiaddr) {}
-
-    /// Indicates to the handler that upgrading an outbound substream to the given protocol has failed.
-    fn inject_dial_upgrade_error(
-        &mut self,
-        info: Self::OutboundOpenInfo,
-        error: ProtocolsHandlerUpgrErr<
-            <Self::OutboundProtocol as OutboundUpgradeSend>::Error
-        >
-    );
-
-    /// Indicates to the handler that upgrading an inbound substream to the given protocol has failed.
-    fn inject_listen_upgrade_error(
-        &mut self,
-        _: ProtocolsHandlerUpgrErr<
-            <Self::InboundProtocol as InboundUpgradeSend>::Error
-        >
-    ) {}
-
-    /// Returns until when the connection should be kept alive.
-    ///
-    /// This method is called by the `Swarm` after each invocation of
-    /// [`ProtocolsHandler::poll`] to determine if the connection and the associated
-    /// `ProtocolsHandler`s should be kept alive as far as this handler is concerned
-    /// and if so, for how long.
-    ///
-    /// Returning [`KeepAlive::No`] indicates that the connection should be
-    /// closed and this handler destroyed immediately.
-    ///
-    /// Returning [`KeepAlive::Until`] indicates that the connection may be closed
-    /// and this handler destroyed after the specified `Instant`.
-    ///
-    /// Returning [`KeepAlive::Yes`] indicates that the connection should
-    /// be kept alive until the next call to this method.
-    ///
-    /// > **Note**: The connection is always closed and the handler destroyed
-    /// > when [`ProtocolsHandler::poll`] returns an error. Furthermore, the
-    /// > connection may be closed for reasons outside of the control
-    /// > of the handler.
-    fn connection_keep_alive(&self) -> KeepAlive;
-
-    /// Should behave like `Stream::poll()`.
-    fn poll(&mut self, cx: &mut Context) -> Poll<
-        ProtocolsHandlerEvent<Self::OutboundProtocol, Self::OutboundOpenInfo, Self::OutEvent, Self::Error>
-    >;
-
-    /// Adds a closure that turns the input event into something else.
-    #[inline]
-    fn map_in_event<TNewIn, TMap>(self, map: TMap) -> MapInEvent<Self, TNewIn, TMap>
-    where
-        Self: Sized,
-        TMap: Fn(&TNewIn) -> Option<&Self::InEvent>,
-    {
-        MapInEvent::new(self, map)
-    }
-
-    /// Adds a closure that turns the output event into something else.
-    #[inline]
-    fn map_out_event<TMap, TNewOut>(self, map: TMap) -> MapOutEvent<Self, TMap>
-    where
-        Self: Sized,
-        TMap: FnMut(Self::OutEvent) -> TNewOut,
-    {
-        MapOutEvent::new(self, map)
-    }
-
-    /// Creates a new `ProtocolsHandler` that selects either this handler or
-    /// `other` by delegating methods calls appropriately.
-    ///
-    /// > **Note**: The largest `KeepAlive` returned by the two handlers takes precedence,
-    /// > i.e. is returned from [`ProtocolsHandler::connection_keep_alive`] by the returned
-    /// > handler.
-    #[inline]
-    fn select<TProto2>(self, other: TProto2) -> ProtocolsHandlerSelect<Self, TProto2>
-    where
-        Self: Sized,
-    {
-        ProtocolsHandlerSelect::new(self, other)
-    }
-
-    /// Creates a builder that allows creating a `NodeHandler` that handles this protocol
-    /// exclusively.
-    ///
-    /// > **Note**: This method should not be redefined in a custom `ProtocolsHandler`.
-    #[inline]
-    fn into_node_handler_builder(self) -> NodeHandlerWrapperBuilder<Self>
-    where
-        Self: Sized,
-    {
-        IntoProtocolsHandler::into_node_handler_builder(self)
+impl<C> Clone for BoxHandler<C> {
+    fn clone(&self) -> Self {
+        self.box_clone()
     }
 }
+
+
+/// Dummy protocol handler, test purpose
+///
+/// Implementation of `ProtocolHandler` that doesn't handle anything.
+#[derive(Clone, Default)]
+pub struct DummyProtocolHandler {
+}
+
+impl DummyProtocolHandler {
+    pub fn new() -> Self {
+        DummyProtocolHandler {
+        }
+    }
+}
+
+impl UpgradeInfo for DummyProtocolHandler {
+    type Info = &'static [u8];
+    fn protocol_info(&self) -> Vec<Self::Info> {
+        vec![b"/dummy/1.0.0", b"/dummy/2.0.0"]
+    }
+}
+
+#[async_trait]
+impl<C: Send + std::fmt::Debug + 'static> ProtocolHandler<C> for DummyProtocolHandler {
+
+    async fn handle(&mut self, stream: C, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+        log::trace!("Dummy Protocol handling inbound {:?} {:?}", stream, info.protocol_name_str());
+        Ok(())
+    }
+    fn box_clone(&self) -> BoxHandler<C> {
+        Box::new(self.clone())
+    }
+}
+
+
+
+/*
 
 /// Configuration of inbound or outbound substream protocol(s)
 /// for a [`ProtocolsHandler`].
@@ -243,7 +116,6 @@ pub trait ProtocolsHandler: Send + 'static {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct SubstreamProtocol<TUpgrade> {
     upgrade: TUpgrade,
-    upgrade_protocol: upgrade::Version,
     timeout: Duration,
 }
 
@@ -255,7 +127,6 @@ impl<TUpgrade> SubstreamProtocol<TUpgrade> {
     pub fn new(upgrade: TUpgrade) -> SubstreamProtocol<TUpgrade> {
         SubstreamProtocol {
             upgrade,
-            upgrade_protocol: upgrade::Version::V1,
             timeout: Duration::from_secs(10),
         }
     }
@@ -274,7 +145,6 @@ impl<TUpgrade> SubstreamProtocol<TUpgrade> {
     {
         SubstreamProtocol {
             upgrade: f(self.upgrade),
-            upgrade_protocol: self.upgrade_protocol,
             timeout: self.timeout,
         }
     }
@@ -451,52 +321,6 @@ where
     }
 }
 
-/// Prototype for a `ProtocolsHandler`.
-pub trait IntoProtocolsHandler: Send + 'static {
-    /// The protocols handler.
-    type Handler: ProtocolsHandler;
-
-    /// Builds the protocols handler.
-    ///
-    /// The `PeerId` is the id of the node the handler is going to handle.
-    fn into_handler(self, remote_peer_id: &PeerId, connected_point: &ConnectedPoint) -> Self::Handler;
-
-    /// Return the handler's inbound protocol.
-    fn inbound_protocol(&self) -> <Self::Handler as ProtocolsHandler>::InboundProtocol;
-
-    /// Builds an implementation of `IntoProtocolsHandler` that handles both this protocol and the
-    /// other one together.
-    fn select<TProto2>(self, other: TProto2) -> IntoProtocolsHandlerSelect<Self, TProto2>
-    where
-        Self: Sized,
-    {
-        IntoProtocolsHandlerSelect::new(self, other)
-    }
-
-    /// Creates a builder that will allow creating a `NodeHandler` that handles this protocol
-    /// exclusively.
-    fn into_node_handler_builder(self) -> NodeHandlerWrapperBuilder<Self>
-    where
-        Self: Sized,
-    {
-        NodeHandlerWrapperBuilder::new(self)
-    }
-}
-
-impl<T> IntoProtocolsHandler for T
-where T: ProtocolsHandler
-{
-    type Handler = Self;
-
-    fn into_handler(self, _: &PeerId, _: &ConnectedPoint) -> Self {
-        self
-    }
-
-    fn inbound_protocol(&self) -> <Self::Handler as ProtocolsHandler>::InboundProtocol {
-        self.listen_protocol().into_upgrade().1
-    }
-}
-
 /// How long the connection should be kept alive.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum KeepAlive {
@@ -536,3 +360,4 @@ impl Ord for KeepAlive {
         }
     }
 }
+*/

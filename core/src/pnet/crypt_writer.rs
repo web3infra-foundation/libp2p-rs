@@ -1,3 +1,5 @@
+use crate::transport::ConnectionInfo;
+use crate::Multiaddr;
 use async_trait::async_trait;
 use futures::io;
 use libp2p_traits::{Read2, Write2};
@@ -65,5 +67,14 @@ where
 {
     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.inner.read2(buf).await
+    }
+}
+
+impl<W: ConnectionInfo> ConnectionInfo for CryptWriter<W> {
+    fn local_multiaddr(&self) -> Multiaddr {
+        self.inner.local_multiaddr()
+    }
+    fn remote_multiaddr(&self) -> Multiaddr {
+        self.inner.remote_multiaddr()
     }
 }

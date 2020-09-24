@@ -20,7 +20,6 @@ libp2p-traits = { path = "traits", version = "0.1.0", package = "libp2p-traits" 
 yamux = { path = "protocols/yamux", version = "0.1.0", package = "yamux" }
 mplex = { path = "protocols/mplex", version = "0.1.0", package = "mplex" }
 secio = { path = "protocols/secio", version = "0.1.0", package = "secio" }
-pnet = { path = "protocols/pnet", version = "0.1.0", package = "pnet" }
 multiaddr = { path = "multiaddr", package = "parity-multiaddr", version = "0.9.1" }
 libp2p-core = { path = "core", version = "0.1.0", package = "libp2p-core" }
 libp2p-tcp = { path = "transports/tcp", version = "0.0.1", package = "libp2p-tcp" }
@@ -28,6 +27,7 @@ libp2p-swarm = { path = "swarm", version = "0.1.0", package = "libp2p-swarm" }
 
 
 async-std = { version = "1.6", features = ["attributes", "unstable"] }
+async-trait = "0.1"
 futures = { version = "0.3.5" }
 pin-project-lite = "0.1"
 log = "0.4"
@@ -62,7 +62,8 @@ members = [
   "protocols/yamux",
   "protocols/mplex",
   "protocols/secio",
-  "protocols/pnet",
+  "protocols/plaintext",
+  "protocols/ping",
   "core",
   "transports/tcp",
   "multiaddr",

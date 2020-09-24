@@ -19,11 +19,11 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::identity::Keypair;
-use crate::muxing::StreamMuxer;
+use crate::muxing::{StreamMuxer, StreamInfo};
 use crate::secure_io::SecureInfo;
-use crate::transport::{TransportError, ConnectionInfo};
+use crate::transport::{ConnectionInfo, TransportError};
 use crate::upgrade::{UpgradeInfo, Upgrader};
-use crate::{PeerId, PublicKey, Multiaddr};
+use crate::{Multiaddr, PeerId, PublicKey};
 use async_trait::async_trait;
 use futures::future::BoxFuture;
 use libp2p_traits::{Read2, Write2};
@@ -48,7 +48,6 @@ impl<T> fmt::Debug for DummyStream<T> {
         f.write_str("DummyStream")
     }
 }
-
 
 impl DummyUpgrader {
     /// Builds a new `DummyUpgrader`.
@@ -125,6 +124,10 @@ impl<T: Send + Write2> Write2 for DummyStream<T> {
     async fn close2(&mut self) -> io::Result<()> {
         self.0.close2().await
     }
+}
+
+impl StreamInfo for () {
+    fn id(&self) -> usize { 0 }
 }
 
 #[async_trait]
