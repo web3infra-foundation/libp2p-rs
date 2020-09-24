@@ -471,7 +471,7 @@ where
             },
             SwarmControlCmd::NetworkInfo(reply) => {
                 // got the peer_id, try opening a new sub stream
-                let _ = self.on_retrieve_networkinfo(reply).await;
+                let _ = self.on_retrieve_networkinfo(reply);
             }
             SwarmControlCmd::CloseSwarm => {
                 log::info!("closing the swarm...");
@@ -509,8 +509,6 @@ where
             for id in ids {
                 if let Some(connection) = self.connections_by_id.get_mut(&id) {
                     let _ = connection.close().await;
-                    // wait for accept-task and bg-task to exit
-                    let _ = connection.wait().await;
                 }
             }
         }
@@ -519,6 +517,7 @@ where
         Ok(())
     }
 
+
     async fn on_new_stream(
         &mut self,
         peer_id: PeerId,
@@ -526,50 +525,14 @@ where
         reply: oneshot::Sender<Result<Substream<<TTrans::Output as StreamMuxer>::Substream>>>,
     ) -> Result<()> {
         if let Some(connection) = self.get_best_conn(&peer_id) {
-            // well, we have a connection, simply open a new stream
-            let r = connection.open_stream().await;
-            match r {
-                Ok(raw_stream) => {
-                    // in order to prevent the main loop from blocking,
-                    // spawn a new task to do prorocol selection
-                    let cid = connection.id();
-                    let mut tx = self.event_sender.clone();
-
-                    task::spawn(async move {
-                        // now it's time to do protocol multiplexing for sub stream
-                        let negotiator = Negotiator::new_with_protocols(pids);
-                        let result = negotiator.select_one(raw_stream).await;
-
-                        let response = match result {
-                            Ok((proto, raw_stream)) => {
-                                log::info!("select_outbound {:?}", proto.protocol_name_str());
-
-                                let stream =
-                                    Substream::new(raw_stream, Direction::Outbound, proto, cid);
-                                let sid = stream.id();
-                                let _ = tx
-                                    .send(SwarmEvent::StreamOpened {
-                                        dir: Direction::Outbound,
-                                        cid,
-                                        sid,
-                                    })
-                                    .await;
-
-                                Ok(stream)
-                            }
-                            Err(err) => {
-                                let _ = tx.send(SwarmEvent::StreamError { cid, error: TransportError::Internal }).await;
-                                Err(SwarmError::Transport(err.into()))
-                            },
-                        };
-
-                        let _ = reply.send(response);
-                    });
-                }
-                Err(err) => {
-                    let _ = reply.send(Err(err.into()));
-                }
-            }
+            // well, we have a connection, start a task to open the stream
+            let cid = connection.id();
+            let stream_muxer = connection.stream_muxer().clone();
+            let mut tx = self.event_sender.clone();
+            task::spawn(async move {
+                let r = open_stream(cid, stream_muxer, pids, tx).await;
+                let _ = reply.send(r);
+            });
         } else {
             let _ = reply.send(Err(SwarmError::NoConnection(peer_id)));
         }
@@ -593,7 +556,7 @@ where
         Ok(())
     }
     ///
-    async fn on_retrieve_networkinfo(
+    fn on_retrieve_networkinfo(
         &mut self,
         reply: oneshot::Sender<Result<NetworkInfo>>,
     ) -> Result<()> {
@@ -957,6 +920,17 @@ where
         // TODO: return the connection
     }
 
+    // Open a stream specified with protocols, Swarm internal use
+    fn open_stream_internal(&self, connection: &Connection<TTrans::Output>, pids: Vec<ProtocolId>) {
+        let cid = connection.id();
+        let stream_muxer = connection.stream_muxer().clone();
+        let tx = self.event_sender.clone();
+        task::spawn(async move {
+           let r = open_stream(cid, stream_muxer, pids, tx).await;
+        });
+
+    }
+
     /// Handles a new connection
     ///
     /// start a Task for accepting new sub-stream from the connection
@@ -1226,5 +1200,48 @@ impl From<oneshot::Canceled> for SwarmError {
     }
 }
 
+
+
+async fn open_stream<T>(cid: ConnectionId,
+                        mut stream_muxer: T,
+                        pids: Vec<ProtocolId>,
+                        mut tx: mpsc::UnboundedSender<SwarmEvent<T, T::Substream>>
+) -> Result<Substream<T::Substream>>
+    where
+        T: StreamMuxer,
+        T::Substream: Read2 + Write2 + Send + Unpin,
+{
+    let raw_stream = stream_muxer.open_stream().await?;
+
+    // now it's time to do protocol multiplexing for sub stream
+    let negotiator = Negotiator::new_with_protocols(pids);
+    let result = negotiator.select_one(raw_stream).await;
+
+    match result {
+        Ok((proto, raw_stream)) => {
+            log::info!("select_outbound {:?}", proto.protocol_name_str());
+
+            let stream =
+                Substream::new(raw_stream, Direction::Outbound, proto, cid);
+
+            let sid = stream.id();
+            let _ = tx
+                .send(SwarmEvent::StreamOpened {
+                    dir: Direction::Outbound,
+                    cid,
+                    sid,
+                })
+                .await;
+               Ok(stream)
+        }
+        Err(err) => {
+            let _ = tx.send(SwarmEvent::StreamError { cid, error: TransportError::Internal }).await;
+            Err(SwarmError::Transport(err.into()))
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {}
+
+

@@ -231,58 +231,52 @@ where
         }
     }
 
-    /// Returns the unique Id of the connection
+    /// Returns the unique Id of the connection.
     pub fn id(&self) -> ConnectionId {
         self.id
     }
 
-    /// Returns a copy of the stream_muxer
-    pub fn stream_muxer(&self) -> TMuxer {
-        self.stream_muxer.clone()
+    /// Returns a reference of the stream_muxer.
+    pub fn stream_muxer(&self) -> &TMuxer {
+        &self.stream_muxer
     }
 
-    /// Sets the task handle of the connection
+    /// Sets the task handle of the connection.
     pub fn set_handle(&mut self, handle: JoinHandle<()>) {
         self.handle = Some(handle);
     }
 
-    /// Closes the inner stream_muxer
+    /// Closes the inner stream_muxer and wait for tasks.
     pub async fn close(&mut self) -> Result<(), SwarmError> {
-        self.stream_muxer.close().await.map_err(|e|e.into())
-    }
-    /// Opens a new raw stream
-    pub(crate) async fn open_stream(&mut self) -> Result<TMuxer::Substream, SwarmError> {
-        self.stream_muxer.open_stream().await.map_err(|e|e.into())
-    }
-    /// Waits for task exiting
-    pub(crate) async fn wait(&mut self) -> Result<(), SwarmError> {
+        self.stream_muxer.close().await?;
+        // wait for accept-task and bg-task to exit
         if let Some(h) = self.handle.take() {
             h.await;
         }
         Ok(())
     }
 
-    /// local_addr is the multiaddr on our side of the connection
+    /// local_addr is the multiaddr on our side of the connection.
     pub fn local_addr(&self) -> Multiaddr {
         self.stream_muxer.local_multiaddr()
     }
 
-    /// remote_addr is the multiaddr on the remote side of the connection
+    /// remote_addr is the multiaddr on the remote side of the connection.
     pub fn remote_addr(&self) -> Multiaddr {
         self.stream_muxer.remote_multiaddr()
     }
 
-    /// local_peer is the Peer on our side of the connection
+    /// local_peer is the Peer on our side of the connection.
     pub fn local_peer(&self) -> PeerId {
         self.stream_muxer.local_peer()
     }
 
-    /// remote_peer is the Peer on the remote side
+    /// remote_peer is the Peer on the remote side.
     pub fn remote_peer(&self) -> PeerId {
         self.stream_muxer.remote_peer()
     }
 
-    /// local_priv_key is the public key of the peer on this side
+    /// local_priv_key is the public key of the peer on this side.
     pub fn local_priv_key(&self) -> Keypair {
         self.stream_muxer.local_priv_key()
     }
