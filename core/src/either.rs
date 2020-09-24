@@ -18,16 +18,16 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use std::io;
+use crate::identity::Keypair;
+use crate::muxing::{StreamMuxer, StreamInfo};
+use crate::secure_io::SecureInfo;
+use crate::transport::{ConnectionInfo, TransportError};
+use crate::upgrade::ProtocolName;
+use crate::{Multiaddr, PeerId, PublicKey};
 use async_trait::async_trait;
 use futures::future::BoxFuture;
 use libp2p_traits::{Read2, Write2};
-use crate::muxing::StreamMuxer;
-use crate::transport::{TransportError, ConnectionInfo};
-use crate::upgrade::ProtocolName;
-use crate::secure_io::SecureInfo;
-use crate::identity::Keypair;
-use crate::{PublicKey, PeerId, Multiaddr};
+use std::io;
 
 #[derive(Debug, Copy, Clone)]
 pub enum EitherOutput<A, B> {
@@ -111,11 +111,26 @@ where
     }
 }
 
+impl<A, B> StreamInfo for EitherOutput<A, B>
+where
+    A: StreamInfo,
+    B: StreamInfo,
+{
+    fn id(&self) -> usize {
+        match self {
+            EitherOutput::A(a) => a.id(),
+            EitherOutput::B(b) => b.id(),
+        }
+    }
+}
+
 #[async_trait]
 impl<A, B> StreamMuxer for EitherOutput<A, B>
 where
     A: StreamMuxer,
     B: StreamMuxer,
+    A::Substream: StreamInfo,
+    B::Substream: StreamInfo,
 {
     type Substream = EitherOutput<A::Substream, B::Substream>;
 
@@ -149,9 +164,9 @@ where
 }
 
 impl<A, B> ConnectionInfo for EitherOutput<A, B>
-    where
-        A: ConnectionInfo,
-        B: ConnectionInfo,
+where
+    A: ConnectionInfo,
+    B: ConnectionInfo,
 {
     fn local_multiaddr(&self) -> Multiaddr {
         match self {

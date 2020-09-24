@@ -1,4 +1,4 @@
-use crate::transport::{Transport, TransportError, TransportListener, ConnectionInfo};
+use crate::transport::{ConnectionInfo, Transport, TransportError, TransportListener};
 use crate::Multiaddr;
 use async_trait::async_trait;
 use std::fmt;

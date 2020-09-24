@@ -1,4 +1,5 @@
-use crate::{Multiaddr, PeerId};
+use crate::{Multiaddr, PeerId, SwarmError};
+use async_std::task::JoinHandle;
 use libp2p_core::identity::Keypair;
 use libp2p_core::muxing::StreamMuxer;
 use libp2p_core::secure_io::SecureInfo;
@@ -7,7 +8,7 @@ use libp2p_core::PublicKey;
 use smallvec::SmallVec;
 use std::hash::Hash;
 use std::{error::Error, fmt, io};
-use async_std::task::JoinHandle;
+use crate::substream::StreamId;
 
 /// The direction of a peer-to-peer communication channel.
 #[derive(Debug, Clone, PartialEq)]
@@ -169,28 +170,28 @@ pub enum Event<T> {
     AddressChange(Multiaddr),
 }
 
-pub type ConnectionId = usize;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ConnectionId(usize);
 
 /// A multiplexed connection to a peer with associated `Substream`s.
 #[allow(dead_code)]
-pub struct Connection<TMuxer: StreamMuxer>
-{
+pub struct Connection<TMuxer: StreamMuxer> {
     /// The unique ID for a connection
-    pub(crate) id: usize,
-    /// Node that handles the muxer.
-    pub(crate) muxer: TMuxer,
+    id: ConnectionId,
+    /// Node that handles the stream_muxer.
+    stream_muxer: TMuxer,
     /// Handler that processes substreams.
-    pub(crate) substreams: SmallVec<[TMuxer::Substream; 8]>,
+    //pub(crate) substreams: SmallVec<[TMuxer::Substream; 8]>,
+    substreams: SmallVec<[StreamId; 8]>,
     /// Direction of this connection
-    pub(crate) dir: Direction,
+    dir: Direction,
 
     /// The task handle of this connection, returned by task::Spawn
     /// handle.await() when closing a connection
-    pub(crate) handle: Option<JoinHandle<()>>,
+    handle: Option<JoinHandle<()>>,
 }
 
-impl<TMuxer: StreamMuxer> PartialEq for Connection<TMuxer>
-{
+impl<TMuxer: StreamMuxer> PartialEq for Connection<TMuxer> {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
@@ -204,8 +205,9 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Connection")
             .field("id", &self.id)
-            .field("muxer", &self.muxer)
+            .field("muxer", &self.stream_muxer)
             .field("dir", &self.dir)
+            .field("subs", &self.substreams)
             .finish()
     }
 }
@@ -219,10 +221,10 @@ where
 {
     /// Builds a new `Connection` from the given substream multiplexer
     /// and connection handler.
-    pub fn new(id: ConnectionId, muxer: TMuxer, dir: Direction) -> Self {
+    pub fn new(id: usize, stream_muxer: TMuxer, dir: Direction) -> Self {
         Connection {
-            id,
-            muxer,
+            id: ConnectionId(id),
+            stream_muxer,
             dir,
             substreams: Default::default(),
             handle: None,
@@ -230,62 +232,80 @@ where
     }
 
     /// Returns the unique Id of the connection
-    pub fn id(&self) -> ConnectionId { self.id }
+    pub fn id(&self) -> ConnectionId {
+        self.id
+    }
+
+    /// Returns a copy of the stream_muxer
+    pub fn stream_muxer(&self) -> TMuxer {
+        self.stream_muxer.clone()
+    }
+
+    /// Sets the task handle of the connection
+    pub fn set_handle(&mut self, handle: JoinHandle<()>) {
+        self.handle = Some(handle);
+    }
+
+    /// Closes the inner stream_muxer
+    pub async fn close(&mut self) -> Result<(), SwarmError> {
+        self.stream_muxer.close().await.map_err(|e|e.into())
+    }
+    /// Opens a new raw stream
+    pub(crate) async fn open_stream(&mut self) -> Result<TMuxer::Substream, SwarmError> {
+        self.stream_muxer.open_stream().await.map_err(|e|e.into())
+    }
+    /// Waits for task exiting
+    pub(crate) async fn wait(&mut self) -> Result<(), SwarmError> {
+        if let Some(h) = self.handle.take() {
+            h.await;
+        }
+        Ok(())
+    }
 
     /// local_addr is the multiaddr on our side of the connection
     pub fn local_addr(&self) -> Multiaddr {
-        self.muxer.local_multiaddr()
+        self.stream_muxer.local_multiaddr()
     }
 
     /// remote_addr is the multiaddr on the remote side of the connection
     pub fn remote_addr(&self) -> Multiaddr {
-        self.muxer.remote_multiaddr()
+        self.stream_muxer.remote_multiaddr()
     }
 
     /// local_peer is the Peer on our side of the connection
     pub fn local_peer(&self) -> PeerId {
-        self.muxer.local_peer()
+        self.stream_muxer.local_peer()
     }
 
     /// remote_peer is the Peer on the remote side
     pub fn remote_peer(&self) -> PeerId {
-        self.muxer.remote_peer()
+        self.stream_muxer.remote_peer()
     }
 
     /// local_priv_key is the public key of the peer on this side
     pub fn local_priv_key(&self) -> Keypair {
-        self.muxer.local_priv_key()
+        self.stream_muxer.local_priv_key()
     }
 
-    /// remote_pub_key is the public key of the peer on the remote side
+    /// remote_pub_key is the public key of the peer on the remote side.
     pub fn remote_pub_key(&self) -> PublicKey {
-        self.muxer.remote_pub_key()
+        self.stream_muxer.remote_pub_key()
     }
 
-    fn add_stream(&mut self, ss: TMuxer::Substream, _dir: Endpoint) -> Result<(), ()> {
-        self.substreams.push(ss);
-
-        // TODO: generate STREAM_OPENED event
-
-        Ok(())
+    /// Adds a substream id to the list.
+    pub(crate) fn add_stream(&mut self, sid: StreamId) {
+        log::trace!("adding sub {:?} to {:?}", sid, self);
+        self.substreams.push(sid);
+    }
+    /// Removes a substream id from the list.
+    pub(crate) fn del_stream(&mut self, sid: StreamId) {
+        log::trace!("removing sub {:?} from {:?}", sid, self);
+        self.substreams.retain(|id| id != &sid);
     }
 
-    /// new_stream returns a new Stream from this connection
-    ///
-    pub async fn new_stream(&mut self) -> Result<TMuxer::Substream, TransportError> {
-        let ss = self.muxer.open_stream().await?;
-        //self.add_stream(ss.clone(), Endpoint::Dialer);
-
-        Ok(ss)
-    }
-
-    /// new_stream returns a new Stream from this connection
-    ///
-    pub async fn accept_stream(&mut self) -> Result<TMuxer::Substream, TransportError> {
-        let ss = self.muxer.accept_stream().await?;
-        //self.add_stream(ss.clone(), Endpoint::Listener);
-
-        Ok(ss)
+    /// Returns how many substreams in the list.
+    pub(crate) fn num_streams(&self) -> usize {
+        self.substreams.len()
     }
 }
 
