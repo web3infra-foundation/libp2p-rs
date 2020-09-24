@@ -77,7 +77,7 @@ fn run_client() {
 
         let mut ctrl = muxer_conn.control();
 
-        task::spawn(async {
+        let loop_handle = task::spawn(async {
             let mut muxer_conn = muxer_conn;
             while let Ok(_) = muxer_conn.next_stream().await {}
             info!("connection is closed");
@@ -118,6 +118,8 @@ fn run_client() {
         }
 
         ctrl.close().await.expect("close connection");
+
+        loop_handle.await;
 
         info!("shutdown is completed");
     });
