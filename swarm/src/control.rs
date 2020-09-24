@@ -28,6 +28,8 @@ pub enum SwarmControlCmd<TSubstream> {
     CloseConnection(PeerId, oneshot::Sender<Result<()>>),
     /// Open a new stream specified with protocol Ids to the remote peer.
     NewStream(PeerId, Vec<ProtocolId>, oneshot::Sender<Result<TSubstream>>),
+    /// Close a stream specified.
+    CloseStream(TSubstream, oneshot::Sender<Result<()>>),
     /// Close the whole connection.
     CloseSwarm,
     /// Retrieve network information of Swarm
@@ -73,11 +75,19 @@ where TSubstream: Read2 + Write2
         rx.await?
     }
 
-    /// Open a new stream to the remote.
+    /// Open a new outbound stream towards the remote.
     pub async fn new_stream(&mut self, peerd_id: PeerId, pids: Vec<ProtocolId>) -> Result<TSubstream> {
         let (tx, rx) = oneshot::channel();
         self.sender
             .send(SwarmControlCmd::NewStream(peerd_id.clone(), pids, tx))
+            .await?;
+        rx.await?
+    }
+    /// Close an outbound stream.
+    pub async fn close_stream(&mut self, substream: TSubstream) -> Result<()> {
+        let (tx, rx) = oneshot::channel();
+        self.sender
+            .send(SwarmControlCmd::CloseStream(substream, tx))
             .await?;
         rx.await?
     }

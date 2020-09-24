@@ -98,6 +98,8 @@ fn run_client() {
 
         task::sleep(Duration::from_secs(3)).await;
 
+        control.close_stream(stream).await.unwrap();
+
 
         info!("shutdown is completed");
     });

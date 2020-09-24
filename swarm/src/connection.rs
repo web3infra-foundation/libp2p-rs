@@ -294,12 +294,12 @@ where
 
     /// Adds a substream id to the list.
     pub(crate) fn add_stream(&mut self, sid: StreamId) {
-        log::trace!("{:?} adding sub stream {:?}", self, sid);
+        log::trace!("adding sub {:?} to {:?}", sid, self);
         self.substreams.push(sid);
     }
     /// Removes a substream id from the list.
     pub(crate) fn del_stream(&mut self, sid: StreamId) {
-        log::trace!("{:?} removing sub stream {:?}", self, sid);
+        log::trace!("removing sub {:?} from {:?}", sid, self);
         self.substreams.retain(|id| id != &sid);
     }
 
