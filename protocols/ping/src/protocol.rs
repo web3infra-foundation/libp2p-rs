@@ -219,7 +219,7 @@ where
     /// The Ping handler's inbound protocol.
     /// Simply wait for any thing that coming in then send back
     async fn handle(&mut self, mut stream: C, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
-        log::trace!("Ping Protocol handling on {:?} {:?}", stream, info.protocol_name_str());
+        log::trace!("Ping Protocol handling on {:?}", stream);
         let mut msg = vec![0; 4096];
         loop {
             let n = stream.read2(&mut msg).await?;
