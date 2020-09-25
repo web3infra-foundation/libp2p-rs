@@ -1,13 +1,13 @@
 use crate::{Multiaddr, PeerId, SwarmError};
 use async_std::task::JoinHandle;
+use smallvec::SmallVec;
+use std::hash::Hash;
+use std::{error::Error, fmt, io};
 use libp2p_core::identity::Keypair;
 use libp2p_core::muxing::StreamMuxer;
 use libp2p_core::secure_io::SecureInfo;
 use libp2p_core::transport::TransportError;
 use libp2p_core::PublicKey;
-use smallvec::SmallVec;
-use std::hash::Hash;
-use std::{error::Error, fmt, io};
 use crate::substream::StreamId;
 
 /// The direction of a peer-to-peer communication channel.
