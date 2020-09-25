@@ -208,6 +208,7 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Connection")
             .field("id", &self.id)
+            .field("remote", &self.remote_peer())
             .field("muxer", &self.stream_muxer)
             .field("dir", &self.dir)
             .field("subs", &self.substreams)

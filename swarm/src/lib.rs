@@ -918,7 +918,9 @@ where
         let cid = connection.id();
         let remote_peer_id = connection.remote_peer();
 
-        self.open_stream_internal(&connection, vec![PING_PROTOCOL]);
+        // start Ping if need
+        log::trace!("staring Ping service for {:?}", connection);
+        self.start_ping_task(&connection, vec![PING_PROTOCOL]);
 
         // append to the by_id hashmap
         self.connections_by_id.insert(cid, connection);
@@ -943,31 +945,49 @@ where
     }
 
     // Open a stream specified with protocols, Swarm internal use
-    fn open_stream_internal(&self, connection: &Connection<TTrans::Output>, pids: Vec<ProtocolId>) {
+    fn start_ping_task(&self, connection: &Connection<TTrans::Output>, pids: Vec<ProtocolId>) {
         let cid = connection.id();
         let stream_muxer = connection.stream_muxer().clone();
         let tx = self.event_sender.clone();
 
         let ping_config = PingConfig::new();
 
-        let mut ping = PingService::new(ping_config);
+        //let mut ping = PingService::new(ping_config);
 
         task::spawn(async move {
             let mut tx2 = tx.clone();
-            let r = open_stream(cid, stream_muxer, pids, tx).await;
-            let r = match r {
-                Ok(stream) => {
-                    ping::ping(stream, ping.config.timeout).await.map_err(|e| e.into())
-                },
-                Err(err) => {
-                    // looks like the peer doesn't support the protocol
-                    log::warn!("protocol specified not supported at all {:?}", err);
-                    Err(err)
-                }
-            };
 
-            let _ = tx2.send(SwarmEvent::PingResult { cid, result: r }).await;
+            loop {
+                // sleep for the interval
+                task::sleep(ping_config.interval).await;
 
+                let stream_muxer = stream_muxer.clone();
+                let pids = pids.clone();
+                let tx = tx.clone();
+
+                let r = open_stream(cid, stream_muxer, pids, tx).await;
+                let r = match r {
+                    Ok(stream) => {
+                        let cid = stream.cid();
+                        let sid = stream.id();
+
+                        let r = ping::ping(stream, ping_config.timeout).await;
+                        // generate a StreamClosed event so that substream can be removed from Connection
+                        let _= tx2.send(SwarmEvent::StreamClosed {
+                            dir: Direction::Outbound,
+                            cid,
+                            sid,
+                        }).await;
+                        r.map_err(|e| e.into())
+                    },
+                    Err(err) => {
+                        // looks like the peer doesn't support the protocol
+                        log::warn!("Ping protocol not supported: {:?}", err);
+                        Err(err)
+                    }
+                };
+                let _ = tx2.send(SwarmEvent::PingResult { cid, result: r }).await;
+            }
         });
 
         //ping.nothing();
@@ -1152,9 +1172,8 @@ where
                 result
                     .map(|ttl| {
                         let remote_peer_id = c.remote_peer();
+                        log::trace!("ping result TTL={:?} for {:?}", ttl, c);
                         // TODO: update peer store with the TTL
-
-                        // TODO: restart the Ping interval timer
 
                     })
                     .map_err(|e| {
@@ -1163,10 +1182,16 @@ where
                             // peer doesn't support Ping protocol
                             SwarmError::Transport(TransportError::NegotiationError(_)) => {
                                 // TODO:
-
                             }
-                            _ => {}
+                            _ => {
+                                log::info!("ping result failed for {:?}", c);
+
+                                // if max_failure reached, close the connection
+                                //let _ = connection.close().await;
+                            }
                         }
+
+
                     });
 
             });
