@@ -461,17 +461,3 @@ impl<T> Connection<T> {
         }
     }
 }
-
-// /// Turn a mplex [`Connection`] into a [`futures::Stream`].
-// pub fn into_stream<T>(c: Connection<T>) -> impl futures::stream::Stream<Item = Result<Stream>>
-// where
-//     T: Read2 + Write2 + Unpin + Send,
-// {
-//     futures::stream::unfold(c, |mut c| async {
-//         match c.next_stream().await {
-//             Ok(None) => None,
-//             Ok(Some(stream)) => Some((Ok(stream), c)),
-//             Err(e) => Some((Err(e), c)),
-//         }
-//     })
-// }
