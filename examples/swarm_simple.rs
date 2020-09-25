@@ -13,6 +13,7 @@ use libp2p_tcp::TcpConfig;
 use secio;
 use yamux;
 use libp2p_swarm::protocol_handler::{ProtocolHandler, BoxHandler};
+use libp2p_swarm::ping::{PingHandler};
 use libp2p_core::upgrade::UpgradeInfo;
 
 
@@ -78,7 +79,7 @@ fn run_server() {
     let mut muxer = Muxer::new();
     let dummy_handler = Box::new(DummyProtocolHandler::new());
     muxer.add_protocol_handler(dummy_handler);
-    //muxer.add_protocol_handler(Box::new(PingHandler::new()));
+    muxer.add_protocol_handler(Box::new(PingHandler));
     muxer.add_protocol_handler(Box::new(MyProtocolHandler));
 
     let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer);
