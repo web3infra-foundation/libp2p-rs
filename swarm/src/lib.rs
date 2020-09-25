@@ -46,19 +46,18 @@ pub mod ping;
 pub mod protocol_handler;
 
 pub use control::Control;
-pub use protocol_handler::DummyProtocolHandler;
-pub use ping::PingHandler;
 pub use muxer::Muxer;
-
+pub use ping::PingHandler;
+pub use protocol_handler::DummyProtocolHandler;
 
 use async_std::task;
 use fnv::FnvHashMap;
-use smallvec::SmallVec;
-use std::collections::HashSet;
-use std::{error, fmt, hash::Hash};
 use futures::channel::{mpsc, oneshot};
 use futures::future::Either;
 use futures::prelude::*;
+use smallvec::SmallVec;
+use std::collections::HashSet;
+use std::{error, fmt, hash::Hash};
 
 use libp2p_core::multistream::Negotiator;
 use libp2p_core::peerstore::PeerStore;
@@ -69,11 +68,11 @@ use libp2p_core::{muxing::StreamMuxer, transport::TransportError, Multiaddr, Pee
 use libp2p_traits::{Read2, Write2};
 
 use crate::connection::{ConnectedPoint, Connection, ConnectionId, ConnectionLimit, Direction};
-use crate::control::{SwarmControlCmd};
+use crate::control::SwarmControlCmd;
 use crate::network::NetworkInfo;
+use crate::ping::{PingConfig, PingService, PING_PROTOCOL};
 use crate::registry::Addresses;
 use crate::substream::{StreamId, Substream};
-use crate::ping::{PingService, PingConfig, PING_PROTOCOL};
 use std::time::Duration;
 
 type Result<T> = std::result::Result<T, SwarmError>;
@@ -291,18 +290,14 @@ where
     // /// can be polled again.
     // pending_event: Option<(PeerId, PendingNotifyHandler, TInEvent)>
     /// Swarm will listen on this channel, waiting for events generated from underlying transport
-    event_receiver:
-        mpsc::UnboundedReceiver<SwarmEvent<TTrans::Output, <TTrans::Output as StreamMuxer>::Substream>>,
+    event_receiver: mpsc::UnboundedReceiver<SwarmEvent<TTrans::Output, <TTrans::Output as StreamMuxer>::Substream>>,
     /// The Swarm event sender wil be cloned and then taken by underlying parts
-    event_sender:
-        mpsc::UnboundedSender<SwarmEvent<TTrans::Output, <TTrans::Output as StreamMuxer>::Substream>>,
+    event_sender: mpsc::UnboundedSender<SwarmEvent<TTrans::Output, <TTrans::Output as StreamMuxer>::Substream>>,
 
     /// Swarm will listen on this channel, for external control commands
-    ctrl_receiver:
-        mpsc::Receiver<SwarmControlCmd<Substream<<TTrans::Output as StreamMuxer>::Substream>>>,
+    ctrl_receiver: mpsc::Receiver<SwarmControlCmd<Substream<<TTrans::Output as StreamMuxer>::Substream>>>,
     /// The Swarm event sender wil be cloned and then taken by others
-    ctrl_sender:
-        mpsc::Sender<SwarmControlCmd<Substream<<TTrans::Output as StreamMuxer>::Substream>>>,
+    ctrl_sender: mpsc::Sender<SwarmControlCmd<Substream<<TTrans::Output as StreamMuxer>::Substream>>>,
 }
 
 // impl<TBehaviour, TInEvent, TOutEvent, THandler, TConnInfo> Unpin for
@@ -391,8 +386,7 @@ where
     /// invoked from `next_stream`
     async fn handle_messages(&mut self) -> Result<()> {
         loop {
-            let either =
-                future::select(self.event_receiver.next(), self.ctrl_receiver.next()).await;
+            let either = future::select(self.event_receiver.next(), self.ctrl_receiver.next()).await;
             match either {
                 Either::Left((evt, _)) => {
                     if let Some(evt) = evt {
@@ -416,21 +410,12 @@ where
         }
     }
 
-    async fn on_event(
-        &mut self,
-        event: SwarmEvent<TTrans::Output, <TTrans::Output as StreamMuxer>::Substream>,
-    ) -> Result<()> {
+    async fn on_event(&mut self, event: SwarmEvent<TTrans::Output, <TTrans::Output as StreamMuxer>::Substream>) -> Result<()> {
         log::trace!("Swarm event={:?}", event);
 
         match event {
-            SwarmEvent::ListenerClosed {
-                addresses: _,
-                reason: _,
-            } => {}
-            SwarmEvent::ConnectionEstablished {
-                stream_muxer,
-                direction,
-            } => {
+            SwarmEvent::ListenerClosed { addresses: _, reason: _ } => {}
+            SwarmEvent::ConnectionEstablished { stream_muxer, direction } => {
                 let _ = self.handle_new_connection(stream_muxer, direction);
             }
             SwarmEvent::ConnectionClosed { cid, error: _ } => {
@@ -448,10 +433,10 @@ where
             }
             SwarmEvent::StreamOpened { dir, cid, sid } => {
                 let _ = self.handle_stream_opened(dir, cid, sid);
-            },
+            }
             SwarmEvent::StreamClosed { dir, cid, sid } => {
                 let _ = self.handle_stream_closed(dir, cid, sid);
-            },
+            }
             SwarmEvent::PingResult { cid, result } => {
                 let _ = self.handle_ping_result(cid, result);
             }
@@ -465,29 +450,26 @@ where
         Ok(())
     }
 
-    async fn on_command(
-        &mut self,
-        cmd: SwarmControlCmd<Substream<<TTrans::Output as StreamMuxer>::Substream>>,
-    ) -> Result<()> {
+    async fn on_command(&mut self, cmd: SwarmControlCmd<Substream<<TTrans::Output as StreamMuxer>::Substream>>) -> Result<()> {
         log::trace!("Swarm control command={:?}", cmd);
 
         match cmd {
             SwarmControlCmd::NewConnection(peer_id, reply) => {
                 // got the peer_id, start the dialer for it
                 let _ = self.on_new_connection(peer_id, reply).await;
-            },
+            }
             SwarmControlCmd::CloseConnection(peer_id, reply) => {
                 // got the peer_id, close all connections to the peer
                 let _ = self.on_close_connection(peer_id, reply).await;
-            },
+            }
             SwarmControlCmd::NewStream(peer_id, pids, reply) => {
                 // got the peer_id, try opening a new sub stream
                 let _ = self.on_new_stream(peer_id, pids, reply).await;
-            },
+            }
             SwarmControlCmd::CloseStream(stream, reply) => {
                 // got the peer_id, try opening a new sub stream
                 let _ = self.on_close_stream(stream, reply).await;
-            },
+            }
             SwarmControlCmd::NetworkInfo(reply) => {
                 // got the peer_id, try opening a new sub stream
                 let _ = self.on_retrieve_networkinfo(reply);
@@ -495,19 +477,15 @@ where
             SwarmControlCmd::CloseSwarm => {
                 log::info!("closing the swarm...");
                 let _ = self.event_sender.close_channel();
-            },
+            }
             // TODO:
-              //_ => {}
+            //_ => {}
         }
 
         Ok(())
     }
 
-    async fn on_new_connection(
-        &mut self,
-        peer_id: PeerId,
-        reply: oneshot::Sender<Result<()>>,
-    ) -> Result<()> {
+    async fn on_new_connection(&mut self, peer_id: PeerId, reply: oneshot::Sender<Result<()>>) -> Result<()> {
         // return if we already have the connection, otherwise, start dialing
         if let Some(_conn) = self.get_best_conn(&peer_id) {
             let _ = reply.send(Ok(()));
@@ -518,11 +496,7 @@ where
         Ok(())
     }
 
-    async fn on_close_connection(
-        &mut self,
-        peer_id: PeerId,
-        reply: oneshot::Sender<Result<()>>,
-    ) -> Result<()> {
+    async fn on_close_connection(&mut self, peer_id: PeerId, reply: oneshot::Sender<Result<()>>) -> Result<()> {
         if let Some(ids) = self.connections_by_peer.get(&peer_id) {
             // TODO: to check if this connection is being closed
             for id in ids {
@@ -535,7 +509,6 @@ where
         let _ = reply.send(Ok(()));
         Ok(())
     }
-
 
     async fn on_new_stream(
         &mut self,
@@ -565,20 +538,20 @@ where
     ) -> Result<()> {
         let cid = substream.cid();
         let sid = substream.id();
-        let _= self.event_sender.send(SwarmEvent::StreamClosed {
-            dir: Direction::Outbound,
-            cid,
-            sid,
-        }).await;
+        let _ = self
+            .event_sender
+            .send(SwarmEvent::StreamClosed {
+                dir: Direction::Outbound,
+                cid,
+                sid,
+            })
+            .await;
         //self.handle_stream_closed(Direction::Outbound, cid, sid);
         let _ = reply.send(Ok(()));
         Ok(())
     }
     ///
-    fn on_retrieve_networkinfo(
-        &mut self,
-        reply: oneshot::Sender<Result<NetworkInfo>>,
-    ) -> Result<()> {
+    fn on_retrieve_networkinfo(&mut self, reply: oneshot::Sender<Result<NetworkInfo>>) -> Result<()> {
         let _ = reply.send(Ok(self.network_info()));
         Ok(())
     }
@@ -673,12 +646,7 @@ where
     /// Tries to dial the given address.
     ///
     /// Returns an error if the address is not supported.
-    fn dial_peer_with_addr(
-        &mut self,
-        peer_id: PeerId,
-        addr: Multiaddr,
-        reply: Option<oneshot::Sender<Result<()>>>,
-    ) {
+    fn dial_peer_with_addr(&mut self, peer_id: PeerId, addr: Multiaddr, reply: Option<oneshot::Sender<Result<()>>>) {
         // TODO: add dial limiter...
 
         log::trace!("dialing addr={:?}, expecting {:?}", addr, peer_id);
@@ -738,11 +706,7 @@ where
 
     /// Starts a dialing task
     /// reply is optional, it might be 'None' when dialer is initiated internally
-    pub fn start_dialer(
-        &mut self,
-        peer_id: PeerId,
-        reply: Option<oneshot::Sender<Result<()>>>,
-    ) -> Result<()> {
+    pub fn start_dialer(&mut self, peer_id: PeerId, reply: Option<oneshot::Sender<Result<()>>>) -> Result<()> {
         log::trace!("dialer, looking for {:?}", peer_id);
 
         // TODO: find a better way to handle multiple addresses of PeerId
@@ -777,9 +741,7 @@ where
 
         log::trace!("trying to get the best connnection for {:?}", peer_id);
 
-        self.connections_by_peer
-            .iter()
-            .for_each(|(k, v)| log::info!("{:?}={:?}", k, v));
+        self.connections_by_peer.iter().for_each(|(k, v)| log::info!("{:?}={:?}", k, v));
 
         //let v = self.connections_by_peer.get_mut(peer_id).unwrap();
 
@@ -929,10 +891,7 @@ where
         let conns = self.connections_by_peer.entry(remote_peer_id).or_default();
         conns.push(cid);
 
-        log::trace!(
-            "connection added to hashmap, total={}",
-            self.connections_by_id.len()
-        );
+        log::trace!("connection added to hashmap, total={}", self.connections_by_id.len());
 
         // TODO: we have a connection to the specified peer_id, now cancel all pending attempts
 
@@ -941,7 +900,6 @@ where
         // TODO: return the connection
 
         // start Ping service if need
-
     }
 
     // Open a stream specified with protocols, Swarm internal use
@@ -973,13 +931,15 @@ where
 
                         let r = ping::ping(stream, ping_config.timeout).await;
                         // generate a StreamClosed event so that substream can be removed from Connection
-                        let _= tx2.send(SwarmEvent::StreamClosed {
-                            dir: Direction::Outbound,
-                            cid,
-                            sid,
-                        }).await;
+                        let _ = tx2
+                            .send(SwarmEvent::StreamClosed {
+                                dir: Direction::Outbound,
+                                cid,
+                                sid,
+                            })
+                            .await;
                         r.map_err(|e| e.into())
-                    },
+                    }
                     Err(err) => {
                         // looks like the peer doesn't support the protocol
                         log::warn!("Ping protocol not supported: {:?}", err);
@@ -991,22 +951,16 @@ where
         });
 
         //ping.nothing();
-
     }
 
     /// Handles a new connection
     ///
     /// start a Task for accepting new sub-stream from the connection
-    fn handle_new_connection(
-        &mut self,
-        stream_muxer: TTrans::Output,
-        dir: Direction,
-    ) -> Result<()> {
+    fn handle_new_connection(&mut self, stream_muxer: TTrans::Output, dir: Direction) -> Result<()> {
         log::trace!("handle_new_connection: {:?} {:?}", stream_muxer, dir);
 
         // clone the stream_muxer, and then wrap into Connection, task_handle will be assigned later
-        let mut connection =
-            Connection::new(self.assign_connection_id(), stream_muxer.clone(), dir);
+        let mut connection = Connection::new(self.assign_connection_id(), stream_muxer.clone(), dir);
 
         // TODO: filtering the multiaddr, Err = AddrFiltered(addr)
 
@@ -1051,8 +1005,7 @@ where
                         let result = muxer.select_inbound(raw_stream).await;
                         match result {
                             Ok((mut handler, raw_stream, proto)) => {
-                                let stream =
-                                    Substream::new(raw_stream, Direction::Inbound, proto, cid);
+                                let stream = Substream::new(raw_stream, Direction::Inbound, proto, cid);
                                 let sid = stream.id();
                                 let _ = tx
                                     .send(SwarmEvent::StreamOpened {
@@ -1066,7 +1019,13 @@ where
                                 let mut tx = tx.clone();
                                 task::spawn(async move {
                                     let _ = handler.handle(stream, proto).await;
-                                    let _ = tx.send(SwarmEvent::StreamClosed { dir: Direction::Inbound, cid, sid }).await;
+                                    let _ = tx
+                                        .send(SwarmEvent::StreamClosed {
+                                            dir: Direction::Inbound,
+                                            cid,
+                                            sid,
+                                        })
+                                        .await;
                                 });
 
                                 // TODO: hook the task handle to the Substream, so that it can wait for exiting the task
@@ -1103,32 +1062,18 @@ where
         Ok(())
     }
 
-    fn handle_stream_opened(
-        &mut self,
-        dir: Direction,
-        cid: ConnectionId,
-        sid: StreamId,
-    ) -> Result<()> {
+    fn handle_stream_opened(&mut self, dir: Direction, cid: ConnectionId, sid: StreamId) -> Result<()> {
         log::trace!("handle_stream_opened: {:?} {:?}/{:?}", dir, cid, sid);
         // add stream id to the connection substream list
-        self.connections_by_id
-            .get_mut(&cid)
-            .map(|c| c.add_stream(sid));
+        self.connections_by_id.get_mut(&cid).map(|c| c.add_stream(sid));
 
         Ok(())
     }
 
-    fn handle_stream_closed(
-        &mut self,
-        dir: Direction,
-        cid: ConnectionId,
-        sid: StreamId,
-    ) -> Result<()> {
+    fn handle_stream_closed(&mut self, dir: Direction, cid: ConnectionId, sid: StreamId) -> Result<()> {
         log::trace!("handle_stream_closed: {:?} {:?}/{:?}", dir, cid, sid);
         // delete stream id from the connection substream list
-        self.connections_by_id
-            .get_mut(&cid)
-            .map(|c| c.del_stream(sid));
+        self.connections_by_id.get_mut(&cid).map(|c| c.del_stream(sid));
 
         Ok(())
     }
@@ -1160,45 +1105,34 @@ where
         Ok(())
     }
 
-    fn handle_ping_result(
-        &mut self,
-        cid: ConnectionId,
-        result: Result<Duration>,
-    ) -> Result<()> {
+    fn handle_ping_result(&mut self, cid: ConnectionId, result: Result<Duration>) -> Result<()> {
         log::trace!("handle_ping_result: {:?} {:?}", cid, result);
-        self.connections_by_id
-            .get_mut(&cid)
-            .map(|c| {
-                result
-                    .map(|ttl| {
-                        let remote_peer_id = c.remote_peer();
-                        log::trace!("ping result TTL={:?} for {:?}", ttl, c);
-                        // TODO: update peer store with the TTL
-
-                    })
-                    .map_err(|e| {
-                        match e {
-                            // Handle NegotiationError, don't Ping any more since the remote
-                            // peer doesn't support Ping protocol
-                            SwarmError::Transport(TransportError::NegotiationError(_)) => {
-                                // TODO:
-                            }
-                            _ => {
-                                log::info!("ping result failed for {:?}", c);
-
-                                // if max_failure reached, close the connection
-                                //let _ = connection.close().await;
-                            }
+        self.connections_by_id.get_mut(&cid).map(|c| {
+            result
+                .map(|ttl| {
+                    let remote_peer_id = c.remote_peer();
+                    log::trace!("ping result TTL={:?} for {:?}", ttl, c);
+                    // TODO: update peer store with the TTL
+                })
+                .map_err(|e| {
+                    match e {
+                        // Handle NegotiationError, don't Ping any more since the remote
+                        // peer doesn't support Ping protocol
+                        SwarmError::Transport(TransportError::NegotiationError(_)) => {
+                            // TODO:
                         }
+                        _ => {
+                            log::info!("ping result failed for {:?}", c);
 
-
-                    });
-
-            });
+                            // if max_failure reached, close the connection
+                            //let _ = connection.close().await;
+                        }
+                    }
+                });
+        });
 
         Ok(())
     }
-
 }
 
 /// Connections to notify of a pending event.
@@ -1245,17 +1179,9 @@ impl fmt::Display for SwarmError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SwarmError::ConnectionLimit(err) => write!(f, "Swarm Dial error: {}", err),
-            SwarmError::NoAddresses(peer_id) => {
-                write!(f, "Swarm Dial error: no addresses for peer{:?}.", peer_id)
-            }
-            SwarmError::NoConnection(peer_id) => write!(
-                f,
-                "Swarm Stream error: no connections for peer{:?}.",
-                peer_id
-            ),
-            SwarmError::InvalidPeerId(peer_id) => {
-                write!(f, "Swarm Dial error: invalid peer id{:?}.", peer_id)
-            }
+            SwarmError::NoAddresses(peer_id) => write!(f, "Swarm Dial error: no addresses for peer{:?}.", peer_id),
+            SwarmError::NoConnection(peer_id) => write!(f, "Swarm Stream error: no connections for peer{:?}.", peer_id),
+            SwarmError::InvalidPeerId(peer_id) => write!(f, "Swarm Dial error: invalid peer id{:?}.", peer_id),
             SwarmError::Transport(err) => write!(f, "Swarm Transport error: {}.", err),
             SwarmError::Internal => write!(f, "Swarm internal error."),
             SwarmError::Closing(s) => write!(f, "Swarm channel closed source={}.", s),
@@ -1303,16 +1229,15 @@ impl From<oneshot::Canceled> for SwarmError {
     }
 }
 
-
-
-async fn open_stream<T>(cid: ConnectionId,
-                        mut stream_muxer: T,
-                        pids: Vec<ProtocolId>,
-                        mut tx: mpsc::UnboundedSender<SwarmEvent<T, T::Substream>>
+async fn open_stream<T>(
+    cid: ConnectionId,
+    mut stream_muxer: T,
+    pids: Vec<ProtocolId>,
+    mut tx: mpsc::UnboundedSender<SwarmEvent<T, T::Substream>>,
 ) -> Result<Substream<T::Substream>>
-    where
-        T: StreamMuxer,
-        T::Substream: Read2 + Write2 + Send + Unpin,
+where
+    T: StreamMuxer,
+    T::Substream: Read2 + Write2 + Send + Unpin,
 {
     let raw_stream = stream_muxer.open_stream().await?;
 
@@ -1324,8 +1249,7 @@ async fn open_stream<T>(cid: ConnectionId,
         Ok((proto, raw_stream)) => {
             log::info!("select_outbound {:?}", proto.protocol_name_str());
 
-            let stream =
-                Substream::new(raw_stream, Direction::Outbound, proto, cid);
+            let stream = Substream::new(raw_stream, Direction::Outbound, proto, cid);
 
             let sid = stream.id();
             let _ = tx
@@ -1335,16 +1259,19 @@ async fn open_stream<T>(cid: ConnectionId,
                     sid,
                 })
                 .await;
-               Ok(stream)
+            Ok(stream)
         }
         Err(err) => {
-            let _ = tx.send(SwarmEvent::StreamError { cid, error: TransportError::Internal }).await;
+            let _ = tx
+                .send(SwarmEvent::StreamError {
+                    cid,
+                    error: TransportError::Internal,
+                })
+                .await;
             Err(SwarmError::Transport(err.into()))
-        },
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {}
-
-
