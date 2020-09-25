@@ -257,6 +257,6 @@ impl<S: Read2 + Write2 + Unpin + Send + 'static> Write2 for SecioOutput<S> {
 impl From<SecioError> for TransportError {
     fn from(_: SecioError) -> Self {
         // TODO: make a security error catalog for secio
-        TransportError::Internal
+        TransportError::SecurityError
     }
 }

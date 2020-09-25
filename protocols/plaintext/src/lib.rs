@@ -149,6 +149,6 @@ impl<S: Read2 + Write2 + Unpin + Send + 'static> Write2 for PlainTextOutput<S> {
 
 impl From<PlaintextError> for TransportError {
     fn from(_: PlaintextError) -> Self {
-        TransportError::Internal
+        TransportError::SecurityError
     }
 }
