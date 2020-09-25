@@ -35,6 +35,7 @@ use std::time::Duration;
 use std::{error::Error, fmt};
 
 use crate::multistream::NegotiationError;
+use crate::pnet::PnetError;
 
 // pub mod and_then;
 // pub mod boxed;
@@ -452,10 +453,17 @@ pub enum TransportError {
     /// Any other error that a [`Transport`] may produce.
     IoError(std::io::Error),
 
+    /// Multistream selection error.
     NegotiationError(NegotiationError),
 
-    //handshake error
-    HandshakeError,
+    /// Pnet layer error.
+    ProtectorError(PnetError),
+
+    /// Security layer error.
+    SecurityError,
+
+    /// StreamMuxer layer error
+    StreamMuxerError,
 }
 
 impl From<std::io::Error> for TransportError {
@@ -466,8 +474,14 @@ impl From<std::io::Error> for TransportError {
 }
 
 impl From<NegotiationError> for TransportError {
-    fn from(ne: NegotiationError) -> Self {
-        TransportError::NegotiationError(ne)
+    fn from(e: NegotiationError) -> Self {
+        TransportError::NegotiationError(e)
+    }
+}
+
+impl From<PnetError> for TransportError {
+    fn from(e: PnetError) -> Self {
+        TransportError::ProtectorError(e)
     }
 }
 
@@ -482,7 +496,9 @@ impl fmt::Display for TransportError {
             TransportError::Internal => write!(f, "Internal error"),
             TransportError::IoError(err) => write!(f, "IO error {}", err),
             TransportError::NegotiationError(err) => write!(f, "Negotiation error {:?}", err),
-            TransportError::HandshakeError => write!(f, "Handshake error"),
+            TransportError::ProtectorError(err) => write!(f, "Protector error {:?}", err),
+            TransportError::SecurityError => write!(f, "SecurityError layer error"),
+            TransportError::StreamMuxerError => write!(f, "StreamMuxerError layer error"),
         }
     }
 }
@@ -496,7 +512,9 @@ impl Error for TransportError {
             TransportError::Internal => None,
             TransportError::IoError(err) => Some(err),
             TransportError::NegotiationError(err) => Some(err),
-            TransportError::HandshakeError => None,
+            TransportError::ProtectorError(err) => Some(err),
+            TransportError::SecurityError => None,
+            TransportError::StreamMuxerError => None,
         }
     }
 }

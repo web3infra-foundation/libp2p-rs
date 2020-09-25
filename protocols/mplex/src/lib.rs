@@ -221,7 +221,7 @@ where
 impl From<ConnectionError> for TransportError {
     fn from(_: ConnectionError) -> Self {
         // TODO: make a mux error catalog for secio
-        TransportError::Internal
+        TransportError::StreamMuxerError
     }
 }
 
