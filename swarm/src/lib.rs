@@ -915,9 +915,10 @@ where
 
         // TODO: generate a connected event
 
-        // TODO: start the connection in a background task
-
         // TODO: return the connection
+
+        // start Ping service if need
+
     }
 
     // Open a stream specified with protocols, Swarm internal use
@@ -925,6 +926,9 @@ where
         let cid = connection.id();
         let stream_muxer = connection.stream_muxer().clone();
         let tx = self.event_sender.clone();
+
+        //let ping = PingService::new();
+
         task::spawn(async move {
            let r = open_stream(cid, stream_muxer, pids, tx).await;
         });
