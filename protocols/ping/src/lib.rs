@@ -43,6 +43,8 @@
 
 pub mod protocol;
 
+pub use protocol::{PingService, PingHandler};
+
 use libp2p_core::{Multiaddr, PeerId};
 use std::{collections::VecDeque, task::Context, task::Poll};
 use crate::protocol::{PingConfig, PingResult, PingSuccess, PingFailure};

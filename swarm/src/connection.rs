@@ -185,7 +185,10 @@ pub struct Connection<TMuxer: StreamMuxer> {
     substreams: SmallVec<[StreamId; 8]>,
     /// Direction of this connection
     dir: Direction,
-
+    /// Ping service.
+    ping: Option<()>,
+    /// Identity service
+    identity: Option<()>,    
     /// The task handle of this connection, returned by task::Spawn
     /// handle.await() when closing a connection
     handle: Option<JoinHandle<()>>,
@@ -212,7 +215,7 @@ where
     }
 }
 
-impl<TMuxer> Unpin for Connection<TMuxer> where TMuxer: StreamMuxer {}
+//impl<TMuxer> Unpin for Connection<TMuxer> where TMuxer: StreamMuxer {}
 
 #[allow(dead_code)]
 impl<TMuxer> Connection<TMuxer>
@@ -226,8 +229,10 @@ where
             id: ConnectionId(id),
             stream_muxer,
             dir,
+            ping: None,
             substreams: Default::default(),
             handle: None,
+            identity: None
         }
     }
 

@@ -78,7 +78,8 @@ fn run_server() {
     let mut muxer = Muxer::new();
     let dummy_handler = Box::new(DummyProtocolHandler::new());
     muxer.add_protocol_handler(dummy_handler);
-    muxer.add_protocol_handler(Box::new(MyProtocolHandler {}));
+    //muxer.add_protocol_handler(Box::new(PingHandler::new()));
+    muxer.add_protocol_handler(Box::new(MyProtocolHandler));
 
     let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer);
 
