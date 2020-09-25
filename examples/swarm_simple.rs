@@ -134,7 +134,7 @@ fn run_client() {
 
         stream.write_all2(b"hello").await;
 
-        task::sleep(Duration::from_secs(15)).await;
+        task::sleep(Duration::from_secs(40)).await;
 
         control.close_stream(stream).await.unwrap();
 

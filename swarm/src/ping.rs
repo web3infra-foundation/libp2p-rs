@@ -23,16 +23,12 @@
 //! [`Swarm`]: libp2p_swarm::Swarm
 //! [`Transport`]: libp2p_core::Transport
 
-use async_trait::async_trait;
-use std::{collections::VecDeque, task::Context, task::Poll};
 use std::time::{Duration, Instant};
 use std::num::NonZeroU32;
 use std::{fmt, io};
-use std::error::Error;
 use rand::{distributions, prelude::*};
-use async_std::task;
+use async_trait::async_trait;
 
-use libp2p_core::PeerId;
 use libp2p_traits::{Read2, Write2};
 use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_core::transport::TransportError;
@@ -76,7 +72,7 @@ pub struct PingConfig {
     /// The maximum number of failed outbound pings before the associated
     /// connection is deemed unhealthy, indicating to the `Swarm` that it
     /// should be closed.
-    max_failures: NonZeroU32,
+    pub(crate) max_failures: NonZeroU32,
     /// Whether the connection should generally be kept alive unless
     /// `max_failures` occur.
     keep_alive: bool,
@@ -102,8 +98,8 @@ impl PingConfig {
     ///     connection alive.
     pub fn new() -> Self {
         Self {
-            timeout: Duration::from_secs(5),
-            interval: Duration::from_secs(5),
+            timeout: Duration::from_secs(3),
+            interval: Duration::from_secs(3),
             max_failures: NonZeroU32::new(3).expect("1 != 0"),
             keep_alive: false
         }
@@ -143,35 +139,6 @@ impl PingConfig {
         self
     }
 }
-
-/// Protocol handler that handles pinging the remote at a regular period
-/// and answering ping queries.
-///
-/// If the remote doesn't respond, produces an error that closes the connection.
-///
-///
-///
-///
-///
-pub struct PingService {
-    /// Configuration options.
-    pub(crate) config: PingConfig,
-    /// The number of consecutive ping failures that occurred.
-    failures: u32,
-}
-
-impl PingService {
-    /// Builds a new `PingHandler` with the given configuration.
-    pub fn new(config: PingConfig) -> Self {
-        PingService {
-            config,
-            failures: 0,
-        }
-    }
-
-    pub(crate) fn nothing(&self) {}
-}
-
 
 pub async fn ping<T: Read2 + Write2 + Send + std::fmt::Debug>(mut stream: T, timeout: Duration) -> Result<Duration, TransportError> {
 
@@ -245,7 +212,7 @@ impl<C> ProtocolHandler<C> for PingHandler
 {
     /// The Ping handler's inbound protocol.
     /// Simply wait for any thing that coming in then send back
-    async fn handle(&mut self, mut stream: C, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+    async fn handle(&mut self, mut stream: C, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
         log::trace!("Ping Protocol handling on {:?}", stream);
 
         let mut payload = [0u8; PING_SIZE];
