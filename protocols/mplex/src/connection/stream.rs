@@ -7,13 +7,16 @@ use bytes::{Buf, BufMut};
 use futures::{channel::mpsc, SinkExt, StreamExt};
 use libp2p_traits::{Read2, Write2};
 use std::{fmt, io};
+use futures::lock::Mutex;
+use std::sync::Arc;
 
+#[derive(Clone)]
 pub struct Stream {
     id: StreamID,
     conn_id: Id,
     read_buffer: bytes::BytesMut,
     sender: mpsc::Sender<StreamCommand>,
-    receiver: mpsc::Receiver<Vec<u8>>,
+    receiver: Arc<Mutex<mpsc::Receiver<Vec<u8>>>>,
 }
 
 impl fmt::Debug for Stream {
@@ -35,18 +38,29 @@ impl Stream {
         sender: mpsc::Sender<StreamCommand>,
         receiver: mpsc::Receiver<Vec<u8>>,
     ) -> Self {
-        let read_buffer = bytes::BytesMut::new();
         Stream {
             id,
             conn_id,
-            read_buffer,
+            read_buffer: Default::default(),
             sender,
-            receiver,
+            receiver: Arc::new(Mutex::new(receiver)),
         }
     }
+
     /// Get this stream's identifier.
     pub fn id(&self) -> u32 {
         self.id.val()
+    }
+
+    /// impl [`Clone`] trait
+    pub fn clone(&self) -> Self {
+        Stream {
+            id: self.id,
+            conn_id: self.conn_id,
+            read_buffer: Default::default(),
+            sender: self.sender.clone(),
+            receiver: self.receiver.clone(),
+        }
     }
 
     // TODO: handle the case: buf capacity is not enough
@@ -58,7 +72,8 @@ impl Stream {
             return Ok(len);
         }
 
-        if let Some(data) = self.receiver.next().await {
+        let mut receiver = self.receiver.lock().await;
+        if let Some(data) = receiver.next().await {
             let dlen = data.len();
             let len = std::cmp::min(data.len(), buf.len());
             buf[..len].copy_from_slice(&data[..len]);
@@ -88,20 +103,26 @@ impl Stream {
     }
 
     async fn close(&mut self) -> io::Result<()> {
-        // step1: send close frame
-        let frame = Frame::close_frame(self.id);
-        let cmd = StreamCommand::SendFrame(frame);
-        self.sender
-            .send(cmd)
-            .await
-            .map_err(|_| self.write_zero_err())?;
+        // in order to support [`Clone`]
+        // when reference count is 1, we can close stream entirely
+        // otherwise, just close sender channel
+        let count = Arc::<Mutex<mpsc::Receiver<Vec<u8>>>>::strong_count(&self.receiver);
+        if count == 1 {
+            // step1: send close frame
+            let frame = Frame::close_frame(self.id);
+            let cmd = StreamCommand::SendFrame(frame);
+            self.sender
+                .send(cmd)
+                .await
+                .map_err(|_| self.write_zero_err())?;
 
-        // step2: notify connection to remove itself
-        let cmd = StreamCommand::CloseStream(self.id);
-        self.sender
-            .send(cmd)
-            .await
-            .map_err(|_| self.write_zero_err())?;
+            // step2: notify connection to remove itself
+            let cmd = StreamCommand::CloseStream(self.id);
+            self.sender
+                .send(cmd)
+                .await
+                .map_err(|_| self.write_zero_err())?;
+        }
 
         // step3: close channel
         self.sender.close().await.expect("send err");
