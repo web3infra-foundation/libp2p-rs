@@ -41,6 +41,8 @@ mod network;
 mod registry;
 mod substream;
 
+mod ping;
+
 pub mod protocol_handler;
 
 pub use muxer::Muxer;
