@@ -72,7 +72,7 @@ pub struct PingConfig {
     pub(crate) timeout: Duration,
     /// The duration between the last successful outbound or inbound ping
     /// and the next outbound ping.
-    interval: Duration,
+    pub(crate) interval: Duration,
     /// The maximum number of failed outbound pings before the associated
     /// connection is deemed unhealthy, indicating to the `Swarm` that it
     /// should be closed.
@@ -102,9 +102,9 @@ impl PingConfig {
     ///     connection alive.
     pub fn new() -> Self {
         Self {
-            timeout: Duration::from_secs(20),
-            interval: Duration::from_secs(15),
-            max_failures: NonZeroU32::new(1).expect("1 != 0"),
+            timeout: Duration::from_secs(5),
+            interval: Duration::from_secs(5),
+            max_failures: NonZeroU32::new(3).expect("1 != 0"),
             keep_alive: false
         }
     }
@@ -173,7 +173,7 @@ impl PingService {
 }
 
 
-pub async fn ping<T: Read2 + Write2 + Send>(mut stream: T, timeout: Duration) -> Result<Duration, TransportError> {
+pub async fn ping<T: Read2 + Write2 + Send + std::fmt::Debug>(mut stream: T, timeout: Duration) -> Result<Duration, TransportError> {
 
     let ping = async {
         let payload: [u8; PING_SIZE] = thread_rng().sample(distributions::Standard);
@@ -186,8 +186,10 @@ pub async fn ping<T: Read2 + Write2 + Send>(mut stream: T, timeout: Duration) ->
         let mut recv_payload = [0u8; PING_SIZE];
         stream.read_exact2(&mut recv_payload).await?;
         if recv_payload == payload {
+            log::trace!("ping succeeded for {:?}", stream);
             Ok(started.elapsed())
         } else {
+            log::info!("Invalid ping payload received {:?}", payload);
             Err(io::Error::new(io::ErrorKind::InvalidData, "Ping payload mismatch"))
         }
     };
