@@ -15,6 +15,7 @@ use yamux;
 use libp2p_swarm::protocol_handler::{ProtocolHandler, BoxHandler};
 use libp2p_swarm::ping::{PingHandler, PingConfig};
 use libp2p_core::upgrade::UpgradeInfo;
+use libp2p_swarm::identify::IdentifyConfig;
 
 
 //use libp2p_swarm::Swarm::network::NetworkConfig;
@@ -79,10 +80,12 @@ fn run_server() {
     let mut muxer = Muxer::new();
     let dummy_handler = Box::new(DummyProtocolHandler::new());
     muxer.add_protocol_handler(dummy_handler);
-    muxer.add_protocol_handler(Box::new(PingHandler));
     muxer.add_protocol_handler(Box::new(MyProtocolHandler));
 
-    let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer);
+    let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer)
+        //.with_ping(PingConfig::new().with_interval(Duration::from_secs(1)))
+        .with_identify(IdentifyConfig);
+
 
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
 
@@ -109,8 +112,9 @@ fn run_client() {
     // let dummy_handler = Box::new(DummyProtocolHandler::new());
     // muxer.add_protocol_handler(dummy_handler);
 
-    let ping = PingConfig::new().with_interval(Duration::from_secs(1));
-    let mut swarm = Swarm::new(tu,PeerId::from_public_key(keys.public()), muxer).with_ping(ping);
+    let mut swarm = Swarm::new(tu,PeerId::from_public_key(keys.public()), muxer)
+        //.with_ping(PingConfig::new().with_interval(Duration::from_secs(1)))
+        .with_identify(IdentifyConfig);
 
 
     let mut control = swarm.control();
