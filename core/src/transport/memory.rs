@@ -10,7 +10,7 @@ use libp2p_traits::{Read2, Write2};
 use multiaddr::{Multiaddr, Protocol};
 use parking_lot::Mutex;
 use rw_stream_sink::RwStreamSink;
-use std::{collections::hash_map::Entry, io, num::NonZeroU64, pin::Pin};
+use std::{collections::hash_map::Entry, io, num::NonZeroU64, pin::Pin, fmt};
 
 lazy_static! {
     static ref HUB: Mutex<FnvHashMap<NonZeroU64, mpsc::Sender<Channel>>> =
@@ -172,6 +172,15 @@ pub struct Channel {
     io: RwStreamSink<Chan<Vec<u8>>>,
     la: Multiaddr,
     ra: Multiaddr,
+}
+
+impl fmt::Debug for Channel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Channel")
+            .field("la", &self.la)
+            .field("ra", &self.ra)
+            .finish()
+    }
 }
 
 #[async_trait]
