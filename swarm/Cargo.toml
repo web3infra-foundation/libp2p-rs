@@ -17,9 +17,13 @@ log = "0.4"
 rand = "0.7"
 fnv = "1.0"
 smallvec = "1.0"
+prost = "0.6"
 void = "1"
 libp2p-traits = { path = "../traits", version = "0.1.0", package = "libp2p-traits" }
 libp2p-core = { version = "0.1.0", path = "../core" }
+
+[build-dependencies]
+prost-build = "0.6"
 
 [dev-dependencies]
 #libp2p-mplex = { path = "../muxer/mplex" }

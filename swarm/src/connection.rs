@@ -1,4 +1,4 @@
-use crate::{Multiaddr, PeerId, SwarmError, SwarmEvent, ping, open_stream};
+use crate::{Multiaddr, PeerId, SwarmError, SwarmEvent, ping, open_stream, identify};
 use async_std::task::JoinHandle;
 use smallvec::SmallVec;
 use std::hash::Hash;
@@ -16,6 +16,7 @@ use libp2p_core::secure_io::SecureInfo;
 use libp2p_core::PublicKey;
 use crate::substream::StreamId;
 use crate::ping::{PING_PROTOCOL};
+use crate::identify::IDENTIFY_PROTOCOL;
 
 /// The direction of a peer-to-peer communication channel.
 #[derive(Debug, Clone, PartialEq)]
@@ -62,6 +63,8 @@ pub struct Connection<TMuxer: StreamMuxer> {
     handle: Option<JoinHandle<()>>,
     /// The task handle of the Ping service of this connection
     ping_handle: Option<JoinHandle<()>>,
+    /// The task handle of the Ping service of this connection
+    identify_handle: Option<JoinHandle<()>>,
 }
 
 impl<TMuxer: StreamMuxer> PartialEq for Connection<TMuxer> {
@@ -106,6 +109,7 @@ where
             handle: None,
             identity: None,
             ping_handle: None,
+            identify_handle: None
         }
     }
 
@@ -209,7 +213,8 @@ where
         self.ping_failures = 0;
     }
 
-    ///
+    /// Starts the Ping service on this connection. The task handle will be tracked
+    /// by the connection for later closing the Ping service
     pub(crate) fn start_ping(&mut self, timeout: Duration, interval: Duration,
                              tx: mpsc::UnboundedSender<SwarmEvent<TMuxer>>)
     where
@@ -276,6 +281,58 @@ where
             self.ping_running.store(false, Ordering::Relaxed);
             h.await;
             //h.cancel().await;
+        }
+    }
+
+    /// Starts the Identify service on this connection.
+    pub(crate) fn start_identify(&mut self, tx: mpsc::UnboundedSender<SwarmEvent<TMuxer>>)
+        where
+            TMuxer: 'static,
+            TMuxer::Substream: Read2 + Write2 + Send + Unpin,
+    {
+        let cid = self.id();
+        let stream_muxer = self.stream_muxer.clone();
+        let tx = tx.clone();
+        let pids = vec![IDENTIFY_PROTOCOL];
+
+        let mut tx2 = tx.clone();
+
+        let handle = task::spawn(async move {
+
+            let r = open_stream(cid, stream_muxer, pids, tx).await;
+            let r = match r {
+                Ok(stream) => {
+                    let cid = stream.cid();
+                    let sid = stream.id();
+
+                    let r = identify::identify(stream).await;
+                    // generate a StreamClosed event so that substream can be removed from Connection
+                    let _ = tx2
+                        .send(SwarmEvent::StreamClosed {
+                            dir: Direction::Outbound,
+                            cid,
+                            sid,
+                        })
+                        .await;
+                    r.map_err(|e| e.into())
+                }
+                Err(err) => {
+                    // looks like the peer doesn't support the protocol
+                    log::warn!("Identify protocol not supported: {:?}", err);
+                    Err(err)
+                }
+            };
+            let _ = tx2.send(SwarmEvent::IdentifyResult { cid, result: r }).await;
+
+            log::trace!("identify task exiting...");
+        });
+
+        self.identify_handle = Some(handle);
+    }
+
+    pub(crate) async fn stop_identify(&mut self) {
+        if let Some(h) =  self.identify_handle.take() {
+            h.cancel().await;
         }
     }
 }

@@ -42,6 +42,7 @@ mod registry;
 mod substream;
 
 pub mod ping;
+pub mod identify;
 
 pub mod protocol_handler;
 
@@ -74,6 +75,8 @@ use crate::ping::{PingConfig};
 use crate::registry::Addresses;
 use crate::substream::{StreamId, Substream};
 use std::time::Duration;
+use crate::identify::{IdentifyHandler, IdentifyConfig, RemoteInfo};
+use libp2p_core::identity::Keypair;
 
 type Result<T> = std::result::Result<T, SwarmError>;
 
@@ -230,6 +233,13 @@ pub enum SwarmEvent<TStreamMuxer> {
         /// Duration means the TTL when succeeded, or SwarmError for failed.
         result: Result<Duration>,
     },
+    IdentifyResult {
+        /// The connection Id.
+        cid: ConnectionId,
+        /// The result.
+        /// Duration means the TTL when succeeded, or SwarmError for failed.
+        result: Result<RemoteInfo>,
+    },
 }
 
 type ProtocolId = &'static [u8];
@@ -280,6 +290,9 @@ where
     /// Ping service will be started as long as a new connection is established, if enabled.
     /// The connection will be closed if Ping failure reaches the maxmium failure counts.
     ping: Option<PingConfig>,
+    /// Swarm Identify service config, optional.
+    /// Identify service will be started as long as a new connection is established, if enabled.
+    identify: Option<IdentifyConfig>,
 
     //
     // /// Pending event to be delivered to connection handlers
@@ -335,6 +348,7 @@ where
             connections_by_id: Default::default(),
             connections_by_peer: Default::default(),
             ping: None,
+            identify: None,
             event_receiver: event_rx,
             event_sender: event_tx,
             ctrl_receiver: ctrl_rx,
@@ -347,8 +361,19 @@ where
         self.next_connection_id
     }
 
+    /// Creates Swarm with Ping service.
     pub fn with_ping(mut self, ping: PingConfig) -> Self {
         self.ping = Some(ping);
+        self.muxer.add_protocol_handler(Box::new(PingHandler));
+        self
+    }
+    /// Creates Swarm with Identify service.
+    pub fn with_identify(mut self, id: IdentifyConfig) -> Self {
+        self.identify = Some(id);
+        let protocols = self.muxer.supported_protocols().into_iter().map(|p| p.protocol_name_str().to_string()).collect();
+        // TODO: public key
+        let handler = IdentifyHandler::new(Keypair::generate_secp256k1().public(), protocols);
+        self.muxer.add_protocol_handler(Box::new(handler));
         self
     }
 
@@ -404,29 +429,32 @@ where
             SwarmEvent::ListenerClosed { addresses: _, reason: _ } => {}
             SwarmEvent::ConnectionEstablished { stream_muxer, direction } => {
                 let _ = self.handle_connection_opened(stream_muxer, direction);
-            }
+            },
             SwarmEvent::ConnectionClosed { cid, error: _ } => {
                 let _ = self.handle_connection_closed(cid);
-            }
+            },
             SwarmEvent::OutgoingConnectionError {
                 peer_id: _,
                 remote_addr: _,
                 error: _,
             } => {
                 // TODO: add statistics
-            }
+            },
             SwarmEvent::StreamError { .. } => {
                 // TODO: add statistics
-            }
+            },
             SwarmEvent::StreamOpened { dir, cid, sid } => {
                 let _ = self.handle_stream_opened(dir, cid, sid);
-            }
+            },
             SwarmEvent::StreamClosed { dir, cid, sid } => {
                 let _ = self.handle_stream_closed(dir, cid, sid);
-            }
+            },
             SwarmEvent::PingResult { cid, result } => {
                 let _ = self.handle_ping_result(cid, result);
-            }
+            },
+            SwarmEvent::IdentifyResult { cid, result } => {
+                let _ = self.handle_identify_result(cid, result);
+            },
 
             // TODO: handle other messages
             e => {
@@ -986,8 +1014,14 @@ where
 
         // start Ping service if there is
         self.ping.as_ref().map(|config| {
-            log::trace!("staring Ping service for {:?}", connection);
+            log::trace!("starting Ping service for {:?}", connection);
             connection.start_ping(config.timeout, config.interval, self.event_sender.clone());
+        });
+
+        // start Ping service if there is
+        self.identify.as_ref().map(|config| {
+            log::trace!("starting Identify service for {:?}", connection);
+            connection.start_identify(self.event_sender.clone());
         });
 
         // insert to the hashmap of connections
@@ -1065,6 +1099,24 @@ where
                     log::info!("ping failed {:?} for {:?}", err, connection);
                     let allowed_max_failure = self.ping.as_ref().map_or(0, |config|config.max_failures.into());
                     connection.handle_failure(allowed_max_failure);
+                }
+            }
+        }
+
+        Ok(())
+    }
+    fn handle_identify_result(&mut self, cid: ConnectionId, result: Result<RemoteInfo>) -> Result<()> {
+        log::trace!("handle_identify_result: {:?} {:?}", cid, result);
+
+        if let Some(connection)= self.connections_by_id.get_mut(&cid) {
+            match result {
+                Ok(info) =>{
+                    //let remote_peer_id = c.remote_peer();
+                    log::trace!("identify info={:?} for {:?}", info, connection);
+                    // TODO: update peer store with the TTL
+                },
+                Err(err) => {
+                    log::info!("identify failed {:?} for {:?}", err, connection);
                 }
             }
         }
