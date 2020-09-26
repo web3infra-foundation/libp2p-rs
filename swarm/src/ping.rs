@@ -25,7 +25,7 @@
 
 use std::time::{Duration, Instant};
 use std::num::NonZeroU32;
-use std::{fmt, io};
+use std::io;
 use rand::{distributions, prelude::*};
 use async_trait::async_trait;
 
@@ -35,31 +35,6 @@ use libp2p_core::transport::TransportError;
 
 use crate::SwarmError;
 use crate::protocol_handler::{ProtocolHandler, BoxHandler};
-
-
-/// `Ping` is a [`NetworkBehaviour`] that responds to inbound pings and
-/// periodically sends outbound pings on every established connection.
-///
-/// See the crate root documentation for more information.
-pub struct Ping {
-    /// Configuration for outbound pings.
-    config: PingConfig,
-}
-
-impl Ping {
-    /// Creates a new `Ping` network behaviour with the given configuration.
-    pub fn new(config: PingConfig) -> Self {
-        Ping {
-            config,
-        }
-    }
-}
-
-impl Default for Ping {
-    fn default() -> Self {
-        Ping::new(PingConfig::new())
-    }
-}
 
 /// The configuration for outbound pings.
 #[derive(Clone, Debug)]
@@ -165,15 +140,11 @@ pub async fn ping<T: Read2 + Write2 + Send + std::fmt::Debug>(mut stream: T, tim
 }
 
 
-
-
-
 /// Protocol handler that handles pinging the remote at a regular period
 /// and answering ping queries.
 ///
 #[derive(Debug, Clone)]
 pub struct PingHandler;
-
 
 /// Represents a prototype for an upgrade to handle the ping protocol.
 ///
@@ -191,15 +162,12 @@ pub struct PingHandler;
 /// >           Nagle's algorithm, delayed acks and similar configuration options
 /// >           which can affect latencies especially on otherwise low-volume
 /// >           connections.
-
+pub const PING_PROTOCOL: &[u8] = b"/ipfs/ping/1.0.0";
 
 const PING_SIZE: usize = 32;
 
-pub const PING_PROTOCOL: &[u8] = b"/ipfs/ping/1.0.0";
-
 impl UpgradeInfo for PingHandler {
     type Info = &'static [u8];
-
     fn protocol_info(&self) -> Vec<Self::Info> {
         vec!(PING_PROTOCOL)
     }
@@ -233,33 +201,37 @@ impl<C> ProtocolHandler<C> for PingHandler
 mod tests {
     use super::PingHandler;
     use libp2p_core::{
-        upgrade,
         multiaddr::multiaddr,
         transport::{
             Transport,
-            ListenerEvent,
             memory::MemoryTransport
         }
     };
     use rand::{thread_rng, Rng};
     use std::time::Duration;
+    use libp2p_core::transport::TransportListener;
+    use crate::protocol_handler::ProtocolHandler;
+    use libp2p_core::upgrade::UpgradeInfo;
+    use crate::ping::ping;
 
     #[test]
     fn ping_pong() {
         let mem_addr = multiaddr![Memory(thread_rng().gen::<u64>())];
+        let listener_addr = mem_addr.clone();
         let mut listener = MemoryTransport.listen_on(mem_addr).unwrap();
 
         async_std::task::spawn(async move {
-            // let listener_event = listener.next().await.unwrap();
-            // let (listener_upgrade, _) = listener_event.unwrap().into_upgrade().unwrap();
-            // let conn = listener_upgrade.await.unwrap();
-            // upgrade::apply_inbound(conn, Ping::default()).await.unwrap();
+            let socket = listener.accept().await.unwrap();
+
+            let mut handler = PingHandler;
+            let _ = handler.handle(socket, handler.protocol_info().first().unwrap()).await;
         });
 
         async_std::task::block_on(async move {
-            // let c = MemoryTransport.dial(listener_addr).unwrap().await.unwrap();
-            // let rtt = upgrade::apply_outbound(c, Ping::default(), upgrade::Version::V1).await.unwrap();
-            // assert!(rtt > Duration::from_secs(0));
+            let socket = MemoryTransport.dial(listener_addr).await.unwrap();
+
+            let rtt = ping(socket, Duration::from_secs(3)).await.unwrap();
+            assert!(rtt > Duration::from_secs(0));
         });
     }
 }

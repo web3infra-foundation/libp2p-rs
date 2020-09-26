@@ -2,8 +2,10 @@ use crate::{Multiaddr, PeerId, SwarmError, SwarmEvent, ping, open_stream};
 use async_std::task::JoinHandle;
 use smallvec::SmallVec;
 use std::hash::Hash;
-use std::{error::Error, fmt, io};
+use std::{error::Error, fmt};
 use std::time::Duration;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use futures::channel::mpsc;
 use futures::prelude::*;
 use async_std::task;
@@ -11,13 +13,9 @@ use libp2p_traits::{Read2, Write2};
 use libp2p_core::identity::Keypair;
 use libp2p_core::muxing::StreamMuxer;
 use libp2p_core::secure_io::SecureInfo;
-use libp2p_core::transport::TransportError;
 use libp2p_core::PublicKey;
 use crate::substream::StreamId;
-use crate::ping::PING_PROTOCOL;
-use std::num::NonZeroU32;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use crate::ping::{PING_PROTOCOL};
 
 /// The direction of a peer-to-peer communication channel.
 #[derive(Debug, Clone, PartialEq)]
@@ -57,8 +55,6 @@ pub struct Connection<TMuxer: StreamMuxer> {
     ping_running: Arc<AtomicBool>,
     /// Ping failure count.
     ping_failures: u32,
-    /// The max allowed Ping failure.
-    max_ping_failures: NonZeroU32,
     /// Identity service
     identity: Option<()>,    
     /// The task handle of this connection, returned by task::Spawn
@@ -110,7 +106,6 @@ where
             handle: None,
             identity: None,
             ping_handle: None,
-            max_ping_failures: NonZeroU32::new(3).expect("1 != 0")
         }
     }
 
@@ -198,9 +193,15 @@ where
     }
 
     /// Increases failure count, returns the increased count.
-    pub(crate) fn inc_failure(&mut self) -> u32 {
+    pub(crate) fn handle_failure(&mut self, allowed_max_failures: u32)
+        where TMuxer: 'static,
+    {
         self.ping_failures += 1;
-        self.ping_failures
+        if self.ping_failures > allowed_max_failures {
+            // close the connection
+            log::info!("reach the max ping failure count, closing {:?}", self);
+            self.close();
+        }
     }
 
     /// Increases failure count, returns the increased count.
@@ -209,14 +210,12 @@ where
     }
 
     ///
-    pub(crate) fn start_ping(&mut self, timeout: Duration, interval: Duration, max_failures: NonZeroU32,
+    pub(crate) fn start_ping(&mut self, timeout: Duration, interval: Duration,
                              tx: mpsc::UnboundedSender<SwarmEvent<TMuxer>>)
     where
         TMuxer: 'static,
         TMuxer::Substream: Read2 + Write2 + Send + Unpin,
     {
-        self.max_ping_failures = max_failures;
-
         self.ping_running.store(true, Ordering::Relaxed);
 
         let cid = self.id();
@@ -230,7 +229,6 @@ where
 
             loop {
                 if !flag.load(Ordering::Relaxed) {
-                    log::error!("break");
                     break;
                 }
 
@@ -275,9 +273,8 @@ where
 
     pub(crate) async fn stop_ping(&mut self) {
         if let Some(h) =  self.ping_handle.take() {
-            log::error!("store");
             self.ping_running.store(false, Ordering::Relaxed);
-            log::error!("cancel");
+            h.await;
             //h.cancel().await;
         }
     }
@@ -300,87 +297,3 @@ impl fmt::Display for ConnectionLimit {
 
 /// A `ConnectionLimit` can represent an error if it has been exceeded.
 impl Error for ConnectionLimit {}
-
-/// Errors that can occur in the context of an established `Connection`.
-#[derive(Debug)]
-#[allow(dead_code)]
-pub enum ConnectionError<THandlerErr> {
-    /// An I/O error occurred on the connection.
-    // TODO: Eventually this should also be a custom error?
-    IO(io::Error),
-
-    /// The connection handler produced an error.
-    Handler(THandlerErr),
-}
-
-impl<THandlerErr> fmt::Display for ConnectionError<THandlerErr>
-where
-    THandlerErr: fmt::Display,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ConnectionError::IO(err) => write!(f, "Connection error: I/O error: {}", err),
-            ConnectionError::Handler(err) => write!(f, "Connection error: Handler error: {}", err),
-        }
-    }
-}
-
-impl<THandlerErr> std::error::Error for ConnectionError<THandlerErr>
-where
-    THandlerErr: std::error::Error + 'static,
-{
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            ConnectionError::IO(err) => Some(err),
-            ConnectionError::Handler(err) => Some(err),
-        }
-    }
-}
-
-/// Errors that can occur in the context of a pending `Connection`.
-#[derive(Debug)]
-#[allow(dead_code)]
-pub enum PendingConnectionError {
-    /// An error occurred while negotiating the transport protocol(s).
-    Transport(TransportError),
-
-    /// The peer identity obtained on the connection did not
-    /// match the one that was expected or is otherwise invalid.
-    InvalidPeerId,
-
-    /// The connection was dropped because the connection limit
-    /// for a peer has been reached.
-    ConnectionLimit(ConnectionLimit),
-
-    /// An I/O error occurred on the connection.
-    // TODO: Eventually this should also be a custom error?
-    IO(io::Error),
-}
-
-impl fmt::Display for PendingConnectionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PendingConnectionError::IO(err) => write!(f, "Pending connection: I/O error: {}", err),
-            PendingConnectionError::Transport(err) => {
-                write!(f, "Pending connection: Transport error: {}", err)
-            }
-            PendingConnectionError::InvalidPeerId => {
-                write!(f, "Pending connection: Invalid peer ID.")
-            }
-            PendingConnectionError::ConnectionLimit(l) => {
-                write!(f, "Connection error: Connection limit: {}.", l)
-            }
-        }
-    }
-}
-
-impl std::error::Error for PendingConnectionError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            PendingConnectionError::IO(err) => Some(err),
-            PendingConnectionError::Transport(err) => Some(err),
-            PendingConnectionError::InvalidPeerId => None,
-            PendingConnectionError::ConnectionLimit(..) => None,
-        }
-    }
-}
