@@ -861,16 +861,9 @@ where
         self.banned_peers.remove(peer_id.as_ref());
     }
 
-    fn add_connection(&mut self, mut connection: Connection<TTrans::Output>) {
+    fn add_connection(&mut self, connection: Connection<TTrans::Output>) {
         let cid = connection.id();
         let remote_peer_id = connection.remote_peer();
-
-        // start Ping if there is
-        self.ping.as_ref().map(|config| {
-            log::trace!("staring Ping service for {:?}", connection);
-            connection.start_ping(config.timeout, config.interval, self.event_sender.clone());
-        });
-        //self.start_ping_task(&connection, vec![PING_PROTOCOL]);
 
         // append to the by_id hashmap
         self.connections_by_id.insert(cid, connection);
@@ -990,6 +983,12 @@ where
 
         // now we have the handle, move it into Connection
         connection.set_handle(handle);
+
+        // start Ping service if there is
+        self.ping.as_ref().map(|config| {
+            log::trace!("staring Ping service for {:?}", connection);
+            connection.start_ping(config.timeout, config.interval, self.event_sender.clone());
+        });
 
         // insert to the hashmap of connections
         // there might be a race condition:
