@@ -273,8 +273,13 @@ where
     /// The all connections_by_peer connections organized by their Ids
     connections_by_id: FnvHashMap<ConnectionId, Connection<TTrans::Output>>,
     /// The all connections_by_peer connections by  peer Id
-    /// THere might be more than one connections for a remote peer
+    /// There might be more than one connections for a remote peer
     connections_by_peer: FnvHashMap<PeerId, Vec<ConnectionId>>,
+
+    /// Swarm Ping service config, optional.
+    /// Ping service will be started as long as a new connection is established, if enabled.
+    /// The connection will be closed if Ping failure reaches the maxmium failure counts.
+    ping: Option<PingConfig>,
 
     //
     // /// Pending event to be delivered to connection handlers
@@ -329,6 +334,7 @@ where
             banned_peers: Default::default(),
             connections_by_id: Default::default(),
             connections_by_peer: Default::default(),
+            ping: None,
             event_receiver: event_rx,
             event_sender: event_tx,
             ctrl_receiver: ctrl_rx,
@@ -336,9 +342,14 @@ where
         }
     }
 
-    fn assign_connection_id(&mut self) -> usize {
+    fn assign_cid(&mut self) -> usize {
         self.next_connection_id += 1;
         self.next_connection_id
+    }
+
+    pub fn with_ping(mut self, ping: PingConfig) -> Self {
+        self.ping = Some(ping);
+        self
     }
 
     /// Get a controller for Swarm.
@@ -850,14 +861,14 @@ where
         self.banned_peers.remove(peer_id.as_ref());
     }
 
-    fn add_connection(&mut self, mut connection: Connection<TTrans::Output>, ping: Option<&PingConfig>) {
+    fn add_connection(&mut self, mut connection: Connection<TTrans::Output>) {
         let cid = connection.id();
         let remote_peer_id = connection.remote_peer();
 
         // start Ping if there is
-        ping.map(|config| {
+        self.ping.as_ref().map(|config| {
             log::trace!("staring Ping service for {:?}", connection);
-            connection.start_ping(config.timeout, config.interval, config.max_failures, self.event_sender.clone());
+            connection.start_ping(config.timeout, config.interval, self.event_sender.clone());
         });
         //self.start_ping_task(&connection, vec![PING_PROTOCOL]);
 
@@ -879,55 +890,6 @@ where
         // start Ping service if need
     }
 
-    // Open a stream specified with protocols, Swarm internal use
-    fn start_ping_task(&self, connection: &Connection<TTrans::Output>, pids: Vec<ProtocolId>) {
-        let cid = connection.id();
-        let stream_muxer = connection.stream_muxer().clone();
-        let tx = self.event_sender.clone();
-
-        let ping_config = PingConfig::new();
-
-        //let mut ping = PingService::new(ping_config);
-
-        task::spawn(async move {
-            let mut tx2 = tx.clone();
-
-            loop {
-                // sleep for the interval
-                task::sleep(ping_config.interval).await;
-
-                let stream_muxer = stream_muxer.clone();
-                let pids = pids.clone();
-                let tx = tx.clone();
-
-                let r = open_stream(cid, stream_muxer, pids, tx).await;
-                let r = match r {
-                    Ok(stream) => {
-                        let cid = stream.cid();
-                        let sid = stream.id();
-
-                        let r = ping::ping(stream, ping_config.timeout).await;
-                        // generate a StreamClosed event so that substream can be removed from Connection
-                        let _ = tx2
-                            .send(SwarmEvent::StreamClosed {
-                                dir: Direction::Outbound,
-                                cid,
-                                sid,
-                            })
-                            .await;
-                        r.map_err(|e| e.into())
-                    }
-                    Err(err) => {
-                        // looks like the peer doesn't support the protocol
-                        log::warn!("Ping protocol not supported: {:?}", err);
-                        Err(err)
-                    }
-                };
-                let _ = tx2.send(SwarmEvent::PingResult { cid, result: r }).await;
-            }
-        });
-    }
-
     /// Handles a new connection
     ///
     /// start a Task for accepting new sub-stream from the connection
@@ -935,7 +897,7 @@ where
         log::trace!("handle_connection_opened: {:?} {:?}", stream_muxer, dir);
 
         // clone the stream_muxer, and then wrap into Connection, task_handle will be assigned later
-        let mut connection = Connection::new(self.assign_connection_id(), stream_muxer.clone(), dir);
+        let mut connection = Connection::new(self.assign_cid(), stream_muxer.clone(), dir);
 
         // TODO: filtering the multiaddr, Err = AddrFiltered(addr)
 
@@ -1034,7 +996,7 @@ where
         // the spawned connection task might have exited for some reason, before we insert connection
         // into the hashmap. No problem, the connection will be cleaned up in 'handle_connection_closed'
         // event.
-        self.add_connection(connection, Some(&PingConfig::new()));
+        self.add_connection(connection);
 
         Ok(())
     }
@@ -1075,9 +1037,7 @@ where
 
             // now, close all tasks owned by the connection
             task::spawn(async move {
-                log::error!("wait");
                 let _ = connection.wait().await;
-                log::error!("stop");
                 let _ = connection.stop_ping().await;
             });
         } else {
@@ -1092,26 +1052,23 @@ where
 
     fn handle_ping_result(&mut self, cid: ConnectionId, result: Result<Duration>) -> Result<()> {
         log::trace!("handle_ping_result: {:?} {:?}", cid, result);
-        self.connections_by_id.get_mut(&cid).map(|c| {
-            result
-                .map(|ttl| {
+
+        if let Some(connection)= self.connections_by_id.get_mut(&cid) {
+            match result {
+                Ok(ttl) =>{
                     //let remote_peer_id = c.remote_peer();
-                    log::trace!("ping succeeded TTL={:?} for {:?}", ttl, c);
+                    log::trace!("ping TTL={:?} for {:?}", ttl, connection);
                     // TODO: update peer store with the TTL
 
-                    c.reset_failure();
-                })
-                .map_err(|e| {
-                    log::info!("ping failed {:?} for {:?}", e, c);
-                    let failure_count = c.inc_failure();
-
-                    if failure_count > 2 {
-                        // close the connection
-                        log::info!("reach the max ping failure count, closing {:?}", c);
-                        c.close();
-                    }
-                })
-        });
+                    connection.reset_failure();
+                },
+                Err(err) => {
+                    log::info!("ping failed {:?} for {:?}", err, connection);
+                    let allowed_max_failure = self.ping.as_ref().map_or(0, |config|config.max_failures.into());
+                    connection.handle_failure(allowed_max_failure);
+                }
+            }
+        }
 
         Ok(())
     }
