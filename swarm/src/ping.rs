@@ -35,6 +35,7 @@ use libp2p_core::transport::TransportError;
 
 use crate::SwarmError;
 use crate::protocol_handler::{ProtocolHandler, BoxHandler};
+use crate::substream::Substream;
 
 /// The configuration for outbound pings.
 #[derive(Clone, Debug)]
@@ -207,7 +208,7 @@ impl<C> ProtocolHandler<C> for PingHandler
 {
     /// The Ping handler's inbound protocol.
     /// Simply wait for any thing that coming in then send back
-    async fn handle(&mut self, mut stream: C, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+    async fn handle(&mut self, mut stream: Substream<C>, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
         log::trace!("Ping Protocol handling on {:?}", stream);
 
         let mut payload = [0u8; PING_SIZE];
@@ -240,6 +241,8 @@ mod tests {
     use crate::protocol_handler::ProtocolHandler;
     use libp2p_core::upgrade::UpgradeInfo;
     use crate::ping::ping;
+    use crate::substream::Substream;
+    use crate::connection::{Direction, ConnectionId};
 
     #[test]
     fn ping_pong() {
@@ -249,6 +252,7 @@ mod tests {
 
         async_std::task::spawn(async move {
             let socket = listener.accept().await.unwrap();
+            let socket = Substream::new(socket, Direction::Inbound, b"", ConnectionId::default());
 
             let mut handler = PingHandler;
             let _ = handler.handle(socket, handler.protocol_info().first().unwrap()).await;

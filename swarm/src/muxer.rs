@@ -5,13 +5,12 @@ use libp2p_core::upgrade::ProtocolName;
 use libp2p_core::transport::TransportError;
 use crate::ProtocolId;
 use crate::protocol_handler::BoxHandler;
-use crate::substream::Substream;
 
 
 /// Muxer that uses multistream-select to select and handle protocols.
 ///
 pub struct Muxer<TRaw> {
-    protocol_handlers: FnvHashMap<ProtocolId, BoxHandler<Substream<TRaw>>>,
+    protocol_handlers: FnvHashMap<ProtocolId, BoxHandler<TRaw>>,
 }
 
 impl<TRaw> Clone for Muxer<TRaw> {
@@ -34,7 +33,7 @@ impl<TRaw> Muxer<TRaw> {
 }
 
 impl<TRaw> Muxer<TRaw> {
-    pub fn add_protocol_handler(&mut self, p: BoxHandler<Substream<TRaw>>) {
+    pub fn add_protocol_handler(&mut self, p: BoxHandler<TRaw>) {
         log::trace!("adding protocol handler: {:?}", p.protocol_info().iter().map(|n|n.protocol_name_str()).collect::<Vec<_>>());
         p.protocol_info().iter().for_each(|pid| {
             self.protocol_handlers.insert(pid, p.clone());
@@ -47,7 +46,7 @@ impl<TRaw> Muxer<TRaw> {
             .map(|k| k.clone())
     }
 
-    pub(crate) async fn select_inbound(&mut self, socket: TRaw) -> Result<(BoxHandler<Substream<TRaw>>, TRaw, ProtocolId), TransportError>
+    pub(crate) async fn select_inbound(&mut self, socket: TRaw) -> Result<(BoxHandler<TRaw>, TRaw, ProtocolId), TransportError>
         where
             TRaw: Read2 + Write2 + Send + Unpin,
     {

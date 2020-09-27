@@ -39,8 +39,8 @@ mod control;
 mod muxer;
 mod network;
 mod registry;
-mod substream;
 
+pub mod substream;
 pub mod ping;
 pub mod identify;
 
