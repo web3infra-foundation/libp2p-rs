@@ -9,6 +9,18 @@ use libp2p_traits::{Read2, Write2};
 use std::{fmt, io};
 use futures::lock::Mutex;
 use std::sync::Arc;
+use futures::channel::oneshot;
+
+/// The state of a Yamux stream.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum State {
+    /// Open bidirectionally.
+    Open,
+    /// half close.
+    HalfClosed,
+    /// Closed (terminal state).
+    Closed,
+}
 
 #[derive(Clone)]
 pub struct Stream {
@@ -89,35 +101,31 @@ impl Stream {
     }
 
     pub(crate) async fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let (tx, rx) = oneshot::channel();
         let frame = Frame::message_frame(self.id, buf);
         let n = buf.len();
         log::trace!("{}/{}: write {} bytes", self.conn_id, self.id, n);
 
-        let cmd = StreamCommand::SendFrame(frame);
+        let cmd = StreamCommand::SendFrame(frame, tx);
         self.sender
             .send(cmd)
             .await
             .map_err(|_| self.write_zero_err())?;
 
+        // TODO define stream error type
+        rx.await.map_err(|_| self.closed_err())?;
+
         Ok(n)
     }
 
     async fn close(&mut self) -> io::Result<()> {
-        // in order to support [`Clone`]
-        // when reference count is 1, we can close stream entirely
-        // otherwise, just close sender channel
+        // In order to support [`Clone`]
+        // When reference count is 1, we can close stream entirely
+        // Otherwise, just close sender channel
         let count = Arc::<Mutex<mpsc::Receiver<Vec<u8>>>>::strong_count(&self.receiver);
         if count == 1 {
-            // step1: send close frame
             let frame = Frame::close_frame(self.id);
-            let cmd = StreamCommand::SendFrame(frame);
-            self.sender
-                .send(cmd)
-                .await
-                .map_err(|_| self.write_zero_err())?;
-
-            // step2: notify connection to remove itself
-            let cmd = StreamCommand::CloseStream(self.id);
+            let cmd = StreamCommand::CloseStream(frame);
             self.sender
                 .send(cmd)
                 .await
@@ -125,13 +133,39 @@ impl Stream {
         }
 
         // step3: close channel
-        self.sender.close().await.expect("send err");
+        // self.sender.close().await.expect("send err");
 
         Ok(())
     }
 
+    pub async fn reset(&mut self) -> io::Result<()> {
+        // In order to support [`Clone`]
+        // When reference count is 1, we can close stream entirely
+        // Otherwise, just close sender channel
+        let count = Arc::<Mutex<mpsc::Receiver<Vec<u8>>>>::strong_count(&self.receiver);
+        if count == 1 {
+            let frame = Frame::reset_frame(self.id);
+            let cmd = StreamCommand::ResetStream(frame);
+            self.sender
+                .send(cmd)
+                .await
+                .map_err(|_| self.write_zero_err())?;
+
+            self.sender.close().await.map_err(|_| self.write_zero_err())?;
+        }
+
+        Ok(())
+    }
+
+    /// connection is closed
     fn write_zero_err(&self) -> io::Error {
         let msg = format!("{}/{}: connection is closed", self.conn_id, self.id);
+        io::Error::new(io::ErrorKind::WriteZero, msg)
+    }
+
+    /// stream is closed or reset
+    fn closed_err(&self) -> io::Error {
+        let msg = format!("{}/{}: stream is closed / reset", self.conn_id, self.id);
         io::Error::new(io::ErrorKind::WriteZero, msg)
     }
 }

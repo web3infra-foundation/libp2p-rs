@@ -33,3 +33,6 @@ path = "../secio"
 path = "../../core"
 version = "0.1.0"
 package = "libp2p-core"
+
+[dev-dependencies.quickcheck]
+version = "0.9"
