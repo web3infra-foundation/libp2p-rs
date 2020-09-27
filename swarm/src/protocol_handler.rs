@@ -39,14 +39,14 @@
 
 use async_trait::async_trait;
 use libp2p_core::upgrade::{UpgradeInfo, ProtocolName};
-use crate::SwarmError;
+use crate::{SwarmError, ProtocolId};
 
 
 /// Common trait for upgrades that can be applied on inbound substreams, outbound substreams,
 /// or both.
 /// Possible upgrade on a connection or substream.
 #[async_trait]
-pub trait ProtocolHandler<C>: UpgradeInfo {
+pub trait ProtocolHandler<TSocket>: UpgradeInfo {
     /// After we have determined that the remote supports one of the protocols we support, this
     /// method is called to start handling the inbound. Swarm will start invoking this method
     /// in a newly spawned task.
@@ -54,17 +54,17 @@ pub trait ProtocolHandler<C>: UpgradeInfo {
     /// The `info` is the identifier of the protocol, as produced by `protocol_info`.
     async fn handle(
         &mut self,
-        stream: C,
+        stream: TSocket,
         info: <Self as UpgradeInfo>::Info,
     ) -> Result<(), SwarmError>;
     /// This is to provide a clone method for the trait object.
-    fn box_clone(&self) -> BoxHandler<C>;
+    fn box_clone(&self) -> BoxHandler<TSocket>;
 }
 
-pub type BoxHandler<C> = Box<dyn ProtocolHandler<C, Info = &'static [u8]> + Send + Sync>;
+pub type BoxHandler<TSocket> = Box<dyn ProtocolHandler<TSocket, Info = ProtocolId> + Send + Sync>;
 
 
-impl<C> Clone for BoxHandler<C> {
+impl<TSocket> Clone for BoxHandler<TSocket> {
     fn clone(&self) -> Self {
         self.box_clone()
     }
@@ -93,13 +93,13 @@ impl UpgradeInfo for DummyProtocolHandler {
 }
 
 #[async_trait]
-impl<C: Send + std::fmt::Debug + 'static> ProtocolHandler<C> for DummyProtocolHandler {
+impl<TSocket: Send + std::fmt::Debug + 'static> ProtocolHandler<TSocket> for DummyProtocolHandler {
 
-    async fn handle(&mut self, stream: C, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+    async fn handle(&mut self, stream: TSocket, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
         log::trace!("Dummy Protocol handling inbound {:?} {:?}", stream, info.protocol_name_str());
         Ok(())
     }
-    fn box_clone(&self) -> BoxHandler<C> {
+    fn box_clone(&self) -> BoxHandler<TSocket> {
         Box::new(self.clone())
     }
 }

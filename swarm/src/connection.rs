@@ -1,4 +1,4 @@
-use crate::identify::IDENTIFY_PROTOCOL;
+use crate::identify::{IDENTIFY_PROTOCOL, IDENTIFY_PUSH_PROTOCOL, IdentifyInfo};
 use crate::ping::PING_PROTOCOL;
 use crate::substream::{StreamId, Substream};
 use crate::{identify, ping, Multiaddr, PeerId, ProtocolId, SwarmError, SwarmEvent};
@@ -40,7 +40,7 @@ pub enum Event<T> {
     AddressChange(Multiaddr),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ConnectionId(usize);
 
 /// A multiplexed connection to a peer with associated `Substream`s.
@@ -68,8 +68,10 @@ pub struct Connection<TMuxer: StreamMuxer> {
     handle: Option<JoinHandle<()>>,
     /// The task handle of the Ping service of this connection
     ping_handle: Option<JoinHandle<()>>,
-    /// The task handle of the Ping service of this connection
+    /// The task handle of the Identify service of this connection
     identify_handle: Option<JoinHandle<()>>,
+    /// The task handle of the Identify Push service of this connection
+    identify_push_handle: Option<JoinHandle<()>>,
 }
 
 impl<TMuxer: StreamMuxer> PartialEq for Connection<TMuxer> {
@@ -117,6 +119,7 @@ where
             ping_handle: None,
             identity: None,
             identify_handle: None,
+            identify_push_handle: None
         }
     }
 
@@ -346,6 +349,62 @@ where
     pub(crate) async fn stop_identify(&mut self) {
         if let Some(h) =  self.identify_handle.take() {
             log::debug!("stopping Identify service...");
+            h.cancel().await;
+        }
+    }
+
+
+    /// Starts the Identify service on this connection.
+    pub(crate) fn start_identify_push(&mut self)
+    {
+        let cid = self.id();
+        let stream_muxer = self.stream_muxer.clone();
+        let tx = self.tx.clone();
+        let pids = vec![IDENTIFY_PUSH_PROTOCOL];
+
+        let mut tx2 = tx.clone();
+
+        let info = IdentifyInfo {
+            public_key: Keypair::generate_ed25519_fixed().public(),
+            protocol_version: "".to_string(),
+            agent_version: "".to_string(),
+            listen_addrs: vec![],
+            protocols: vec!["/p1".to_string(), "/p1".to_string()],
+        };
+
+        let handle = task::spawn(async move {
+
+            let r = open_stream_internal(cid, stream_muxer, pids, tx).await;
+            match r {
+                Ok(stream) => {
+                    let cid = stream.cid();
+                    let sid = stream.id();
+                    // generate a StreamClosed event so that substream can be removed from Connection
+                    let _ = tx2
+                        .send(SwarmEvent::StreamClosed {
+                            dir: Direction::Outbound,
+                            cid,
+                            sid,
+                        })
+                        .await;
+                    // ignore the error
+                    let _ = identify::produce_message(stream, info).await;
+                }
+                Err(err) => {
+                    // looks like the peer doesn't support the protocol
+                    log::warn!("Identify protocol not supported: {:?}", err);
+                    //Err(err)
+                }
+            }
+
+            log::trace!("identify push task exiting...");
+        });
+
+        self.identify_push_handle = Some(handle);
+    }
+    pub(crate) async fn stop_identify_push(&mut self) {
+        if let Some(h) =  self.identify_push_handle.take() {
+            log::debug!("stopping Identify Push service...");
             h.cancel().await;
         }
     }

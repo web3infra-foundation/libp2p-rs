@@ -18,28 +18,28 @@
 //! [`IdentifyEvent`]: self::IdentifyEvent
 //! [`IdentifyInfo`]: self::IdentifyEvent
 
-use std::time::{Duration, Instant};
-use std::num::NonZeroU32;
 use std::io;
 use std::convert::TryFrom;
-use rand::{distributions, prelude::*};
 use async_trait::async_trait;
 use prost::Message;
+use futures::channel::mpsc;
+use futures::SinkExt;
 
 use libp2p_traits::{Read2, Write2};
-use libp2p_core::upgrade::{UpgradeInfo, ProtocolName};
+use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_core::transport::TransportError;
-
-use crate::{SwarmError, ProtocolId};
-use crate::protocol_handler::{ProtocolHandler, BoxHandler};
 use libp2p_core::{PublicKey, Multiaddr};
+
+use crate::{SwarmError, SwarmEvent};
+use crate::protocol_handler::{ProtocolHandler, BoxHandler};
+use crate::connection::ConnectionId;
 
 mod structs_proto {
     include!(concat!(env!("OUT_DIR"), "/structs.rs"));
 }
 
 pub const IDENTIFY_PROTOCOL: &[u8] = b"/ipfs/id/1.0.0";
-pub const IDENTIFY_PUSH_PROTOCOL: &[u8] = b"/ipfs/id/1.0.0";
+pub const IDENTIFY_PUSH_PROTOCOL: &[u8] = b"/ipfs/id/push/1.0.0";
 
 
 /// The configuration for identify.
@@ -170,7 +170,7 @@ pub(crate) async fn produce_message<T: Read2 + Write2 + Send + std::fmt::Debug>(
 /// - Client receives the data and consume the data.
 ///
 #[derive(Debug, Clone)]
-pub struct IdentifyHandler {
+pub(crate) struct IdentifyHandler {
     /// The information about ourselves.
     info: IdentifyInfo,
 }
@@ -197,13 +197,13 @@ impl UpgradeInfo for IdentifyHandler {
 }
 
 #[async_trait]
-impl<C> ProtocolHandler<C> for IdentifyHandler
+impl<TSocket> ProtocolHandler<TSocket> for IdentifyHandler
     where
-        C: Read2 + Write2 + Unpin + Send + std::fmt::Debug + 'static
+        TSocket: Read2 + Write2 + Unpin + Send + std::fmt::Debug + 'static
 {
     /// The Ping handler's inbound protocol.
     /// Simply wait for any thing that coming in then send back
-    async fn handle(&mut self, stream: C, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+    async fn handle(&mut self, stream: TSocket, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
         log::trace!("Identify Protocol handling on {:?}", stream);
 
         let info = self.info.clone();
@@ -212,12 +212,10 @@ impl<C> ProtocolHandler<C> for IdentifyHandler
         produce_message(stream, info).await.map_err(|e|e.into())
     }
 
-    fn box_clone(&self) -> BoxHandler<C> {
+    fn box_clone(&self) -> BoxHandler<TSocket> {
         Box::new(self.clone())
     }
 }
-
-
 
 /// Represents a prototype for the identify push protocol.
 ///
@@ -227,18 +225,28 @@ impl<C> ProtocolHandler<C> for IdentifyHandler
 /// - Server receives the identify message in protobuf and consume it
 /// - Client sends/pushes the the identify message to server side.
 ///
-#[derive(Debug, Clone)]
-pub struct IdentifyPushHandler {
+#[derive(Debug)]
+pub(crate) struct IdentifyPushHandler<T> {
+    tx: mpsc::UnboundedSender<SwarmEvent<T>>,
 }
 
-impl IdentifyPushHandler {
-    pub(crate) fn new() -> Self {
+impl<T> Clone for IdentifyPushHandler<T> {
+    fn clone(&self) -> Self {
         Self {
+            tx: self.tx.clone(),
         }
     }
 }
 
-impl UpgradeInfo for IdentifyPushHandler {
+impl<T: Send> IdentifyPushHandler<T> {
+    pub(crate) fn new(tx: mpsc::UnboundedSender<SwarmEvent<T>>) -> Self {
+        Self {
+            tx,
+        }
+    }
+}
+
+impl<T: Send> UpgradeInfo for IdentifyPushHandler<T> {
     type Info = &'static [u8];
     fn protocol_info(&self) -> Vec<Self::Info> {
         vec!(IDENTIFY_PUSH_PROTOCOL)
@@ -246,23 +254,25 @@ impl UpgradeInfo for IdentifyPushHandler {
 }
 
 #[async_trait]
-impl<C> ProtocolHandler<C> for IdentifyPushHandler
+impl<TSocket, T> ProtocolHandler<TSocket> for IdentifyPushHandler<T>
     where
-        C: Read2 + Write2 + Unpin + Send + std::fmt::Debug + 'static
+        TSocket: Read2 + Write2 + Unpin + Send + std::fmt::Debug + 'static,
+        T: Send + 'static,
 {
     // receive the message and consume it
-    async fn handle(&mut self, stream: C, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+    async fn handle(&mut self, stream: TSocket, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
         log::trace!("Identify Push Protocol handling on {:?}", stream);
 
-        let remote_info = consume_message(stream).await?;
+        let result = consume_message(stream).await.map_err(TransportError::into);
 
-        // TODO: consume the information
-        log::debug!("remote {:?}", remote_info);
+        // TODO: how to get cid?
+        let cid = ConnectionId::default();
+        let _ = self.tx.send(SwarmEvent::IdentifyResult { cid, result }).await;
 
         Ok(())
     }
 
-    fn box_clone(&self) -> BoxHandler<C> {
+    fn box_clone(&self) -> BoxHandler<TSocket> {
         Box::new(self.clone())
     }
 }
@@ -285,8 +295,10 @@ mod tests {
     use libp2p_core::upgrade::UpgradeInfo;
     use libp2p_core::identity::Keypair;
     use crate::protocol_handler::ProtocolHandler;
-    use crate::identify;
+    use crate::{identify, SwarmEvent};
     use crate::identify::{IdentifyPushHandler, IdentifyInfo};
+    use futures::channel::mpsc;
+    use futures::{StreamExt, SinkExt};
 
     #[test]
     fn produce_and_consume() {
@@ -321,6 +333,8 @@ mod tests {
         let pubkey = Keypair::generate_ed25519_fixed().public();
         let key_cloned = pubkey.clone();
 
+        let (mut tx, mut rx) = mpsc::unbounded::<SwarmEvent<()>>();
+
         async_std::task::spawn(async move {
             let socket = MemoryTransport.dial(listener_addr).await.unwrap();
 
@@ -333,16 +347,25 @@ mod tests {
             };
 
             let _ = identify::produce_message(socket, info).await.unwrap();
+
         });
 
         async_std::task::block_on(async move {
             let socket = listener.accept().await.unwrap();
 
-            let mut handler = IdentifyPushHandler::new();
+            let mut handler = IdentifyPushHandler::new(tx);
             let _ = handler.handle(socket, handler.protocol_info().first().unwrap()).await;
 
+            let r = rx.next().await.unwrap();
 
-            assert_eq!(ri.info.public_key, pubkey);
+            if let SwarmEvent::Testing(b) = r {
+                assert_eq!(b, 100);
+            } else {
+                assert!(false);
+            }
+
+
+            //assert_eq!(ri.info.public_key, pubkey);
         });
     }
 
