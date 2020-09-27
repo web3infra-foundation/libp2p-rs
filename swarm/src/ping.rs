@@ -40,14 +40,17 @@ use crate::protocol_handler::{ProtocolHandler, BoxHandler};
 #[derive(Clone, Debug)]
 pub struct PingConfig {
     /// The timeout of an outbound ping.
-    pub(crate) timeout: Duration,
+    timeout: Duration,
     /// The duration between the last successful outbound or inbound ping
     /// and the next outbound ping.
-    pub(crate) interval: Duration,
+    interval: Duration,
     /// The maximum number of failed outbound pings before the associated
     /// connection is deemed unhealthy, indicating to the `Swarm` that it
     /// should be closed.
-    pub(crate) max_failures: NonZeroU32,
+    max_failures: NonZeroU32,
+    /// The flag of Ping unsolicited. If true, Ping as soon as connection
+    /// is established.
+    unsolicited: bool,
     /// Whether the connection should generally be kept alive unless
     /// `max_failures` occur.
     keep_alive: bool,
@@ -76,8 +79,28 @@ impl PingConfig {
             timeout: Duration::from_secs(3),
             interval: Duration::from_secs(3),
             max_failures: NonZeroU32::new(3).expect("1 != 0"),
+            unsolicited: false,
             keep_alive: false
         }
+    }
+    /// Gets the ping timeout.
+    pub fn timeout(&self) -> Duration {
+        self.timeout
+    }
+
+    /// Sets the ping interval.
+    pub fn interval(&self) -> Duration {
+        self.interval
+    }
+
+    /// Sets the maximum number of consecutive ping failures upon which the remote
+    /// peer is considered unreachable and the connection closed.
+    pub fn max_failures(&self) -> u32 {
+        self.max_failures.into()
+    }
+    /// Gets the unsolicited Ping flag.
+    pub fn unsolicited(&self) -> bool {
+        self.unsolicited
     }
 
     /// Sets the ping timeout.
@@ -98,7 +121,11 @@ impl PingConfig {
         self.max_failures = n;
         self
     }
-
+    /// Sets the unsolicited Ping flag.
+    pub fn with_unsolicited(mut self, b: bool) -> Self {
+        self.unsolicited = b;
+        self
+    }
     /// Sets whether the ping protocol itself should keep the connection alive,
     /// apart from the maximum allowed failures.
     ///

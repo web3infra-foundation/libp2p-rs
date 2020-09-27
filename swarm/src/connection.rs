@@ -252,7 +252,7 @@ where
     /// Increases failure count, returns the increased count.
     pub(crate) fn handle_failure(&mut self, allowed_max_failures: u32) {
         self.ping_failures += 1;
-        if self.ping_failures > allowed_max_failures {
+        if self.ping_failures >= allowed_max_failures {
             // close the connection
             log::info!("reach the max ping failure count, closing {:?}", self);
             self.close();

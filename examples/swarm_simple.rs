@@ -83,7 +83,7 @@ fn run_server() {
     muxer.add_protocol_handler(Box::new(MyProtocolHandler));
 
     let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer)
-        //.with_ping(PingConfig::new().with_interval(Duration::from_secs(1)))
+        .with_ping(PingConfig::new().with_unsolicited(true).with_interval(Duration::from_secs(1)))
         .with_identify(IdentifyConfig);
 
 
@@ -113,7 +113,7 @@ fn run_client() {
     // muxer.add_protocol_handler(dummy_handler);
 
     let mut swarm = Swarm::new(tu,PeerId::from_public_key(keys.public()), muxer)
-        //.with_ping(PingConfig::new().with_interval(Duration::from_secs(1)))
+        .with_ping(PingConfig::new().with_unsolicited(true).with_interval(Duration::from_secs(1)))
         .with_identify(IdentifyConfig);
 
 
