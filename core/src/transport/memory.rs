@@ -11,6 +11,7 @@ use multiaddr::{Multiaddr, Protocol};
 use parking_lot::Mutex;
 use rw_stream_sink::RwStreamSink;
 use std::{collections::hash_map::Entry, io, num::NonZeroU64, pin::Pin, fmt};
+use crate::muxing::StreamInfo;
 
 lazy_static! {
     static ref HUB: Mutex<FnvHashMap<NonZeroU64, mpsc::Sender<Channel>>> =
@@ -257,6 +258,12 @@ impl ConnectionInfo for Channel {
 
     fn remote_multiaddr(&self) -> Multiaddr {
         self.ra.clone()
+    }
+}
+
+impl StreamInfo for Channel {
+    fn id(&self) -> usize {
+        0
     }
 }
 

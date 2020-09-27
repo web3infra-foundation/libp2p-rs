@@ -40,6 +40,7 @@
 use async_trait::async_trait;
 use libp2p_core::upgrade::{UpgradeInfo, ProtocolName};
 use crate::{SwarmError, ProtocolId};
+use crate::substream::Substream;
 
 
 /// Common trait for upgrades that can be applied on inbound substreams, outbound substreams,
@@ -54,7 +55,7 @@ pub trait ProtocolHandler<TSocket>: UpgradeInfo {
     /// The `info` is the identifier of the protocol, as produced by `protocol_info`.
     async fn handle(
         &mut self,
-        stream: TSocket,
+        stream: Substream<TSocket>,
         info: <Self as UpgradeInfo>::Info,
     ) -> Result<(), SwarmError>;
     /// This is to provide a clone method for the trait object.
@@ -95,7 +96,7 @@ impl UpgradeInfo for DummyProtocolHandler {
 #[async_trait]
 impl<TSocket: Send + std::fmt::Debug + 'static> ProtocolHandler<TSocket> for DummyProtocolHandler {
 
-    async fn handle(&mut self, stream: TSocket, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+    async fn handle(&mut self, stream: Substream<TSocket>, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
         log::trace!("Dummy Protocol handling inbound {:?} {:?}", stream, info.protocol_name_str());
         Ok(())
     }

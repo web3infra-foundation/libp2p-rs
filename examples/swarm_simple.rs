@@ -16,6 +16,7 @@ use libp2p_swarm::protocol_handler::{ProtocolHandler, BoxHandler};
 use libp2p_swarm::ping::{PingConfig};
 use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_swarm::identify::IdentifyConfig;
+use libp2p_swarm::substream::Substream;
 
 
 //use libp2p_swarm::Swarm::network::NetworkConfig;
@@ -61,7 +62,7 @@ fn run_server() {
     where
         C: Read2 + Write2 + Unpin + Send + std::fmt::Debug + 'static
     {
-        async fn handle(&mut self, stream: C, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+        async fn handle(&mut self, stream: Substream<C>, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
             let mut stream = stream;
             log::trace!("MyProtocolHandler handling inbound {:?}", stream);
             let mut msg = vec![0; 4096];
