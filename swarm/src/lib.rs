@@ -488,7 +488,7 @@ where
             SwarmControlCmd::NetworkInfo(reply) => {
                 // got the peer_id, try opening a new sub stream
                 let _ = self.on_retrieve_networkinfo(|r| {
-                    reply.send(r);
+                    let _ = reply.send(r);
                 });
             }
             SwarmControlCmd::CloseSwarm => {
@@ -1012,8 +1012,10 @@ where
 
         // start Ping service if there is
         self.ping.as_ref().map(|config| {
-            log::trace!("starting Ping service for {:?}", connection);
-            connection.start_ping(config.timeout, config.interval);
+            if config.unsolicited() {
+                log::trace!("starting Ping service for {:?}", connection);
+                connection.start_ping(config.timeout(), config.interval());
+            }
         });
 
         // start Ping service if there is
@@ -1096,7 +1098,7 @@ where
                 },
                 Err(err) => {
                     log::info!("ping failed {:?} for {:?}", err, connection);
-                    let allowed_max_failure = self.ping.as_ref().map_or(0, |config|config.max_failures.into());
+                    let allowed_max_failure = self.ping.as_ref().map_or(0, |config|config.max_failures());
                     connection.handle_failure(allowed_max_failure);
                 }
             }
