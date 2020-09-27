@@ -17,6 +17,10 @@ impl Frame {
         &self.header
     }
 
+    pub fn stream_id(&self) -> StreamID {
+        self.header.stream_id()
+    }
+
     pub fn body(&self) -> &[u8] {
         &self.body
     }

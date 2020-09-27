@@ -22,7 +22,10 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::pin::Pin;
 use std::time::Duration;
-use stream::Stream;
+use stream::{
+    State,
+    Stream,
+};
 
 /// `Control` to `Connection` commands.
 #[derive(Debug)]
@@ -39,9 +42,11 @@ pub enum ControlCommand {
 #[derive(Debug)]
 pub(crate) enum StreamCommand {
     /// A new frame should be sent to the remote.
-    SendFrame(Frame),
+    SendFrame(Frame, oneshot::Sender<()>),
     /// Close a stream.
-    CloseStream(StreamID),
+    ResetStream(Frame),
+    /// Close a stream.
+    CloseStream(Frame),
 }
 
 /// The connection identifier.
@@ -107,6 +112,11 @@ impl Shutdown {
     }
 }
 
+pub(crate) struct StreamInfo {
+    state: State,
+    sender: mpsc::Sender<Vec<u8>>,
+}
+
 /// Arbitrary limit of our internal command channels.
 ///
 /// Since each `mpsc::Sender` gets a guaranteed slot in a channel the
@@ -123,7 +133,7 @@ pub struct Connection<T> {
     is_closed: bool,
     shutdown: Shutdown,
     next_stream_id: u32,
-    streams: IntMap<StreamID, mpsc::Sender<Vec<u8>>>,
+    streams: IntMap<StreamID, StreamInfo>,
     stream_sender: mpsc::Sender<StreamCommand>,
     stream_receiver: mpsc::Receiver<StreamCommand>,
     control_sender: mpsc::Sender<ControlCommand>,
@@ -258,7 +268,11 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
                 }
 
                 let (stream_sender, stream_receiver) = mpsc::channel(MAX_COMMAND_BACKLOG);
-                self.streams.insert(stream_id, stream_sender);
+                let info = StreamInfo {
+                    state: State::Open,
+                    sender: stream_sender,
+                };
+                self.streams.insert(stream_id, info);
                 let stream = Stream::new(
                     stream_id,
                     self.id,
@@ -277,13 +291,14 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
                 let stream_id = frame.header().stream_id();
                 let mut dropped = false;
                 // If stream is closed, ignore frame
-                if let Some(stream_sender) = self.streams.get_mut(&stream_id) {
-                    if !stream_sender.is_closed() {
-                        let sender = stream_sender.send(frame.body().to_vec());
+                if let Some(info) = self.streams.get_mut(&stream_id) {
+                    if !info.sender.is_closed() {
+                        let sender = info.sender.send(frame.body().to_vec());
                         if send_channel_timeout(sender, RECEIVE_TIMEOUT).await.is_err() {
                             // reset stream
                             log::error!("stream {} send timeout, Reset it", stream_id);
                             dropped = true;
+                            // info.sender.close().await;
                             let frame = Frame::reset_frame(stream_id);
                             self.writer
                                 .send_frame(&frame)
@@ -299,9 +314,23 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
                     self.streams.remove(&stream_id);
                 }
             }
-            Tag::Reset | Tag::Close => {
+            Tag::Close => {
                 let stream_id = frame.header().stream_id();
                 log::info!("{}: remote close stream {} of {}", self.id, stream_id, self);
+                if let Some(info) = self.streams.get_mut(&stream_id) {
+                    let state = info.state;
+                    match state {
+                        State::Open => { info.state = State::HalfClosed; }
+                        State::HalfClosed => {
+                            self.streams.remove(&stream_id);
+                        },
+                        _ => {}
+                    }
+                }
+            }
+            Tag::Reset => {
+                let stream_id = frame.header().stream_id();
+                log::info!("{}: remote reset stream {} of {}", self.id, stream_id, self);
                 self.streams.remove(&stream_id);
             }
         };
@@ -312,16 +341,53 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
     /// Process a command from one of our `Stream`s.
     async fn on_stream_command(&mut self, cmd: Option<StreamCommand>) -> Result<()> {
         match cmd {
-            Some(StreamCommand::SendFrame(frame)) => {
-                log::info!("{}: sending: {}", self.id, frame.header());
+            Some(StreamCommand::SendFrame(frame, reply)) => {
+                let stream_id = frame.stream_id();
+                if self.streams.contains_key(&stream_id) {
+                    log::info!("{}: sending: {}", self.id, frame.header());
+                    self.writer
+                        .send_frame(&frame)
+                        .await
+                        .or(Err(ConnectionError::Closed))?;
+
+                    reply.send(());
+                } else {
+                    log::info!("{}: stream {} have been removed", self.id, stream_id);
+                    drop(reply);
+                }
+            }
+            Some(StreamCommand::CloseStream(frame)) => {
+                let stream_id = frame.stream_id();
+                log::info!("{}: closing stream {} of {}", self.id, stream_id, self);
+                // step1: send close frame
                 self.writer
                     .send_frame(&frame)
                     .await
                     .or(Err(ConnectionError::Closed))?;
+
+                // step2: remove stream
+                if let Some(info) = self.streams.get_mut(&stream_id) {
+                    let state = info.state;
+                    match state {
+                        State::Open => { info.state = State::HalfClosed; },
+                        State::HalfClosed => {
+                            self.streams.remove(&stream_id);
+                        },
+                        _ => {}
+                    }
+                }
             }
-            Some(StreamCommand::CloseStream(id)) => {
-                log::info!("{}: closing stream {} of {}", self.id, id, self);
-                self.streams.remove(&id);
+            Some(StreamCommand::ResetStream(frame)) => {
+                let stream_id = frame.stream_id();
+                log::info!("{}: reset stream {} of {}", self.id, stream_id, self);
+                // step1: send close frame
+                self.writer
+                    .send_frame(&frame)
+                    .await
+                    .or(Err(ConnectionError::Closed))?;
+
+                // step2: remove stream
+                self.streams.remove(&stream_id);
             }
             None => {
                 // We only get to this point when `self.stream_receiver`
@@ -353,7 +419,11 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
 
                 let stream_id = self.next_stream_id()?;
                 let (stream_sender, stream_receiver) = mpsc::channel(MAX_COMMAND_BACKLOG);
-                self.streams.insert(stream_id, stream_sender);
+                let info = StreamInfo {
+                    state: State::Open,
+                    sender: stream_sender,
+                };
+                self.streams.insert(stream_id, info);
                 let stream = Stream::new(
                     stream_id,
                     self.id,
@@ -450,6 +520,10 @@ impl<T> Connection<T> {
             .ok_or(ConnectionError::NoMoreStreamIds)?;
 
         Ok(proposed)
+    }
+
+    pub fn streams_length(&self) -> usize {
+        self.streams.len()
     }
 
     /// Close and drop all `Stream`s and wake any pending `Waker`s.
