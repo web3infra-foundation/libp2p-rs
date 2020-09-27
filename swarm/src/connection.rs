@@ -1,22 +1,25 @@
-use crate::{Multiaddr, PeerId, SwarmError, SwarmEvent, ping, open_stream, identify};
+use crate::identify::IDENTIFY_PROTOCOL;
+use crate::ping::PING_PROTOCOL;
+use crate::substream::{StreamId, Substream};
+use crate::{identify, ping, Multiaddr, PeerId, ProtocolId, SwarmError, SwarmEvent};
+use async_std::task;
 use async_std::task::JoinHandle;
-use smallvec::SmallVec;
-use std::hash::Hash;
-use std::{error::Error, fmt};
-use std::time::Duration;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use futures::channel::mpsc;
 use futures::prelude::*;
-use async_std::task;
-use libp2p_traits::{Read2, Write2};
 use libp2p_core::identity::Keypair;
+use libp2p_core::multistream::Negotiator;
 use libp2p_core::muxing::StreamMuxer;
 use libp2p_core::secure_io::SecureInfo;
+use libp2p_core::transport::TransportError;
+use libp2p_core::upgrade::ProtocolName;
 use libp2p_core::PublicKey;
-use crate::substream::StreamId;
-use crate::ping::{PING_PROTOCOL};
-use crate::identify::IDENTIFY_PROTOCOL;
+use libp2p_traits::{Read2, Write2};
+use smallvec::SmallVec;
+use std::hash::Hash;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+use std::{error::Error, fmt};
 
 /// The direction of a peer-to-peer communication channel.
 #[derive(Debug, Clone, PartialEq)]
@@ -47,6 +50,8 @@ pub struct Connection<TMuxer: StreamMuxer> {
     id: ConnectionId,
     /// Node that handles the stream_muxer.
     stream_muxer: TMuxer,
+    /// The tx channel, to send Connection events to Swarm
+    tx: mpsc::UnboundedSender<SwarmEvent<TMuxer>>,
     /// Handler that processes substreams.
     //pub(crate) substreams: SmallVec<[TMuxer::Substream; 8]>,
     substreams: SmallVec<[StreamId; 8]>,
@@ -57,7 +62,7 @@ pub struct Connection<TMuxer: StreamMuxer> {
     /// Ping failure count.
     ping_failures: u32,
     /// Identity service
-    identity: Option<()>,    
+    identity: Option<()>,
     /// The task handle of this connection, returned by task::Spawn
     /// handle.await() when closing a connection
     handle: Option<JoinHandle<()>>,
@@ -75,8 +80,8 @@ impl<TMuxer: StreamMuxer> PartialEq for Connection<TMuxer> {
 
 impl<TMuxer> fmt::Debug for Connection<TMuxer>
 where
-    TMuxer: StreamMuxer + fmt::Debug,
-    TMuxer::Substream: fmt::Debug,
+    TMuxer: StreamMuxer + SecureInfo + 'static,
+    TMuxer::Substream: Read2 + Write2 + Send + Unpin,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Connection")
@@ -94,44 +99,92 @@ where
 #[allow(dead_code)]
 impl<TMuxer> Connection<TMuxer>
 where
-    TMuxer: StreamMuxer + SecureInfo,
+    TMuxer: StreamMuxer + SecureInfo + 'static,
+    TMuxer::Substream: Read2 + Write2 + Send + Unpin,
 {
     /// Builds a new `Connection` from the given substream multiplexer
-    /// and connection handler.
-    pub fn new(id: usize, stream_muxer: TMuxer, dir: Direction) -> Self {
+    /// and a tx channel which will used to send events to Swarm.
+    pub(crate) fn new(id: usize, stream_muxer: TMuxer, dir: Direction, tx: mpsc::UnboundedSender<SwarmEvent<TMuxer>>) -> Self {
         Connection {
             id: ConnectionId(id),
             stream_muxer,
+            tx,
             dir,
-            ping_running: Arc::new(AtomicBool::new(false)),
-            ping_failures: 0,
             substreams: Default::default(),
             handle: None,
-            identity: None,
+            ping_running: Arc::new(AtomicBool::new(false)),
+            ping_failures: 0,
             ping_handle: None,
-            identify_handle: None
+            identity: None,
+            identify_handle: None,
         }
     }
 
     /// Returns the unique Id of the connection.
-    pub fn id(&self) -> ConnectionId {
+    pub(crate) fn id(&self) -> ConnectionId {
         self.id
     }
 
     /// Returns a reference of the stream_muxer.
-    pub fn stream_muxer(&self) -> &TMuxer {
+    pub(crate) fn stream_muxer(&self) -> &TMuxer {
         &self.stream_muxer
     }
 
     /// Sets the task handle of the connection.
-    pub fn set_handle(&mut self, handle: JoinHandle<()>) {
+    pub(crate) fn set_handle(&mut self, handle: JoinHandle<()>) {
         self.handle = Some(handle);
     }
 
+    /// Opens a sub stream with the protocols specified
+    pub(crate) fn open_stream<T: Send + 'static>(
+        &mut self,
+        pids: Vec<ProtocolId>,
+        f: impl FnOnce(Result<Substream<TMuxer::Substream>, TransportError>) -> T + Send + 'static,
+    ) -> JoinHandle<T> {
+        let cid = self.id();
+        let mut stream_muxer = self.stream_muxer().clone();
+        let mut tx = self.tx.clone();
+
+        task::spawn(async move {
+            let result = stream_muxer.open_stream().await;
+            match result {
+                Ok(raw_stream) => {
+                    // now it's time to do protocol multiplexing for sub stream
+                    let negotiator = Negotiator::new_with_protocols(pids);
+                    let result = negotiator.select_one(raw_stream).await;
+                    let r = match result {
+                        Ok((proto, raw_stream)) => {
+                            log::info!("select_outbound {:?}", proto.protocol_name_str());
+                            let stream = Substream::new(raw_stream, Direction::Outbound, proto, cid);
+                            let sid = stream.id();
+                            let _ = tx
+                                .send(SwarmEvent::StreamOpened {
+                                    dir: Direction::Outbound,
+                                    cid,
+                                    sid,
+                                })
+                                .await;
+                            Ok(stream)
+                        }
+                        Err(err) => {
+                            let _ = tx
+                                .send(SwarmEvent::StreamError {
+                                    cid,
+                                    error: TransportError::Internal,
+                                })
+                                .await;
+                            Err(TransportError::NegotiationError(err))
+                        }
+                    };
+                    f(r)
+                }
+                Err(err) => f(Err(err)),
+            }
+        })
+    }
+
     /// Closes the inner stream_muxer. Spawn a task to avoid blocking.
-    pub fn close(&self)
-        where TMuxer: 'static,
-    {
+    pub(crate) fn close(&self) {
         log::trace!("closing {:?}", self);
 
         let mut stream_muxer = self.stream_muxer.clone();
@@ -143,7 +196,7 @@ where
     }
 
     /// Waits for bg-task & accept-task.
-    pub async fn wait(&mut self) -> Result<(), SwarmError> {
+    pub(crate) async fn wait(&mut self) -> Result<(), SwarmError> {
         // wait for accept-task and bg-task to exit
         if let Some(h) = self.handle.take() {
             h.await;
@@ -151,32 +204,32 @@ where
         Ok(())
     }
     /// local_addr is the multiaddr on our side of the connection.
-    pub fn local_addr(&self) -> Multiaddr {
+    pub(crate) fn local_addr(&self) -> Multiaddr {
         self.stream_muxer.local_multiaddr()
     }
 
     /// remote_addr is the multiaddr on the remote side of the connection.
-    pub fn remote_addr(&self) -> Multiaddr {
+    pub(crate) fn remote_addr(&self) -> Multiaddr {
         self.stream_muxer.remote_multiaddr()
     }
 
     /// local_peer is the Peer on our side of the connection.
-    pub fn local_peer(&self) -> PeerId {
+    pub(crate) fn local_peer(&self) -> PeerId {
         self.stream_muxer.local_peer()
     }
 
     /// remote_peer is the Peer on the remote side.
-    pub fn remote_peer(&self) -> PeerId {
+    pub(crate) fn remote_peer(&self) -> PeerId {
         self.stream_muxer.remote_peer()
     }
 
     /// local_priv_key is the public key of the peer on this side.
-    pub fn local_priv_key(&self) -> Keypair {
+    pub(crate) fn local_priv_key(&self) -> Keypair {
         self.stream_muxer.local_priv_key()
     }
 
     /// remote_pub_key is the public key of the peer on the remote side.
-    pub fn remote_pub_key(&self) -> PublicKey {
+    pub(crate) fn remote_pub_key(&self) -> PublicKey {
         self.stream_muxer.remote_pub_key()
     }
 
@@ -197,9 +250,7 @@ where
     }
 
     /// Increases failure count, returns the increased count.
-    pub(crate) fn handle_failure(&mut self, allowed_max_failures: u32)
-        where TMuxer: 'static,
-    {
+    pub(crate) fn handle_failure(&mut self, allowed_max_failures: u32) {
         self.ping_failures += 1;
         if self.ping_failures > allowed_max_failures {
             // close the connection
@@ -215,17 +266,13 @@ where
 
     /// Starts the Ping service on this connection. The task handle will be tracked
     /// by the connection for later closing the Ping service
-    pub(crate) fn start_ping(&mut self, timeout: Duration, interval: Duration,
-                             tx: mpsc::UnboundedSender<SwarmEvent<TMuxer>>)
-    where
-        TMuxer: 'static,
-        TMuxer::Substream: Read2 + Write2 + Send + Unpin,
+    pub(crate) fn start_ping(&mut self, timeout: Duration, interval: Duration)
     {
         self.ping_running.store(true, Ordering::Relaxed);
 
         let cid = self.id();
         let stream_muxer = self.stream_muxer.clone();
-        let tx = tx.clone();
+        let tx = self.tx.clone();
         let flag = self.ping_running.clone();
         let pids = vec![PING_PROTOCOL];
 
@@ -244,7 +291,7 @@ where
                 let pids = pids.clone();
                 let tx = tx.clone();
 
-                let r = open_stream(cid, stream_muxer, pids, tx).await;
+                let r = open_stream_internal(cid, stream_muxer, pids, tx).await;
                 let r = match r {
                     Ok(stream) => {
                         let cid = stream.cid();
@@ -267,7 +314,7 @@ where
                         Err(err)
                     }
                 };
-                let _ = tx2.send(SwarmEvent::PingResult { cid, result: r }).await;
+                let _ = tx2.send(SwarmEvent::PingResult { cid, result: r.map_err(|e|e.into()) }).await;
             }
 
             log::trace!("ping task exiting...");
@@ -278,6 +325,7 @@ where
 
     pub(crate) async fn stop_ping(&mut self) {
         if let Some(h) =  self.ping_handle.take() {
+            log::debug!("stopping Ping service...");
             self.ping_running.store(false, Ordering::Relaxed);
             h.await;
             //h.cancel().await;
@@ -285,21 +333,18 @@ where
     }
 
     /// Starts the Identify service on this connection.
-    pub(crate) fn start_identify(&mut self, tx: mpsc::UnboundedSender<SwarmEvent<TMuxer>>)
-        where
-            TMuxer: 'static,
-            TMuxer::Substream: Read2 + Write2 + Send + Unpin,
+    pub(crate) fn start_identify(&mut self)
     {
         let cid = self.id();
         let stream_muxer = self.stream_muxer.clone();
-        let tx = tx.clone();
+        let tx = self.tx.clone();
         let pids = vec![IDENTIFY_PROTOCOL];
 
         let mut tx2 = tx.clone();
 
         let handle = task::spawn(async move {
 
-            let r = open_stream(cid, stream_muxer, pids, tx).await;
+            let r = open_stream_internal(cid, stream_muxer, pids, tx).await;
             let r = match r {
                 Ok(stream) => {
                     let cid = stream.cid();
@@ -322,7 +367,7 @@ where
                     Err(err)
                 }
             };
-            let _ = tx2.send(SwarmEvent::IdentifyResult { cid, result: r }).await;
+            let _ = tx2.send(SwarmEvent::IdentifyResult { cid, result: r.map_err(|e|e.into()) }).await;
 
             log::trace!("identify task exiting...");
         });
@@ -332,10 +377,57 @@ where
 
     pub(crate) async fn stop_identify(&mut self) {
         if let Some(h) =  self.identify_handle.take() {
+            log::debug!("stopping Identify service...");
             h.cancel().await;
         }
     }
 }
+
+
+async fn open_stream_internal<T>(
+    cid: ConnectionId,
+    mut stream_muxer: T,
+    pids: Vec<ProtocolId>,
+    mut tx: mpsc::UnboundedSender<SwarmEvent<T>>,
+) -> Result<Substream<T::Substream>, TransportError>
+    where
+        T: StreamMuxer,
+        T::Substream: Read2 + Write2 + Send + Unpin,
+{
+    let raw_stream = stream_muxer.open_stream().await?;
+
+    // now it's time to do protocol multiplexing for sub stream
+    let negotiator = Negotiator::new_with_protocols(pids);
+    let result = negotiator.select_one(raw_stream).await;
+
+    match result {
+        Ok((proto, raw_stream)) => {
+            log::info!("select_outbound {:?}", proto.protocol_name_str());
+
+            let stream = Substream::new(raw_stream, Direction::Outbound, proto, cid);
+
+            let sid = stream.id();
+            let _ = tx
+                .send(SwarmEvent::StreamOpened {
+                    dir: Direction::Outbound,
+                    cid,
+                    sid,
+                })
+                .await;
+            Ok(stream)
+        }
+        Err(err) => {
+            let _ = tx
+                .send(SwarmEvent::StreamError {
+                    cid,
+                    error: TransportError::Internal,
+                })
+                .await;
+            Err(TransportError::NegotiationError(err))
+        }
+    }
+}
+
 
 /// Information about a connection limit.
 #[derive(Debug, Clone)]
