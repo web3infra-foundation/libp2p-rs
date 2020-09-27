@@ -142,44 +142,12 @@ where
         f: impl FnOnce(Result<Substream<TMuxer::Substream>, TransportError>) -> T + Send + 'static,
     ) -> JoinHandle<T> {
         let cid = self.id();
-        let mut stream_muxer = self.stream_muxer().clone();
-        let mut tx = self.tx.clone();
+        let stream_muxer = self.stream_muxer().clone();
+        let tx = self.tx.clone();
 
         task::spawn(async move {
-            let result = stream_muxer.open_stream().await;
-            match result {
-                Ok(raw_stream) => {
-                    // now it's time to do protocol multiplexing for sub stream
-                    let negotiator = Negotiator::new_with_protocols(pids);
-                    let result = negotiator.select_one(raw_stream).await;
-                    let r = match result {
-                        Ok((proto, raw_stream)) => {
-                            log::info!("select_outbound {:?}", proto.protocol_name_str());
-                            let stream = Substream::new(raw_stream, Direction::Outbound, proto, cid);
-                            let sid = stream.id();
-                            let _ = tx
-                                .send(SwarmEvent::StreamOpened {
-                                    dir: Direction::Outbound,
-                                    cid,
-                                    sid,
-                                })
-                                .await;
-                            Ok(stream)
-                        }
-                        Err(err) => {
-                            let _ = tx
-                                .send(SwarmEvent::StreamError {
-                                    cid,
-                                    error: TransportError::Internal,
-                                })
-                                .await;
-                            Err(TransportError::NegotiationError(err))
-                        }
-                    };
-                    f(r)
-                }
-                Err(err) => f(Err(err)),
-            }
+            let result = open_stream_internal(cid, stream_muxer, pids, tx).await;
+            f(result)
         })
     }
 
