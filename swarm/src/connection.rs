@@ -318,7 +318,6 @@ where
                     let cid = stream.cid();
                     let sid = stream.id();
 
-                    let r = identify::identify(stream).await;
                     // generate a StreamClosed event so that substream can be removed from Connection
                     let _ = tx2
                         .send(SwarmEvent::StreamClosed {
@@ -327,7 +326,8 @@ where
                             sid,
                         })
                         .await;
-                    r.map_err(|e| e.into())
+
+                    identify::consume_message(stream).await
                 }
                 Err(err) => {
                     // looks like the peer doesn't support the protocol
