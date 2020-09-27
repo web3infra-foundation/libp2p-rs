@@ -38,12 +38,41 @@ mod structs_proto {
     include!(concat!(env!("OUT_DIR"), "/structs.rs"));
 }
 
+pub const IDENTIFY_PROTOCOL: &[u8] = b"/ipfs/id/1.0.0";
+pub const IDENTIFY_PUSH_PROTOCOL: &[u8] = b"/ipfs/id/1.0.0";
 
-/// The configuration for outbound pings.
+
+/// The configuration for identify.
 #[derive(Clone, Debug)]
 pub struct IdentifyConfig;
 
 
+/// Information of a peer sent in `Identify` protocol responses.
+#[derive(Debug, Clone)]
+pub struct IdentifyInfo {
+    /// The public key underlying the peer's `PeerId`.
+    pub public_key: PublicKey,
+    /// Version of the protocol family used by the peer, e.g. `ipfs/1.0.0`
+    /// or `p2p/1.0.0`.
+    pub protocol_version: String,
+    /// Name and version of the peer, similar to the `User-Agent` header in
+    /// the HTTP protocol.
+    pub agent_version: String,
+    /// The addresses that the peer is listening on.
+    pub listen_addrs: Vec<Multiaddr>,
+    /// The list of protocols supported by the peer, e.g. `/ipfs/ping/1.0.0`.
+    pub protocols: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RemoteInfo {
+    /// Information about the remote.
+    pub info: IdentifyInfo,
+    /// Address the remote sees for us.
+    pub observed_addr: Multiaddr,
+
+    _priv: ()
+}
 
 // Turns a protobuf message into an `IdentifyInfo` and an observed address. If something bad
 // happens, turn it into an `io::Error`.
@@ -84,7 +113,7 @@ fn parse_proto_msg(msg: impl AsRef<[u8]>) -> Result<(IdentifyInfo, Multiaddr), i
     }
 }
 
-pub async fn identify<T: Read2 + Write2 + Send + std::fmt::Debug>(mut stream: T) -> Result<RemoteInfo, TransportError> {
+pub(crate) async fn consume_message<T: Read2 + Write2 + Send + std::fmt::Debug>(mut stream: T) -> Result<RemoteInfo, TransportError> {
     stream.close2().await?;
     //let msg = upgrade::read_one(&mut socket, 4096).await?;
     let mut buf = vec![0u8; 4096];
@@ -107,9 +136,38 @@ pub async fn identify<T: Read2 + Write2 + Send + std::fmt::Debug>(mut stream: T)
     })
 }
 
+pub(crate) async fn produce_message<T: Read2 + Write2 + Send + std::fmt::Debug>(mut stream: T, info: IdentifyInfo) -> Result<(), TransportError> {
+    let listen_addrs = info.listen_addrs
+        .into_iter()
+        .map(|addr| addr.to_vec())
+        .collect();
 
-/// Protocol handler that handles pinging the remote at a regular period
-/// and answering ping queries.
+    let pubkey_bytes = info.public_key.into_protobuf_encoding();
+
+    let message = structs_proto::Identify {
+        agent_version: Some(info.agent_version),
+        protocol_version: Some(info.protocol_version),
+        public_key: Some(pubkey_bytes),
+        listen_addrs: listen_addrs,
+        observed_addr: None,//Some(observed_addr.to_vec()),
+        protocols: info.protocols
+    };
+
+    let mut bytes = Vec::with_capacity(message.encoded_len());
+    message.encode(&mut bytes).expect("Vec<u8> provides capacity as needed");
+
+    stream.write_all2(&bytes).await.map_err(|e|e.into())
+}
+
+
+
+
+/// Represents a prototype for the identify protocol.
+///
+/// The protocol works the following way:
+///
+/// - Server sends the identify message in protobuf to client
+/// - Client receives the data and consume the data.
 ///
 #[derive(Debug, Clone)]
 pub struct IdentifyHandler {
@@ -131,27 +189,6 @@ impl IdentifyHandler {
     }
 }
 
-/// Represents a prototype for an upgrade to handle the ping protocol.
-///
-/// The protocol works the following way:
-///
-/// - Dialer sends 32 bytes of random data.
-/// - Listener receives the data and sends it back.
-/// - Dialer receives the data and verifies that it matches what it sent.
-///
-/// The dialer produces a `Duration`, which corresponds to the round-trip time
-/// of the payload.
-///
-/// > **Note**: The round-trip time of a ping may be subject to delays induced
-/// >           by the underlying transport, e.g. in the case of TCP there is
-/// >           Nagle's algorithm, delayed acks and similar configuration options
-/// >           which can affect latencies especially on otherwise low-volume
-/// >           connections.
-pub const IDENTIFY_PROTOCOL: &[u8] = b"/ipfs/id/1.0.0";
-
-//pub const IDENTIFY_PUSH_PROTOCOL: &[u8] = b"/ipfs/id/1.0.0";
-
-
 impl UpgradeInfo for IdentifyHandler {
     type Info = &'static [u8];
     fn protocol_info(&self) -> Vec<Self::Info> {
@@ -166,34 +203,13 @@ impl<C> ProtocolHandler<C> for IdentifyHandler
 {
     /// The Ping handler's inbound protocol.
     /// Simply wait for any thing that coming in then send back
-    async fn handle(&mut self, mut stream: C, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+    async fn handle(&mut self, stream: C, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
         log::trace!("Identify Protocol handling on {:?}", stream);
 
         let info = self.info.clone();
         log::trace!("Sending identify info to client: {:?}", info);
 
-        let listen_addrs = info.listen_addrs
-            .into_iter()
-            .map(|addr| addr.to_vec())
-            .collect();
-
-        let pubkey_bytes = info.public_key.into_protobuf_encoding();
-
-        let message = structs_proto::Identify {
-            agent_version: Some(info.agent_version),
-            protocol_version: Some(info.protocol_version),
-            public_key: Some(pubkey_bytes),
-            listen_addrs: listen_addrs,
-            observed_addr: None,//Some(observed_addr.to_vec()),
-            protocols: info.protocols
-        };
-
-        let mut bytes = Vec::with_capacity(message.encoded_len());
-        message.encode(&mut bytes).expect("Vec<u8> provides capacity as needed");
-
-        stream.write_all2(&bytes).await.map_err(|e|e.into())
-
-        //upgrade::write_one(&mut self.inner, &bytes).await
+        produce_message(stream, info).await.map_err(|e|e.into())
     }
 
     fn box_clone(&self) -> BoxHandler<C> {
@@ -203,33 +219,55 @@ impl<C> ProtocolHandler<C> for IdentifyHandler
 
 
 
-
-/// Information of a peer sent in `Identify` protocol responses.
+/// Represents a prototype for the identify push protocol.
+///
+/// This is just the opposite of the identify protocol.
+/// It works the following way:
+///
+/// - Server receives the identify message in protobuf and consume it
+/// - Client sends/pushes the the identify message to server side.
+///
 #[derive(Debug, Clone)]
-pub struct IdentifyInfo {
-    /// The public key underlying the peer's `PeerId`.
-    pub public_key: PublicKey,
-    /// Version of the protocol family used by the peer, e.g. `ipfs/1.0.0`
-    /// or `p2p/1.0.0`.
-    pub protocol_version: String,
-    /// Name and version of the peer, similar to the `User-Agent` header in
-    /// the HTTP protocol.
-    pub agent_version: String,
-    /// The addresses that the peer is listening on.
-    pub listen_addrs: Vec<Multiaddr>,
-    /// The list of protocols supported by the peer, e.g. `/ipfs/ping/1.0.0`.
-    pub protocols: Vec<String>,
+pub struct IdentifyPushHandler {
 }
 
-#[derive(Debug, Clone)]
-pub struct RemoteInfo {
-    /// Information about the remote.
-    pub info: IdentifyInfo,
-    /// Address the remote sees for us.
-    pub observed_addr: Multiaddr,
-
-    _priv: ()
+impl IdentifyPushHandler {
+    pub(crate) fn new() -> Self {
+        Self {
+        }
+    }
 }
+
+impl UpgradeInfo for IdentifyPushHandler {
+    type Info = &'static [u8];
+    fn protocol_info(&self) -> Vec<Self::Info> {
+        vec!(IDENTIFY_PUSH_PROTOCOL)
+    }
+}
+
+#[async_trait]
+impl<C> ProtocolHandler<C> for IdentifyPushHandler
+    where
+        C: Read2 + Write2 + Unpin + Send + std::fmt::Debug + 'static
+{
+    // receive the message and consume it
+    async fn handle(&mut self, stream: C, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+        log::trace!("Identify Push Protocol handling on {:?}", stream);
+
+        let remote_info = consume_message(stream).await?;
+
+        // TODO: consume the information
+        log::debug!("remote {:?}", remote_info);
+
+        Ok(())
+    }
+
+    fn box_clone(&self) -> BoxHandler<C> {
+        Box::new(self.clone())
+    }
+}
+
+
 
 
 #[cfg(test)]
@@ -243,32 +281,71 @@ mod tests {
         }
     };
     use rand::{thread_rng, Rng};
-    use std::time::Duration;
     use libp2p_core::transport::TransportListener;
-    use crate::protocol_handler::ProtocolHandler;
     use libp2p_core::upgrade::UpgradeInfo;
-    use crate::ping::ping;
+    use libp2p_core::identity::Keypair;
+    use crate::protocol_handler::ProtocolHandler;
+    use crate::identify;
+    use crate::identify::{IdentifyPushHandler, IdentifyInfo};
 
     #[test]
-    fn ping_pong() {
+    fn produce_and_consume() {
         let mem_addr = multiaddr![Memory(thread_rng().gen::<u64>())];
         let listener_addr = mem_addr.clone();
         let mut listener = MemoryTransport.listen_on(mem_addr).unwrap();
 
+        let pubkey = Keypair::generate_ed25519_fixed().public();
+        let key_cloned = pubkey.clone();
+
         async_std::task::spawn(async move {
             let socket = listener.accept().await.unwrap();
 
-            let mut handler = IdentifyHandler;
+            let mut handler = IdentifyHandler::new(key_cloned, vec![]);
             let _ = handler.handle(socket, handler.protocol_info().first().unwrap()).await;
         });
 
         async_std::task::block_on(async move {
             let socket = MemoryTransport.dial(listener_addr).await.unwrap();
 
-            let rtt = ping(socket, Duration::from_secs(3)).await.unwrap();
-            assert!(rtt > Duration::from_secs(0));
+            let ri = identify::consume_message(socket).await.unwrap();
+            assert_eq!(ri.info.public_key, pubkey);
         });
     }
+
+    #[test]
+    fn produce_and_consume_push() {
+        let mem_addr = multiaddr![Memory(thread_rng().gen::<u64>())];
+        let listener_addr = mem_addr.clone();
+        let mut listener = MemoryTransport.listen_on(mem_addr).unwrap();
+
+        let pubkey = Keypair::generate_ed25519_fixed().public();
+        let key_cloned = pubkey.clone();
+
+        async_std::task::spawn(async move {
+            let socket = MemoryTransport.dial(listener_addr).await.unwrap();
+
+            let info = IdentifyInfo {
+                public_key: key_cloned,
+                protocol_version: "".to_string(),
+                agent_version: "".to_string(),
+                listen_addrs: vec![],
+                protocols: vec![]
+            };
+
+            let _ = identify::produce_message(socket, info).await.unwrap();
+        });
+
+        async_std::task::block_on(async move {
+            let socket = listener.accept().await.unwrap();
+
+            let mut handler = IdentifyPushHandler::new();
+            let _ = handler.handle(socket, handler.protocol_info().first().unwrap()).await;
+
+
+            assert_eq!(ri.info.public_key, pubkey);
+        });
+    }
+
 }
 
 

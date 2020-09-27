@@ -21,7 +21,7 @@ pub struct Substream<TStream> {
     /// The direction of the sub stream
     dir: Direction,
     /// The connection ID of the sub stream
-    /// IT can be used to back track to the stream muxer
+    /// It can be used to back track to the stream muxer
     cid: ConnectionId,
 }
 
