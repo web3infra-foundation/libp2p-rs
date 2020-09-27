@@ -13,7 +13,7 @@ use libp2p_tcp::TcpConfig;
 use secio;
 use yamux;
 use libp2p_swarm::protocol_handler::{ProtocolHandler, BoxHandler};
-use libp2p_swarm::ping::{PingHandler, PingConfig};
+use libp2p_swarm::ping::{PingConfig};
 use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_swarm::identify::IdentifyConfig;
 

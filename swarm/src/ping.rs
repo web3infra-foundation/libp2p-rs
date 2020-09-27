@@ -171,7 +171,7 @@ pub async fn ping<T: Read2 + Write2 + Send + std::fmt::Debug>(mut stream: T, tim
 /// and answering ping queries.
 ///
 #[derive(Debug, Clone)]
-pub struct PingHandler;
+pub(crate) struct PingHandler;
 
 /// Represents a prototype for an upgrade to handle the ping protocol.
 ///
@@ -189,7 +189,7 @@ pub struct PingHandler;
 /// >           Nagle's algorithm, delayed acks and similar configuration options
 /// >           which can affect latencies especially on otherwise low-volume
 /// >           connections.
-pub const PING_PROTOCOL: &[u8] = b"/ipfs/ping/1.0.0";
+pub(crate) const PING_PROTOCOL: &[u8] = b"/ipfs/ping/1.0.0";
 
 const PING_SIZE: usize = 32;
 
