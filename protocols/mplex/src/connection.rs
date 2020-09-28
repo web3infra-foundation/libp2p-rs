@@ -22,10 +22,7 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::pin::Pin;
 use std::time::Duration;
-use stream::{
-    State,
-    Stream
-};
+use stream::{State, Stream};
 
 /// `Control` to `Connection` commands.
 #[derive(Debug)]
@@ -145,8 +142,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
 
         let (reader, writer) = socket.split2();
         let reader = io::IO::new(id, reader);
-        let reader =
-            futures::stream::unfold(reader, |mut io| async { Some((io.recv_frame().await, io)) });
+        let reader = futures::stream::unfold(reader, |mut io| async { Some((io.recv_frame().await, io)) });
         let reader = Box::pin(reader);
 
         let writer = io::IO::new(id, writer);
@@ -257,10 +253,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
             Tag::NewStream => {
                 let stream_id = frame.header().stream_id();
                 if self.streams_stat.contains_key(&stream_id) {
-                    log::error!(
-                        "received NewStream message for existing stream: {}",
-                        stream_id
-                    );
+                    log::error!("received NewStream message for existing stream: {}", stream_id);
                     return Err(ConnectionError::Io(std::io::ErrorKind::InvalidData.into()));
                 }
 
@@ -268,12 +261,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
                 self.streams.insert(stream_id, stream_sender);
                 self.streams_stat.insert(stream_id, State::Open);
 
-                let stream = Stream::new(
-                    stream_id,
-                    self.id,
-                    self.stream_sender.clone(),
-                    stream_receiver,
-                );
+                let stream = Stream::new(stream_id, self.id, self.stream_sender.clone(), stream_receiver);
 
                 log::info!("{}: new inbound {} of {}", self.id, stream, self);
                 if let Some(sender) = self.waiting_stream_sender.take() {
@@ -305,10 +293,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
                             reset = true;
                             // info.sender.close().await;
                             let frame = Frame::reset_frame(stream_id);
-                            self.writer
-                                .send_frame(&frame)
-                                .await
-                                .or(Err(ConnectionError::Closed))?;
+                            self.writer.send_frame(&frame).await.or(Err(ConnectionError::Closed))?;
                         }
                     } else {
                         dropped = true;
@@ -358,10 +343,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
                 if let Some(stat) = self.streams_stat.get(&stream_id) {
                     if stat.can_write() {
                         log::info!("{}: sending: {}", self.id, frame.header());
-                        self.writer
-                            .send_frame(&frame)
-                            .await
-                            .or(Err(ConnectionError::Closed))?;
+                        self.writer.send_frame(&frame).await.or(Err(ConnectionError::Closed))?;
 
                         let _ = reply.send(());
                     } else {
@@ -374,10 +356,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
                 let stream_id = frame.stream_id();
                 log::info!("{}: closing stream {} of {}", self.id, stream_id, self);
                 // step1: send close frame
-                self.writer
-                    .send_frame(&frame)
-                    .await
-                    .or(Err(ConnectionError::Closed))?;
+                self.writer.send_frame(&frame).await.or(Err(ConnectionError::Closed))?;
 
                 // step2: remove stream
                 if let Some(stat) = self.streams_stat.get_mut(&stream_id) {
@@ -396,10 +375,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
                 let stream_id = frame.stream_id();
                 log::info!("{}: reset stream {} of {}", self.id, stream_id, self);
                 // step1: send close frame
-                self.writer
-                    .send_frame(&frame)
-                    .await
-                    .or(Err(ConnectionError::Closed))?;
+                self.writer.send_frame(&frame).await.or(Err(ConnectionError::Closed))?;
 
                 // step2: remove stream
                 self.streams_stat.remove(&stream_id);
@@ -443,17 +419,9 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
                 // send to peer with new stream frame
                 let body = format!("{}", stream_id.val());
                 let frame = Frame::new_stream_frame(stream_id, body.as_bytes());
-                self.writer
-                    .send_frame(&frame)
-                    .await
-                    .or(Err(ConnectionError::Closed))?;
+                self.writer.send_frame(&frame).await.or(Err(ConnectionError::Closed))?;
 
-                let stream = Stream::new(
-                    stream_id,
-                    self.id,
-                    self.stream_sender.clone(),
-                    stream_receiver,
-                );
+                let stream = Stream::new(stream_id, self.id, self.stream_sender.clone(), stream_receiver);
                 reply.send(Ok(stream)).expect("send err");
             }
             Some(ControlCommand::AcceptStream(reply)) => {
@@ -513,12 +481,7 @@ where
 
 impl<T> fmt::Display for Connection<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "(Connection {} (streams {}))",
-            self.id,
-            self.streams.len()
-        )
+        write!(f, "(Connection {} (streams {}))", self.id, self.streams.len())
     }
 }
 
@@ -526,10 +489,7 @@ impl<T> Connection<T> {
     // next_stream_id is only used to get stream id when open stream
     fn next_stream_id(&mut self) -> Result<StreamID> {
         let proposed = StreamID::new(self.next_stream_id, true);
-        self.next_stream_id = self
-            .next_stream_id
-            .checked_add(1)
-            .ok_or(ConnectionError::NoMoreStreamIds)?;
+        self.next_stream_id = self.next_stream_id.checked_add(1).ok_or(ConnectionError::NoMoreStreamIds)?;
 
         Ok(proposed)
     }

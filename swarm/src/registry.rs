@@ -93,9 +93,7 @@ impl Addresses {
     /// The iteration is ordered by descending score.
     #[allow(dead_code)]
     pub fn into_iter(self) -> AddressIntoIter {
-        AddressIntoIter {
-            items: self.registry,
-        }
+        AddressIntoIter { items: self.registry }
     }
 }
 
@@ -230,12 +228,7 @@ mod tests {
                 addresses.add(a.clone())
             }
             for r in &addresses.registry {
-                let count = xs
-                    .iter()
-                    .rev()
-                    .take(usize::from(n))
-                    .filter(|Ma(x)| x == &r.addr)
-                    .count();
+                let count = xs.iter().rev().take(usize::from(n)).filter(|Ma(x)| x == &r.addr).count();
                 if r.score as usize != count {
                     return false;
                 }

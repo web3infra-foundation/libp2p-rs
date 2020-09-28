@@ -246,10 +246,7 @@ impl Stream {
             let mut frame = frame.right();
             self.add_flag(frame.header_mut());
             let cmd = StreamCommand::SendFrame(frame);
-            self.sender
-                .send(cmd)
-                .await
-                .map_err(|_| self.write_zero_err())?;
+            self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
         }
         Ok(n)
     }
@@ -293,10 +290,7 @@ impl Stream {
         self.add_flag(frame.header_mut());
         log::trace!("{}/{}: write {} bytes", self.conn, self.id, n);
         let cmd = StreamCommand::SendFrame(frame);
-        self.sender
-            .send(cmd)
-            .await
-            .map_err(|_| self.write_zero_err())?;
+        self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
 
         Ok(n)
     }
@@ -315,14 +309,9 @@ impl Stream {
         };
 
         let cmd = StreamCommand::CloseStream { id: self.id, ack };
-        self.sender
-            .send(cmd)
-            .await
-            .map_err(|_| self.write_zero_err())?;
+        self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
 
-        self.shared()
-            .await
-            .update_state(self.conn, self.id, State::SendClosed);
+        self.shared().await.update_state(self.conn, self.id, State::SendClosed);
         Ok(())
     }
 
@@ -382,12 +371,7 @@ impl Shared {
     }
 
     /// Update the stream state and return the state before it was updated.
-    pub(crate) fn update_state(
-        &mut self,
-        cid: connection::Id,
-        sid: StreamId,
-        next: State,
-    ) -> State {
+    pub(crate) fn update_state(&mut self, cid: connection::Id, sid: StreamId, next: State) -> State {
         use self::State::*;
 
         let current = self.state;
@@ -405,14 +389,7 @@ impl Shared {
             (SendClosed, SendClosed) => {}
         }
 
-        log::trace!(
-            "{}/{}: update state: ({:?} {:?} {:?})",
-            cid,
-            sid,
-            current,
-            next,
-            self.state
-        );
+        log::trace!("{}/{}: update state: ({:?} {:?} {:?})", cid, sid, current, next, self.state);
 
         current // Return the previous stream state for informational purposes.
     }

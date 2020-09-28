@@ -4,10 +4,7 @@
 
 use async_trait::async_trait;
 
-use crate::{
-    crypto::cipher::CipherType, error::SecioError, exchange::KeyAgreement,
-    handshake::procedure::handshake,
-};
+use crate::{crypto::cipher::CipherType, error::SecioError, exchange::KeyAgreement, handshake::procedure::handshake};
 
 use libp2p_core::identity::Keypair;
 use libp2p_core::{Multiaddr, PeerId, PublicKey};
@@ -121,10 +118,7 @@ impl Config {
     ///
     /// On success, produces a `SecureStream` that can then be used to encode/decode
     /// communications, plus the public key of the remote, plus the ephemeral public key.
-    pub async fn handshake<T>(
-        self,
-        socket: T,
-    ) -> Result<(SecureStream<T>, PublicKey, EphemeralPublicKey), SecioError>
+    pub async fn handshake<T>(self, socket: T) -> Result<(SecureStream<T>, PublicKey, EphemeralPublicKey), SecioError>
     where
         T: ReadEx + WriteEx + Send + 'static,
     {
@@ -169,19 +163,11 @@ where
 {
     type Output = SecioOutput<T>;
 
-    async fn upgrade_inbound(
-        self,
-        socket: T,
-        _info: <Self as UpgradeInfo>::Info,
-    ) -> Result<Self::Output, TransportError> {
+    async fn upgrade_inbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
         make_secure_output(self, socket).await
     }
 
-    async fn upgrade_outbound(
-        self,
-        socket: T,
-        _info: <Self as UpgradeInfo>::Info,
-    ) -> Result<Self::Output, TransportError> {
+    async fn upgrade_outbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
         make_secure_output(self, socket).await
     }
 }

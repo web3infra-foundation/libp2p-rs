@@ -2,8 +2,7 @@
 /// It does not use protobuf. It uses flatbuffers as the basis for serialization and deserialization.
 /// It does not use protobuf bytes when determining the order of the order. But the original public key bytes
 use crate::{
-    crypto::cipher::CipherType, error::SecioError, exchange::KeyAgreement,
-    handshake_proto::Propose, support, Config, Digest,
+    crypto::cipher::CipherType, error::SecioError, exchange::KeyAgreement, handshake_proto::Propose, support, Config, Digest,
 };
 
 use libp2p_core::PublicKey;
@@ -107,9 +106,7 @@ impl HandshakeContext<()> {
 
         let proposition_bytes = {
             let mut buf = Vec::with_capacity(local_proposition.encoded_len());
-            local_proposition
-                .encode(&mut buf)
-                .expect("Vec<u8> provides capacity as needed");
+            local_proposition.encode(&mut buf).expect("Vec<u8> provides capacity as needed");
             buf
         };
 
@@ -128,10 +125,7 @@ impl HandshakeContext<()> {
 
 impl HandshakeContext<Local> {
     // Process remote proposition.
-    pub fn with_remote(
-        self,
-        remote_bytes: Vec<u8>,
-    ) -> Result<HandshakeContext<Remote>, SecioError> {
+    pub fn with_remote(self, remote_bytes: Vec<u8>) -> Result<HandshakeContext<Remote>, SecioError> {
         let propose = match Propose::decode(&remote_bytes[..]) {
             Ok(prop) => prop,
             Err(_) => {
@@ -251,11 +245,7 @@ impl HandshakeContext<Local> {
 }
 
 impl HandshakeContext<Remote> {
-    pub fn with_ephemeral(
-        self,
-        sk: agreement::EphemeralPrivateKey,
-        pk: Vec<u8>,
-    ) -> HandshakeContext<Ephemeral> {
+    pub fn with_ephemeral(self, sk: agreement::EphemeralPrivateKey, pk: Vec<u8>) -> HandshakeContext<Ephemeral> {
         HandshakeContext {
             config: self.config,
             state: Ephemeral {
@@ -268,12 +258,7 @@ impl HandshakeContext<Remote> {
 }
 
 impl HandshakeContext<Ephemeral> {
-    pub fn take_private_key(
-        self,
-    ) -> (
-        HandshakeContext<PubEphemeral>,
-        agreement::EphemeralPrivateKey,
-    ) {
+    pub fn take_private_key(self) -> (HandshakeContext<PubEphemeral>, agreement::EphemeralPrivateKey) {
         let context = HandshakeContext {
             config: self.config,
             state: PubEphemeral {

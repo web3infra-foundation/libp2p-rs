@@ -1,3 +1,4 @@
+use crate::muxing::StreamInfo;
 use crate::transport::{ConnectionInfo, TransportListener};
 use crate::{transport::TransportError, Transport};
 use async_trait::async_trait;
@@ -10,12 +11,10 @@ use libp2p_traits::{ReadEx, WriteEx};
 use multiaddr::{Multiaddr, Protocol};
 use parking_lot::Mutex;
 use rw_stream_sink::RwStreamSink;
-use std::{collections::hash_map::Entry, io, num::NonZeroU64, pin::Pin, fmt};
-use crate::muxing::StreamInfo;
+use std::{collections::hash_map::Entry, fmt, io, num::NonZeroU64, pin::Pin};
 
 lazy_static! {
-    static ref HUB: Mutex<FnvHashMap<NonZeroU64, mpsc::Sender<Channel>>> =
-        Mutex::new(FnvHashMap::default());
+    static ref HUB: Mutex<FnvHashMap<NonZeroU64, mpsc::Sender<Channel>>> = Mutex::new(FnvHashMap::default());
 }
 
 /// Transport that supports `/memory/N` multiaddresses.
@@ -108,10 +107,7 @@ impl Transport for MemoryTransport {
             la: la.clone(),
             ra: ra.clone(),
         };
-        sender
-            .send(channel_to_send)
-            .await
-            .map_err(|_| TransportError::Unreachable)?;
+        sender.send(channel_to_send).await.map_err(|_| TransportError::Unreachable)?;
         Ok(channel_to_return)
     }
 }
@@ -131,10 +127,7 @@ impl TransportListener for Listener {
     type Output = Channel;
 
     async fn accept(&mut self) -> Result<Self::Output, TransportError> {
-        self.receiver
-            .next()
-            .await
-            .ok_or(TransportError::Unreachable)
+        self.receiver.next().await.ok_or(TransportError::Unreachable)
     }
 
     fn multi_addr(&self) -> Multiaddr {
@@ -177,10 +170,7 @@ pub struct Channel {
 
 impl fmt::Debug for Channel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Channel")
-            .field("la", &self.la)
-            .field("ra", &self.ra)
-            .finish()
+        f.debug_struct("Channel").field("la", &self.la).field("ra", &self.ra).finish()
     }
 }
 
@@ -237,9 +227,7 @@ impl<T> Sink<T> for Chan<T> {
     }
 
     fn start_send(mut self: Pin<&mut Self>, item: T) -> Result<(), Self::Error> {
-        self.outgoing
-            .start_send(item)
-            .map_err(|_| io::ErrorKind::BrokenPipe.into())
+        self.outgoing.start_send(item).map_err(|_| io::ErrorKind::BrokenPipe.into())
     }
 
     fn poll_flush(self: Pin<&mut Self>, _: &mut Context) -> Poll<Result<(), Self::Error>> {
@@ -276,62 +264,31 @@ mod tests {
         assert_eq!(parse_memory_addr(&"/memory/5".parse().unwrap()), Ok(5));
         assert_eq!(parse_memory_addr(&"/tcp/150".parse().unwrap()), Err(()));
         assert_eq!(parse_memory_addr(&"/memory/0".parse().unwrap()), Ok(0));
-        assert_eq!(
-            parse_memory_addr(&"/memory/5/tcp/150".parse().unwrap()),
-            Err(())
-        );
-        assert_eq!(
-            parse_memory_addr(&"/tcp/150/memory/5".parse().unwrap()),
-            Err(())
-        );
-        assert_eq!(
-            parse_memory_addr(&"/memory/1234567890".parse().unwrap()),
-            Ok(1_234_567_890)
-        );
+        assert_eq!(parse_memory_addr(&"/memory/5/tcp/150".parse().unwrap()), Err(()));
+        assert_eq!(parse_memory_addr(&"/tcp/150/memory/5".parse().unwrap()), Err(()));
+        assert_eq!(parse_memory_addr(&"/memory/1234567890".parse().unwrap()), Ok(1_234_567_890));
     }
 
     #[test]
     fn listening_twice() {
         let transport = MemoryTransport::default();
-        assert!(transport
-            .listen_on("/memory/1639174018481".parse().unwrap())
-            .is_ok());
-        assert!(transport
-            .listen_on("/memory/1639174018481".parse().unwrap())
-            .is_ok());
-        let _listener = transport
-            .listen_on("/memory/1639174018481".parse().unwrap())
-            .unwrap();
-        assert!(transport
-            .listen_on("/memory/1639174018481".parse().unwrap())
-            .is_err());
-        assert!(transport
-            .listen_on("/memory/1639174018481".parse().unwrap())
-            .is_err());
+        assert!(transport.listen_on("/memory/1639174018481".parse().unwrap()).is_ok());
+        assert!(transport.listen_on("/memory/1639174018481".parse().unwrap()).is_ok());
+        let _listener = transport.listen_on("/memory/1639174018481".parse().unwrap()).unwrap();
+        assert!(transport.listen_on("/memory/1639174018481".parse().unwrap()).is_err());
+        assert!(transport.listen_on("/memory/1639174018481".parse().unwrap()).is_err());
         drop(_listener);
-        assert!(transport
-            .listen_on("/memory/1639174018481".parse().unwrap())
-            .is_ok());
-        assert!(transport
-            .listen_on("/memory/1639174018481".parse().unwrap())
-            .is_ok());
+        assert!(transport.listen_on("/memory/1639174018481".parse().unwrap()).is_ok());
+        assert!(transport.listen_on("/memory/1639174018481".parse().unwrap()).is_ok());
     }
 
     #[test]
     fn port_not_in_use() {
         futures::executor::block_on(async move {
             let transport = MemoryTransport::default();
-            assert!(transport
-                .dial("/memory/810172461024613".parse().unwrap())
-                .await
-                .is_err());
-            let _listener = transport
-                .listen_on("/memory/810172461024613".parse().unwrap())
-                .unwrap();
-            assert!(transport
-                .dial("/memory/810172461024613".parse().unwrap())
-                .await
-                .is_ok());
+            assert!(transport.dial("/memory/810172461024613".parse().unwrap()).await.is_err());
+            let _listener = transport.listen_on("/memory/810172461024613".parse().unwrap()).unwrap();
+            assert!(transport.dial("/memory/810172461024613".parse().unwrap()).await.is_ok());
         });
     }
 

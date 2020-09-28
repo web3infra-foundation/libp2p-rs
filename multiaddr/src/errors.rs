@@ -25,9 +25,7 @@ impl fmt::Display for Error {
             Error::InvalidUvar(e) => write!(f, "failed to decode unsigned varint: {}", e),
             Error::ParsingError(e) => write!(f, "failed to parse: {}", e),
             Error::UnknownProtocolId(id) => write!(f, "unknown protocol id: {}", id),
-            Error::UnknownProtocolString(string) => {
-                write!(f, "unknown protocol string: {}", string)
-            } //Error::__Nonexhaustive => f.write_str("__Nonexhaustive"),
+            Error::UnknownProtocolString(string) => write!(f, "unknown protocol string: {}", string), //Error::__Nonexhaustive => f.write_str("__Nonexhaustive"),
         }
     }
 }

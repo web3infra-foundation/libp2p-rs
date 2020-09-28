@@ -32,17 +32,10 @@ pub enum CryptoMode {
 
 /// Generate a specific Cipher with key and initialize vector
 #[doc(hidden)]
-pub fn new_stream(
-    t: cipher::CipherType,
-    key: &[u8],
-    iv: &[u8],
-    mode: CryptoMode,
-) -> BoxStreamCipher {
+pub fn new_stream(t: cipher::CipherType, key: &[u8], iv: &[u8], mode: CryptoMode) -> BoxStreamCipher {
     match t {
         cipher::CipherType::Aes128Ctr => Box::new(ctr_impl::CTRCipher::new(key, iv)),
-        cipher::CipherType::Aes128Gcm
-        | cipher::CipherType::Aes256Gcm
-        | cipher::CipherType::ChaCha20Poly1305 => {
+        cipher::CipherType::Aes128Gcm | cipher::CipherType::Aes256Gcm | cipher::CipherType::ChaCha20Poly1305 => {
             Box::new(ring_impl::RingAeadCipher::new(t, key, mode))
         }
     }

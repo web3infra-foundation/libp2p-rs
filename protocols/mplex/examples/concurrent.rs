@@ -81,10 +81,7 @@ fn run_client() {
             let data = data.clone();
             info!("C: opened new stream {}", stream.id());
             let handle = task::spawn(async move {
-                stream
-                    .write_all2(&(data.len() as u32).to_be_bytes()[..])
-                    .await
-                    .unwrap();
+                stream.write_all2(&(data.len() as u32).to_be_bytes()[..]).await.unwrap();
 
                 stream.write_all2(data.as_ref()).await.unwrap();
                 info!("C: {}: wrote {} bytes", stream.id(), data.len());

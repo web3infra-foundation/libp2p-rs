@@ -31,11 +31,7 @@ struct Params {
 
 impl fmt::Debug for Params {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "((streams {}) (messages {}))",
-            self.streams, self.messages
-        )
+        write!(f, "((streams {}) (messages {}))", self.streams, self.messages)
     }
 }
 
@@ -51,26 +47,11 @@ impl AsRef<[u8]> for Bytes {
 fn concurrent(c: &mut Criterion) {
     // env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();
     let params = &[
-        Params {
-            streams: 1,
-            messages: 1,
-        },
-        Params {
-            streams: 10,
-            messages: 1,
-        },
-        Params {
-            streams: 1,
-            messages: 10,
-        },
-        Params {
-            streams: 100,
-            messages: 1,
-        },
-        Params {
-            streams: 1,
-            messages: 100,
-        },
+        Params { streams: 1, messages: 1 },
+        Params { streams: 10, messages: 1 },
+        Params { streams: 1, messages: 10 },
+        Params { streams: 100, messages: 1 },
+        Params { streams: 1, messages: 100 },
         Params {
             streams: 10,
             messages: 100,
@@ -89,14 +70,7 @@ fn concurrent(c: &mut Criterion) {
         "one by one",
         move |b, &&params| {
             let data = data1.clone();
-            b.iter(move || {
-                task::block_on(roundtrip(
-                    params.streams,
-                    params.messages,
-                    data.clone(),
-                    false,
-                ))
-            })
+            b.iter(move || task::block_on(roundtrip(params.streams, params.messages, data.clone(), false)))
         },
         params,
     );
@@ -105,14 +79,7 @@ fn concurrent(c: &mut Criterion) {
         "all at once",
         move |b, &&params| {
             let data = data2.clone();
-            b.iter(move || {
-                task::block_on(roundtrip(
-                    params.streams,
-                    params.messages,
-                    data.clone(),
-                    true,
-                ))
-            })
+            b.iter(move || task::block_on(roundtrip(params.streams, params.messages, data.clone(), true)))
         },
         params,
     );
@@ -197,10 +164,7 @@ async fn roundtrip(nstreams: usize, nmessages: usize, data: Bytes, send_all: boo
         });
     }
 
-    let n = rx
-        .take(nstreams)
-        .fold(0, |acc, n| future::ready(acc + n))
-        .await;
+    let n = rx.take(nstreams).fold(0, |acc, n| future::ready(acc + n)).await;
     assert_eq!(n, nstreams * nmessages * msg_len);
     ctrl.close().await.expect("close")
 }
@@ -241,19 +205,12 @@ impl Stream for Endpoint {
 }
 
 impl AsyncWrite for Endpoint {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context, buf: &[u8]) -> Poll<io::Result<usize>> {
         if ready!(Pin::new(&mut self.outgoing).poll_ready(cx)).is_err() {
             return Poll::Ready(Err(io::ErrorKind::ConnectionAborted.into()));
         }
         let n = buf.len();
-        if Pin::new(&mut self.outgoing)
-            .start_send(Vec::from(buf))
-            .is_err()
-        {
+        if Pin::new(&mut self.outgoing).start_send(Vec::from(buf)).is_err() {
             return Poll::Ready(Err(io::ErrorKind::ConnectionAborted.into()));
         }
         Poll::Ready(Ok(n))

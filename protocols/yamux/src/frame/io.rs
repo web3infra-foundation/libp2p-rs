@@ -219,8 +219,6 @@ mod tests {
             })
         }
 
-        QuickCheck::new()
-            .tests(10_000)
-            .quickcheck(property as fn(Frame<()>) -> bool)
+        QuickCheck::new().tests(10_000).quickcheck(property as fn(Frame<()>) -> bool)
     }
 }

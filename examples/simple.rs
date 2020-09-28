@@ -29,10 +29,7 @@ fn main() {
 
         let sec = secio::Config::new(Keypair::generate_secp256k1());
         //let sec = DummyUpgrader::new();
-        let mux = Selector::new(
-            yamux::Config::new(),
-            Selector::new(yamux::Config::new(), yamux::Config::new()),
-        );
+        let mux = Selector::new(yamux::Config::new(), Selector::new(yamux::Config::new(), yamux::Config::new()));
         //let mux = yamux::Config::new();
         //let mux = mplex::Config::new();
         let t1 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
@@ -87,10 +84,7 @@ fn main() {
                 //let sec = DummyUpgrader::new();
                 //let mux = yamux::Config::new();
                 //let mux = mplex::Config::new();
-                let mux = Selector::new(
-                    yamux::Config::new(),
-                    Selector::new(yamux::Config::new(), yamux::Config::new()),
-                );
+                let mux = Selector::new(yamux::Config::new(), Selector::new(yamux::Config::new(), yamux::Config::new()));
                 let t2 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
                 let mut stream_muxer = t2.dial(addr).await.expect("listener is started already");
 

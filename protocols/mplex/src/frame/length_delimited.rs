@@ -15,10 +15,7 @@ where
     /// Creates a new I/O resource for reading and writing unsigned-varint
     /// length delimited frames.
     pub fn new(inner: R, max_frame_size: u32) -> LengthDelimited<R> {
-        LengthDelimited {
-            inner,
-            max_frame_size,
-        }
+        LengthDelimited { inner, max_frame_size }
     }
 }
 
@@ -69,10 +66,7 @@ where
 
     pub async fn write_length(&mut self, length: u32) -> io::Result<()> {
         if length > self.max_frame_size {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Maximum frame size exceeded.",
-            ));
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "Maximum frame size exceeded."));
         }
 
         let mut uvi_buf = unsigned_varint::encode::u32_buffer();

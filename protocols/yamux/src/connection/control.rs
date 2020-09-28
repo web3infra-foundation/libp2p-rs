@@ -61,12 +61,7 @@ impl Control {
     /// Close the connection.
     pub async fn close(&mut self) -> Result<()> {
         let (tx, rx) = oneshot::channel();
-        if self
-            .sender
-            .send(ControlCommand::CloseConnection(tx))
-            .await
-            .is_err()
-        {
+        if self.sender.send(ControlCommand::CloseConnection(tx)).await.is_err() {
             // The receiver is closed which means the connection is already closed.
             return Ok(());
         }
