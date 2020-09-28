@@ -13,7 +13,7 @@ use futures::{
     prelude::*,
 };
 use libp2p_core::PeerId;
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use crate::{SwarmError, ProtocolId};
 use crate::network::NetworkInfo;
 
@@ -60,7 +60,7 @@ impl<TSubstream> Clone for Control<TSubstream> {
 }
 
 impl<TSubstream> Control<TSubstream>
-where TSubstream: Read2 + Write2
+where TSubstream: ReadEx + WriteEx
 {
     pub(crate) fn new(sender: mpsc::Sender<SwarmControlCmd<TSubstream>>) -> Self {
         Control { sender }

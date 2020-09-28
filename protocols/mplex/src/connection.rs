@@ -16,7 +16,7 @@ use crate::{
     pause::Pausable,
 };
 use control::Control;
-use libp2p_traits::{ext::split::WriteHalf, Read2, ReadExt2, Write2};
+use libp2p_traits::{ext::split::WriteHalf, ReadEx, ReadExt2, WriteEx};
 use nohash_hasher::IntMap;
 use std::collections::VecDeque;
 use std::fmt;
@@ -142,7 +142,7 @@ pub struct Connection<T> {
     pending_streams: VecDeque<stream::Stream>,
 }
 
-impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
+impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
     pub fn new(socket: T) -> Self {
         let id = Id::random();
         log::debug!("new connection: {}", id);
@@ -350,7 +350,7 @@ impl<T: Read2 + Write2 + Unpin + Send + 'static> Connection<T> {
                         .await
                         .or(Err(ConnectionError::Closed))?;
 
-                    reply.send(());
+                    let _ = reply.send(());
                 } else {
                     log::info!("{}: stream {} have been removed", self.id, stream_id);
                     drop(reply);

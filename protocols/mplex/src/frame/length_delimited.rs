@@ -1,4 +1,4 @@
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use std::io::{self, ErrorKind};
 
 const U32_LEN: usize = 5;
@@ -24,7 +24,7 @@ where
 
 impl<T> LengthDelimited<T>
 where
-    T: Read2 + Send,
+    T: ReadEx + Send,
 {
     pub async fn read_byte(&mut self, buf: &mut [u8]) -> io::Result<()> {
         let n = self.inner.read2(buf).await?;
@@ -59,7 +59,7 @@ where
 
 impl<T> LengthDelimited<T>
 where
-    T: Write2 + Send,
+    T: WriteEx + Send,
 {
     pub async fn write_header(&mut self, hdr: u32) -> io::Result<()> {
         let mut uvi_buf = unsigned_varint::encode::u32_buffer();
@@ -87,7 +87,7 @@ where
 
 impl<T> LengthDelimited<T>
 where
-    T: Write2 + Send,
+    T: WriteEx + Send,
 {
     pub(crate) async fn flush(&mut self) -> io::Result<()> {
         self.inner.flush2().await

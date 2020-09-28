@@ -1,4 +1,4 @@
-use crate::{Read2, Write2};
+use crate::{ReadEx, WriteEx};
 /// Copies the entire contents of a reader into a writer.
 ///
 /// This function will read data from `reader` and write it into `writer` in a streaming fashion
@@ -8,8 +8,8 @@ use crate::{Read2, Write2};
 ///
 pub async fn copy<R, W>(mut reader: R, mut writer: W) -> std::io::Result<usize>
 where
-    R: Read2 + Unpin,
-    W: Write2 + Unpin + Send,
+    R: ReadEx + Unpin,
+    W: WriteEx + Unpin + Send,
 {
     let mut copyed = 0_usize;
 

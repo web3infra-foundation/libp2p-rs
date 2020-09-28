@@ -13,7 +13,7 @@ pub use ext::ReadExt2;
 /// Read Trait for async/wait
 ///
 #[async_trait]
-pub trait Read2 {
+pub trait ReadEx {
     /// Reads some bytes from the byte stream.
     ///
     /// On success, returns the total number of bytes read.
@@ -159,7 +159,7 @@ pub trait Read2 {
 /// Write Trait for async/wait
 ///
 #[async_trait]
-pub trait Write2 {
+pub trait WriteEx {
     /// Attempt to write bytes from `buf` into the object.
     ///
     /// On success, returns `Ok(num_bytes_written)`.
@@ -237,7 +237,7 @@ pub trait Write2 {
 }
 
 #[async_trait]
-impl<T: AsyncRead + Unpin + Send> Read2 for T {
+impl<T: AsyncRead + Unpin + Send> ReadEx for T {
     async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
         let n = AsyncReadExt::read(self, buf).await?;
         Ok(n)
@@ -245,7 +245,7 @@ impl<T: AsyncRead + Unpin + Send> Read2 for T {
 }
 
 #[async_trait]
-impl<T: AsyncWrite + Unpin + Send> Write2 for T {
+impl<T: AsyncWrite + Unpin + Send> WriteEx for T {
     async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
         AsyncWriteExt::write(self, buf).await
     }
@@ -272,14 +272,14 @@ mod tests {
             struct Test(Cursor<Vec<u8>>);
 
             #[async_trait]
-            impl Read2 for Test {
+            impl ReadEx for Test {
                 async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
                     self.0.read(buf).await
                 }
             }
 
             #[async_trait]
-            impl Write2 for Test {
+            impl WriteEx for Test {
                 async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
                     self.0.write(buf).await
                 }

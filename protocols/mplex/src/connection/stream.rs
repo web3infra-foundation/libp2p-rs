@@ -5,7 +5,7 @@ use crate::{
 use async_trait::async_trait;
 use bytes::{Buf, BufMut};
 use futures::{channel::mpsc, SinkExt, StreamExt};
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use std::{fmt, io};
 use futures::lock::Mutex;
 use std::sync::Arc;
@@ -171,14 +171,14 @@ impl Stream {
 }
 
 #[async_trait]
-impl Read2 for Stream {
+impl ReadEx for Stream {
     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.read(buf).await
     }
 }
 
 #[async_trait]
-impl Write2 for Stream {
+impl WriteEx for Stream {
     async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.write(buf).await
     }

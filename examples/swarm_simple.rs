@@ -4,7 +4,7 @@ use std::time::Duration;
 #[macro_use]
 extern crate lazy_static;
 
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use libp2p_core::identity::Keypair;
 use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::{Multiaddr, PeerId};
@@ -60,7 +60,7 @@ fn run_server() {
     #[async_trait]
     impl<C> ProtocolHandler<C> for MyProtocolHandler
     where
-        C: Read2 + Write2 + Unpin + Send + std::fmt::Debug + 'static
+        C: ReadEx + WriteEx + Unpin + Send + std::fmt::Debug + 'static
     {
         async fn handle(&mut self, stream: Substream<C>, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
             let mut stream = stream;

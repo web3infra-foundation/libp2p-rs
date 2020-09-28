@@ -13,7 +13,7 @@ use libp2p_core::secure_io::SecureInfo;
 use libp2p_core::transport::TransportError;
 use libp2p_core::upgrade::ProtocolName;
 use libp2p_core::PublicKey;
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use smallvec::SmallVec;
 use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -83,7 +83,7 @@ impl<TMuxer: StreamMuxer> PartialEq for Connection<TMuxer> {
 impl<TMuxer> fmt::Debug for Connection<TMuxer>
 where
     TMuxer: StreamMuxer + SecureInfo + 'static,
-    TMuxer::Substream: Read2 + Write2 + Send + Unpin,
+    TMuxer::Substream: ReadEx + WriteEx + Send + Unpin,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Connection")
@@ -102,7 +102,7 @@ where
 impl<TMuxer> Connection<TMuxer>
 where
     TMuxer: StreamMuxer + SecureInfo + 'static,
-    TMuxer::Substream: Read2 + Write2 + Send + Unpin,
+    TMuxer::Substream: ReadEx + WriteEx + Send + Unpin,
 {
     /// Builds a new `Connection` from the given substream multiplexer
     /// and a tx channel which will used to send events to Swarm.
@@ -419,7 +419,7 @@ async fn open_stream_internal<T>(
 ) -> Result<Substream<T::Substream>, TransportError>
     where
         T: StreamMuxer,
-        T::Substream: Read2 + Write2 + Send + Unpin,
+        T::Substream: ReadEx + WriteEx + Send + Unpin,
 {
     let raw_stream = stream_muxer.open_stream().await?;
 

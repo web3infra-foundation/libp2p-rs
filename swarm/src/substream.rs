@@ -1,6 +1,6 @@
 use std::{io, fmt};
 use async_trait::async_trait;
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 
 use crate::ProtocolId;
 use crate::connection::{ConnectionId, Direction};
@@ -64,14 +64,14 @@ impl<TStream: StreamInfo> Substream<TStream> {
 }
 
 #[async_trait]
-impl<TStream: Read2 + Send> Read2 for Substream<TStream> {
+impl<TStream: ReadEx + Send> ReadEx for Substream<TStream> {
     async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
         self.inner.read2(buf).await
     }
 }
 
 #[async_trait]
-impl<TStream: Write2 + Send> Write2 for Substream<TStream> {
+impl<TStream: WriteEx + Send> WriteEx for Substream<TStream> {
     async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
         self.inner.write2(buf).await
     }

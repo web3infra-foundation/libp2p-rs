@@ -13,7 +13,7 @@ use async_std::{
     net::{TcpListener, TcpStream},
     task,
 };
-use libp2p_traits::{Read2, ReadExt2, Write2};
+use libp2p_traits::{ReadEx, ReadExt2, WriteEx};
 use quickcheck::{Arbitrary, Gen, QuickCheck, TestResult};
 use rand::Rng;
 use std::{

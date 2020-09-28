@@ -2,7 +2,7 @@ use async_std::{
     net::{TcpListener, TcpStream},
     task,
 };
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use log::{error, info};
 use mplex::connection::Connection;
 use std::collections::VecDeque;

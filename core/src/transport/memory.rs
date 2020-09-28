@@ -6,7 +6,7 @@ use futures::io::Error;
 use futures::{channel::mpsc, prelude::*, task::Context, task::Poll, AsyncReadExt, AsyncWriteExt};
 use futures::{SinkExt, StreamExt};
 use lazy_static::lazy_static;
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use multiaddr::{Multiaddr, Protocol};
 use parking_lot::Mutex;
 use rw_stream_sink::RwStreamSink;
@@ -168,7 +168,7 @@ fn parse_memory_addr(a: &Multiaddr) -> Result<u64, ()> {
 
 /// A channel represents an established, in-memory, logical connection between two endpoints.
 ///
-/// Implements `Read2` and `Write2`.
+/// Implements `ReadEx` and `WriteEx`.
 pub struct Channel {
     io: RwStreamSink<Chan<Vec<u8>>>,
     la: Multiaddr,
@@ -185,13 +185,13 @@ impl fmt::Debug for Channel {
 }
 
 #[async_trait]
-impl Read2 for Channel {
+impl ReadEx for Channel {
     async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
         self.io.read(buf).await
     }
 }
 #[async_trait]
-impl Write2 for Channel {
+impl WriteEx for Channel {
     async fn write2(&mut self, buf: &[u8]) -> Result<usize, Error> {
         self.io.write(buf).await
     }

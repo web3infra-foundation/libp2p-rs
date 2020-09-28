@@ -13,7 +13,7 @@ use libp2p_core::{Multiaddr, PeerId};
 use libp2p_swarm::protocol_handler::{IProtocolHandler, ProtocolHandler};
 use libp2p_swarm::{Muxer, Swarm, SwarmError};
 use libp2p_tcp::TcpConfig;
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use secio;
 use yamux;
 
@@ -34,7 +34,7 @@ lazy_static! {
 
 async fn write_data<C>(mut stream: C)
 where
-    C: Read2 + Write2 + Send,
+    C: ReadEx + WriteEx + Send,
 {
     loop {
         print!("> ");
@@ -48,7 +48,7 @@ where
 
 async fn read_data<C>(mut stream: C)
 where
-    C: Read2 + Write2  + Send,
+    C: ReadEx + WriteEx  + Send,
 {
     loop {
         let mut buf = [0; 4096];
@@ -78,7 +78,7 @@ impl UpgradeInfo for ChatHandler {
 #[async_trait]
 impl<C> ProtocolHandler<C> for ChatHandler
 where
-    C: Read2 + Write2 + Unpin + Clone + Send + std::fmt::Debug + 'static,
+    C: ReadEx + WriteEx + Unpin + Clone + Send + std::fmt::Debug + 'static,
 {
     async fn handle(
         &mut self,
