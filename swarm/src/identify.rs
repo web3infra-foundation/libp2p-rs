@@ -42,8 +42,19 @@ pub const IDENTIFY_PROTOCOL: &[u8] = b"/ipfs/id/1.0.0";
 pub const IDENTIFY_PUSH_PROTOCOL: &[u8] = b"/ipfs/id/push/1.0.0";
 
 /// The configuration for identify.
-#[derive(Clone, Debug)]
-pub struct IdentifyConfig;
+#[derive(Clone, Debug, Default)]
+pub struct IdentifyConfig {
+    /// Starts the Push service.
+    pub(crate) push: bool,
+}
+
+impl IdentifyConfig {
+    pub fn new(push: bool) -> Self {
+        Self {
+            push,
+        }
+    }
+}
 
 /// Information of a peer sent in `Identify` protocol responses.
 #[derive(Debug, Clone)]
@@ -116,9 +127,8 @@ where
 {
     stream.close2().await?;
     //let msg = upgrade::read_one(&mut socket, 4096).await?;
-    let mut buf = vec![0u8; 4096];
-    let n = stream.read2(&mut buf).await?;
-    let (info, observed_addr) = match parse_proto_msg(&buf[..n]) {
+    let buf = stream.read_one(4096).await?;
+    let (info, observed_addr) = match parse_proto_msg(&buf) {
         Ok(v) => v,
         Err(err) => {
             log::debug!("Failed to parse protobuf message; error = {:?}", err);
@@ -158,7 +168,7 @@ where
     let mut bytes = Vec::with_capacity(message.encoded_len());
     message.encode(&mut bytes).expect("Vec<u8> provides capacity as needed");
 
-    stream.write_all2(&bytes).await.map_err(|e| e.into())
+    stream.write_one(&bytes).await.map_err(|e| e.into())
 }
 
 /// Represents a prototype for the identify protocol.
