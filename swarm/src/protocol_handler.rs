@@ -59,13 +59,13 @@ pub trait ProtocolHandler<TSocket>: UpgradeInfo {
         info: <Self as UpgradeInfo>::Info,
     ) -> Result<(), SwarmError>;
     /// This is to provide a clone method for the trait object.
-    fn box_clone(&self) -> BoxHandler<TSocket>;
+    fn box_clone(&self) -> IProtocolHandler<TSocket>;
 }
 
-pub type BoxHandler<TSocket> = Box<dyn ProtocolHandler<TSocket, Info = ProtocolId> + Send + Sync>;
+pub type IProtocolHandler<TSocket> = Box<dyn ProtocolHandler<TSocket, Info = ProtocolId> + Send + Sync>;
 
 
-impl<TSocket> Clone for BoxHandler<TSocket> {
+impl<TSocket> Clone for IProtocolHandler<TSocket> {
     fn clone(&self) -> Self {
         self.box_clone()
     }
@@ -100,7 +100,7 @@ impl<TSocket: Send + std::fmt::Debug + 'static> ProtocolHandler<TSocket> for Dum
         log::trace!("Dummy Protocol handling inbound {:?} {:?}", stream, info.protocol_name_str());
         Ok(())
     }
-    fn box_clone(&self) -> BoxHandler<TSocket> {
+    fn box_clone(&self) -> IProtocolHandler<TSocket> {
         Box::new(self.clone())
     }
 }

@@ -12,7 +12,7 @@ use libp2p_swarm::{Swarm, DummyProtocolHandler, Muxer, SwarmError};
 use libp2p_tcp::TcpConfig;
 use secio;
 use yamux;
-use libp2p_swarm::protocol_handler::{ProtocolHandler, BoxHandler};
+use libp2p_swarm::protocol_handler::{ProtocolHandler, IProtocolHandler};
 use libp2p_swarm::ping::{PingConfig};
 use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_swarm::identify::IdentifyConfig;
@@ -73,7 +73,7 @@ fn run_server() {
             }
         }
 
-        fn box_clone(&self) -> BoxHandler<C> {
+        fn box_clone(&self) -> IProtocolHandler<C> {
             Box::new(self.clone())
         }
     }

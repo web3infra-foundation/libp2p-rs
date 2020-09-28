@@ -10,7 +10,7 @@ use libp2p_core::identity::Keypair;
 use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_core::{Multiaddr, PeerId};
-use libp2p_swarm::protocol_handler::{BoxHandler, ProtocolHandler};
+use libp2p_swarm::protocol_handler::{IProtocolHandler, ProtocolHandler};
 use libp2p_swarm::{Muxer, Swarm, SwarmError};
 use libp2p_tcp::TcpConfig;
 use libp2p_traits::{Read2, Write2};
@@ -100,7 +100,7 @@ where
         Ok(())
     }
 
-    fn box_clone(&self) -> BoxHandler<C> {
+    fn box_clone(&self) -> IProtocolHandler<C> {
         Box::new(self.clone())
     }
 }
