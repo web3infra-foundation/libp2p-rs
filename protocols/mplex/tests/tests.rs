@@ -8,27 +8,24 @@
 // at https://www.apache.org/licenses/LICENSE-2.0 and a copy of the MIT license
 // at https://opensource.org/licenses/MIT.
 
-use mplex::{
-    connection::{
-        Connection,
-        control::Control,
-    },
-    error::ConnectionError,
-};
 use async_std::{
     net::{TcpListener, TcpStream},
     task,
 };
+use futures::channel::oneshot;
+use mplex::{
+    connection::{control::Control, Connection},
+    error::ConnectionError,
+};
 use libp2p_traits::{ReadEx, ReadExt2, WriteEx};
 use quickcheck::{Arbitrary, Gen, QuickCheck, TestResult};
 use rand::Rng;
+use std::time::Duration;
 use std::{
     fmt::Debug,
     io,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
 };
-use std::time::Duration;
-use futures::channel::oneshot;
 
 #[test]
 fn prop_send_recv() {
@@ -66,7 +63,6 @@ fn prop_send_recv() {
             TestResult::from_bool(result.len() == num_requests && result.into_iter().eq(iter))
         })
     }
-    // env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();
     QuickCheck::new().tests(1).quickcheck(prop as fn(_) -> _)
 }
 
@@ -93,7 +89,6 @@ fn prop_slow_reader() {
                 log::info!("C connection {} is closed", muxer_conn.id());
             });
 
-
             let mut stream = control.clone().open_stream().await.unwrap();
             log::info!("C: opened new stream {}", stream.id());
             let res = task::spawn(async move {
@@ -114,7 +109,8 @@ fn prop_slow_reader() {
                 }
 
                 Ok::<(), ConnectionError>(())
-            }).await;
+            })
+            .await;
 
             control.close().await.expect("close connection");
             loop_handle.await;
@@ -126,20 +122,16 @@ fn prop_slow_reader() {
             }
         })
     }
-    // env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
     QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
 }
 
 #[test]
 fn prop_half_close() {
-    fn prop(msg: Vec<u8>) -> TestResult {
-        if msg.is_empty() {
-            return TestResult::discard();
-        }
-
+    fn prop() -> TestResult {
         task::block_on(async {
             let (listener, address) = bind().await.expect("bind");
             let (tx, rx) = oneshot::channel();
+            let msg = vec![0x42; 40960];
             let data = msg.clone();
 
             let server = async move {
@@ -156,7 +148,10 @@ fn prop_half_close() {
                 if let Ok(mut stream) = control.accept_stream().await {
                     log::info!("S accept new stream {}", stream.id());
                     rx.await.expect("S oneshot receive");
-                    stream.write_all2(&data).await.expect("server stream write all");
+                    stream
+                        .write_all2(&data)
+                        .await
+                        .expect("server stream write all");
                     stream.close2().await.expect("server stream close");
                 }
                 loop_handle.await;
@@ -173,29 +168,41 @@ fn prop_half_close() {
                     log::info!("C connection {} is closed", muxer_conn.id());
                 });
 
-                let mut stream = control.clone().open_stream().await.expect("client open stream");
+                let mut stream = control
+                    .clone()
+                    .open_stream()
+                    .await
+                    .expect("client open stream");
                 stream.close2().await.expect("client close stream");
 
-                stream.write_all2(b"foo").await.expect("client stream write all");
+                if stream.write_all2(b"foo").await.is_ok() {
+                    return TestResult::failed();
+                }
 
                 // notify server
                 tx.send(()).expect("C oneshot send");
 
                 let mut buf = vec![0; msg.len()];
-                stream.read_exact2(&mut buf).await.expect("client stream read exact");
+                stream
+                    .read_exact2(&mut buf)
+                    .await
+                    .expect("client stream read exact");
+
+                if !msg.eq(&buf) {
+                    return TestResult::failed();
+                }
 
                 control.close().await.expect("client close connection");
 
                 loop_handle.await;
 
-                buf
+                TestResult::passed()
             };
 
-            let result = futures::join!(server, client).1;
-            TestResult::from_bool(result.eq(&msg))
+            futures::join!(server, client).1
         })
     }
-    QuickCheck::new().tests(10).quickcheck(prop as fn(_) -> _)
+    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
 }
 
 #[test]
@@ -260,7 +267,11 @@ fn prop_closing() {
                     muxer_conn.streams_length()
                 });
 
-                control.clone().accept_stream().await.expect("S accept stream");
+                control
+                    .clone()
+                    .accept_stream()
+                    .await
+                    .expect("S accept stream");
                 control.close().await.expect("S close connection");
 
                 loop_handle.await
@@ -291,7 +302,6 @@ fn prop_closing() {
     QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
 }
 
-
 #[test]
 fn prop_reset() {
     fn prop() -> TestResult {
@@ -317,10 +327,10 @@ fn prop_reset() {
                 let res_w = stream.write2(b"test").await;
                 let res_r = stream.read2(&mut buf).await;
 
-                loop_handle.cancel().await;
+                loop_handle.await;
 
                 if res_r.is_err() && res_w.is_err() {
-                    return true
+                    return true;
                 }
                 false
             };
@@ -329,14 +339,18 @@ fn prop_reset() {
             let client = async {
                 let socket = TcpStream::connect(address).await.expect("connect");
                 let connection = Connection::new(socket);
-                let control = connection.control();
+                let mut control = connection.control();
                 let loop_handle = task::spawn(async {
                     let mut muxer_conn = connection;
                     muxer_conn.next_stream().await;
                     log::info!("C connection {} is closed", muxer_conn.id());
                 });
 
-                let mut stream = control.clone().open_stream().await.expect("client open stream");
+                let mut stream = control
+                    .clone()
+                    .open_stream()
+                    .await
+                    .expect("client open stream");
                 stream.reset().await.expect("client close stream");
 
                 let mut buf = vec![0; 64];
@@ -347,10 +361,11 @@ fn prop_reset() {
                 task::sleep(Duration::from_millis(200)).await;
                 tx.send(()).expect("C oneshot send");
 
-                loop_handle.cancel().await;
+                control.close().await.expect("C close connection");
+                loop_handle.await;
 
                 if res_r.is_err() && res_w.is_err() {
-                    return true
+                    return true;
                 }
 
                 false
@@ -360,10 +375,155 @@ fn prop_reset() {
             TestResult::from_bool(result.0 && result.1)
         })
     }
-    // env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
     QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
 }
 
+#[test]
+fn prop_reset_after_eof() {
+    fn prop() -> TestResult {
+        task::block_on(async {
+            let (listener, address) = bind().await.expect("bind");
+            let (tx, rx) = oneshot::channel();
+
+            let server = async move {
+                let socket = listener.accept().await.expect("accept").0;
+                let connection = Connection::new(socket);
+                let mut control = connection.control();
+
+                let loop_handle = task::spawn(async {
+                    let mut muxer_conn = connection;
+                    muxer_conn.next_stream().await;
+                    log::info!("S connection {} is closed", muxer_conn.id());
+                });
+
+                let mut stream = control
+                    .clone()
+                    .accept_stream()
+                    .await
+                    .expect("S accept stream");
+                log::info!("S accept new stream {}", stream.id());
+                stream.close2().await.expect("S close stream");
+
+                task::sleep(Duration::from_millis(200)).await;
+                tx.send(()).expect("S oneshot send");
+
+                let mut buf = vec![0; 64];
+                let res_r = stream.read2(&mut buf).await;
+
+                // control.close().await.expect("S close connection");
+                // loop_handle.await;
+
+                if res_r.is_err() {
+                    return true;
+                }
+
+                false
+            };
+
+            // client
+            let client = async {
+                let socket = TcpStream::connect(address).await.expect("connect");
+                let connection = Connection::new(socket);
+                let mut control = connection.control();
+                let loop_handle = task::spawn(async {
+                    let mut muxer_conn = connection;
+                    muxer_conn.next_stream().await;
+                    log::info!("C connection {} is closed", muxer_conn.id());
+                });
+
+                let mut stream = control
+                    .clone()
+                    .open_stream()
+                    .await
+                    .expect("client open stream");
+                rx.await.expect("C oneshot receive");
+
+                let mut buf = vec![0; 64];
+                let res_r = stream.read2(&mut buf).await;
+
+                stream.reset().await.expect("client close stream");
+
+                control.close().await.expect("C close connection");
+                loop_handle.await;
+
+                if res_r.is_err() {
+                    return true;
+                }
+                false
+            };
+
+            let result = futures::join!(server, client);
+            TestResult::from_bool(result.0 && result.1)
+        })
+    }
+    QuickCheck::new().tests(1).quickcheck(prop as fn() -> _)
+}
+
+#[test]
+fn prop_reset_after_eof1() {
+    fn prop() -> TestResult {
+        task::block_on(async {
+            let (listener, address) = bind().await.expect("bind");
+            let sa_handle = task::spawn(async move {
+                let socket = listener.accept().await.expect("accept").0;
+                let connection = Connection::new(socket);
+                let mut control = connection.control();
+
+                let loop_handle = task::spawn(async {
+                    let mut muxer_conn = connection;
+                    muxer_conn.next_stream().await;
+                    log::info!("S connection {} is closed", muxer_conn.id());
+                });
+
+                control
+                    .clone()
+                    .accept_stream()
+                    .await
+                    .expect("S accept stream")
+            });
+
+            let sb_handle = task::spawn(async move {
+                let socket = TcpStream::connect(address).await.expect("connect");
+                let connection = Connection::new(socket);
+                let mut control = connection.control();
+                task::spawn(async {
+                    let mut muxer_conn = connection;
+                    muxer_conn.next_stream().await;
+                    log::info!("C connection {} is closed", muxer_conn.id());
+                });
+
+                control
+                    .clone()
+                    .open_stream()
+                    .await
+                    .expect("client open stream")
+            });
+
+            let result = futures::future::join(sa_handle, sb_handle).await;
+            let mut sa = result.0;
+            let mut sb = result.1;
+
+            sa.close2().await.expect("sa close");
+            task::sleep(Duration::from_millis(200)).await;
+
+            let mut buf = vec![0; 64];
+            if sb.read2(&mut buf).await.is_ok() {
+                return TestResult::failed();
+            }
+
+            sb.reset().await.expect("sb reset");
+            task::sleep(Duration::from_millis(200)).await;
+
+            let mut buf = vec![0; 64];
+            if sa.read2(&mut buf).await.is_ok() {
+                return TestResult::failed();
+            }
+
+            TestResult::passed()
+        })
+    }
+    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
+}
 
 #[derive(Clone, Debug)]
 struct Msg(Vec<u8>);
@@ -399,22 +559,23 @@ async fn repeat_echo(c: Connection<TcpStream>) -> Result<(), ConnectionError> {
             task::spawn(async move {
                 loop {
                     let (r, w) = stream.clone().split2();
-                     if let Err(_e) = libp2p_traits::copy(r, w).await {
-                         break
+                    if let Err(_e) = libp2p_traits::copy(r, w).await {
+                        break;
                     }
                 }
             });
         }
         log::info!("S accept stream failed, exit now");
-    }).await;
+    })
+    .await;
     Ok(())
 }
 
 /// For each message in `iter`, open a new stream, send the message and
 /// collect the response. The sequence of responses will be returned.
 async fn send_recv<I>(mut control: Control, iter: I) -> Result<Vec<Vec<u8>>, ConnectionError>
-    where
-        I: Iterator<Item = Vec<u8>>,
+where
+    I: Iterator<Item = Vec<u8>>,
 {
     let mut result = Vec::new();
     for msg in iter {

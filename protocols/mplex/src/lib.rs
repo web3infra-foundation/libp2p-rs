@@ -8,13 +8,13 @@ use futures::FutureExt;
 use log::{info, trace};
 use std::fmt;
 
-use libp2p_core::muxing::{StreamMuxer, StreamInfo};
+use libp2p_core::muxing::{StreamInfo, StreamMuxer};
 use libp2p_core::transport::{ConnectionInfo, TransportError};
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
 use libp2p_traits::{ReadEx, WriteEx};
 
 use crate::connection::Connection;
-use connection::{Id, control::Control, stream::Stream};
+use connection::{control::Control, stream::Stream, Id};
 use error::ConnectionError;
 use futures::future::BoxFuture;
 use libp2p_core::identity::Keypair;
@@ -75,7 +75,7 @@ impl<C> Clone for Mplex<C> {
             local_priv_key: self.local_priv_key.clone(),
             local_peer_id: self.local_peer_id.clone(),
             remote_pub_key: self.remote_pub_key.clone(),
-            remote_peer_id: self.remote_peer_id.clone()
+            remote_peer_id: self.remote_peer_id.clone(),
         }
     }
 }
