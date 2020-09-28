@@ -375,7 +375,7 @@ where
             .supported_protocols()
             .into_iter()
             .map(|p| p.protocol_name_str().to_string())
-            .collect();
+            .collect::<Vec<_>>();
         // TODO: public key
         let handler = IdentifyHandler::new(Keypair::generate_ed25519_fixed().public(), protocols);
         self.muxer.add_protocol_handler(Box::new(handler));
@@ -992,11 +992,13 @@ where
                                 // TODO: hook the task handle to the Substream, so that it can wait for exiting the task
                             }
                             Err(error) => {
+                                log::debug!("failed inbound protocol selection {:?} {:?}", cid, error);
                                 let _ = tx.send(SwarmEvent::StreamError { cid, error }).await;
                             }
                         }
                     }
                     Err(error) => {
+                        log::debug!("connection closed {:?} {:?}", cid, error);
                         let _ = tx.send(SwarmEvent::ConnectionClosed { cid, error }).await;
                         // something happened, break the loop then exit the Task
                         break;
@@ -1030,9 +1032,11 @@ where
         });
 
         // start Ping service if there is
-        self.identify.as_ref().map(|_config| {
-            log::trace!("starting Identify Push service for {:?}", connection);
-            connection.start_identify_push();
+        self.identify.as_ref().map(|config| {
+            if config.push {
+                log::trace!("starting Identify Push service for {:?}", connection);
+                connection.start_identify_push();
+            }
         });
 
         // insert to the hashmap of connections

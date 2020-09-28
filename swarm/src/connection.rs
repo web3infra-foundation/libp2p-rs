@@ -323,6 +323,8 @@ where
                     let cid = stream.cid();
                     let sid = stream.id();
 
+                    let r = identify::consume_message(stream).await;
+
                     // generate a StreamClosed event so that substream can be removed from Connection
                     let _ = tx2
                         .send(SwarmEvent::StreamClosed {
@@ -332,7 +334,7 @@ where
                         })
                         .await;
 
-                    identify::consume_message(stream).await
+                    r
                 }
                 Err(err) => {
                     // looks like the peer doesn't support the protocol
@@ -383,6 +385,9 @@ where
                 Ok(stream) => {
                     let cid = stream.cid();
                     let sid = stream.id();
+                    // ignore the error
+                    let _ = identify::produce_message(stream, info).await;
+
                     // generate a StreamClosed event so that substream can be removed from Connection
                     let _ = tx2
                         .send(SwarmEvent::StreamClosed {
@@ -391,12 +396,10 @@ where
                             sid,
                         })
                         .await;
-                    // ignore the error
-                    let _ = identify::produce_message(stream, info).await;
                 }
                 Err(err) => {
                     // looks like the peer doesn't support the protocol
-                    log::warn!("Identify protocol not supported: {:?}", err);
+                    log::warn!("Identify push protocol not supported: {:?}", err);
                     //Err(err)
                 }
             }
@@ -432,7 +435,7 @@ where
 
     match result {
         Ok((proto, raw_stream)) => {
-            log::info!("select_outbound {:?}", proto.protocol_name_str());
+            log::debug!("selected outbound {:?} {:?}", cid, proto.protocol_name_str());
 
             let stream = Substream::new(raw_stream, Direction::Outbound, proto, cid);
 
@@ -447,6 +450,7 @@ where
             Ok(stream)
         }
         Err(err) => {
+            log::info!("failed outbound protocol selection {:?} {:?}", cid, err);
             let _ = tx
                 .send(SwarmEvent::StreamError {
                     cid,

@@ -84,7 +84,7 @@ fn run_server() {
 
     let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer)
         .with_ping(PingConfig::new().with_unsolicited(false).with_interval(Duration::from_secs(1)))
-        .with_identify(IdentifyConfig);
+        .with_identify(IdentifyConfig::new(false));
 
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
 
@@ -113,7 +113,7 @@ fn run_client() {
 
     let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer)
         .with_ping(PingConfig::new().with_unsolicited(false).with_interval(Duration::from_secs(1)))
-        .with_identify(IdentifyConfig);
+        .with_identify(IdentifyConfig::new(false));
 
     let mut control = swarm.control();
 
