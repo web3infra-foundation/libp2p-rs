@@ -159,10 +159,7 @@ impl<C: ReadEx + WriteEx + Unpin + Send + 'static> StreamMuxer for Mplex<C> {
 
     async fn accept_stream(&mut self) -> Result<Self::Substream, TransportError> {
         trace!("waiting for a new inbound substream for yamux...");
-        self.ctrl
-            .accept_stream()
-            .await
-            .or(Err(TransportError::Internal))
+        self.ctrl.accept_stream().await.or(Err(TransportError::Internal))
     }
 
     async fn close(&mut self) -> Result<(), TransportError> {
@@ -199,20 +196,12 @@ where
 {
     type Output = Mplex<T>;
 
-    async fn upgrade_inbound(
-        self,
-        socket: T,
-        _info: <Self as UpgradeInfo>::Info,
-    ) -> Result<Self::Output, TransportError> {
+    async fn upgrade_inbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
         trace!("upgrading mplex inbound");
         Ok(Mplex::new(socket))
     }
 
-    async fn upgrade_outbound(
-        self,
-        socket: T,
-        _info: <Self as UpgradeInfo>::Info,
-    ) -> Result<Self::Output, TransportError> {
+    async fn upgrade_outbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
         trace!("upgrading mplex outbound");
         Ok(Mplex::new(socket))
     }

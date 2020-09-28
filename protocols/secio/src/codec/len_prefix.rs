@@ -33,10 +33,7 @@ where
 
         let n = u32::from_be_bytes(len) as usize;
         if n > self.max_frame_len {
-            let msg = format!(
-                "data length {} exceeds allowed maximum {}",
-                n, self.max_frame_len
-            );
+            let msg = format!("data length {} exceeds allowed maximum {}", n, self.max_frame_len);
             return Err(io::Error::new(io::ErrorKind::PermissionDenied, msg));
         }
 

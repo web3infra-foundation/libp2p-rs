@@ -59,27 +59,16 @@ where
 {
     type Output = PlainTextOutput<T>;
 
-    async fn upgrade_inbound(
-        self,
-        socket: T,
-        _info: <Self as UpgradeInfo>::Info,
-    ) -> Result<Self::Output, TransportError> {
+    async fn upgrade_inbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
         make_secure_output(self, socket).await
     }
 
-    async fn upgrade_outbound(
-        self,
-        socket: T,
-        _info: <Self as UpgradeInfo>::Info,
-    ) -> Result<Self::Output, TransportError> {
+    async fn upgrade_outbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
         make_secure_output(self, socket).await
     }
 }
 
-async fn make_secure_output<T>(
-    config: PlainTextConfig,
-    socket: T,
-) -> Result<PlainTextOutput<T>, TransportError>
+async fn make_secure_output<T>(config: PlainTextConfig, socket: T) -> Result<PlainTextOutput<T>, TransportError>
 where
     T: ReadEx + WriteEx + Send + Unpin + 'static,
 {

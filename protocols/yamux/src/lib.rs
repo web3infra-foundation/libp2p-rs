@@ -37,7 +37,7 @@ pub use crate::frame::{
 };
 use futures::future::BoxFuture;
 use libp2p_core::identity::Keypair;
-use libp2p_core::muxing::{StreamMuxer, StreamInfo};
+use libp2p_core::muxing::{StreamInfo, StreamMuxer};
 use libp2p_core::secure_io::SecureInfo;
 use libp2p_core::transport::{ConnectionInfo, TransportError};
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
@@ -345,20 +345,12 @@ where
 {
     type Output = Yamux<T>;
 
-    async fn upgrade_inbound(
-        self,
-        socket: T,
-        _info: <Self as UpgradeInfo>::Info,
-    ) -> Result<Self::Output, TransportError> {
+    async fn upgrade_inbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
         trace!("upgrading yamux inbound");
         Ok(Yamux::new(socket, self, Mode::Server))
     }
 
-    async fn upgrade_outbound(
-        self,
-        socket: T,
-        _info: <Self as UpgradeInfo>::Info,
-    ) -> Result<Self::Output, TransportError> {
+    async fn upgrade_outbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
         trace!("upgrading yamux outbound");
         Ok(Yamux::new(socket, self, Mode::Client))
     }

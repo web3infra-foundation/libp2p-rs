@@ -101,7 +101,7 @@ pub trait ReadEx {
         let mut buffer_len = 0;
 
         loop {
-            match self.read2(&mut buffer[buffer_len..buffer_len+1]).await? {
+            match self.read2(&mut buffer[buffer_len..buffer_len + 1]).await? {
                 0 => {
                     // Reaching EOF before finishing to read the length is an error, unless the EOF is
                     // at the very beginning of the substream, in which case we assume that the data is
@@ -120,10 +120,7 @@ pub trait ReadEx {
             match unsigned_varint::decode::usize(&buffer[..buffer_len]) {
                 Ok((len, _)) => return Ok(len),
                 Err(unsigned_varint::decode::Error::Overflow) => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "overflow in variable-length integer"
-                    ));
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, "overflow in variable-length integer"));
                 }
                 // TODO: why do we have a `__Nonexhaustive` variant in the error? I don't know how to process it
                 // Err(unsigned_varint::decode::Error::Insufficient) => {}
@@ -143,7 +140,6 @@ pub trait ReadEx {
     async fn read_one(&mut self, max_size: usize) -> Result<Vec<u8>, io::Error> {
         let len = self.read_varint().await?;
         if len > max_size {
-
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("Received data size over maximum frame length: {}>{}", len, max_size),

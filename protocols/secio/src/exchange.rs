@@ -26,9 +26,7 @@ impl Into<&'static agreement::Algorithm> for KeyAgreement {
 /// Generates a new key pair as part of the exchange.
 ///
 /// Returns the opaque private key and the corresponding public key.
-pub fn generate_agreement(
-    algorithm: KeyAgreement,
-) -> Result<(agreement::EphemeralPrivateKey, Vec<u8>), SecioError> {
+pub fn generate_agreement(algorithm: KeyAgreement) -> Result<(agreement::EphemeralPrivateKey, Vec<u8>), SecioError> {
     let rng = ring_rand::SystemRandom::new();
 
     match agreement::EphemeralPrivateKey::generate(algorithm.into(), &rng) {

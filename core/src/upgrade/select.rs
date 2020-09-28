@@ -61,12 +61,8 @@ where
         info: <Self as UpgradeInfo>::Info,
     ) -> Result<EitherOutput<A::Output, B::Output>, TransportError> {
         match info {
-            EitherName::A(info) => Ok(EitherOutput::A(
-                self.0.upgrade_outbound(socket, info).await?,
-            )),
-            EitherName::B(info) => Ok(EitherOutput::B(
-                self.1.upgrade_outbound(socket, info).await?,
-            )),
+            EitherName::A(info) => Ok(EitherOutput::A(self.0.upgrade_outbound(socket, info).await?)),
+            EitherName::B(info) => Ok(EitherOutput::B(self.1.upgrade_outbound(socket, info).await?)),
         }
     }
 }
@@ -82,10 +78,7 @@ mod tests {
         let m = Selector::new(DummyUpgrader::new(), DummyUpgrader::new());
 
         async_std::task::block_on(async move {
-            let output = m
-                .upgrade_outbound(100u32, EitherName::A(b""))
-                .await
-                .unwrap();
+            let output = m.upgrade_outbound(100u32, EitherName::A(b"")).await.unwrap();
 
             let mut _o = match output {
                 EitherOutput::A(a) => a,

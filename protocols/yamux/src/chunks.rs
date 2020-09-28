@@ -23,9 +23,7 @@ pub(crate) struct Chunks {
 impl Chunks {
     /// A new empty chunk list.
     pub(crate) fn new() -> Self {
-        Chunks {
-            seq: VecDeque::new(),
-        }
+        Chunks { seq: VecDeque::new() }
     }
 
     /// Does this chunk list contain any bytes?
@@ -35,9 +33,7 @@ impl Chunks {
 
     /// The total length of bytes contained in all `Chunk`s.
     pub(crate) fn len(&self) -> Option<usize> {
-        self.seq.iter().fold(Some(0), |total, x| {
-            total.and_then(|n| n.checked_add(x.len()))
-        })
+        self.seq.iter().fold(Some(0), |total, x| total.and_then(|n| n.checked_add(x.len())))
     }
 
     /// Add another chunk of bytes to the end.
@@ -97,8 +93,7 @@ impl Chunk {
             pos.is_some() && pos <= Some(max)
         });
 
-        self.cursor
-            .set_position(self.cursor.position() + amount as u64);
+        self.cursor.set_position(self.cursor.position() + amount as u64);
     }
 
     // Consume `self` and return the inner vector.

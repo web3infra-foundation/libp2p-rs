@@ -171,10 +171,7 @@ mod tests {
     fn dialer_and_listener_timeout() {
         fn test1(addr: Multiaddr) {
             futures::executor::block_on(async move {
-                let mut timeout_listener = MemoryTransport::default()
-                    .timeout(Duration::from_secs(1))
-                    .listen_on(addr)
-                    .unwrap();
+                let mut timeout_listener = MemoryTransport::default().timeout(Duration::from_secs(1)).listen_on(addr).unwrap();
                 assert!(timeout_listener.accept().await.is_err());
             });
         }

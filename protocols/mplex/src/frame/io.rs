@@ -40,10 +40,7 @@ where
             return Err(FrameDecodeError::FrameTooLarge(len as usize));
         }
         if len == 0 {
-            return Ok(Frame {
-                header,
-                body: Vec::new(),
-            });
+            return Ok(Frame { header, body: Vec::new() });
         }
 
         // get body
@@ -58,12 +55,7 @@ where
     T: WriteEx + Unpin + Send,
 {
     pub(crate) async fn send_frame(&mut self, frame: &Frame) -> io::Result<()> {
-        log::trace!(
-            "{}: write stream, header: {}, len {}",
-            self.id,
-            frame.header,
-            frame.body.len()
-        );
+        log::trace!("{}: write stream, header: {}, len {}", self.id, frame.header, frame.body.len());
 
         let hdr = header::encode(&frame.header);
 

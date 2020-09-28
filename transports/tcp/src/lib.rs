@@ -81,17 +81,9 @@ impl Transport for TcpConfig {
         };
 
         let socket = if socket_addr.is_ipv4() {
-            Socket::new(
-                Domain::ipv4(),
-                Type::stream(),
-                Some(socket2::Protocol::tcp()),
-            )?
+            Socket::new(Domain::ipv4(), Type::stream(), Some(socket2::Protocol::tcp()))?
         } else {
-            let s = Socket::new(
-                Domain::ipv6(),
-                Type::stream(),
-                Some(socket2::Protocol::tcp()),
-            )?;
+            let s = Socket::new(Domain::ipv6(), Type::stream(), Some(socket2::Protocol::tcp()))?;
             s.set_only_v6(true)?;
             s
         };
@@ -101,8 +93,7 @@ impl Transport for TcpConfig {
         socket.bind(&socket_addr.into())?;
         socket.listen(1024)?; // we may want to make this configurable
 
-        let listener = <TcpListener>::try_from(socket.into_tcp_listener())
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let listener = <TcpListener>::try_from(socket.into_tcp_listener()).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
         let local_addr = listener.local_addr()?;
         let port = local_addr.port();
@@ -161,9 +152,7 @@ impl Transport for TcpConfig {
         let socket_addr = if let Ok(socket_addr) = multiaddr_to_socketaddr(&addr) {
             if socket_addr.port() == 0 || socket_addr.ip().is_unspecified() {
                 debug!("Instantly refusing dialing {}, as it is invalid", addr);
-                return Err(TransportError::IoError(
-                    io::ErrorKind::ConnectionRefused.into(),
-                ));
+                return Err(TransportError::IoError(io::ErrorKind::ConnectionRefused.into()));
             }
             socket_addr
         } else {
@@ -214,11 +203,7 @@ impl TransportListener for TcpTransListener {
         let local_addr = stream.local_addr()?;
         let la = ip_to_multiaddr(local_addr.ip(), local_addr.port());
         let ra = ip_to_multiaddr(sock_addr.ip(), sock_addr.port());
-        Ok(TcpTransStream {
-            inner: stream,
-            la,
-            ra,
-        })
+        Ok(TcpTransStream { inner: stream, la, ra })
     }
 
     fn multi_addr(&self) -> Multiaddr {
@@ -357,21 +342,13 @@ fn apply_config(config: &TcpConfig, socket: &TcpStream) -> Result<(), io::Error>
 }
 
 impl AsyncRead for TcpTransStream {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context,
-        buf: &mut [u8],
-    ) -> Poll<Result<usize, io::Error>> {
+    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context, buf: &mut [u8]) -> Poll<Result<usize, io::Error>> {
         AsyncRead::poll_read(Pin::new(&mut self.inner), cx, buf)
     }
 }
 
 impl AsyncWrite for TcpTransStream {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context,
-        buf: &[u8],
-    ) -> Poll<Result<usize, io::Error>> {
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context, buf: &[u8]) -> Poll<Result<usize, io::Error>> {
         AsyncWrite::poll_write(Pin::new(&mut self.inner), cx, buf)
     }
 
@@ -512,35 +489,19 @@ mod tests {
     fn multiaddr_to_tcp_conversion() {
         use std::net::Ipv6Addr;
 
-        assert!(
-            multiaddr_to_socketaddr(&"/ip4/127.0.0.1/udp/1234".parse::<Multiaddr>().unwrap())
-                .is_err()
-        );
+        assert!(multiaddr_to_socketaddr(&"/ip4/127.0.0.1/udp/1234".parse::<Multiaddr>().unwrap()).is_err());
 
         assert_eq!(
             multiaddr_to_socketaddr(&"/ip4/127.0.0.1/tcp/12345".parse::<Multiaddr>().unwrap()),
-            Ok(SocketAddr::new(
-                IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-                12345,
-            ))
+            Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 12345,))
         );
         assert_eq!(
-            multiaddr_to_socketaddr(
-                &"/ip4/255.255.255.255/tcp/8080"
-                    .parse::<Multiaddr>()
-                    .unwrap()
-            ),
-            Ok(SocketAddr::new(
-                IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)),
-                8080,
-            ))
+            multiaddr_to_socketaddr(&"/ip4/255.255.255.255/tcp/8080".parse::<Multiaddr>().unwrap()),
+            Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)), 8080,))
         );
         assert_eq!(
             multiaddr_to_socketaddr(&"/ip6/::1/tcp/12345".parse::<Multiaddr>().unwrap()),
-            Ok(SocketAddr::new(
-                IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
-                12345,
-            ))
+            Ok(SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 12345,))
         );
         assert_eq!(
             multiaddr_to_socketaddr(
@@ -549,9 +510,7 @@ mod tests {
                     .unwrap()
             ),
             Ok(SocketAddr::new(
-                IpAddr::V6(Ipv6Addr::new(
-                    65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535,
-                )),
+                IpAddr::V6(Ipv6Addr::new(65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535,)),
                 8080,
             ))
         );
@@ -562,10 +521,7 @@ mod tests {
     fn dialer_and_listener_timeout() {
         fn test1(addr: Multiaddr) {
             async_std::task::block_on(async move {
-                let mut timeout_listener = TcpConfig::new()
-                    .timeout(Duration::from_secs(1))
-                    .listen_on(addr)
-                    .unwrap();
+                let mut timeout_listener = TcpConfig::new().timeout(Duration::from_secs(1)).listen_on(addr).unwrap();
                 assert!(timeout_listener.accept().await.is_err());
             });
         }
@@ -591,11 +547,7 @@ mod tests {
             async_std::task::spawn(async move {
                 let mut tcp_listener = TcpConfig::new().listen_on(addr).unwrap();
 
-                ready_tx
-                    .take()
-                    .unwrap()
-                    .send(tcp_listener.multi_addr())
-                    .unwrap();
+                ready_tx.take().unwrap().send(tcp_listener.multi_addr()).unwrap();
 
                 loop {
                     let mut socket = tcp_listener.accept().await.unwrap();

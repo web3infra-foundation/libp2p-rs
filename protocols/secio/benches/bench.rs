@@ -5,20 +5,14 @@ use secio::{
 };
 
 fn decode_encode(data: &[u8], cipher: CipherType) {
-    let cipher_key = (0..cipher.key_size())
-        .map(|_| rand::random::<u8>())
-        .collect::<Vec<_>>();
+    let cipher_key = (0..cipher.key_size()).map(|_| rand::random::<u8>()).collect::<Vec<_>>();
     let _hmac_key: [u8; 32] = rand::random();
-    let iv = (0..cipher.iv_size())
-        .map(|_| rand::random::<u8>())
-        .collect::<Vec<_>>();
+    let iv = (0..cipher.iv_size()).map(|_| rand::random::<u8>()).collect::<Vec<_>>();
 
     let mut encode_cipher = new_stream(cipher, &cipher_key, &iv, CryptoMode::Encrypt);
     let mut decode_cipher = new_stream(cipher, &cipher_key, &iv, CryptoMode::Decrypt);
     let (mut decode_hmac, mut encode_hmac): (Option<Hmac>, Option<Hmac>) = match cipher {
-        CipherType::ChaCha20Poly1305 | CipherType::Aes128Gcm | CipherType::Aes256Gcm => {
-            (None, None)
-        }
+        CipherType::ChaCha20Poly1305 | CipherType::Aes128Gcm | CipherType::Aes256Gcm => (None, None),
         #[cfg(unix)]
         _ => {
             use secio::Digest;
@@ -39,10 +33,7 @@ fn decode_encode(data: &[u8], cipher: CipherType) {
 
         let (crypted_data, expected_hash) = encode_data.split_at(content_length);
 
-        assert!(decode_hmac
-            .as_mut()
-            .unwrap()
-            .verify(crypted_data, expected_hash));
+        assert!(decode_hmac.as_mut().unwrap().verify(crypted_data, expected_hash));
 
         encode_data.truncate(content_length);
     }
@@ -59,9 +50,7 @@ fn bench_test(bench: &mut Bencher, cipher: CipherType, data: &[u8]) {
 }
 
 fn criterion_benchmark(bench: &mut Criterion) {
-    let data = (0..1024 * 256)
-        .map(|_| rand::random::<u8>())
-        .collect::<Vec<_>>();
+    let data = (0..1024 * 256).map(|_| rand::random::<u8>()).collect::<Vec<_>>();
     #[cfg(unix)]
     bench.bench_function("1kb_aes128ctr", {
         let data = data.clone();
@@ -80,13 +69,9 @@ fn criterion_benchmark(bench: &mut Criterion) {
         let data = data.clone();
         move |b| bench_test(b, CipherType::Aes256Gcm, &data)
     });
-    bench.bench_function("1kb_chacha20poly1305", move |b| {
-        bench_test(b, CipherType::ChaCha20Poly1305, &data)
-    });
+    bench.bench_function("1kb_chacha20poly1305", move |b| bench_test(b, CipherType::ChaCha20Poly1305, &data));
 
-    let data = (0..1024 * 1024)
-        .map(|_| rand::random::<u8>())
-        .collect::<Vec<_>>();
+    let data = (0..1024 * 1024).map(|_| rand::random::<u8>()).collect::<Vec<_>>();
     #[cfg(unix)]
     bench.bench_function("1mb_aes128ctr", {
         let data = data.clone();
@@ -105,9 +90,7 @@ fn criterion_benchmark(bench: &mut Criterion) {
         let data = data.clone();
         move |b| bench_test(b, CipherType::Aes256Gcm, &data)
     });
-    bench.bench_function("1mb_chacha20poly1305", move |b| {
-        bench_test(b, CipherType::ChaCha20Poly1305, &data)
-    });
+    bench.bench_function("1mb_chacha20poly1305", move |b| bench_test(b, CipherType::ChaCha20Poly1305, &data));
 }
 
 criterion_group!(benches, criterion_benchmark);

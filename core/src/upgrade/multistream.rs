@@ -31,9 +31,7 @@ impl<U> Multistream<U> {
     {
         trace!("starting multistream select for inbound...");
         let protocols = self.inner.protocol_info();
-        let neg = Negotiator::new_with_protocols(
-            protocols.into_iter().map(NameWrap as fn(_) -> NameWrap<_>),
-        );
+        let neg = Negotiator::new_with_protocols(protocols.into_iter().map(NameWrap as fn(_) -> NameWrap<_>));
 
         let (proto, socket) = neg.negotiate(socket).await?;
 
@@ -41,19 +39,14 @@ impl<U> Multistream<U> {
         self.inner.upgrade_inbound(socket, proto.0).await
     }
 
-    pub(crate) async fn select_outbound<C: Send + Unpin>(
-        self,
-        socket: C,
-    ) -> Result<U::Output, TransportError>
+    pub(crate) async fn select_outbound<C: Send + Unpin>(self, socket: C) -> Result<U::Output, TransportError>
     where
         C: ReadEx + WriteEx + Send + Unpin,
         U: Upgrader<C> + Send,
     {
         trace!("starting multistream select for outbound...");
         let protocols = self.inner.protocol_info();
-        let neg = Negotiator::new_with_protocols(
-            protocols.into_iter().map(NameWrap as fn(_) -> NameWrap<_>),
-        );
+        let neg = Negotiator::new_with_protocols(protocols.into_iter().map(NameWrap as fn(_) -> NameWrap<_>));
 
         let (proto, socket) = neg.select_one(socket).await?;
 

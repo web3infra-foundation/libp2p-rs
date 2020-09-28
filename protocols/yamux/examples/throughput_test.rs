@@ -107,10 +107,7 @@ fn run_server() {
 }
 
 fn run_client() {
-    let num = std::env::args()
-        .nth(1)
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(2);
+    let num = std::env::args().nth(1).and_then(|s| s.parse::<usize>().ok()).unwrap_or(2);
 
     task::block_on(async move {
         let socket = TcpStream::connect("127.0.0.1:12345").await.unwrap();

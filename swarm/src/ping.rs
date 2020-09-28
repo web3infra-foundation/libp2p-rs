@@ -1,5 +1,3 @@
-
-
 //! This module implements the `/ipfs/ping/1.0.0` protocol.
 //!
 //! The ping protocol can be used as a simple application-layer health check
@@ -23,19 +21,19 @@
 //! [`Swarm`]: libp2p_swarm::Swarm
 //! [`Transport`]: libp2p_core::Transport
 
-use std::time::{Duration, Instant};
-use std::num::NonZeroU32;
-use std::io;
-use rand::{distributions, prelude::*};
 use async_trait::async_trait;
+use rand::{distributions, prelude::*};
+use std::io;
+use std::num::NonZeroU32;
+use std::time::{Duration, Instant};
 
-use libp2p_traits::{ReadEx, WriteEx};
-use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_core::transport::TransportError;
+use libp2p_core::upgrade::UpgradeInfo;
+use libp2p_traits::{ReadEx, WriteEx};
 
-use crate::SwarmError;
-use crate::protocol_handler::{ProtocolHandler, IProtocolHandler};
+use crate::protocol_handler::{IProtocolHandler, ProtocolHandler};
 use crate::substream::Substream;
+use crate::SwarmError;
 
 /// The configuration for outbound pings.
 #[derive(Clone, Debug)]
@@ -81,7 +79,7 @@ impl PingConfig {
             interval: Duration::from_secs(3),
             max_failures: NonZeroU32::new(3).expect("1 != 0"),
             unsolicited: false,
-            keep_alive: false
+            keep_alive: false,
         }
     }
     /// Gets the ping timeout.
@@ -144,7 +142,6 @@ impl PingConfig {
 }
 
 pub async fn ping<T: ReadEx + WriteEx + Send + std::fmt::Debug>(mut stream: T, timeout: Duration) -> Result<Duration, TransportError> {
-
     let ping = async {
         let payload: [u8; PING_SIZE] = thread_rng().sample(distributions::Standard);
         log::trace!("Preparing ping payload {:?}", payload);
@@ -166,7 +163,6 @@ pub async fn ping<T: ReadEx + WriteEx + Send + std::fmt::Debug>(mut stream: T, t
 
     async_std::io::timeout(timeout, ping).await.map_err(|e| e.into())
 }
-
 
 /// Protocol handler that handles pinging the remote at a regular period
 /// and answering ping queries.
@@ -197,14 +193,14 @@ const PING_SIZE: usize = 32;
 impl UpgradeInfo for PingHandler {
     type Info = &'static [u8];
     fn protocol_info(&self) -> Vec<Self::Info> {
-        vec!(PING_PROTOCOL)
+        vec![PING_PROTOCOL]
     }
 }
 
 #[async_trait]
 impl<C> ProtocolHandler<C> for PingHandler
-    where
-        C: ReadEx + WriteEx + Unpin + Send + std::fmt::Debug + 'static
+where
+    C: ReadEx + WriteEx + Unpin + Send + std::fmt::Debug + 'static,
 {
     /// The Ping handler's inbound protocol.
     /// Simply wait for any thing that coming in then send back
@@ -224,25 +220,21 @@ impl<C> ProtocolHandler<C> for PingHandler
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::PingHandler;
+    use crate::connection::{ConnectionId, Direction};
+    use crate::ping::ping;
+    use crate::protocol_handler::ProtocolHandler;
+    use crate::substream::Substream;
+    use libp2p_core::transport::TransportListener;
+    use libp2p_core::upgrade::UpgradeInfo;
     use libp2p_core::{
         multiaddr::multiaddr,
-        transport::{
-            Transport,
-            memory::MemoryTransport
-        }
+        transport::{memory::MemoryTransport, Transport},
     };
     use rand::{thread_rng, Rng};
     use std::time::Duration;
-    use libp2p_core::transport::TransportListener;
-    use crate::protocol_handler::ProtocolHandler;
-    use libp2p_core::upgrade::UpgradeInfo;
-    use crate::ping::ping;
-    use crate::substream::Substream;
-    use crate::connection::{Direction, ConnectionId};
 
     #[test]
     fn ping_pong() {
@@ -266,8 +258,6 @@ mod tests {
         });
     }
 }
-
-
 
 /*
 

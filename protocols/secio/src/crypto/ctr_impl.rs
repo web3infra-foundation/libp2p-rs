@@ -52,12 +52,8 @@ mod test {
     use crate::crypto::ctr_impl::CTRCipher;
 
     fn test_ctr(mode: CipherType) {
-        let key = (0..mode.key_size())
-            .map(|_| rand::random::<u8>())
-            .collect::<Vec<_>>();
-        let iv = (0..mode.iv_size())
-            .map(|_| rand::random::<u8>())
-            .collect::<Vec<_>>();
+        let key = (0..mode.key_size()).map(|_| rand::random::<u8>()).collect::<Vec<_>>();
+        let iv = (0..mode.iv_size()).map(|_| rand::random::<u8>()).collect::<Vec<_>>();
 
         let mut encryptor = CTRCipher::new(key.as_ref(), iv.as_ref());
         let mut decryptor = CTRCipher::new(key.as_ref(), iv.as_ref());

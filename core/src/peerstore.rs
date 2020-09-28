@@ -70,30 +70,15 @@ mod tests {
 
         let peer_id = PeerId::random();
 
-        ab.add_addr(
-            &peer_id,
-            "/memory/123456".parse().unwrap(),
-            Duration::from_secs(1),
-        );
+        ab.add_addr(&peer_id, "/memory/123456".parse().unwrap(), Duration::from_secs(1));
 
-        assert_eq!(
-            ab.get_addr(&peer_id).unwrap().first(),
-            Some(&"/memory/123456".parse().unwrap())
-        );
+        assert_eq!(ab.get_addr(&peer_id).unwrap().first(), Some(&"/memory/123456".parse().unwrap()));
 
-        ab.add_addr(
-            &peer_id,
-            "/memory/654321".parse().unwrap(),
-            Duration::from_secs(1),
-        );
+        ab.add_addr(&peer_id, "/memory/654321".parse().unwrap(), Duration::from_secs(1));
         let addrs = ab.get_addr(&peer_id).unwrap();
         assert_eq!(addrs.len(), 2);
 
-        ab.add_addr(
-            &peer_id,
-            "/memory/654321".parse().unwrap(),
-            Duration::from_secs(1),
-        );
+        ab.add_addr(&peer_id, "/memory/654321".parse().unwrap(), Duration::from_secs(1));
         let addrs = ab.get_addr(&peer_id).unwrap();
         assert_eq!(addrs.len(), 2);
 
