@@ -24,7 +24,7 @@ use std::pin::Pin;
 use std::time::Duration;
 use stream::{
     State,
-    Stream,
+    Stream
 };
 
 /// `Control` to `Connection` commands.
@@ -112,11 +112,6 @@ impl Shutdown {
     }
 }
 
-pub(crate) struct StreamInfo {
-    state: State,
-    sender: mpsc::Sender<Vec<u8>>,
-}
-
 /// Arbitrary limit of our internal command channels.
 ///
 /// Since each `mpsc::Sender` gets a guaranteed slot in a channel the
@@ -133,7 +128,8 @@ pub struct Connection<T> {
     is_closed: bool,
     shutdown: Shutdown,
     next_stream_id: u32,
-    streams: IntMap<StreamID, StreamInfo>,
+    streams: IntMap<StreamID, mpsc::Sender<Vec<u8>>>,
+    streams_stat: IntMap<StreamID, State>,
     stream_sender: mpsc::Sender<StreamCommand>,
     stream_receiver: mpsc::Receiver<StreamCommand>,
     control_sender: mpsc::Sender<ControlCommand>,
@@ -165,6 +161,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
             next_stream_id: 0,
             shutdown: Shutdown::NotStarted,
             streams: IntMap::default(),
+            streams_stat: IntMap::default(),
             stream_sender,
             stream_receiver,
             control_sender,
@@ -190,7 +187,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
         }
 
         let result = self.handle_coming().await;
-        log::error!("{}: error exit, {:?}", self.id, result);
+        log::info!("{}: error exit, {:?}", self.id, result);
 
         self.is_closed = true;
 
@@ -259,7 +256,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
         match frame.header().tag() {
             Tag::NewStream => {
                 let stream_id = frame.header().stream_id();
-                if self.streams.contains_key(&stream_id) {
+                if self.streams_stat.contains_key(&stream_id) {
                     log::error!(
                         "received NewStream message for existing stream: {}",
                         stream_id
@@ -268,11 +265,9 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
                 }
 
                 let (stream_sender, stream_receiver) = mpsc::channel(MAX_COMMAND_BACKLOG);
-                let info = StreamInfo {
-                    state: State::Open,
-                    sender: stream_sender,
-                };
-                self.streams.insert(stream_id, info);
+                self.streams.insert(stream_id, stream_sender);
+                self.streams_stat.insert(stream_id, State::Open);
+
                 let stream = Stream::new(
                     stream_id,
                     self.id,
@@ -289,15 +284,25 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
             }
             Tag::Message => {
                 let stream_id = frame.header().stream_id();
+                if let Some(stat) = self.streams_stat.get(&stream_id) {
+                    // if remote had close stream, ingore this stream's frame
+                    if *stat == State::RecvClosed {
+                        return Ok(());
+                    }
+                } else {
+                    return Ok(());
+                }
+
+                let mut reset = false;
                 let mut dropped = false;
                 // If stream is closed, ignore frame
-                if let Some(info) = self.streams.get_mut(&stream_id) {
-                    if !info.sender.is_closed() {
-                        let sender = info.sender.send(frame.body().to_vec());
+                if let Some(sender) = self.streams.get_mut(&stream_id) {
+                    if !sender.is_closed() {
+                        let sender = sender.send(frame.body().to_vec());
                         if send_channel_timeout(sender, RECEIVE_TIMEOUT).await.is_err() {
                             // reset stream
                             log::error!("stream {} send timeout, Reset it", stream_id);
-                            dropped = true;
+                            reset = true;
                             // info.sender.close().await;
                             let frame = Frame::reset_frame(stream_id);
                             self.writer
@@ -313,24 +318,31 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
                 if dropped {
                     self.streams.remove(&stream_id);
                 }
+                if reset {
+                    self.streams.remove(&stream_id);
+                    self.streams_stat.remove(&stream_id);
+                }
             }
             Tag::Close => {
                 let stream_id = frame.header().stream_id();
                 log::info!("{}: remote close stream {} of {}", self.id, stream_id, self);
-                if let Some(info) = self.streams.get_mut(&stream_id) {
-                    let state = info.state;
-                    match state {
-                        State::Open => { info.state = State::HalfClosed; }
-                        State::HalfClosed => {
+                if let Some(stat) = self.streams_stat.get_mut(&stream_id) {
+                    match stat {
+                        State::Open => {
                             self.streams.remove(&stream_id);
-                        },
+                            *stat = State::RecvClosed;
+                        }
+                        State::SendClosed => {
+                            *stat = State::Closed;
+                        }
                         _ => {}
                     }
                 }
             }
             Tag::Reset => {
                 let stream_id = frame.header().stream_id();
-                log::info!("{}: remote reset stream {} of {}", self.id, stream_id, self);
+                log::error!("{}: remote reset stream {} of {}", self.id, stream_id, self);
+                self.streams_stat.remove(&stream_id);
                 self.streams.remove(&stream_id);
             }
         };
@@ -343,17 +355,19 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
         match cmd {
             Some(StreamCommand::SendFrame(frame, reply)) => {
                 let stream_id = frame.stream_id();
-                if self.streams.contains_key(&stream_id) {
-                    log::info!("{}: sending: {}", self.id, frame.header());
-                    self.writer
-                        .send_frame(&frame)
-                        .await
-                        .or(Err(ConnectionError::Closed))?;
+                if let Some(stat) = self.streams_stat.get(&stream_id) {
+                    if stat.can_write() {
+                        log::info!("{}: sending: {}", self.id, frame.header());
+                        self.writer
+                            .send_frame(&frame)
+                            .await
+                            .or(Err(ConnectionError::Closed))?;
 
-                    let _ = reply.send(());
-                } else {
-                    log::info!("{}: stream {} have been removed", self.id, stream_id);
-                    drop(reply);
+                        let _ = reply.send(());
+                    } else {
+                        log::info!("{}: stream {} have been removed", self.id, stream_id);
+                        drop(reply);
+                    }
                 }
             }
             Some(StreamCommand::CloseStream(frame)) => {
@@ -366,13 +380,14 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
                     .or(Err(ConnectionError::Closed))?;
 
                 // step2: remove stream
-                if let Some(info) = self.streams.get_mut(&stream_id) {
-                    let state = info.state;
-                    match state {
-                        State::Open => { info.state = State::HalfClosed; },
-                        State::HalfClosed => {
-                            self.streams.remove(&stream_id);
-                        },
+                if let Some(stat) = self.streams_stat.get_mut(&stream_id) {
+                    match stat {
+                        State::Open => {
+                            *stat = State::SendClosed;
+                        }
+                        State::RecvClosed => {
+                            *stat = State::Closed;
+                        }
                         _ => {}
                     }
                 }
@@ -387,6 +402,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
                     .or(Err(ConnectionError::Closed))?;
 
                 // step2: remove stream
+                self.streams_stat.remove(&stream_id);
                 self.streams.remove(&stream_id);
             }
             None => {
@@ -419,19 +435,10 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
 
                 let stream_id = self.next_stream_id()?;
                 let (stream_sender, stream_receiver) = mpsc::channel(MAX_COMMAND_BACKLOG);
-                let info = StreamInfo {
-                    state: State::Open,
-                    sender: stream_sender,
-                };
-                self.streams.insert(stream_id, info);
-                let stream = Stream::new(
-                    stream_id,
-                    self.id,
-                    self.stream_sender.clone(),
-                    stream_receiver,
-                );
+                self.streams.insert(stream_id, stream_sender);
+                self.streams_stat.insert(stream_id, State::Open);
 
-                log::info!("{}: new outbound {} of {}", self.id, stream, self);
+                log::info!("{}: new outbound {} of {}", self.id, stream_id, self);
 
                 // send to peer with new stream frame
                 let body = format!("{}", stream_id.val());
@@ -441,6 +448,12 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
                     .await
                     .or(Err(ConnectionError::Closed))?;
 
+                let stream = Stream::new(
+                    stream_id,
+                    self.id,
+                    self.stream_sender.clone(),
+                    stream_receiver,
+                );
                 reply.send(Ok(stream)).expect("send err");
             }
             Some(ControlCommand::AcceptStream(reply)) => {
@@ -456,12 +469,11 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
                 }
             }
             Some(ControlCommand::CloseConnection(reply)) => {
-                if self.shutdown.is_complete() {
-                    // We are already closed so just inform the control.
+                if !self.shutdown.has_not_started() {
+                    log::info!("shutdown had started, ingore this request");
                     let _ = reply.send(());
                     return Ok(());
                 }
-                debug_assert!(self.shutdown.has_not_started());
                 self.shutdown = Shutdown::InProgress(reply);
                 log::info!("closing connection {}", self);
                 self.stream_receiver.close();

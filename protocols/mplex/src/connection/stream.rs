@@ -4,22 +4,44 @@ use crate::{
 };
 use async_trait::async_trait;
 use bytes::{Buf, BufMut};
+use futures::channel::oneshot;
+use futures::lock::Mutex;
 use futures::{channel::mpsc, SinkExt, StreamExt};
 use libp2p_traits::{ReadEx, WriteEx};
-use std::{fmt, io};
-use futures::lock::Mutex;
 use std::sync::Arc;
-use futures::channel::oneshot;
+use std::{fmt, io};
 
 /// The state of a Yamux stream.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum State {
     /// Open bidirectionally.
     Open,
-    /// half close.
-    HalfClosed,
+    /// Open for incoming messages.
+    SendClosed,
+    /// Open for outgoing messages.
+    RecvClosed,
     /// Closed (terminal state).
     Closed,
+}
+
+impl State {
+    /// Can we receive messages over this stream?
+    pub fn can_read(self) -> bool {
+        if let State::RecvClosed | State::Closed = self {
+            false
+        } else {
+            true
+        }
+    }
+
+    /// Can we send messages over this stream?
+    pub fn can_write(self) -> bool {
+        if let State::SendClosed | State::Closed = self {
+            false
+        } else {
+            true
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -112,7 +134,6 @@ impl Stream {
             .await
             .map_err(|_| self.write_zero_err())?;
 
-        // TODO define stream error type
         rx.await.map_err(|_| self.closed_err())?;
 
         Ok(n)
@@ -151,7 +172,10 @@ impl Stream {
                 .await
                 .map_err(|_| self.write_zero_err())?;
 
-            self.sender.close().await.map_err(|_| self.write_zero_err())?;
+            self.sender
+                .close()
+                .await
+                .map_err(|_| self.write_zero_err())?;
         }
 
         Ok(())
