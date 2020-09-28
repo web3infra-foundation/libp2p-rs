@@ -16,6 +16,7 @@ use libp2p_tcp::TcpConfig;
 use libp2p_traits::{ReadEx, WriteEx};
 use secio;
 use yamux;
+use libp2p_swarm::substream::Substream;
 
 fn main() {
     env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -38,11 +39,11 @@ where
 {
     loop {
         print!("> ");
-        std::io::stdout().flush();
+        let _= std::io::stdout().flush();
         let mut input = String::new();
         let n = io::stdin().read_line(&mut input).await.unwrap();
         let _ = stream.write_all2(&input.as_bytes()[0..n]).await;
-        stream.flush2().await;
+        let _= stream.flush2().await;
     }
 }
 
@@ -59,7 +60,7 @@ where
         }
         if str != "\n" {
             print!("\x1b[32m{}\x1b[0m> ", str);
-            std::io::stdout().flush();
+            let _= std::io::stdout().flush();
         }
     }
 }
@@ -82,7 +83,7 @@ where
 {
     async fn handle(
         &mut self,
-        stream: C,
+        stream: Substream<C>,
         _info: <Self as UpgradeInfo>::Info,
     ) -> Result<(), SwarmError> {
         let stream = stream;
