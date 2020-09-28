@@ -15,7 +15,7 @@ pub trait Handler<T> {
     async fn handle(&mut self, s: &mut BoxStream) -> T;
 }
 
-pub type BoxHandler<T> = Box<dyn Handler<T> + Send + Sync>;
+pub type IProtocolHandler<T> = Box<dyn Handler<T> + Send + Sync>;
 
 #[async_trait]
 impl<F, T, Fut> Handler<T> for F
@@ -37,7 +37,7 @@ where
 pub struct Muxer<TProto, T> {
     negotiator: Negotiator<TProto>,
 
-    handlers: HashMap<TProto, BoxHandler<T>>,
+    handlers: HashMap<TProto, IProtocolHandler<T>>,
 }
 
 impl<TProto, T> Muxer<TProto, T>
@@ -52,7 +52,7 @@ where
         }
     }
 
-    pub fn add_handler(&mut self, proto: TProto, handler: BoxHandler<T>) -> Option<BoxHandler<T>> {
+    pub fn add_handler(&mut self, proto: TProto, handler: IProtocolHandler<T>) -> Option<IProtocolHandler<T>> {
         self.negotiator
             .add_protocol(proto.clone())
             .expect("protocol duplicate");
@@ -62,7 +62,7 @@ where
     pub async fn negotiate<TSocket>(
         &mut self,
         socket: TSocket,
-    ) -> Result<(&mut BoxHandler<T>, TProto, TSocket), NegotiationError>
+    ) -> Result<(&mut IProtocolHandler<T>, TProto, TSocket), NegotiationError>
     where
         TSocket: ReadEx + WriteEx + Send + Unpin,
     {
@@ -74,7 +74,7 @@ where
     pub async fn select_one<TSocket>(
         &mut self,
         socket: TSocket,
-    ) -> Result<(&mut BoxHandler<T>, TProto, TSocket), NegotiationError>
+    ) -> Result<(&mut IProtocolHandler<T>, TProto, TSocket), NegotiationError>
     where
         TSocket: ReadEx + WriteEx + Send + Unpin,
     {
@@ -100,7 +100,7 @@ mod tests {
     use async_trait::async_trait;
 
     use super::super::Memory;
-    use super::{BoxHandler, BoxStream, Handler, Muxer, Stream};
+    use super::{IProtocolHandler, BoxStream, Handler, Muxer, Stream};
 
     struct Test(String);
     impl Stream for Test {}
@@ -116,12 +116,12 @@ mod tests {
         Box::new(Test("stream".to_string()))
     }
 
-    fn get_handler(name: &str) -> BoxHandler<String> {
+    fn get_handler(name: &str) -> IProtocolHandler<String> {
         Box::new(Test(name.to_string()))
     }
 
     /*
-    fn get_server_proto_handler() -> BoxHandler<()> {
+    fn get_server_proto_handler() -> IProtocolHandler<()> {
         Box::new(|_s: &mut BoxStream| {
             async {
                 println!("/proto1 server handler");
@@ -130,7 +130,7 @@ mod tests {
     }
      */
 
-    fn get_client_proto_handler() -> BoxHandler<&'static str> {
+    fn get_client_proto_handler() -> IProtocolHandler<&'static str> {
         Box::new(|_s: &mut BoxStream| async { "/proto1 client handler" })
     }
 

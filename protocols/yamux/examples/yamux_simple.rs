@@ -4,7 +4,7 @@ use async_std::{
 };
 use log::info;
 
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use yamux::{Config, Connection, Mode};
 
 fn main() {

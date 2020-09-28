@@ -1,11 +1,11 @@
 pub mod split;
 
-use crate::{Read2, Write2};
+use crate::{ReadEx, WriteEx};
 
 // use futures::{AsyncRead, AsyncReadExt, AsyncWrite, io::{ReadHalf, WriteHalf}};
 pub use split::{ReadHalf, WriteHalf};
 
-pub trait ReadExt2: Read2 {
+pub trait ReadExt2: ReadEx {
     /// Helper method for splitting this read/write object into two halves.
     ///
     /// The two halves returned implement the `AsyncRead` and `AsyncWrite`
@@ -37,18 +37,18 @@ pub trait ReadExt2: Read2 {
     /// ```
     fn split2(self) -> (ReadHalf<Self>, WriteHalf<Self>)
     where
-        Self: Sized + Write2 + Send + Unpin,
+        Self: Sized + WriteEx + Send + Unpin,
     {
         split::split(self)
     }
 }
 
-impl<R: Read2 + ?Sized> ReadExt2 for R {}
+impl<R: ReadEx + ?Sized> ReadExt2 for R {}
 
 #[cfg(test)]
 mod tests {
 
-    use super::{Read2, ReadExt2, Write2};
+    use super::{ReadEx, ReadExt2, WriteEx};
     use async_std::net::{TcpListener, TcpStream};
     use async_std::task;
 

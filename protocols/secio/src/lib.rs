@@ -16,7 +16,7 @@ use crate::codec::secure_stream::SecureStream;
 use libp2p_core::secure_io::SecureInfo;
 use libp2p_core::transport::{ConnectionInfo, TransportError};
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use std::io;
 
 /// Encrypted and decrypted codec implementation, and stream handle
@@ -126,7 +126,7 @@ impl Config {
         socket: T,
     ) -> Result<(SecureStream<T>, PublicKey, EphemeralPublicKey), SecioError>
     where
-        T: Read2 + Write2 + Send + 'static,
+        T: ReadEx + WriteEx + Send + 'static,
     {
         handshake(socket, self).await
     }
@@ -142,7 +142,7 @@ impl UpgradeInfo for Config {
 
 async fn make_secure_output<T>(config: Config, socket: T) -> Result<SecioOutput<T>, TransportError>
 where
-    T: ConnectionInfo + Read2 + Write2 + Send + Unpin + 'static,
+    T: ConnectionInfo + ReadEx + WriteEx + Send + Unpin + 'static,
 {
     // TODO: to be more elegant, local private key could be returned by handshake()
     let pri_key = config.key.clone();
@@ -165,7 +165,7 @@ where
 #[async_trait]
 impl<T> Upgrader<T> for Config
 where
-    T: ConnectionInfo + Read2 + Write2 + Send + Unpin + 'static,
+    T: ConnectionInfo + ReadEx + WriteEx + Send + Unpin + 'static,
 {
     type Output = SecioOutput<T>;
 
@@ -233,14 +233,14 @@ impl<S> SecureInfo for SecioOutput<S> {
 }
 
 #[async_trait]
-impl<S: Read2 + Write2 + Unpin + Send + 'static> Read2 for SecioOutput<S> {
+impl<S: ReadEx + WriteEx + Unpin + Send + 'static> ReadEx for SecioOutput<S> {
     async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
         self.stream.read2(buf).await
     }
 }
 
 #[async_trait]
-impl<S: Read2 + Write2 + Unpin + Send + 'static> Write2 for SecioOutput<S> {
+impl<S: ReadEx + WriteEx + Unpin + Send + 'static> WriteEx for SecioOutput<S> {
     async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
         self.stream.write2(buf).await
     }
@@ -257,6 +257,6 @@ impl<S: Read2 + Write2 + Unpin + Send + 'static> Write2 for SecioOutput<S> {
 impl From<SecioError> for TransportError {
     fn from(_: SecioError) -> Self {
         // TODO: make a security error catalog for secio
-        TransportError::Internal
+        TransportError::SecurityError
     }
 }

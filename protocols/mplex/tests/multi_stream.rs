@@ -3,7 +3,7 @@ use async_std::{
     task,
 };
 use futures::channel;
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use mplex::connection::Connection;
 
 #[test]

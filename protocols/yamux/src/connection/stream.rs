@@ -29,7 +29,7 @@ use std::{
 use async_trait::async_trait;
 use futures::lock::{Mutex, MutexGuard};
 
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 
 /// The state of a Yamux stream.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -438,14 +438,14 @@ impl Shared {
 }
 
 #[async_trait]
-impl Read2 for Stream {
+impl ReadEx for Stream {
     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.read_stream(buf).await
     }
 }
 
 #[async_trait]
-impl Write2 for Stream {
+impl WriteEx for Stream {
     async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.write_stream(buf).await
     }

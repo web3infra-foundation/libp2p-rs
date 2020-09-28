@@ -26,7 +26,7 @@ use crate::upgrade::{UpgradeInfo, Upgrader};
 use crate::{Multiaddr, PeerId, PublicKey};
 use async_trait::async_trait;
 use futures::future::BoxFuture;
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use log::trace;
 use std::{fmt, io};
 
@@ -106,13 +106,13 @@ impl<T: Send + 'static> Upgrader<T> for DummyUpgrader {
 }
 
 #[async_trait]
-impl<T: Send + Read2> Read2 for DummyStream<T> {
+impl<T: Send + ReadEx> ReadEx for DummyStream<T> {
     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.0.read2(buf).await
     }
 }
 #[async_trait]
-impl<T: Send + Write2> Write2 for DummyStream<T> {
+impl<T: Send + WriteEx> WriteEx for DummyStream<T> {
     async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0.write2(buf).await
     }

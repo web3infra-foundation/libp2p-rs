@@ -6,11 +6,12 @@ use futures::io::Error;
 use futures::{channel::mpsc, prelude::*, task::Context, task::Poll, AsyncReadExt, AsyncWriteExt};
 use futures::{SinkExt, StreamExt};
 use lazy_static::lazy_static;
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use multiaddr::{Multiaddr, Protocol};
 use parking_lot::Mutex;
 use rw_stream_sink::RwStreamSink;
-use std::{collections::hash_map::Entry, io, num::NonZeroU64, pin::Pin};
+use std::{collections::hash_map::Entry, io, num::NonZeroU64, pin::Pin, fmt};
+use crate::muxing::StreamInfo;
 
 lazy_static! {
     static ref HUB: Mutex<FnvHashMap<NonZeroU64, mpsc::Sender<Channel>>> =
@@ -167,21 +168,30 @@ fn parse_memory_addr(a: &Multiaddr) -> Result<u64, ()> {
 
 /// A channel represents an established, in-memory, logical connection between two endpoints.
 ///
-/// Implements `Read2` and `Write2`.
+/// Implements `ReadEx` and `WriteEx`.
 pub struct Channel {
     io: RwStreamSink<Chan<Vec<u8>>>,
     la: Multiaddr,
     ra: Multiaddr,
 }
 
+impl fmt::Debug for Channel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Channel")
+            .field("la", &self.la)
+            .field("ra", &self.ra)
+            .finish()
+    }
+}
+
 #[async_trait]
-impl Read2 for Channel {
+impl ReadEx for Channel {
     async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
         self.io.read(buf).await
     }
 }
 #[async_trait]
-impl Write2 for Channel {
+impl WriteEx for Channel {
     async fn write2(&mut self, buf: &[u8]) -> Result<usize, Error> {
         self.io.write(buf).await
     }
@@ -248,6 +258,12 @@ impl ConnectionInfo for Channel {
 
     fn remote_multiaddr(&self) -> Multiaddr {
         self.ra.clone()
+    }
+}
+
+impl StreamInfo for Channel {
+    fn id(&self) -> usize {
+        0
     }
 }
 

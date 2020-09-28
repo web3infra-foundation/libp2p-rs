@@ -13,6 +13,7 @@ edition = "2018"
 
 [dependencies]
 async-trait = "0.1"
+unsigned-varint = "0.4"
 futures = { version = "0.3", features = ["default", "bilock", "unstable"] }
 
 [dev-dependencies]

@@ -111,7 +111,7 @@ use std::{fmt, sync::Arc};
 pub use control::Control;
 pub use stream::{State, Stream};
 
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use std::collections::VecDeque;
 
 /// Arbitrary limit of our internal command channels.
@@ -277,7 +277,7 @@ impl<T> fmt::Display for Connection<T> {
     }
 }
 
-impl<T: Read2 + Write2 + Unpin + Send> Connection<T> {
+impl<T: ReadEx + WriteEx + Unpin + Send> Connection<T> {
     /// Create a new `Connection` from the given I/O resource.
     pub fn new(socket: T, cfg: Config, mode: Mode) -> Self {
         let id = Id::random(mode);
@@ -938,7 +938,7 @@ impl<T> Drop for Connection<T> {
 // /// Turn a Yamux [`Connection`] into a [`futures::Stream`].
 // pub fn into_stream<T>(c: Connection<T>) -> impl futures::stream::Stream<Item = Result<Stream>>
 // where
-//     T: Read2 + Write2 + Unpin + Send,
+//     T: ReadEx + WriteEx + Unpin + Send,
 // {
 //     futures::stream::unfold(c, |mut c| async {
 //         match c.next_stream().await {

@@ -5,7 +5,7 @@ use crate::{
     Multiaddr, Transport,
 };
 use async_trait::async_trait;
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 
 #[derive(Debug, Copy, Clone)]
 pub struct ProtectorTransport<InnerTrans> {
@@ -24,7 +24,7 @@ impl<InnerTrans> ProtectorTransport<InnerTrans> {
 impl<InnerTrans> Transport for ProtectorTransport<InnerTrans>
 where
     InnerTrans: Transport,
-    InnerTrans::Output: ConnectionInfo + Read2 + Write2 + Unpin + 'static,
+    InnerTrans::Output: ConnectionInfo + ReadEx + WriteEx + Unpin + 'static,
 {
     type Output = PnetOutput<InnerTrans::Output>;
     type Listener = ProtectorListener<InnerTrans::Listener>;
@@ -37,10 +37,7 @@ where
 
     async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
         let socket = self.inner.dial(addr).await?;
-        match self.pnet.handshake(socket).await {
-            Ok(output) => Ok(output),
-            Err(_) => Err(TransportError::HandshakeError),
-        }
+        self.pnet.handshake(socket).await.map_err(|e|e.into())
     }
 }
 
@@ -59,16 +56,13 @@ impl<InnerListener> ProtectorListener<InnerListener> {
 impl<InnerListener> TransportListener for ProtectorListener<InnerListener>
 where
     InnerListener: TransportListener,
-    InnerListener::Output: ConnectionInfo + Read2 + Write2 + Unpin + 'static,
+    InnerListener::Output: ConnectionInfo + ReadEx + WriteEx + Unpin + 'static,
 {
     type Output = PnetOutput<InnerListener::Output>;
 
     async fn accept(&mut self) -> Result<Self::Output, TransportError> {
         let stream = self.inner.accept().await?;
-        match self.pnet.clone().handshake(stream).await {
-            Ok(output) => Ok(output),
-            Err(_) => Err(TransportError::HandshakeError),
-        }
+        self.pnet.clone().handshake(stream).await.map_err(|e|e.into())
     }
 
     fn multi_addr(&self) -> Multiaddr {

@@ -8,7 +8,7 @@ use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::transport::{TransportError, TransportListener};
 use libp2p_core::upgrade::Selector;
 use libp2p_core::{Multiaddr, Transport};
-use libp2p_traits::{copy, Read2, ReadExt2, Write2};
+use libp2p_traits::{copy, ReadEx, ReadExt2, WriteEx};
 use secio;
 use std::time::Duration;
 use yamux;
