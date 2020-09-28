@@ -11,20 +11,20 @@
 use async_std::task;
 use futures::channel::oneshot;
 use futures::stream::FusedStream;
-use futures::{channel::mpsc, future, prelude::*, ready};
+use futures::{channel::mpsc, prelude::*, ready};
 use libp2p_traits::{ReadEx, ReadExt2, WriteEx};
 use mplex::{
-    connection::{control::Control, stream::Stream as mplex_stream, Connection},
-    error::ConnectionError,
+    connection::{
+        stream::Stream as mplex_stream,
+        Connection
+    },
 };
-use quickcheck::{Arbitrary, Gen, QuickCheck, TestResult};
-use secio::crypto::new_stream;
+use quickcheck::{QuickCheck, TestResult};
 use std::collections::VecDeque;
 use std::time::Duration;
 use std::{
-    fmt, io,
+    io,
     pin::Pin,
-    sync::Arc,
     task::{Context, Poll},
 };
 
@@ -41,7 +41,7 @@ fn prop_slow_reader() {
 
             let handle_a = task::spawn(async {
                 let mut muxer_conn = mpa;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("A connection {} is closed", muxer_conn.id());
             });
 
@@ -50,7 +50,7 @@ fn prop_slow_reader() {
 
             let handle_b = task::spawn(async {
                 let mut muxer_conn = mpb;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("B connection {} is closed", muxer_conn.id());
             });
 
@@ -108,7 +108,7 @@ fn prop_basic_streams() {
             let mut mpa_ctrl = mpa.control();
             let handle_a = task::spawn(async {
                 let mut muxer_conn = mpa;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("A connection {} is closed", muxer_conn.id());
             });
 
@@ -116,7 +116,7 @@ fn prop_basic_streams() {
             let mut mpb_ctrl = mpb.control();
             let handle_b = task::spawn(async {
                 let mut muxer_conn = mpb;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("B connection {} is closed", muxer_conn.id());
             });
 
@@ -164,7 +164,7 @@ fn prop_write_after_close() {
             let mut mpa_ctrl = mpa.control();
             let handle_a = task::spawn(async {
                 let mut muxer_conn = mpa;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("A connection {} is closed", muxer_conn.id());
             });
 
@@ -172,7 +172,7 @@ fn prop_write_after_close() {
             let mut mpb_ctrl = mpb.control();
             let handle_b = task::spawn(async {
                 let mut muxer_conn = mpb;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("B connection {} is closed", muxer_conn.id());
             });
 
@@ -185,7 +185,7 @@ fn prop_write_after_close() {
                 sb.write_all2(msg).await.expect("B write all 1");
                 sb.write_all2(msg).await.expect("B write all 2");
                 sb.close2().await.expect("B close stream");
-                tx.send(());
+                let _ = tx.send(());
             });
 
             let mut sa = mpa_ctrl
@@ -195,7 +195,7 @@ fn prop_write_after_close() {
                 .expect("client open stream");
 
             // wait for writes to complete and close to happen (and be noticed)
-            rx.await;
+            let _ = rx.await;
 
             let mut buf = vec![0; msg.len() * 2];
             sa.read_exact2(&mut buf).await.expect("A read exact");
@@ -246,7 +246,7 @@ fn prop_p2p() {
             let mut mpa_ctrl = mpa.control();
             let loop_handle_a = task::spawn(async {
                 let mut muxer_conn = mpa;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("A connection {} is closed", muxer_conn.id());
             });
 
@@ -255,30 +255,30 @@ fn prop_p2p() {
             let mut mpb_ctrl = mpb.control();
             let loop_handle_b = task::spawn(async {
                 let mut muxer_conn = mpb;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("B connection {} is closed", muxer_conn.id());
             });
 
             let mut mpb_ctrl1 = mpb_ctrl.clone();
             let handle_a = task::spawn(async move {
                 let mut mpb_ctrl2 = mpb_ctrl1.clone();
-                let handle = task::spawn(async move {
-                    let mut sb = mpb_ctrl2.accept_stream().await.expect("B accept stream");
+                task::spawn(async move {
+                    let sb = mpb_ctrl2.accept_stream().await.expect("B accept stream");
                     echo(sb).await;
                 });
-                let mut sb = mpb_ctrl1.open_stream().await.expect("B accept stream");
+                let sb = mpb_ctrl1.open_stream().await.expect("B accept stream");
                 send_recv(sb).await;
             });
 
             let mut mpa_ctrl1 = mpa_ctrl.clone();
             let handle_b = task::spawn(async move {
                 let mut mpa_ctrl2 = mpa_ctrl1.clone();
-                let handle = task::spawn(async move {
-                    let mut sa = mpa_ctrl2.accept_stream().await.expect("accept stream");
+                task::spawn(async move {
+                    let sa = mpa_ctrl2.accept_stream().await.expect("accept stream");
                     echo(sa).await;
                 });
 
-                let mut sa = mpa_ctrl1.clone().open_stream().await.expect("open stream");
+                let sa = mpa_ctrl1.open_stream().await.expect("open stream");
                 send_recv(sa).await;
             });
 
@@ -310,7 +310,7 @@ fn prop_echo() {
             let mut mpa_ctrl = mpa.control();
             let handle_a = task::spawn(async {
                 let mut muxer_conn = mpa;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("A connection {} is closed", muxer_conn.id());
             });
 
@@ -319,7 +319,7 @@ fn prop_echo() {
             let mut mpb_ctrl = mpb.control();
             let handle_b = task::spawn(async {
                 let mut muxer_conn = mpb;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("B connection {} is closed", muxer_conn.id());
             });
 
@@ -378,7 +378,7 @@ fn prop_half_close() {
             let mut mpa_ctrl = mpa.control();
             let handle_a = task::spawn(async {
                 let mut muxer_conn = mpa;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("A connection {} is closed", muxer_conn.id());
             });
 
@@ -387,7 +387,7 @@ fn prop_half_close() {
             let mut mpb_ctrl = mpb.control();
             let handle_b = task::spawn(async {
                 let mut muxer_conn = mpb;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("B connection {} is closed", muxer_conn.id());
             });
 
@@ -396,7 +396,7 @@ fn prop_half_close() {
             let msg1 = msg.clone();
             task::spawn(async move {
                 let mut sb = mpb_ctrl1.accept_stream().await.expect("B accept stream");
-                rx.await;
+                let _ = rx.await;
                 sb.write_all2(&msg1).await.expect("B write all");
                 sb.close2().await.expect("B close");
             });
@@ -414,7 +414,7 @@ fn prop_half_close() {
                 return TestResult::failed();
             }
 
-            tx.send(());
+            let _ = tx.send(());
 
             let mut buf = vec![0; msg.len()];
             sa.read_exact2(&mut buf).await.expect("A read exact");
@@ -445,10 +445,10 @@ fn prop_fuzz_close_connection() {
 
                 // create connection A
                 let mpa = Connection::new(a);
-                let mut mpa_ctrl = mpa.control();
+                let mpa_ctrl = mpa.control();
                 let handle_a = task::spawn(async {
                     let mut muxer_conn = mpa;
-                    muxer_conn.next_stream().await;
+                    let _ = muxer_conn.next_stream().await;
                     log::info!("A connection {} is closed", muxer_conn.id());
                 });
 
@@ -457,7 +457,7 @@ fn prop_fuzz_close_connection() {
                 let mut mpb_ctrl = mpb.control();
                 let handle_b = task::spawn(async {
                     let mut muxer_conn = mpb;
-                    muxer_conn.next_stream().await;
+                    let _ = muxer_conn.next_stream().await;
                     log::info!("B connection {} is closed", muxer_conn.id());
                 });
 
@@ -493,7 +493,7 @@ fn prop_closing() {
             let mut mpa_ctrl = mpa.control();
             let handle_a = task::spawn(async {
                 let mut muxer_conn = mpa;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("A connection {} is closed", muxer_conn.id());
                 muxer_conn.streams_length()
             });
@@ -503,7 +503,7 @@ fn prop_closing() {
             let mut mpb_ctrl = mpb.control();
             let handle_b = task::spawn(async {
                 let mut muxer_conn = mpb;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("B connection {} is closed", muxer_conn.id());
                 muxer_conn.streams_length()
             });
@@ -545,7 +545,7 @@ fn prop_reset() {
             let mut mpa_ctrl = mpa.control();
             let handle_a = task::spawn(async {
                 let mut muxer_conn = mpa;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("A connection {} is closed", muxer_conn.id());
             });
 
@@ -554,7 +554,7 @@ fn prop_reset() {
             let mut mpb_ctrl = mpb.control();
             let handle_b = task::spawn(async {
                 let mut muxer_conn = mpb;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("B connection {} is closed", muxer_conn.id());
             });
 
@@ -613,7 +613,7 @@ fn prop_reset_after_eof() {
             let mut mpa_ctrl = mpa.control();
             let handle_a = task::spawn(async {
                 let mut muxer_conn = mpa;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("A connection {} is closed", muxer_conn.id());
             });
 
@@ -622,7 +622,7 @@ fn prop_reset_after_eof() {
             let mut mpb_ctrl = mpb.control();
             let handle_b = task::spawn(async {
                 let mut muxer_conn = mpb;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("B connection {} is closed", muxer_conn.id());
             });
 
@@ -674,10 +674,10 @@ fn prop_open_after_close() {
 
             // create connection A
             let mpa = Connection::new(a);
-            let mut mpa_ctrl = mpa.control();
+            let mpa_ctrl = mpa.control();
             let handle_a = task::spawn(async {
                 let mut muxer_conn = mpa;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("A connection {} is closed", muxer_conn.id());
             });
 
@@ -686,7 +686,7 @@ fn prop_open_after_close() {
             let mut mpb_ctrl = mpb.control();
             let handle_b = task::spawn(async {
                 let mut muxer_conn = mpb;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("B connection {} is closed", muxer_conn.id());
             });
 
@@ -738,7 +738,7 @@ fn prop_read_after_close() {
             let mut mpa_ctrl = mpa.control();
             let handle_a = task::spawn(async {
                 let mut muxer_conn = mpa;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("A connection {} is closed", muxer_conn.id());
             });
 
@@ -747,7 +747,7 @@ fn prop_read_after_close() {
             let mut mpb_ctrl = mpb.control();
             let handle_b = task::spawn(async {
                 let mut muxer_conn = mpb;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("B connection {} is closed", muxer_conn.id());
             });
 
@@ -796,7 +796,7 @@ fn prop_fuzz_close_stream() {
             let mut mpa_ctrl = mpa.control();
             let handle_a = task::spawn(async {
                 let mut muxer_conn = mpa;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("A connection {} is closed", muxer_conn.id());
                 muxer_conn.streams_length()
             });
@@ -806,7 +806,7 @@ fn prop_fuzz_close_stream() {
             let mut mpb_ctrl = mpb.control();
             let handle_b = task::spawn(async {
                 let mut muxer_conn = mpb;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("B connection {} is closed", muxer_conn.id());
                 muxer_conn.streams_length()
             });
@@ -817,7 +817,7 @@ fn prop_fuzz_close_stream() {
             task::spawn(async move {
                 let mut handles = VecDeque::new();
                 for _ in 0..100 {
-                    let mut sa = ctrl
+                    let sa = ctrl
                         .clone()
                         .open_stream()
                         .await
@@ -836,7 +836,7 @@ fn prop_fuzz_close_stream() {
                     handle.await;
                 }
 
-                tx.send(());
+                let _ = tx.send(());
             });
 
             let mut streams = VecDeque::new();
@@ -849,7 +849,7 @@ fn prop_fuzz_close_stream() {
                 streams.push_back(sb);
             }
 
-            rx.await;
+            let _ = rx.await;
 
             for mut stream in streams {
                 stream.close2().await.expect("B close stream");
