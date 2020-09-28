@@ -301,7 +301,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
                         let sender = sender.send(frame.body().to_vec());
                         if send_channel_timeout(sender, RECEIVE_TIMEOUT).await.is_err() {
                             // reset stream
-                            log::error!("stream {} send timeout, Reset it", stream_id);
+                            log::info!("stream {} send timeout, Reset it", stream_id);
                             reset = true;
                             // info.sender.close().await;
                             let frame = Frame::reset_frame(stream_id);
@@ -341,7 +341,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
             }
             Tag::Reset => {
                 let stream_id = frame.header().stream_id();
-                log::error!("{}: remote reset stream {} of {}", self.id, stream_id, self);
+                log::info!("{}: remote reset stream {} of {}", self.id, stream_id, self);
                 self.streams_stat.remove(&stream_id);
                 self.streams.remove(&stream_id);
             }
