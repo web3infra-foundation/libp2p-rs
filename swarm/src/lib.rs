@@ -255,7 +255,7 @@ where
 
     muxer: Muxer<<TTrans::Output as StreamMuxer>::Substream>,
 
-    //protocol_handlers: FnvHashMap<ProtocolId, BoxHandler<<TTrans::Output as StreamMuxer>::Substream>>,
+    //protocol_handlers: FnvHashMap<ProtocolId, IProtocolHandler<<TTrans::Output as StreamMuxer>::Substream>>,
     /// The Transport
     transport: TTrans,
 

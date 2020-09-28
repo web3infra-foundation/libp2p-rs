@@ -32,7 +32,7 @@ use libp2p_core::transport::TransportError;
 use libp2p_core::{PublicKey, Multiaddr};
 
 use crate::{SwarmError, SwarmEvent};
-use crate::protocol_handler::{ProtocolHandler, BoxHandler};
+use crate::protocol_handler::{ProtocolHandler, IProtocolHandler};
 use crate::substream::Substream;
 
 mod structs_proto {
@@ -221,7 +221,7 @@ where
         produce_message(stream, info).await.map_err(|e|e.into())
     }
 
-    fn box_clone(&self) -> BoxHandler<TSocket> {
+    fn box_clone(&self) -> IProtocolHandler<TSocket> {
         Box::new(self.clone())
     }
 }
@@ -280,7 +280,7 @@ where
         Ok(())
     }
 
-    fn box_clone(&self) -> BoxHandler<TSocket> {
+    fn box_clone(&self) -> IProtocolHandler<TSocket> {
         Box::new(self.clone())
     }
 }

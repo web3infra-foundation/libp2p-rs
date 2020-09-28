@@ -34,7 +34,7 @@ use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_core::transport::TransportError;
 
 use crate::SwarmError;
-use crate::protocol_handler::{ProtocolHandler, BoxHandler};
+use crate::protocol_handler::{ProtocolHandler, IProtocolHandler};
 use crate::substream::Substream;
 
 /// The configuration for outbound pings.
@@ -219,7 +219,7 @@ impl<C> ProtocolHandler<C> for PingHandler
 
         Ok(())
     }
-    fn box_clone(&self) -> BoxHandler<C> {
+    fn box_clone(&self) -> IProtocolHandler<C> {
         Box::new(self.clone())
     }
 }
