@@ -42,7 +42,7 @@ use libp2p_core::secure_io::SecureInfo;
 use libp2p_core::transport::{ConnectionInfo, TransportError};
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
 use libp2p_core::{Multiaddr, PeerId, PublicKey};
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 
 const DEFAULT_CREDIT: u32 = 256 * 1024; // as per yamux specification
 
@@ -226,7 +226,7 @@ impl<C> fmt::Debug for Yamux<C> {
     }
 }
 
-impl<C: ConnectionInfo + SecureInfo + Read2 + Write2 + Unpin + Send + 'static> Yamux<C> {
+impl<C: ConnectionInfo + SecureInfo + ReadEx + WriteEx + Unpin + Send + 'static> Yamux<C> {
     /// Create a new Yamux connection.
     pub fn new(io: C, mut cfg: Config, mode: Mode) -> Self {
         cfg.set_read_after_close(false);
@@ -291,7 +291,7 @@ impl StreamInfo for Stream {
 }
 
 #[async_trait]
-impl<C: Read2 + Write2 + Unpin + Send + 'static> StreamMuxer for Yamux<C> {
+impl<C: ReadEx + WriteEx + Unpin + Send + 'static> StreamMuxer for Yamux<C> {
     type Substream = Stream;
 
     async fn open_stream(&mut self) -> Result<Self::Substream, TransportError> {
@@ -341,7 +341,7 @@ impl UpgradeInfo for Config {
 #[async_trait]
 impl<T> Upgrader<T> for Config
 where
-    T: ConnectionInfo + SecureInfo + Read2 + Write2 + Send + Unpin + 'static,
+    T: ConnectionInfo + SecureInfo + ReadEx + WriteEx + Send + Unpin + 'static,
 {
     type Output = Yamux<T>;
 
@@ -373,6 +373,6 @@ where
 impl From<ConnectionError> for TransportError {
     fn from(_: ConnectionError) -> Self {
         // TODO: make a mux error catalog for secio
-        TransportError::Internal
+        TransportError::StreamMuxerError
     }
 }

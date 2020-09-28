@@ -13,11 +13,11 @@ use async_std::{
     task,
 };
 use futures::channel::oneshot;
-use libp2p_traits::{Read2, ReadExt2, Write2};
 use mplex::{
     connection::{control::Control, Connection},
     error::ConnectionError,
 };
+use libp2p_traits::{ReadEx, ReadExt2, WriteEx};
 use quickcheck::{Arbitrary, Gen, QuickCheck, TestResult};
 use rand::Rng;
 use std::time::Duration;

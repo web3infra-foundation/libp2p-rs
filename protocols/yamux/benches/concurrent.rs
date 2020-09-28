@@ -11,7 +11,7 @@
 use async_std::task;
 use criterion::{criterion_group, criterion_main, Criterion};
 use futures::{channel::mpsc, future, prelude::*, ready};
-use libp2p_traits::{Read2, ReadExt2, Write2};
+use libp2p_traits::{ReadEx, ReadExt2, WriteEx};
 use std::{
     fmt, io,
     pin::Pin,

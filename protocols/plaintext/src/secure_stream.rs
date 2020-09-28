@@ -5,7 +5,7 @@ use std::io;
 use crate::codec::len_prefix::LengthPrefixSocket;
 
 use async_trait::async_trait;
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 
 /// Encrypted stream
 pub struct SecureStream<T> {
@@ -22,7 +22,7 @@ pub struct SecureStream<T> {
 
 impl<T> SecureStream<T>
 where
-    T: Read2 + Write2 + Send + 'static,
+    T: ReadEx + WriteEx + Send + 'static,
 {
     /// New a secure stream
     pub(crate) fn new(socket: LengthPrefixSocket<T>) -> Self {
@@ -53,9 +53,9 @@ where
 }
 
 #[async_trait]
-impl<T> Read2 for SecureStream<T>
+impl<T> ReadEx for SecureStream<T>
 where
-    T: Read2 + Write2 + Send + 'static,
+    T: ReadEx + WriteEx + Send + 'static,
 {
     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         // when there is somthing in recv_buffer
@@ -84,9 +84,9 @@ where
 }
 
 #[async_trait]
-impl<T> Write2 for SecureStream<T>
+impl<T> WriteEx for SecureStream<T>
 where
-    T: Read2 + Write2 + Send + 'static,
+    T: ReadEx + WriteEx + Send + 'static,
 {
     async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
         debug!("start sending plain data: {:?}", buf);

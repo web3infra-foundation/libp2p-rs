@@ -4,7 +4,7 @@ use libp2p_core::identity::Keypair;
 use log::info;
 
 use libp2p_plaintext::PlainTextConfig;
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 
 fn main() {
     env_logger::init();

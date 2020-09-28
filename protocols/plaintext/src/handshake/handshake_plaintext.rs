@@ -4,7 +4,7 @@ use crate::secure_stream::SecureStream;
 use crate::structs_proto::Exchange;
 use crate::PlainTextConfig;
 use libp2p_core::{PeerId, PublicKey};
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use log::error;
 use prost::Message;
 use std::io;
@@ -29,7 +29,7 @@ pub(crate) async fn handshake<T>(
     config: PlainTextConfig,
 ) -> Result<(SecureStream<T>, Remote), PlaintextError>
 where
-    T: Read2 + Write2 + Send + 'static,
+    T: ReadEx + WriteEx + Send + 'static,
 {
     let mut socket = LengthPrefixSocket::new(socket, config.clone().max_frame_length);
     let local_context = HandshakeContext::new(config.clone())?;
@@ -129,7 +129,7 @@ mod tests {
     use futures::channel;
     //use futures::prelude::*;
     use libp2p_core::identity::Keypair;
-    use libp2p_traits::{Read2, Write2};
+    use libp2p_traits::{ReadEx, WriteEx};
 
     fn handshake_with_self_success(
         config_1: PlainTextConfig,

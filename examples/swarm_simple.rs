@@ -4,7 +4,7 @@ use std::time::Duration;
 #[macro_use]
 extern crate lazy_static;
 
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use libp2p_core::identity::Keypair;
 use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::{Multiaddr, PeerId};
@@ -12,8 +12,11 @@ use libp2p_swarm::{Swarm, DummyProtocolHandler, Muxer, SwarmError};
 use libp2p_tcp::TcpConfig;
 use secio;
 use yamux;
-use libp2p_swarm::protocol_handler::{ProtocolHandler, BoxHandler};
+use libp2p_swarm::protocol_handler::{ProtocolHandler, IProtocolHandler};
+use libp2p_swarm::ping::{PingConfig};
 use libp2p_core::upgrade::UpgradeInfo;
+use libp2p_swarm::identify::IdentifyConfig;
+use libp2p_swarm::substream::Substream;
 
 
 //use libp2p_swarm::Swarm::network::NetworkConfig;
@@ -57,9 +60,9 @@ fn run_server() {
     #[async_trait]
     impl<C> ProtocolHandler<C> for MyProtocolHandler
     where
-        C: Read2 + Write2 + Unpin + Send + std::fmt::Debug + 'static
+        C: ReadEx + WriteEx + Unpin + Send + std::fmt::Debug + 'static
     {
-        async fn handle(&mut self, stream: C, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+        async fn handle(&mut self, stream: Substream<C>, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
             let mut stream = stream;
             log::trace!("MyProtocolHandler handling inbound {:?}", stream);
             let mut msg = vec![0; 4096];
@@ -70,7 +73,7 @@ fn run_server() {
             }
         }
 
-        fn box_clone(&self) -> BoxHandler<C> {
+        fn box_clone(&self) -> IProtocolHandler<C> {
             Box::new(self.clone())
         }
     }
@@ -78,10 +81,12 @@ fn run_server() {
     let mut muxer = Muxer::new();
     let dummy_handler = Box::new(DummyProtocolHandler::new());
     muxer.add_protocol_handler(dummy_handler);
-    //muxer.add_protocol_handler(Box::new(PingHandler::new()));
     muxer.add_protocol_handler(Box::new(MyProtocolHandler));
 
-    let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer);
+    let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer)
+        .with_ping(PingConfig::new().with_unsolicited(false).with_interval(Duration::from_secs(1)))
+        .with_identify(IdentifyConfig);
+
 
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
 
@@ -108,7 +113,9 @@ fn run_client() {
     // let dummy_handler = Box::new(DummyProtocolHandler::new());
     // muxer.add_protocol_handler(dummy_handler);
 
-    let mut swarm = Swarm::new(tu,PeerId::from_public_key(keys.public()), muxer);
+    let mut swarm = Swarm::new(tu,PeerId::from_public_key(keys.public()), muxer)
+        .with_ping(PingConfig::new().with_unsolicited(false).with_interval(Duration::from_secs(1)))
+        .with_identify(IdentifyConfig);
 
 
     let mut control = swarm.control();
@@ -133,7 +140,7 @@ fn run_client() {
 
         stream.write_all2(b"hello").await;
 
-        task::sleep(Duration::from_secs(3)).await;
+        task::sleep(Duration::from_secs(40)).await;
 
         control.close_stream(stream).await.unwrap();
 

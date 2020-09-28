@@ -12,7 +12,7 @@ use async_std::task;
 use futures::channel::oneshot;
 use futures::stream::FusedStream;
 use futures::{channel::mpsc, future, prelude::*, ready};
-use libp2p_traits::{Read2, ReadExt2, Write2};
+use libp2p_traits::{ReadEx, ReadExt2, WriteEx};
 use mplex::{
     connection::{control::Control, stream::Stream as mplex_stream, Connection},
     error::ConnectionError,

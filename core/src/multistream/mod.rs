@@ -64,8 +64,8 @@ pub use self::protocol::{ProtocolError, Version};
 // pub use self::dialer_select::{dialer_select_proto, DialerSelectFuture};
 // pub use self::listener_select::{listener_select_proto, ListenerSelectFuture};
 
-pub(self) use libp2p_traits::Read2 as ReadEx;
-pub(self) use libp2p_traits::Write2 as WriteEx;
+pub(self) use libp2p_traits::ReadEx;
+pub(self) use libp2p_traits::WriteEx;
 
 #[cfg(test)]
 pub(self) use tests::Memory;

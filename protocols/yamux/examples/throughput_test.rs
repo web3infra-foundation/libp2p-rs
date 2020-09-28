@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 
 use yamux::{Config, Connection, Mode};
 

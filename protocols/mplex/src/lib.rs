@@ -11,7 +11,7 @@ use std::fmt;
 use libp2p_core::muxing::{StreamInfo, StreamMuxer};
 use libp2p_core::transport::{ConnectionInfo, TransportError};
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 
 use crate::connection::Connection;
 use connection::{control::Control, stream::Stream, Id};
@@ -86,7 +86,7 @@ impl<C> fmt::Debug for Mplex<C> {
     }
 }
 
-impl<C: ConnectionInfo + SecureInfo + Read2 + Write2 + Unpin + Send + 'static> Mplex<C> {
+impl<C: ConnectionInfo + SecureInfo + ReadEx + WriteEx + Unpin + Send + 'static> Mplex<C> {
     pub fn new(io: C) -> Self {
         // `io` will be moved into Connection soon, make a copy of the connection & secure info
         let la = io.local_multiaddr();
@@ -148,7 +148,7 @@ impl StreamInfo for Stream {
 }
 
 #[async_trait]
-impl<C: Read2 + Write2 + Unpin + Send + 'static> StreamMuxer for Mplex<C> {
+impl<C: ReadEx + WriteEx + Unpin + Send + 'static> StreamMuxer for Mplex<C> {
     type Substream = Stream;
 
     async fn open_stream(&mut self) -> Result<Self::Substream, TransportError> {
@@ -195,7 +195,7 @@ impl UpgradeInfo for Config {
 #[async_trait]
 impl<T> Upgrader<T> for Config
 where
-    T: ConnectionInfo + SecureInfo + Read2 + Write2 + Send + Unpin + 'static,
+    T: ConnectionInfo + SecureInfo + ReadEx + WriteEx + Send + Unpin + 'static,
 {
     type Output = Mplex<T>;
 
@@ -221,7 +221,7 @@ where
 impl From<ConnectionError> for TransportError {
     fn from(_: ConnectionError) -> Self {
         // TODO: make a mux error catalog for secio
-        TransportError::Internal
+        TransportError::StreamMuxerError
     }
 }
 

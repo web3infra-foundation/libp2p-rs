@@ -1,17 +1,16 @@
 use fnv::FnvHashMap;
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use libp2p_core::multistream::Negotiator;
 use libp2p_core::upgrade::ProtocolName;
 use libp2p_core::transport::TransportError;
 use crate::ProtocolId;
-use crate::protocol_handler::BoxHandler;
-use crate::substream::Substream;
+use crate::protocol_handler::IProtocolHandler;
 
 
 /// Muxer that uses multistream-select to select and handle protocols.
 ///
 pub struct Muxer<TRaw> {
-    protocol_handlers: FnvHashMap<ProtocolId, BoxHandler<Substream<TRaw>>>,
+    protocol_handlers: FnvHashMap<ProtocolId, IProtocolHandler<TRaw>>,
 }
 
 impl<TRaw> Clone for Muxer<TRaw> {
@@ -34,7 +33,7 @@ impl<TRaw> Muxer<TRaw> {
 }
 
 impl<TRaw> Muxer<TRaw> {
-    pub fn add_protocol_handler(&mut self, p: BoxHandler<Substream<TRaw>>) {
+    pub fn add_protocol_handler(&mut self, p: IProtocolHandler<TRaw>) {
         log::trace!("adding protocol handler: {:?}", p.protocol_info().iter().map(|n|n.protocol_name_str()).collect::<Vec<_>>());
         p.protocol_info().iter().for_each(|pid| {
             self.protocol_handlers.insert(pid, p.clone());
@@ -47,9 +46,9 @@ impl<TRaw> Muxer<TRaw> {
             .map(|k| k.clone())
     }
 
-    pub(crate) async fn select_inbound(&mut self, socket: TRaw) -> Result<(BoxHandler<Substream<TRaw>>, TRaw, ProtocolId), TransportError>
+    pub(crate) async fn select_inbound(&mut self, socket: TRaw) -> Result<(IProtocolHandler<TRaw>, TRaw, ProtocolId), TransportError>
         where
-            TRaw: Read2 + Write2 + Send + Unpin,
+            TRaw: ReadEx + WriteEx + Send + Unpin,
     {
         let protocols = self.supported_protocols();
         let negotiator = Negotiator::new_with_protocols(protocols);
