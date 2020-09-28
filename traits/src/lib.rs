@@ -78,6 +78,82 @@ pub trait Read2 {
         }
         Ok(())
     }
+
+    /// Reads a fixed-length integer from the underlying IO.
+    ///
+    async fn read_fixed_u32(&mut self) -> Result<usize, io::Error> {
+        let mut len = [0; 4];
+        self.read_exact2(&mut len).await?;
+        let n = u32::from_be_bytes(len) as usize;
+
+        Ok(n)
+    }
+
+    /// Reads a variable-length integer from the underlying IO.
+    ///
+    /// As a special exception, if the `IO` is empty and EOFs right at the beginning, then we
+    /// return `Ok(0)`.
+    ///
+    /// > **Note**: This function reads bytes one by one from the underlying IO. It is therefore encouraged
+    /// >           to use some sort of buffering mechanism.
+    async fn read_varint(&mut self) -> Result<usize, io::Error> {
+        let mut buffer = unsigned_varint::encode::usize_buffer();
+        let mut buffer_len = 0;
+
+        loop {
+            match self.read2(&mut buffer[buffer_len..buffer_len+1]).await? {
+                0 => {
+                    // Reaching EOF before finishing to read the length is an error, unless the EOF is
+                    // at the very beginning of the substream, in which case we assume that the data is
+                    // empty.
+                    if buffer_len == 0 {
+                        return Ok(0);
+                    } else {
+                        return Err(io::ErrorKind::UnexpectedEof.into());
+                    }
+                }
+                n => debug_assert_eq!(n, 1),
+            }
+
+            buffer_len += 1;
+
+            match unsigned_varint::decode::usize(&buffer[..buffer_len]) {
+                Ok((len, _)) => return Ok(len),
+                Err(unsigned_varint::decode::Error::Overflow) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "overflow in variable-length integer"
+                    ));
+                }
+                // TODO: why do we have a `__Nonexhaustive` variant in the error? I don't know how to process it
+                // Err(unsigned_varint::decode::Error::Insufficient) => {}
+                Err(_) => {}
+            }
+        }
+    }
+
+    /// Reads a length-prefixed message from the underlying IO.
+    ///
+    /// The `max_size` parameter is the maximum size in bytes of the message that we accept. This is
+    /// necessary in order to avoid DoS attacks where the remote sends us a message of several
+    /// gigabytes.
+    ///
+    /// > **Note**: Assumes that a variable-length prefix indicates the length of the message. This is
+    /// >           compatible with what `write_one` does.
+    async fn read_one(&mut self, max_size: usize) -> Result<Vec<u8>, io::Error> {
+        let len = self.read_varint().await?;
+        if len > max_size {
+
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Received data size over maximum frame length: {}>{}", len, max_size),
+            ));
+        }
+
+        let mut buf = vec![0; len];
+        self.read_exact2(&mut buf).await?;
+        Ok(buf)
+    }
 }
 
 /// Write Trait for async/wait
@@ -104,6 +180,35 @@ pub trait Write2 {
             let (_, rest) = buf_piece.split_at(n);
             buf_piece = rest;
         }
+        Ok(())
+    }
+
+    /// Writes a variable-length integer to the underlying IO.
+    ///
+    /// > **Note**: Does **NOT** flush the IO.
+    async fn write_varint(&mut self, len: usize) -> Result<(), io::Error> {
+        let mut len_data = unsigned_varint::encode::usize_buffer();
+        let encoded_len = unsigned_varint::encode::usize(len, &mut len_data).len();
+        self.write_all2(&len_data[..encoded_len]).await?;
+        Ok(())
+    }
+
+    /// Writes a fixed-length integer to the underlying IO.
+    ///
+    /// > **Note**: Does **NOT** flush the IO.
+    async fn write_fixed_u32(&mut self, len: usize) -> Result<(), io::Error> {
+        self.write_all2((len as u32).to_be_bytes().as_ref()).await?;
+        Ok(())
+    }
+
+    /// Send a message to the underlying IO, then flushes the writing side.
+    ///
+    /// > **Note**: Prepends a variable-length prefix indicate the length of the message. This is
+    /// >           compatible with what `read_one` expects.
+    async fn write_one(&mut self, buf: &[u8]) -> Result<(), io::Error> {
+        self.write_varint(buf.len()).await?;
+        self.write_all2(buf).await?;
+        self.flush2().await?;
         Ok(())
     }
 
