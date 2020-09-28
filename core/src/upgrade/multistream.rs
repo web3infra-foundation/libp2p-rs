@@ -1,7 +1,7 @@
 use crate::multistream::Negotiator;
 use crate::transport::TransportError;
 use crate::upgrade::{ProtocolName, Upgrader};
-use libp2p_traits::{Read2 as ReadEx, Write2 as WriteEx};
+use libp2p_traits::{ReadEx, WriteEx};
 use log::{info, trace};
 
 //b"/multistream/1.0.0"

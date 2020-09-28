@@ -25,7 +25,7 @@ use prost::Message;
 use futures::channel::mpsc;
 use futures::SinkExt;
 
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use libp2p_core::muxing::StreamInfo;
 use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_core::transport::TransportError;
@@ -116,7 +116,7 @@ fn parse_proto_msg(msg: impl AsRef<[u8]>) -> Result<(IdentifyInfo, Multiaddr), i
 
 pub(crate) async fn consume_message<T>(mut stream: Substream<T>) -> Result<RemoteInfo, TransportError>
 where
-    T: StreamInfo + Read2 + Write2 + Unpin + std::fmt::Debug + 'static,
+    T: StreamInfo + ReadEx + WriteEx + Unpin + std::fmt::Debug + 'static,
 {
     stream.close2().await?;
     //let msg = upgrade::read_one(&mut socket, 4096).await?;
@@ -142,7 +142,7 @@ where
 
 pub(crate) async fn produce_message<T>(mut stream: Substream<T>, info: IdentifyInfo) -> Result<(), TransportError>
 where
-    T: StreamInfo + Read2 + Write2 + Unpin + std::fmt::Debug + 'static,
+    T: StreamInfo + ReadEx + WriteEx + Unpin + std::fmt::Debug + 'static,
 {
     let listen_addrs = info.listen_addrs
         .into_iter()
@@ -208,7 +208,7 @@ impl UpgradeInfo for IdentifyHandler {
 #[async_trait]
 impl<TSocket> ProtocolHandler<TSocket> for IdentifyHandler
 where
-    TSocket: StreamInfo + Read2 + Write2 + Unpin + std::fmt::Debug + 'static
+    TSocket: StreamInfo + ReadEx + WriteEx + Unpin + std::fmt::Debug + 'static
 {
     /// The Ping handler's inbound protocol.
     /// Simply wait for any thing that coming in then send back
@@ -265,7 +265,7 @@ impl<T: Send> UpgradeInfo for IdentifyPushHandler<T> {
 #[async_trait]
 impl<TSocket, T> ProtocolHandler<TSocket> for IdentifyPushHandler<T>
 where
-    TSocket: StreamInfo + Read2 + Write2 + Unpin + std::fmt::Debug + 'static,
+    TSocket: StreamInfo + ReadEx + WriteEx + Unpin + std::fmt::Debug + 'static,
     T: Send + 'static,
 {
     // receive the message and consume it

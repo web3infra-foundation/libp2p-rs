@@ -1,4 +1,4 @@
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use std::{fmt, io};
 
 /// `Stream` & `Sink` that reads and writes a length prefix in front of the actual data.
@@ -15,7 +15,7 @@ impl<T> fmt::Debug for LengthPrefixSocket<T> {
 
 impl<T> LengthPrefixSocket<T>
 where
-    T: Read2 + Write2 + Send + 'static,
+    T: ReadEx + WriteEx + Send + 'static,
 {
     /// create a new LengthPrefixSocket
     pub fn new(socket: T, max_len: usize) -> Self {

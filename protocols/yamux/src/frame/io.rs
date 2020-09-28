@@ -17,7 +17,7 @@ use super::{
 use crate::connection::Id;
 use crate::frame::header::HEADER_SIZE;
 
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 
 /// A [`Stream`] and writer of [`Frame`] values.
 // #[derive(Debug)]
@@ -34,7 +34,7 @@ impl<T> fmt::Debug for Io<T> {
     }
 }
 
-impl<T: Read2 + Write2 + Unpin + Send> Io<T> {
+impl<T: ReadEx + WriteEx + Unpin + Send> Io<T> {
     pub(crate) fn new(id: Id, io: T, max_frame_body_len: usize) -> Self {
         Io {
             id,
@@ -100,7 +100,7 @@ struct FrameReader<T> {
 }
 
 #[allow(dead_code)]
-impl<T: Read2 + Write2 + Unpin + Send> FrameReader<T> {
+impl<T: ReadEx + WriteEx + Unpin + Send> FrameReader<T> {
     pub(crate) fn new(id: Id, io: T, max_frame_body_len: usize) -> Self {
         FrameReader {
             id,

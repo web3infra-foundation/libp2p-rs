@@ -65,7 +65,7 @@ use libp2p_core::secure_io::SecureInfo;
 use libp2p_core::transport::TransportListener;
 use libp2p_core::upgrade::ProtocolName;
 use libp2p_core::{muxing::StreamMuxer, transport::TransportError, Multiaddr, PeerId, Transport};
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 
 use crate::connection::{Connection, ConnectionId, ConnectionLimit, Direction};
 use crate::control::SwarmControlCmd;
@@ -324,7 +324,7 @@ where
     TTrans: Transport + Clone + 'static,
     TTrans::Listener: 'static,
     TTrans::Output: StreamMuxer + SecureInfo,
-    <TTrans::Output as StreamMuxer>::Substream: Read2 + Write2 + Send + Unpin,
+    <TTrans::Output as StreamMuxer>::Substream: ReadEx + WriteEx + Send + Unpin,
 {
     /// Builds a new `Swarm`.
     pub fn new(

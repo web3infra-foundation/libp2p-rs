@@ -26,7 +26,7 @@ use crate::upgrade::ProtocolName;
 use crate::{Multiaddr, PeerId, PublicKey};
 use async_trait::async_trait;
 use futures::future::BoxFuture;
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use std::io;
 
 #[derive(Debug, Copy, Clone)]
@@ -36,43 +36,43 @@ pub enum EitherOutput<A, B> {
 }
 
 #[async_trait]
-impl<A, B> Read2 for EitherOutput<A, B>
+impl<A, B> ReadEx for EitherOutput<A, B>
 where
-    A: Read2 + Send,
-    B: Read2 + Send,
+    A: ReadEx + Send,
+    B: ReadEx + Send,
 {
     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
-            EitherOutput::A(a) => Read2::read2(a, buf).await,
-            EitherOutput::B(b) => Read2::read2(b, buf).await,
+            EitherOutput::A(a) => ReadEx::read2(a, buf).await,
+            EitherOutput::B(b) => ReadEx::read2(b, buf).await,
         }
     }
 }
 
 #[async_trait]
-impl<A, B> Write2 for EitherOutput<A, B>
+impl<A, B> WriteEx for EitherOutput<A, B>
 where
-    A: Write2 + Send,
-    B: Write2 + Send,
+    A: WriteEx + Send,
+    B: WriteEx + Send,
 {
     async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self {
-            EitherOutput::A(a) => Write2::write2(a, buf).await,
-            EitherOutput::B(b) => Write2::write2(b, buf).await,
+            EitherOutput::A(a) => WriteEx::write2(a, buf).await,
+            EitherOutput::B(b) => WriteEx::write2(b, buf).await,
         }
     }
 
     async fn flush2(&mut self) -> io::Result<()> {
         match self {
-            EitherOutput::A(a) => Write2::flush2(a).await,
-            EitherOutput::B(b) => Write2::flush2(b).await,
+            EitherOutput::A(a) => WriteEx::flush2(a).await,
+            EitherOutput::B(b) => WriteEx::flush2(b).await,
         }
     }
 
     async fn close2(&mut self) -> io::Result<()> {
         match self {
-            EitherOutput::A(a) => Write2::close2(a).await,
-            EitherOutput::B(b) => Write2::close2(b).await,
+            EitherOutput::A(a) => WriteEx::close2(a).await,
+            EitherOutput::B(b) => WriteEx::close2(b).await,
         }
     }
 }

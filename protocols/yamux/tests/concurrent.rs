@@ -13,7 +13,7 @@ use async_std::{
     task,
 };
 use futures::{channel::mpsc, prelude::*};
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use std::{
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     sync::Arc,

@@ -1,5 +1,5 @@
 use fnv::FnvHashMap;
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use libp2p_core::multistream::Negotiator;
 use libp2p_core::upgrade::ProtocolName;
 use libp2p_core::transport::TransportError;
@@ -48,7 +48,7 @@ impl<TRaw> Muxer<TRaw> {
 
     pub(crate) async fn select_inbound(&mut self, socket: TRaw) -> Result<(IProtocolHandler<TRaw>, TRaw, ProtocolId), TransportError>
         where
-            TRaw: Read2 + Write2 + Send + Unpin,
+            TRaw: ReadEx + WriteEx + Send + Unpin,
     {
         let protocols = self.supported_protocols();
         let negotiator = Negotiator::new_with_protocols(protocols);

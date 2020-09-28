@@ -21,7 +21,7 @@ use std::{
 use crate::transport::ConnectionInfo;
 use crate::Multiaddr;
 use async_trait::async_trait;
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 
 const KEY_SIZE: usize = 32;
 const NONCE_SIZE: usize = 24;
@@ -226,7 +226,7 @@ impl fmt::Display for PnetError {
 #[async_trait]
 impl<TSocket> Pnet<TSocket> for PnetConfig
 where
-    TSocket: ConnectionInfo + Read2 + Write2 + Send + Unpin + 'static,
+    TSocket: ConnectionInfo + ReadEx + WriteEx + Send + Unpin + 'static,
 {
     type Output = PnetOutput<TSocket>;
     /// upgrade a connection to use pre shared key encryption.
@@ -260,7 +260,7 @@ pub struct PnetOutput<S> {
     read_cipher: XSalsa20,
 }
 
-impl<S: Read2 + Write2 + Send + 'static> PnetOutput<S> {
+impl<S: ReadEx + WriteEx + Send + 'static> PnetOutput<S> {
     fn new(inner: S, write_cipher: XSalsa20, read_cipher: XSalsa20) -> Self {
         Self {
             inner: CryptWriter::with_capacity(WRITE_BUFFER_SIZE, inner, write_cipher),
@@ -270,9 +270,9 @@ impl<S: Read2 + Write2 + Send + 'static> PnetOutput<S> {
 }
 
 #[async_trait]
-impl<S> Read2 for PnetOutput<S>
+impl<S> ReadEx for PnetOutput<S>
 where
-    S: Read2 + Write2 + Send + 'static,
+    S: ReadEx + WriteEx + Send + 'static,
 {
     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let result = self.inner.read2(buf).await;
@@ -286,9 +286,9 @@ where
 }
 
 #[async_trait]
-impl<S> Write2 for PnetOutput<S>
+impl<S> WriteEx for PnetOutput<S>
 where
-    S: Read2 + Write2 + Send + 'static,
+    S: ReadEx + WriteEx + Send + 'static,
 {
     async fn write_all2(&mut self, buf: &[u8]) -> io::Result<()> {
         self.inner.write_all2(buf).await

@@ -18,7 +18,7 @@ use crate::{
 use libp2p_core::identity::*;
 use libp2p_core::PublicKey;
 
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use prost::Message;
 
 /// Performs a handshake on the given socket.
@@ -35,7 +35,7 @@ pub(crate) async fn handshake<T>(
     config: Config,
 ) -> Result<(SecureStream<T>, PublicKey, EphemeralPublicKey), SecioError>
 where
-    T: Read2 + Write2 + Send + 'static,
+    T: ReadEx + WriteEx + Send + 'static,
 {
     // The handshake messages all start with a 4-bytes message length prefix.
     let mut socket = LengthPrefixSocket::new(socket, config.max_frame_length);
@@ -282,7 +282,7 @@ mod tests {
     use futures::channel;
     //use futures::prelude::*;
     use libp2p_core::identity::Keypair;
-    use libp2p_traits::{Read2, Write2};
+    use libp2p_traits::{ReadEx, WriteEx};
 
     fn handshake_with_self_success(config_1: Config, config_2: Config, data: &'static [u8]) {
         let (sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();

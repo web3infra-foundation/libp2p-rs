@@ -11,7 +11,7 @@ use libp2p_core::secure_io::SecureInfo;
 use libp2p_core::transport::TransportError;
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
 use libp2p_core::{PeerId, PublicKey};
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use std::io;
 
 use async_trait::async_trait;
@@ -38,7 +38,7 @@ impl PlainTextConfig {
 
     pub async fn handshake<T>(self, socket: T) -> Result<(SecureStream<T>, Remote), PlaintextError>
     where
-        T: Read2 + Write2 + Send + 'static,
+        T: ReadEx + WriteEx + Send + 'static,
     {
         handshake::handshake_plaintext::handshake(socket, self).await
     }
@@ -55,7 +55,7 @@ impl UpgradeInfo for PlainTextConfig {
 #[async_trait]
 impl<T> Upgrader<T> for PlainTextConfig
 where
-    T: Read2 + Write2 + Send + Unpin + 'static,
+    T: ReadEx + WriteEx + Send + Unpin + 'static,
 {
     type Output = PlainTextOutput<T>;
 
@@ -81,7 +81,7 @@ async fn make_secure_output<T>(
     socket: T,
 ) -> Result<PlainTextOutput<T>, TransportError>
 where
-    T: Read2 + Write2 + Send + Unpin + 'static,
+    T: ReadEx + WriteEx + Send + Unpin + 'static,
 {
     let pri_key = config.key.clone();
 
@@ -126,14 +126,14 @@ impl<T> SecureInfo for PlainTextOutput<T> {
 }
 
 #[async_trait]
-impl<S: Read2 + Write2 + Unpin + Send + 'static> Read2 for PlainTextOutput<S> {
+impl<S: ReadEx + WriteEx + Unpin + Send + 'static> ReadEx for PlainTextOutput<S> {
     async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
         self.stream.read2(buf).await
     }
 }
 
 #[async_trait]
-impl<S: Read2 + Write2 + Unpin + Send + 'static> Write2 for PlainTextOutput<S> {
+impl<S: ReadEx + WriteEx + Unpin + Send + 'static> WriteEx for PlainTextOutput<S> {
     async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
         self.stream.write2(buf).await
     }

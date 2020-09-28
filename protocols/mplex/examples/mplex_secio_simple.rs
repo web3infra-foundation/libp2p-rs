@@ -7,7 +7,7 @@ use log::{error, info};
 use libp2p_core::identity::Keypair;
 use secio::Config as SecioConfig;
 
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use mplex::connection::Connection;
 
 fn main() {

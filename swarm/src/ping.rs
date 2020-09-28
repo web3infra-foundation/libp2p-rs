@@ -29,7 +29,7 @@ use std::io;
 use rand::{distributions, prelude::*};
 use async_trait::async_trait;
 
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_core::transport::TransportError;
 
@@ -143,7 +143,7 @@ impl PingConfig {
     }
 }
 
-pub async fn ping<T: Read2 + Write2 + Send + std::fmt::Debug>(mut stream: T, timeout: Duration) -> Result<Duration, TransportError> {
+pub async fn ping<T: ReadEx + WriteEx + Send + std::fmt::Debug>(mut stream: T, timeout: Duration) -> Result<Duration, TransportError> {
 
     let ping = async {
         let payload: [u8; PING_SIZE] = thread_rng().sample(distributions::Standard);
@@ -204,7 +204,7 @@ impl UpgradeInfo for PingHandler {
 #[async_trait]
 impl<C> ProtocolHandler<C> for PingHandler
     where
-        C: Read2 + Write2 + Unpin + Send + std::fmt::Debug + 'static
+        C: ReadEx + WriteEx + Unpin + Send + std::fmt::Debug + 'static
 {
     /// The Ping handler's inbound protocol.
     /// Simply wait for any thing that coming in then send back

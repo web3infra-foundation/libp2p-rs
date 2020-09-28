@@ -5,7 +5,7 @@ use crate::{
     Multiaddr, Transport,
 };
 use async_trait::async_trait;
-use libp2p_traits::{Read2, Write2};
+use libp2p_traits::{ReadEx, WriteEx};
 
 #[derive(Debug, Copy, Clone)]
 pub struct ProtectorTransport<InnerTrans> {
@@ -24,7 +24,7 @@ impl<InnerTrans> ProtectorTransport<InnerTrans> {
 impl<InnerTrans> Transport for ProtectorTransport<InnerTrans>
 where
     InnerTrans: Transport,
-    InnerTrans::Output: ConnectionInfo + Read2 + Write2 + Unpin + 'static,
+    InnerTrans::Output: ConnectionInfo + ReadEx + WriteEx + Unpin + 'static,
 {
     type Output = PnetOutput<InnerTrans::Output>;
     type Listener = ProtectorListener<InnerTrans::Listener>;
@@ -56,7 +56,7 @@ impl<InnerListener> ProtectorListener<InnerListener> {
 impl<InnerListener> TransportListener for ProtectorListener<InnerListener>
 where
     InnerListener: TransportListener,
-    InnerListener::Output: ConnectionInfo + Read2 + Write2 + Unpin + 'static,
+    InnerListener::Output: ConnectionInfo + ReadEx + WriteEx + Unpin + 'static,
 {
     type Output = PnetOutput<InnerListener::Output>;
 
