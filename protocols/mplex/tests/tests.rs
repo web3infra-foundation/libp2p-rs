@@ -85,7 +85,7 @@ fn prop_slow_reader() {
             let mut control = connection.control();
             let loop_handle = task::spawn(async {
                 let mut muxer_conn = connection;
-                muxer_conn.next_stream().await;
+                let _ = muxer_conn.next_stream().await;
                 log::info!("C connection {} is closed", muxer_conn.id());
             });
 
@@ -141,7 +141,7 @@ fn prop_half_close() {
 
                 let loop_handle = task::spawn(async {
                     let mut muxer_conn = connection;
-                    muxer_conn.next_stream().await;
+                    let _ = muxer_conn.next_stream().await;
                     log::info!("S connection {} is closed", muxer_conn.id());
                 });
 
@@ -164,7 +164,7 @@ fn prop_half_close() {
                 let mut control = connection.control();
                 let loop_handle = task::spawn(async {
                     let mut muxer_conn = connection;
-                    muxer_conn.next_stream().await;
+                    let _ = muxer_conn.next_stream().await;
                     log::info!("C connection {} is closed", muxer_conn.id());
                 });
 
@@ -218,7 +218,7 @@ fn prop_fuzz_close_connection() {
 
                 let loop_handle = task::spawn(async {
                     let mut muxer_conn = connection;
-                    muxer_conn.next_stream().await;
+                    let _ = muxer_conn.next_stream().await;
                     log::info!("S connection {} is closed", muxer_conn.id());
                 });
 
@@ -234,7 +234,7 @@ fn prop_fuzz_close_connection() {
                 let mut control = connection.control();
                 let loop_handle = task::spawn(async {
                     let mut muxer_conn = connection;
-                    muxer_conn.next_stream().await;
+                    let _ = muxer_conn.next_stream().await;
                     log::info!("C connection {} is closed", muxer_conn.id());
                 });
 
@@ -262,7 +262,7 @@ fn prop_closing() {
 
                 let loop_handle = task::spawn(async {
                     let mut muxer_conn = connection;
-                    muxer_conn.next_stream().await;
+                    let _ = muxer_conn.next_stream().await;
                     log::info!("S connection {} is closed", muxer_conn.id());
                     muxer_conn.streams_length()
                 });
@@ -284,7 +284,7 @@ fn prop_closing() {
                 let mut control = connection.control();
                 let loop_handle = task::spawn(async {
                     let mut muxer_conn = connection;
-                    muxer_conn.next_stream().await;
+                    let _ = muxer_conn.next_stream().await;
                     log::info!("C connection {} is closed", muxer_conn.id());
                     muxer_conn.streams_length()
                 });
@@ -316,7 +316,7 @@ fn prop_reset() {
 
                 let loop_handle = task::spawn(async {
                     let mut muxer_conn = connection;
-                    muxer_conn.next_stream().await;
+                    let _ = muxer_conn.next_stream().await;
                     log::info!("S connection {} is closed", muxer_conn.id());
                 });
 
@@ -342,7 +342,7 @@ fn prop_reset() {
                 let mut control = connection.control();
                 let loop_handle = task::spawn(async {
                     let mut muxer_conn = connection;
-                    muxer_conn.next_stream().await;
+                    let _ = muxer_conn.next_stream().await;
                     log::info!("C connection {} is closed", muxer_conn.id());
                 });
 
@@ -388,11 +388,11 @@ fn prop_reset_after_eof() {
             let server = async move {
                 let socket = listener.accept().await.expect("accept").0;
                 let connection = Connection::new(socket);
-                let mut control = connection.control();
+                let control = connection.control();
 
-                let loop_handle = task::spawn(async {
+                task::spawn(async {
                     let mut muxer_conn = connection;
-                    muxer_conn.next_stream().await;
+                    let _ = muxer_conn.next_stream().await;
                     log::info!("S connection {} is closed", muxer_conn.id());
                 });
 
@@ -410,9 +410,6 @@ fn prop_reset_after_eof() {
                 let mut buf = vec![0; 64];
                 let res_r = stream.read2(&mut buf).await;
 
-                // control.close().await.expect("S close connection");
-                // loop_handle.await;
-
                 if res_r.is_err() {
                     return true;
                 }
@@ -427,7 +424,7 @@ fn prop_reset_after_eof() {
                 let mut control = connection.control();
                 let loop_handle = task::spawn(async {
                     let mut muxer_conn = connection;
-                    muxer_conn.next_stream().await;
+                    let _ = muxer_conn.next_stream().await;
                     log::info!("C connection {} is closed", muxer_conn.id());
                 });
 
@@ -467,11 +464,11 @@ fn prop_reset_after_eof1() {
             let sa_handle = task::spawn(async move {
                 let socket = listener.accept().await.expect("accept").0;
                 let connection = Connection::new(socket);
-                let mut control = connection.control();
+                let control = connection.control();
 
-                let loop_handle = task::spawn(async {
+                task::spawn(async {
                     let mut muxer_conn = connection;
-                    muxer_conn.next_stream().await;
+                    let _ = muxer_conn.next_stream().await;
                     log::info!("S connection {} is closed", muxer_conn.id());
                 });
 
@@ -485,10 +482,10 @@ fn prop_reset_after_eof1() {
             let sb_handle = task::spawn(async move {
                 let socket = TcpStream::connect(address).await.expect("connect");
                 let connection = Connection::new(socket);
-                let mut control = connection.control();
+                let control = connection.control();
                 task::spawn(async {
                     let mut muxer_conn = connection;
-                    muxer_conn.next_stream().await;
+                    let _ = muxer_conn.next_stream().await;
                     log::info!("C connection {} is closed", muxer_conn.id());
                 });
 
@@ -551,7 +548,7 @@ async fn repeat_echo(c: Connection<TcpStream>) -> Result<(), ConnectionError> {
     task::spawn(async move {
         task::spawn(async {
             let mut muxer_conn = c;
-            muxer_conn.next_stream().await;
+            let _ = muxer_conn.next_stream().await;
             log::info!("S connection {} is closed", muxer_conn.id());
         });
 
