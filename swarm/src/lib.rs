@@ -68,7 +68,7 @@ use libp2p_traits::{ReadEx, WriteEx};
 
 use crate::connection::{Connection, ConnectionId, ConnectionLimit, Direction};
 use crate::control::SwarmControlCmd;
-use crate::identify::{IdentifyConfig, IdentifyHandler, IdentifyPushHandler, RemoteInfo};
+use crate::identify::{IdentifyConfig, IdentifyHandler, IdentifyPushHandler, RemoteInfo, IdentifyInfo};
 use crate::network::NetworkInfo;
 use crate::ping::{PingConfig, PingHandler};
 use crate::registry::Addresses;
@@ -369,14 +369,7 @@ where
     /// Creates Swarm with Identify service.
     pub fn with_identify(mut self, id: IdentifyConfig) -> Self {
         self.identify = Some(id);
-        let protocols = self
-            .muxer
-            .supported_protocols()
-            .into_iter()
-            .map(|p| p.protocol_name_str().to_string())
-            .collect::<Vec<_>>();
-        // TODO: public key
-        let handler = IdentifyHandler::new(Keypair::generate_ed25519_fixed().public(), protocols);
+        let handler = IdentifyHandler::new(self.ctrl_sender.clone());
         self.muxer.add_protocol_handler(Box::new(handler));
         let handler = IdentifyPushHandler::new(self.event_sender.clone());
         self.muxer.add_protocol_handler(Box::new(handler));
@@ -496,6 +489,12 @@ where
                     let _ = reply.send(r);
                 });
             }
+            SwarmControlCmd::IdentifyInfo(reply) => {
+                // got the peer_id, try opening a new sub stream
+                let _ = self.on_retrieve_identifyinfo(|r| {
+                    let _ = reply.send(r);
+                });
+            }
             SwarmControlCmd::CloseSwarm => {
                 log::info!("closing the swarm...");
                 let _ = self.event_sender.close_channel();
@@ -567,7 +566,11 @@ where
         f(Ok(self.network_info()));
         Ok(())
     }
-
+    ///
+    fn on_retrieve_identifyinfo(&mut self, f: impl FnOnce(Result<IdentifyInfo>)) -> Result<()> {
+        f(Ok(self.identify_info()));
+        Ok(())
+    }
     /// Starts Swarm background task
     /// handling the internal events and external controls
     pub fn start(self) {
@@ -582,7 +585,7 @@ where
         &self.transport
     }
 
-    /// Returns information about the [`Network`] underlying the `Swarm`.
+    /// Returns network information about the `Swarm`.
     pub fn network_info(&self) -> NetworkInfo {
         // TODO: add stats later on
         let num_connections_established = self.connections_by_id.len();
@@ -596,6 +599,21 @@ where
             num_connections_established,
             num_connections_pending,
             num_active_streams,
+        }
+    }
+    /// Returns identify information about the `Swarm`.
+    pub fn identify_info(&self) -> IdentifyInfo {
+        let protocols = self.muxer.supported_protocols()
+            .into_iter()
+            .map(|p|p.protocol_name_str().to_string())
+            .collect();
+        IdentifyInfo {
+            // TODO: fix the pubkey
+            public_key: Keypair::generate_ed25519_fixed().public(),
+            protocol_version: "".to_string(),
+            agent_version: "abc".to_string(),
+            listen_addrs: self.listened_addrs.to_vec(),
+            protocols
         }
     }
 
