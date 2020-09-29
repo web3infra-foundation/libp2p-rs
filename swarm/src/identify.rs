@@ -313,7 +313,7 @@ mod tests {
 
         async_std::task::spawn(async move {
             let socket = listener.accept().await.unwrap();
-            let socket = Substream::new(socket, Direction::Inbound, b"", ConnectionId::default());
+            let socket = Substream::new(socket, Direction::Inbound, b"", ConnectionId::default(), None);
 
             let mut handler = IdentifyHandler::new(key_cloned, vec![]);
             let _ = handler.handle(socket, handler.protocol_info().first().unwrap()).await;
@@ -321,7 +321,7 @@ mod tests {
 
         async_std::task::block_on(async move {
             let socket = MemoryTransport.dial(listener_addr).await.unwrap();
-            let socket = Substream::new(socket, Direction::Inbound, b"", ConnectionId::default());
+            let socket = Substream::new(socket, Direction::Inbound, b"", ConnectionId::default(), None);
 
             let ri = identify::consume_message(socket).await.unwrap();
             assert_eq!(ri.info.public_key, pubkey);
@@ -341,7 +341,7 @@ mod tests {
 
         async_std::task::spawn(async move {
             let socket = MemoryTransport.dial(listener_addr).await.unwrap();
-            let socket = Substream::new(socket, Direction::Inbound, b"", ConnectionId::default());
+            let socket = Substream::new(socket, Direction::Inbound, b"", ConnectionId::default(), None);
 
             let info = IdentifyInfo {
                 public_key: key_cloned,
@@ -356,7 +356,7 @@ mod tests {
 
         async_std::task::block_on(async move {
             let socket = listener.accept().await.unwrap();
-            let socket = Substream::new(socket, Direction::Inbound, b"", ConnectionId::default());
+            let socket = Substream::new(socket, Direction::Inbound, b"", ConnectionId::default(), None);
 
             let mut handler = IdentifyPushHandler::new(tx);
             let _ = handler.handle(socket, handler.protocol_info().first().unwrap()).await;

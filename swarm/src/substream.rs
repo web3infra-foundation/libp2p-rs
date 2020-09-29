@@ -1,11 +1,14 @@
 use async_trait::async_trait;
-use libp2p_traits::{ReadEx, WriteEx};
 use std::{fmt, io};
+use futures::channel::mpsc;
+use futures::SinkExt;
 
-use crate::connection::{ConnectionId, Direction};
-use crate::ProtocolId;
+use libp2p_traits::{ReadEx, WriteEx};
 use libp2p_core::muxing::StreamInfo;
 use libp2p_core::upgrade::ProtocolName;
+use crate::control::SwarmControlCmd;
+use crate::connection::{ConnectionId, Direction};
+use crate::ProtocolId;
 
 /// The Id of sub stream
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -22,6 +25,8 @@ pub struct Substream<TStream> {
     /// The connection ID of the sub stream
     /// It can be used to back track to the stream muxer
     cid: ConnectionId,
+    /// The control channel for closing stream
+    ctrl: Option<mpsc::Sender<SwarmControlCmd<Substream<TStream>>>>,
 }
 
 impl<TStream: fmt::Debug> fmt::Debug for Substream<TStream> {
@@ -36,8 +41,8 @@ impl<TStream: fmt::Debug> fmt::Debug for Substream<TStream> {
 }
 
 impl<TStream: StreamInfo> Substream<TStream> {
-    pub(crate) fn new(inner: TStream, dir: Direction, protocol: ProtocolId, cid: ConnectionId) -> Self {
-        Self { inner, protocol, dir, cid }
+    pub(crate) fn new(inner: TStream, dir: Direction, protocol: ProtocolId, cid: ConnectionId, ctrl: Option<mpsc::Sender<SwarmControlCmd<Substream<TStream>>>>,) -> Self {
+        Self { inner, protocol, dir, cid, ctrl }
     }
     /// Returns the protocol of the sub stream
     pub fn protocol(&self) -> ProtocolId {
@@ -65,7 +70,7 @@ impl<TStream: ReadEx + Send> ReadEx for Substream<TStream> {
 }
 
 #[async_trait]
-impl<TStream: WriteEx + Send> WriteEx for Substream<TStream> {
+impl<TStream: StreamInfo + WriteEx + Send> WriteEx for Substream<TStream> {
     async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
         self.inner.write2(buf).await
     }
@@ -74,7 +79,14 @@ impl<TStream: WriteEx + Send> WriteEx for Substream<TStream> {
         self.inner.flush2().await
     }
 
+    // try to send a CloseStream command to Swarm, then close inner stream
     async fn close2(&mut self) -> Result<(), io::Error> {
+        if let Some(mut cmd) = self.ctrl.take() {
+            // to ask Swarm to remove myself
+            let cid = self.cid;
+            let sid = self.id();
+            let _ = cmd.send(SwarmControlCmd::CloseStream(cid, sid)).await;
+        }
         self.inner.close2().await
     }
 }
