@@ -5,6 +5,7 @@ use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::transport::TransportListener;
 use libp2p_core::{Multiaddr, Transport};
 use libp2p_tcp::TcpConfig;
+use libp2p_dns::DnsConfig;
 use libp2p_traits::{ReadEx, WriteEx};
 
 use libp2p_core::identity::Keypair;
@@ -33,7 +34,7 @@ fn run_server() {
     // let mux = yamux::Config::new();
     // let mux = mplex::Config::new();
     let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
-    let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
+    let tu = TransportUpgrade::new(DnsConfig::new(TcpConfig::default()), mux, sec);
 
     task::block_on(async move {
         let mut listener = tu.listen_on(listen_addr).unwrap();
@@ -75,14 +76,15 @@ fn run_server() {
 }
 
 fn run_client() {
-    let addr: Multiaddr = "/ip4/127.0.0.1/tcp/8086".parse().unwrap();
+    // let addr: Multiaddr = "/ip4/127.0.0.1/tcp/8086".parse().unwrap();
+    let addr: Multiaddr = "/dns4/example.com/tcp/8086".parse().unwrap();
     let sec = secio::Config::new(Keypair::generate_secp256k1());
     //let sec = DummyUpgrader::new();
     //let mux = Selector::new(yamux::Config::new(), Selector::new(yamux::Config::new(), yamux::Config::new()));
     // let mux = yamux::Config::new();
     // let mux = mplex::Config::new();
     let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
-    let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
+    let tu = TransportUpgrade::new(DnsConfig::new(TcpConfig::default()), mux, sec);
 
     task::block_on(async move {
         let mut stream_muxer = tu.dial(addr).await.expect("listener is started already");

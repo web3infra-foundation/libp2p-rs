@@ -453,6 +453,9 @@ pub enum TransportError {
     /// Any other error that a [`Transport`] may produce.
     IoError(std::io::Error),
 
+    /// Failed to find any IP address for this DNS address.
+    ResolveFail(String),
+
     /// Multistream selection error.
     NegotiationError(NegotiationError),
 
@@ -495,6 +498,7 @@ impl fmt::Display for TransportError {
             TransportError::Unreachable => write!(f, "Memory transport unreachable"),
             TransportError::Internal => write!(f, "Internal error"),
             TransportError::IoError(err) => write!(f, "IO error {}", err),
+            TransportError::ResolveFail(name) => write!(f, "resolve dns {} failed", name),
             TransportError::NegotiationError(err) => write!(f, "Negotiation error {:?}", err),
             TransportError::ProtectorError(err) => write!(f, "Protector error {:?}", err),
             TransportError::SecurityError => write!(f, "SecurityError layer error"),
@@ -511,6 +515,7 @@ impl Error for TransportError {
             TransportError::Unreachable => None,
             TransportError::Internal => None,
             TransportError::IoError(err) => Some(err),
+            TransportError::ResolveFail(_) => None,
             TransportError::NegotiationError(err) => Some(err),
             TransportError::ProtectorError(err) => Some(err),
             TransportError::SecurityError => None,
