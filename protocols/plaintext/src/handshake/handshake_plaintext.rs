@@ -24,18 +24,13 @@ pub struct Remote {
     pub public_key: PublicKey,
 }
 
-pub(crate) async fn handshake<T>(
-    socket: T,
-    config: PlainTextConfig,
-) -> Result<(SecureStream<T>, Remote), PlaintextError>
+pub(crate) async fn handshake<T>(socket: T, config: PlainTextConfig) -> Result<(SecureStream<T>, Remote), PlaintextError>
 where
     T: ReadEx + WriteEx + Send + 'static,
 {
     let mut socket = LengthPrefixSocket::new(socket, config.clone().max_frame_length);
     let local_context = HandshakeContext::new(config.clone())?;
-    socket
-        .send_frame(local_context.state.exchange_bytes.as_ref())
-        .await?;
+    socket.send_frame(local_context.state.exchange_bytes.as_ref()).await?;
 
     let buf = socket.recv_frame().await?;
     let remote_context = local_context.with_remote(buf)?;
@@ -66,21 +61,14 @@ impl HandshakeContext<Local> {
             pubkey: Some(public_key.into_protobuf_encoding()),
         };
         let mut buf = Vec::with_capacity(local.encoded_len());
-        local
-            .encode(&mut buf)
-            .expect("Vec<u8> provides capacity as needed");
+        local.encode(&mut buf).expect("Vec<u8> provides capacity as needed");
         Ok(HandshakeContext {
             config,
-            state: Local {
-                exchange_bytes: buf,
-            },
+            state: Local { exchange_bytes: buf },
         })
     }
 
-    pub fn with_remote(
-        self,
-        exchange_bytes: Vec<u8>,
-    ) -> Result<HandshakeContext<Remote>, PlaintextError> {
+    pub fn with_remote(self, exchange_bytes: Vec<u8>) -> Result<HandshakeContext<Remote>, PlaintextError> {
         let prop = match Exchange::decode(&exchange_bytes[..]) {
             Ok(prop) => prop,
             Err(e) => {
@@ -112,10 +100,7 @@ impl HandshakeContext<Local> {
         }
         Ok(HandshakeContext {
             config: self.config,
-            state: Remote {
-                peer_id,
-                public_key,
-            },
+            state: Remote { peer_id, public_key },
         })
     }
 }
@@ -131,18 +116,12 @@ mod tests {
     use libp2p_core::identity::Keypair;
     use libp2p_traits::{ReadEx, WriteEx};
 
-    fn handshake_with_self_success(
-        config_1: PlainTextConfig,
-        config_2: PlainTextConfig,
-        data: &'static [u8],
-    ) {
+    fn handshake_with_self_success(config_1: PlainTextConfig, config_2: PlainTextConfig, data: &'static [u8]) {
         let (sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();
         let (addr_sender, addr_receiver) = channel::oneshot::channel::<::std::net::SocketAddr>();
 
         task::spawn(async move {
-            let listener = async_std::net::TcpListener::bind("127.0.0.1:0")
-                .await
-                .unwrap();
+            let listener = async_std::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let listener_addr = listener.local_addr().unwrap();
             let _res = addr_sender.send(listener_addr);
             let (connect, _) = listener.accept().await.unwrap();
@@ -154,9 +133,7 @@ mod tests {
 
         task::spawn(async move {
             let listener_addr = addr_receiver.await.unwrap();
-            let connect = async_std::net::TcpStream::connect(&listener_addr)
-                .await
-                .unwrap();
+            let connect = async_std::net::TcpStream::connect(&listener_addr).await.unwrap();
             let (mut handle, _) = config_2.handshake(connect).await.unwrap();
             handle.write2(data).await.unwrap();
             let mut data = [0u8; 11];
@@ -174,10 +151,6 @@ mod tests {
     fn handshake_with_self_success_secp256k1_small_data() {
         let key_1 = Keypair::generate_secp256k1();
         let key_2 = Keypair::generate_secp256k1();
-        handshake_with_self_success(
-            PlainTextConfig::new(key_1),
-            PlainTextConfig::new(key_2),
-            b"hello world",
-        )
+        handshake_with_self_success(PlainTextConfig::new(key_1), PlainTextConfig::new(key_2), b"hello world")
     }
 }

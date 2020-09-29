@@ -13,11 +13,11 @@ use async_std::{
     task,
 };
 use futures::channel::oneshot;
+use libp2p_traits::{ReadEx, ReadExt2, WriteEx};
 use mplex::{
     connection::{control::Control, Connection},
     error::ConnectionError,
 };
-use libp2p_traits::{ReadEx, ReadExt2, WriteEx};
 use quickcheck::{Arbitrary, Gen, QuickCheck, TestResult};
 use rand::Rng;
 use std::time::Duration;
@@ -148,10 +148,7 @@ fn prop_half_close() {
                 if let Ok(mut stream) = control.accept_stream().await {
                     log::info!("S accept new stream {}", stream.id());
                     rx.await.expect("S oneshot receive");
-                    stream
-                        .write_all2(&data)
-                        .await
-                        .expect("server stream write all");
+                    stream.write_all2(&data).await.expect("server stream write all");
                     stream.close2().await.expect("server stream close");
                 }
                 loop_handle.await;
@@ -168,11 +165,7 @@ fn prop_half_close() {
                     log::info!("C connection {} is closed", muxer_conn.id());
                 });
 
-                let mut stream = control
-                    .clone()
-                    .open_stream()
-                    .await
-                    .expect("client open stream");
+                let mut stream = control.clone().open_stream().await.expect("client open stream");
                 stream.close2().await.expect("client close stream");
 
                 if stream.write_all2(b"foo").await.is_ok() {
@@ -183,10 +176,7 @@ fn prop_half_close() {
                 tx.send(()).expect("C oneshot send");
 
                 let mut buf = vec![0; msg.len()];
-                stream
-                    .read_exact2(&mut buf)
-                    .await
-                    .expect("client stream read exact");
+                stream.read_exact2(&mut buf).await.expect("client stream read exact");
 
                 if !msg.eq(&buf) {
                     return TestResult::failed();
@@ -267,11 +257,7 @@ fn prop_closing() {
                     muxer_conn.streams_length()
                 });
 
-                control
-                    .clone()
-                    .accept_stream()
-                    .await
-                    .expect("S accept stream");
+                control.clone().accept_stream().await.expect("S accept stream");
                 control.close().await.expect("S close connection");
 
                 loop_handle.await
@@ -346,11 +332,7 @@ fn prop_reset() {
                     log::info!("C connection {} is closed", muxer_conn.id());
                 });
 
-                let mut stream = control
-                    .clone()
-                    .open_stream()
-                    .await
-                    .expect("client open stream");
+                let mut stream = control.clone().open_stream().await.expect("client open stream");
                 stream.reset().await.expect("client close stream");
 
                 let mut buf = vec![0; 64];
@@ -396,11 +378,7 @@ fn prop_reset_after_eof() {
                     log::info!("S connection {} is closed", muxer_conn.id());
                 });
 
-                let mut stream = control
-                    .clone()
-                    .accept_stream()
-                    .await
-                    .expect("S accept stream");
+                let mut stream = control.clone().accept_stream().await.expect("S accept stream");
                 log::info!("S accept new stream {}", stream.id());
                 stream.close2().await.expect("S close stream");
 
@@ -428,11 +406,7 @@ fn prop_reset_after_eof() {
                     log::info!("C connection {} is closed", muxer_conn.id());
                 });
 
-                let mut stream = control
-                    .clone()
-                    .open_stream()
-                    .await
-                    .expect("client open stream");
+                let mut stream = control.clone().open_stream().await.expect("client open stream");
                 rx.await.expect("C oneshot receive");
 
                 let mut buf = vec![0; 64];
@@ -472,11 +446,7 @@ fn prop_reset_after_eof1() {
                     log::info!("S connection {} is closed", muxer_conn.id());
                 });
 
-                control
-                    .clone()
-                    .accept_stream()
-                    .await
-                    .expect("S accept stream")
+                control.clone().accept_stream().await.expect("S accept stream")
             });
 
             let sb_handle = task::spawn(async move {
@@ -489,11 +459,7 @@ fn prop_reset_after_eof1() {
                     log::info!("C connection {} is closed", muxer_conn.id());
                 });
 
-                control
-                    .clone()
-                    .open_stream()
-                    .await
-                    .expect("client open stream")
+                control.clone().open_stream().await.expect("client open stream")
             });
 
             let result = futures::future::join(sa_handle, sb_handle).await;

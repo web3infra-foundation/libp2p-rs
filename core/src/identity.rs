@@ -73,8 +73,7 @@ impl Keypair {
     /// [RFC5915]: https://tools.ietf.org/html/rfc5915
     #[cfg(feature = "secp256k1")]
     pub fn secp256k1_from_der(der: &mut [u8]) -> Result<Keypair, DecodingError> {
-        secp256k1::SecretKey::from_der(der)
-            .map(|sk| Keypair::Secp256k1(secp256k1::Keypair::from(sk)))
+        secp256k1::SecretKey::from_der(der).map(|sk| Keypair::Secp256k1(secp256k1::Keypair::from(sk)))
     }
 
     /// Sign a message using the private key of this keypair, producing
@@ -155,9 +154,7 @@ impl PublicKey {
         };
 
         let mut buf = Vec::with_capacity(public_key.encoded_len());
-        public_key
-            .encode(&mut buf)
-            .expect("Vec<u8> provides capacity as needed");
+        public_key.encode(&mut buf).expect("Vec<u8> provides capacity as needed");
         buf
     }
 
@@ -167,29 +164,22 @@ impl PublicKey {
         use prost::Message;
 
         #[allow(unused_mut)] // Due to conditional compilation.
-        let mut pubkey = keys_proto::PublicKey::decode(bytes)
-            .map_err(|e| DecodingError::new("Protobuf").source(e))?;
+        let mut pubkey = keys_proto::PublicKey::decode(bytes).map_err(|e| DecodingError::new("Protobuf").source(e))?;
 
         let key_type = keys_proto::KeyType::from_i32(pubkey.r#type)
             .ok_or_else(|| DecodingError::new(format!("unknown key type: {}", pubkey.r#type)))?;
 
         match key_type {
-            keys_proto::KeyType::Ed25519 => {
-                ed25519::PublicKey::decode(&pubkey.data).map(PublicKey::Ed25519)
-            }
+            keys_proto::KeyType::Ed25519 => ed25519::PublicKey::decode(&pubkey.data).map(PublicKey::Ed25519),
             #[cfg(not(any(target_os = "emscripten", target_os = "unknown")))]
-            keys_proto::KeyType::Rsa => {
-                rsa::PublicKey::decode_x509(&pubkey.data).map(PublicKey::Rsa)
-            }
+            keys_proto::KeyType::Rsa => rsa::PublicKey::decode_x509(&pubkey.data).map(PublicKey::Rsa),
             #[cfg(any(target_os = "emscripten", target_os = "unknown"))]
             keys_proto::KeyType::Rsa => {
                 log::debug!("support for RSA was disabled at compile-time");
                 Err(DecodingError::new("Unsupported"))
             }
             #[cfg(feature = "secp256k1")]
-            keys_proto::KeyType::Secp256k1 => {
-                secp256k1::PublicKey::decode(&pubkey.data).map(PublicKey::Secp256k1)
-            }
+            keys_proto::KeyType::Secp256k1 => secp256k1::PublicKey::decode(&pubkey.data).map(PublicKey::Secp256k1),
             #[cfg(not(feature = "secp256k1"))]
             keys_proto::KeyType::Secp256k1 => {
                 log::debug!("support for secp256k1 was disabled at compile-time");

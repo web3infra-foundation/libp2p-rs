@@ -1,9 +1,6 @@
 use bytes::BytesMut;
 use ring::{
-    aead::{
-        Aad, BoundKey, Nonce, NonceSequence, OpeningKey, SealingKey, UnboundKey, AES_128_GCM,
-        AES_256_GCM, CHACHA20_POLY1305,
-    },
+    aead::{Aad, BoundKey, Nonce, NonceSequence, OpeningKey, SealingKey, UnboundKey, AES_128_GCM, AES_256_GCM, CHACHA20_POLY1305},
     error::Unspecified,
 };
 
@@ -48,26 +45,18 @@ impl RingAeadCipher {
             CipherType::Aes128Gcm => &AES_128_GCM,
             CipherType::Aes256Gcm => &AES_256_GCM,
             CipherType::ChaCha20Poly1305 => &CHACHA20_POLY1305,
-            _ => panic!(
-                "Cipher type {:?} does not supported by RingAead yet",
-                cipher_type
-            ),
+            _ => panic!("Cipher type {:?} does not supported by RingAead yet", cipher_type),
         };
 
         let cipher = match mode {
-            CryptoMode::Encrypt => RingAeadCryptoVariant::Seal(SealingKey::new(
-                UnboundKey::new(algorithm, key).unwrap(),
-                RingNonce(nonce),
-            )),
-            CryptoMode::Decrypt => RingAeadCryptoVariant::Open(OpeningKey::new(
-                UnboundKey::new(algorithm, key).unwrap(),
-                RingNonce(nonce),
-            )),
+            CryptoMode::Encrypt => {
+                RingAeadCryptoVariant::Seal(SealingKey::new(UnboundKey::new(algorithm, key).unwrap(), RingNonce(nonce)))
+            }
+            CryptoMode::Decrypt => {
+                RingAeadCryptoVariant::Open(OpeningKey::new(UnboundKey::new(algorithm, key).unwrap(), RingNonce(nonce)))
+            }
         };
-        RingAeadCipher {
-            cipher,
-            cipher_type,
-        }
+        RingAeadCipher { cipher, cipher_type }
     }
 
     /// Encrypt `input` to `output` with `tag`. `output.len()` should equals to `input.len() + tag.len()`.
@@ -143,9 +132,7 @@ mod test {
     use super::{CipherType, CryptoMode, RingAeadCipher};
 
     fn test_ring_aead(cipher: CipherType) {
-        let key = (0..cipher.key_size())
-            .map(|_| rand::random::<u8>())
-            .collect::<Vec<_>>();
+        let key = (0..cipher.key_size()).map(|_| rand::random::<u8>()).collect::<Vec<_>>();
 
         // first time
         let message = b"HELLO WORLD";

@@ -52,10 +52,7 @@ impl PreSharedKey {
         cipher.apply_keystream(&mut enc);
         let mut hasher = Shake128::default();
         hasher.write_all(&enc).expect("shake128 failed");
-        hasher
-            .xof_result()
-            .read_exact(&mut out)
-            .expect("shake128 failed");
+        hasher.xof_result().read_exact(&mut out).expect("shake128 failed");
         Fingerprint(out)
     }
 }
@@ -64,8 +61,7 @@ fn parse_hex_key(s: &str) -> Result<[u8; KEY_SIZE], KeyParseError> {
     if s.len() == KEY_SIZE * 2 {
         let mut r = [0u8; KEY_SIZE];
         for i in 0..KEY_SIZE {
-            r[i] = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16)
-                .map_err(KeyParseError::InvalidKeyChar)?;
+            r[i] = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).map_err(KeyParseError::InvalidKeyChar)?;
         }
         Ok(r)
     } else {
@@ -106,9 +102,7 @@ impl FromStr for PreSharedKey {
 
 impl fmt::Debug for PreSharedKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("PreSharedKey")
-            .field(&to_hex(&self.0))
-            .finish()
+        f.debug_tuple("PreSharedKey").field(&to_hex(&self.0)).finish()
     }
 }
 
@@ -238,14 +232,8 @@ where
         let mut local_nonce = [0u8; NONCE_SIZE];
         let mut remote_nonce = [0u8; NONCE_SIZE];
         rand::thread_rng().fill_bytes(&mut local_nonce);
-        socket
-            .write_all2(&local_nonce)
-            .await
-            .map_err(PnetError::HandshakeError)?;
-        socket
-            .read_exact2(&mut remote_nonce)
-            .await
-            .map_err(PnetError::HandshakeError)?;
+        socket.write_all2(&local_nonce).await.map_err(PnetError::HandshakeError)?;
+        socket.read_exact2(&mut remote_nonce).await.map_err(PnetError::HandshakeError)?;
         trace!("setting up ciphers");
         let write_cipher = XSalsa20::new(&self.key.0.into(), &local_nonce.into());
         let read_cipher = XSalsa20::new(&self.key.0.into(), &remote_nonce.into());
@@ -332,33 +320,22 @@ mod tests {
     fn psk_tostring_parse() {
         fn prop(key: PreSharedKey) -> bool {
             let text = key.to_string();
-            text.parse::<PreSharedKey>()
-                .map(|res| res == key)
-                .unwrap_or(false)
+            text.parse::<PreSharedKey>().map(|res| res == key).unwrap_or(false)
         }
-        QuickCheck::new()
-            .tests(10)
-            .quickcheck(prop as fn(PreSharedKey) -> _);
+        QuickCheck::new().tests(10).quickcheck(prop as fn(PreSharedKey) -> _);
     }
 
     #[test]
     fn psk_parse_failure() {
         use KeyParseError::*;
         assert_eq!("".parse::<PreSharedKey>().unwrap_err(), InvalidKeyFile);
+        assert_eq!("a\nb\nc".parse::<PreSharedKey>().unwrap_err(), InvalidKeyType);
         assert_eq!(
-            "a\nb\nc".parse::<PreSharedKey>().unwrap_err(),
-            InvalidKeyType
-        );
-        assert_eq!(
-            "/key/swarm/psk/1.0.0/\nx\ny"
-                .parse::<PreSharedKey>()
-                .unwrap_err(),
+            "/key/swarm/psk/1.0.0/\nx\ny".parse::<PreSharedKey>().unwrap_err(),
             InvalidKeyEncoding
         );
         assert_eq!(
-            "/key/swarm/psk/1.0.0/\n/base16/\ny"
-                .parse::<PreSharedKey>()
-                .unwrap_err(),
+            "/key/swarm/psk/1.0.0/\n/base16/\ny".parse::<PreSharedKey>().unwrap_err(),
             InvalidKeyLength
         );
     }
@@ -366,7 +343,9 @@ mod tests {
     #[test]
     fn fingerprint() {
         // checked against go-ipfs output
-        let key = "/key/swarm/psk/1.0.0/\n/base16/\n6189c5cf0b87fb800c1a9feeda73c6ab5e998db48fb9e6a978575c770ceef683".parse::<PreSharedKey>().unwrap();
+        let key = "/key/swarm/psk/1.0.0/\n/base16/\n6189c5cf0b87fb800c1a9feeda73c6ab5e998db48fb9e6a978575c770ceef683"
+            .parse::<PreSharedKey>()
+            .unwrap();
         let expected = "45fc986bbc9388a11d939df26f730f0c";
         let actual = key.fingerprint().to_string();
         assert_eq!(expected, actual);

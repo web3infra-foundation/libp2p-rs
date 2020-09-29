@@ -13,12 +13,7 @@ use futures::channel::oneshot;
 use futures::stream::FusedStream;
 use futures::{channel::mpsc, prelude::*, ready};
 use libp2p_traits::{ReadEx, ReadExt2, WriteEx};
-use mplex::{
-    connection::{
-        stream::Stream as mplex_stream,
-        Connection
-    },
-};
+use mplex::connection::{stream::Stream as mplex_stream, Connection};
 use quickcheck::{QuickCheck, TestResult};
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -54,16 +49,8 @@ fn prop_slow_reader() {
                 log::info!("B connection {} is closed", muxer_conn.id());
             });
 
-            let mut sa = mpa_ctrl
-                .clone()
-                .open_stream()
-                .await
-                .expect("client open stream");
-            let mut sb = mpb_ctrl
-                .clone()
-                .accept_stream()
-                .await
-                .expect("S accept stream");
+            let mut sa = mpa_ctrl.clone().open_stream().await.expect("client open stream");
+            let mut sb = mpb_ctrl.clone().accept_stream().await.expect("S accept stream");
 
             for _ in 0..40 {
                 sa.write_all2(b"Hello World").await.expect("A write all");
@@ -128,11 +115,7 @@ fn prop_basic_streams() {
                 sb.close2().await.expect("B close stream");
             });
 
-            let mut sa = mpa_ctrl
-                .clone()
-                .open_stream()
-                .await
-                .expect("client open stream");
+            let mut sa = mpa_ctrl.clone().open_stream().await.expect("client open stream");
             let mut buf = vec![0; msg.len()];
             sa.read_exact2(&mut buf).await.expect("A read exact");
             if !msg.eq(buf.as_slice()) {
@@ -188,11 +171,7 @@ fn prop_write_after_close() {
                 let _ = tx.send(());
             });
 
-            let mut sa = mpa_ctrl
-                .clone()
-                .open_stream()
-                .await
-                .expect("client open stream");
+            let mut sa = mpa_ctrl.clone().open_stream().await.expect("client open stream");
 
             // wait for writes to complete and close to happen (and be noticed)
             let _ = rx.await;
@@ -333,11 +312,7 @@ fn prop_echo() {
             });
 
             // A act as client
-            let mut sa = mpa_ctrl
-                .clone()
-                .open_stream()
-                .await
-                .expect("client open stream");
+            let mut sa = mpa_ctrl.clone().open_stream().await.expect("client open stream");
 
             // A send and recv
             let msg = b"Hello World";
@@ -402,11 +377,7 @@ fn prop_half_close() {
             });
 
             // A act as client
-            let mut sa = mpa_ctrl
-                .clone()
-                .open_stream()
-                .await
-                .expect("client open stream");
+            let mut sa = mpa_ctrl.clone().open_stream().await.expect("client open stream");
 
             sa.close2().await.expect("B close stream");
 
@@ -509,16 +480,8 @@ fn prop_closing() {
             });
 
             // new stream
-            mpa_ctrl
-                .clone()
-                .open_stream()
-                .await
-                .expect("client open stream");
-            mpb_ctrl
-                .clone()
-                .accept_stream()
-                .await
-                .expect("S accept stream");
+            mpa_ctrl.clone().open_stream().await.expect("client open stream");
+            mpb_ctrl.clone().accept_stream().await.expect("S accept stream");
 
             // close connection A and B
             mpa_ctrl.close().await.expect("A close connection");
@@ -559,16 +522,8 @@ fn prop_reset() {
             });
 
             // new stream
-            let mut sa = mpa_ctrl
-                .clone()
-                .open_stream()
-                .await
-                .expect("client open stream");
-            let mut sb = mpb_ctrl
-                .clone()
-                .accept_stream()
-                .await
-                .expect("S accept stream");
+            let mut sa = mpa_ctrl.clone().open_stream().await.expect("client open stream");
+            let mut sb = mpb_ctrl.clone().accept_stream().await.expect("S accept stream");
 
             sa.reset().await.expect("A reset");
 
@@ -627,16 +582,8 @@ fn prop_reset_after_eof() {
             });
 
             // new stream
-            let mut sa = mpa_ctrl
-                .clone()
-                .open_stream()
-                .await
-                .expect("client open stream");
-            let mut sb = mpb_ctrl
-                .clone()
-                .accept_stream()
-                .await
-                .expect("S accept stream");
+            let mut sa = mpa_ctrl.clone().open_stream().await.expect("client open stream");
+            let mut sb = mpb_ctrl.clone().accept_stream().await.expect("S accept stream");
 
             sa.close2().await.expect("sa close");
 
@@ -691,16 +638,8 @@ fn prop_open_after_close() {
             });
 
             // new stream
-            let mut sa = mpa_ctrl
-                .clone()
-                .open_stream()
-                .await
-                .expect("client open stream");
-            let mut sb = mpb_ctrl
-                .clone()
-                .accept_stream()
-                .await
-                .expect("S accept stream");
+            let mut sa = mpa_ctrl.clone().open_stream().await.expect("client open stream");
+            let mut sb = mpb_ctrl.clone().accept_stream().await.expect("S accept stream");
 
             // close stream sa and sb
             sa.close2().await.expect("A close");
@@ -752,16 +691,8 @@ fn prop_read_after_close() {
             });
 
             // new stream
-            let mut sa = mpa_ctrl
-                .clone()
-                .open_stream()
-                .await
-                .expect("client open stream");
-            let mut sb = mpb_ctrl
-                .clone()
-                .accept_stream()
-                .await
-                .expect("S accept stream");
+            let mut sa = mpa_ctrl.clone().open_stream().await.expect("client open stream");
+            let mut sb = mpb_ctrl.clone().accept_stream().await.expect("S accept stream");
 
             sa.close2().await.expect("sa close");
 
@@ -817,11 +748,7 @@ fn prop_fuzz_close_stream() {
             task::spawn(async move {
                 let mut handles = VecDeque::new();
                 for _ in 0..100 {
-                    let sa = ctrl
-                        .clone()
-                        .open_stream()
-                        .await
-                        .expect("client open stream");
+                    let sa = ctrl.clone().open_stream().await.expect("client open stream");
 
                     for _ in 0..2 {
                         let mut sa = sa.clone();
@@ -841,11 +768,7 @@ fn prop_fuzz_close_stream() {
 
             let mut streams = VecDeque::new();
             for _ in 0..100 {
-                let sb = mpb_ctrl
-                    .clone()
-                    .accept_stream()
-                    .await
-                    .expect("B accept stream");
+                let sb = mpb_ctrl.clone().accept_stream().await.expect("B accept stream");
                 streams.push_back(sb);
             }
 
@@ -906,19 +829,12 @@ impl Stream for Endpoint {
 }
 
 impl AsyncWrite for Endpoint {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context, buf: &[u8]) -> Poll<io::Result<usize>> {
         if ready!(Pin::new(&mut self.outgoing).poll_ready(cx)).is_err() {
             return Poll::Ready(Err(io::ErrorKind::ConnectionAborted.into()));
         }
         let n = buf.len();
-        if Pin::new(&mut self.outgoing)
-            .start_send(Vec::from(buf))
-            .is_err()
-        {
+        if Pin::new(&mut self.outgoing).start_send(Vec::from(buf)).is_err() {
             return Poll::Ready(Err(io::ErrorKind::ConnectionAborted.into()));
         }
         Poll::Ready(Ok(n))

@@ -1,12 +1,11 @@
-use std::{io, fmt};
 use async_trait::async_trait;
 use libp2p_traits::{ReadEx, WriteEx};
+use std::{fmt, io};
 
-use crate::ProtocolId;
 use crate::connection::{ConnectionId, Direction};
+use crate::ProtocolId;
 use libp2p_core::muxing::StreamInfo;
 use libp2p_core::upgrade::ProtocolName;
-
 
 /// The Id of sub stream
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -38,12 +37,7 @@ impl<TStream: fmt::Debug> fmt::Debug for Substream<TStream> {
 
 impl<TStream: StreamInfo> Substream<TStream> {
     pub(crate) fn new(inner: TStream, dir: Direction, protocol: ProtocolId, cid: ConnectionId) -> Self {
-        Self {
-            inner,
-            protocol,
-            dir,
-            cid,
-        }
+        Self { inner, protocol, dir, cid }
     }
     /// Returns the protocol of the sub stream
     pub fn protocol(&self) -> ProtocolId {

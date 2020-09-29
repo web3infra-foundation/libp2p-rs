@@ -34,9 +34,7 @@ impl Keypair {
 
 impl fmt::Debug for Keypair {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Keypair")
-            .field("public", &self.public)
-            .finish()
+        f.debug_struct("Keypair").field("public", &self.public).finish()
     }
 }
 
@@ -85,8 +83,8 @@ impl SecretKey {
     /// error is returned.
     pub fn from_bytes(mut sk: impl AsMut<[u8]>) -> Result<SecretKey, DecodingError> {
         let sk_bytes = sk.as_mut();
-        let secret = secp256k1::SecretKey::parse_slice(&*sk_bytes)
-            .map_err(|_| DecodingError::new("failed to parse secp256k1 secret key"))?;
+        let secret =
+            secp256k1::SecretKey::parse_slice(&*sk_bytes).map_err(|_| DecodingError::new("failed to parse secp256k1 secret key"))?;
         sk_bytes.zeroize();
         Ok(SecretKey(secret))
     }
@@ -98,15 +96,14 @@ impl SecretKey {
     pub fn from_der(mut der: impl AsMut<[u8]>) -> Result<SecretKey, DecodingError> {
         // TODO: Stricter parsing.
         let der_obj = der.as_mut();
-        let obj: Vec<DerObject> = FromDerObject::deserialize((&*der_obj).iter())
-            .map_err(|e| DecodingError::new("Secp256k1 DER ECPrivateKey").source(e))?;
+        let obj: Vec<DerObject> =
+            FromDerObject::deserialize((&*der_obj).iter()).map_err(|e| DecodingError::new("Secp256k1 DER ECPrivateKey").source(e))?;
         der_obj.zeroize();
         let sk_obj = obj
             .into_iter()
             .nth(1)
             .ok_or_else(|| DecodingError::new("Not enough elements in DER"))?;
-        let mut sk_bytes: Vec<u8> =
-            FromDerObject::from_der_object(sk_obj).map_err(DecodingError::new)?;
+        let mut sk_bytes: Vec<u8> = FromDerObject::from_der_object(sk_obj).map_err(DecodingError::new)?;
         let sk = SecretKey::from_bytes(&mut sk_bytes)?;
         sk_bytes.zeroize();
         Ok(sk)
@@ -128,13 +125,8 @@ impl SecretKey {
     /// Sign a raw message of length 256 bits with this secret key, produces a DER-encoded
     /// ECDSA signature.
     pub fn sign_hash(&self, msg: &[u8]) -> Result<Vec<u8>, SigningError> {
-        let m = Message::parse_slice(msg)
-            .map_err(|_| SigningError::new("failed to parse secp256k1 digest"))?;
-        Ok(secp256k1::sign(&m, &self.0)
-            .0
-            .serialize_der()
-            .as_ref()
-            .into())
+        let m = Message::parse_slice(msg).map_err(|_| SigningError::new("failed to parse secp256k1 digest"))?;
+        Ok(secp256k1::sign(&m, &self.0).0.serialize_der().as_ref().into())
     }
 }
 

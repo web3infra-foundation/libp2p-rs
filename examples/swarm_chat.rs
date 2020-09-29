@@ -5,16 +5,17 @@ use std::time::Duration;
 extern crate lazy_static;
 
 use async_std::io;
-use std::io::Write;
 use libp2p_core::identity::Keypair;
 use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_core::{Multiaddr, PeerId};
 use libp2p_swarm::protocol_handler::{IProtocolHandler, ProtocolHandler};
+use libp2p_swarm::substream::Substream;
 use libp2p_swarm::{Muxer, Swarm, SwarmError};
 use libp2p_tcp::TcpConfig;
 use libp2p_traits::{ReadEx, WriteEx};
 use secio;
+use std::io::Write;
 use yamux;
 
 fn main() {
@@ -38,17 +39,17 @@ where
 {
     loop {
         print!("> ");
-        std::io::stdout().flush();
+        let _ = std::io::stdout().flush();
         let mut input = String::new();
         let n = io::stdin().read_line(&mut input).await.unwrap();
         let _ = stream.write_all2(&input.as_bytes()[0..n]).await;
-        stream.flush2().await;
+        let _ = stream.flush2().await;
     }
 }
 
 async fn read_data<C>(mut stream: C)
 where
-    C: ReadEx + WriteEx  + Send,
+    C: ReadEx + WriteEx + Send,
 {
     loop {
         let mut buf = [0; 4096];
@@ -59,7 +60,7 @@ where
         }
         if str != "\n" {
             print!("\x1b[32m{}\x1b[0m> ", str);
-            std::io::stdout().flush();
+            let _ = std::io::stdout().flush();
         }
     }
 }
@@ -80,11 +81,7 @@ impl<C> ProtocolHandler<C> for ChatHandler
 where
     C: ReadEx + WriteEx + Unpin + Clone + Send + std::fmt::Debug + 'static,
 {
-    async fn handle(
-        &mut self,
-        stream: C,
-        _info: <Self as UpgradeInfo>::Info,
-    ) -> Result<(), SwarmError> {
+    async fn handle(&mut self, stream: Substream<C>, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
         let stream = stream;
         log::trace!("ChatHandler handling inbound {:?}", stream);
         let s1 = stream.clone();
@@ -111,7 +108,6 @@ fn run_server() {
     let sec = secio::Config::new(keys.clone());
     let mux = yamux::Config::new();
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
-
 
     let mut muxer = Muxer::new();
 
@@ -147,23 +143,16 @@ fn run_client() {
 
     log::info!("about to connect to {:?}", remote_peer_id);
 
-    swarm.peers.addrs.add_addr(
-        &remote_peer_id,
-        "/ip4/127.0.0.1/tcp/8086".parse().unwrap(),
-        Duration::default(),
-    );
+    swarm
+        .peers
+        .addrs
+        .add_addr(&remote_peer_id, "/ip4/127.0.0.1/tcp/8086".parse().unwrap(), Duration::default());
 
     swarm.start();
 
     task::block_on(async move {
-        control
-            .new_connection(remote_peer_id.clone())
-            .await
-            .unwrap();
-        let stream = control
-            .new_stream(remote_peer_id, vec![b"/chat/1.0.0"])
-            .await
-            .unwrap();
+        control.new_connection(remote_peer_id.clone()).await.unwrap();
+        let stream = control.new_stream(remote_peer_id, vec![b"/chat/1.0.0"]).await.unwrap();
 
         log::info!("stream {:?} opened, writing something...", stream);
         let s1 = stream.clone();

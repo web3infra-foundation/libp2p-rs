@@ -2,9 +2,7 @@ use log::{debug, trace};
 
 use std::{cmp::min, io};
 
-use crate::{
-    codec::len_prefix::LengthPrefixSocket, codec::Hmac, crypto::BoxStreamCipher, error::SecioError,
-};
+use crate::{codec::len_prefix::LengthPrefixSocket, codec::Hmac, crypto::BoxStreamCipher, error::SecioError};
 
 use async_trait::async_trait;
 use libp2p_traits::{ReadEx, WriteEx};
@@ -87,11 +85,7 @@ where
             let mut nonce = self.nonce.clone();
             let nonce_len = self.read2(&mut nonce).await?;
 
-            trace!(
-                "verify_nonce nonce={}, my_nonce={}",
-                nonce_len,
-                self.nonce.len()
-            );
+            trace!("verify_nonce nonce={}, my_nonce={}", nonce_len, self.nonce.len());
 
             let n = min(nonce.len(), self.nonce.len());
             if nonce[..n] != self.nonce[..n] {
@@ -151,9 +145,7 @@ where
         let t = self.socket.recv_frame().await?;
         debug!("receive encrypted data size: {:?}", t.len());
 
-        let decoded = self
-            .decode_buffer(t)
-            .map_err::<io::Error, _>(|err| err.into())?;
+        let decoded = self.decode_buffer(t).map_err::<io::Error, _>(|err| err.into())?;
 
         // when input buffer is big enough
         let n = decoded.len();
@@ -204,13 +196,9 @@ mod tests {
     use libp2p_traits::{ReadEx, WriteEx};
 
     fn test_decode_encode(cipher: CipherType) {
-        let cipher_key = (0..cipher.key_size())
-            .map(|_| rand::random::<u8>())
-            .collect::<Vec<_>>();
+        let cipher_key = (0..cipher.key_size()).map(|_| rand::random::<u8>()).collect::<Vec<_>>();
         let _hmac_key: [u8; 32] = rand::random();
-        let iv = (0..cipher.iv_size())
-            .map(|_| rand::random::<u8>())
-            .collect::<Vec<_>>();
+        let iv = (0..cipher.iv_size()).map(|_| rand::random::<u8>()).collect::<Vec<_>>();
 
         let data = b"hello world";
 
@@ -218,9 +206,7 @@ mod tests {
         let mut decode_cipher = new_stream(cipher, &cipher_key, &iv, CryptoMode::Decrypt);
 
         let (mut decode_hmac, mut encode_hmac): (Option<Hmac>, Option<Hmac>) = match cipher {
-            CipherType::ChaCha20Poly1305 | CipherType::Aes128Gcm | CipherType::Aes256Gcm => {
-                (None, None)
-            }
+            CipherType::ChaCha20Poly1305 | CipherType::Aes128Gcm | CipherType::Aes256Gcm => (None, None),
             _ => {
                 let encode_hmac = Hmac::from_key(Digest::Sha256, &_hmac_key);
                 let decode_hmac = encode_hmac.clone();
@@ -239,10 +225,7 @@ mod tests {
 
             let (crypted_data, expected_hash) = encode_data.split_at(content_length);
 
-            assert!(decode_hmac
-                .as_mut()
-                .unwrap()
-                .verify(crypted_data, expected_hash));
+            assert!(decode_hmac.as_mut().unwrap().verify(crypted_data, expected_hash));
 
             encode_data.truncate(content_length);
         }
@@ -255,9 +238,7 @@ mod tests {
     fn secure_codec_encode_then_decode(cipher: CipherType) {
         let cipher_key: [u8; 32] = rand::random();
         let cipher_key_clone = cipher_key;
-        let iv = (0..cipher.iv_size())
-            .map(|_| rand::random::<u8>())
-            .collect::<Vec<_>>();
+        let iv = (0..cipher.iv_size()).map(|_| rand::random::<u8>()).collect::<Vec<_>>();
         let iv_clone = iv.clone();
         let key_size = cipher.key_size();
         let hmac_key: [u8; 16] = rand::random();
@@ -270,17 +251,13 @@ mod tests {
         let (addr_sender, addr_receiver) = channel::oneshot::channel::<::std::net::SocketAddr>();
 
         task::spawn(async move {
-            let listener = async_std::net::TcpListener::bind("127.0.0.1:0")
-                .await
-                .unwrap();
+            let listener = async_std::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let listener_addr = listener.local_addr().unwrap();
             let _res = addr_sender.send(listener_addr);
             let (socket, _) = listener.accept().await.unwrap();
             let nonce2 = nonce.clone();
             let (decode_hmac, encode_hmac) = match cipher {
-                CipherType::ChaCha20Poly1305 | CipherType::Aes128Gcm | CipherType::Aes256Gcm => {
-                    (None, None)
-                }
+                CipherType::ChaCha20Poly1305 | CipherType::Aes128Gcm | CipherType::Aes256Gcm => (None, None),
                 _ => (
                     Some(Hmac::from_key(Digest::Sha256, &_hmac_key_clone)),
                     Some(Hmac::from_key(Digest::Sha256, &_hmac_key_clone)),
@@ -288,19 +265,9 @@ mod tests {
             };
             let mut handle = SecureStream::new(
                 LengthPrefixSocket::new(socket, 4096),
-                new_stream(
-                    cipher,
-                    &cipher_key_clone[..key_size],
-                    &iv_clone,
-                    CryptoMode::Decrypt,
-                ),
+                new_stream(cipher, &cipher_key_clone[..key_size], &iv_clone, CryptoMode::Decrypt),
                 decode_hmac,
-                new_stream(
-                    cipher,
-                    &cipher_key_clone[..key_size],
-                    &iv_clone,
-                    CryptoMode::Encrypt,
-                ),
+                new_stream(cipher, &cipher_key_clone[..key_size], &iv_clone, CryptoMode::Encrypt),
                 encode_hmac,
                 nonce2,
             );
@@ -312,13 +279,9 @@ mod tests {
 
         task::spawn(async move {
             let listener_addr = addr_receiver.await.unwrap();
-            let stream = async_std::net::TcpStream::connect(&listener_addr)
-                .await
-                .unwrap();
+            let stream = async_std::net::TcpStream::connect(&listener_addr).await.unwrap();
             let (decode_hmac, encode_hmac) = match cipher {
-                CipherType::ChaCha20Poly1305 | CipherType::Aes128Gcm | CipherType::Aes256Gcm => {
-                    (None, None)
-                }
+                CipherType::ChaCha20Poly1305 | CipherType::Aes128Gcm | CipherType::Aes256Gcm => (None, None),
                 _ => (
                     Some(Hmac::from_key(Digest::Sha256, &_hmac_key_clone)),
                     Some(Hmac::from_key(Digest::Sha256, &_hmac_key_clone)),
@@ -326,19 +289,9 @@ mod tests {
             };
             let mut handle = SecureStream::new(
                 LengthPrefixSocket::new(stream, 4096),
-                new_stream(
-                    cipher,
-                    &cipher_key_clone[..key_size],
-                    &iv,
-                    CryptoMode::Decrypt,
-                ),
+                new_stream(cipher, &cipher_key_clone[..key_size], &iv, CryptoMode::Decrypt),
                 decode_hmac,
-                new_stream(
-                    cipher,
-                    &cipher_key_clone[..key_size],
-                    &iv,
-                    CryptoMode::Encrypt,
-                ),
+                new_stream(cipher, &cipher_key_clone[..key_size], &iv, CryptoMode::Encrypt),
                 encode_hmac,
                 Vec::new(),
             );

@@ -53,9 +53,7 @@ where
     }
 
     pub fn add_handler(&mut self, proto: TProto, handler: IProtocolHandler<T>) -> Option<IProtocolHandler<T>> {
-        self.negotiator
-            .add_protocol(proto.clone())
-            .expect("protocol duplicate");
+        self.negotiator.add_protocol(proto.clone()).expect("protocol duplicate");
         self.handlers.insert(proto, handler)
     }
 
@@ -100,7 +98,7 @@ mod tests {
     use async_trait::async_trait;
 
     use super::super::Memory;
-    use super::{IProtocolHandler, BoxStream, Handler, Muxer, Stream};
+    use super::{BoxStream, Handler, IProtocolHandler, Muxer, Stream};
 
     struct Test(String);
     impl Stream for Test {}
@@ -141,9 +139,7 @@ mod tests {
 
             let server = task::spawn(async move {
                 let mut muxer = Muxer::new();
-                let duplicate = muxer
-                    .add_handler(b"/proto1", get_handler("server"))
-                    .is_some();
+                let duplicate = muxer.add_handler(b"/proto1", get_handler("server")).is_some();
                 assert!(!duplicate, "add duplicate protocol '{}' handler", "/proto1");
 
                 let (h, proto, _) = muxer.negotiate(server).await.expect("muxer.negotiate");
@@ -157,9 +153,7 @@ mod tests {
 
             let client = task::spawn(async move {
                 let mut muxer = Muxer::new();
-                let duplicate = muxer
-                    .add_handler(b"/proto1", get_client_proto_handler())
-                    .is_some();
+                let duplicate = muxer.add_handler(b"/proto1", get_client_proto_handler()).is_some();
                 assert!(!duplicate, "add duplicate protocol '{}' handler", "/proto1");
 
                 let (h, proto, _) = muxer.select_one(client).await.expect("muxer.select_one");

@@ -66,12 +66,7 @@ impl fmt::Display for Stream {
 }
 
 impl Stream {
-    pub(crate) fn new(
-        id: StreamID,
-        conn_id: Id,
-        sender: mpsc::Sender<StreamCommand>,
-        receiver: mpsc::Receiver<Vec<u8>>,
-    ) -> Self {
+    pub(crate) fn new(id: StreamID, conn_id: Id, sender: mpsc::Sender<StreamCommand>, receiver: mpsc::Receiver<Vec<u8>>) -> Self {
         Stream {
             id,
             conn_id,
@@ -129,10 +124,7 @@ impl Stream {
         log::trace!("{}/{}: write {} bytes", self.conn_id, self.id, n);
 
         let cmd = StreamCommand::SendFrame(frame, tx);
-        self.sender
-            .send(cmd)
-            .await
-            .map_err(|_| self.write_zero_err())?;
+        self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
 
         rx.await.map_err(|_| self.closed_err())?;
 
@@ -147,10 +139,7 @@ impl Stream {
         if count == 1 {
             let frame = Frame::close_frame(self.id);
             let cmd = StreamCommand::CloseStream(frame);
-            self.sender
-                .send(cmd)
-                .await
-                .map_err(|_| self.write_zero_err())?;
+            self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
         }
 
         // step3: close channel
@@ -167,15 +156,9 @@ impl Stream {
         if count == 1 {
             let frame = Frame::reset_frame(self.id);
             let cmd = StreamCommand::ResetStream(frame);
-            self.sender
-                .send(cmd)
-                .await
-                .map_err(|_| self.write_zero_err())?;
+            self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
 
-            self.sender
-                .close()
-                .await
-                .map_err(|_| self.write_zero_err())?;
+            self.sender.close().await.map_err(|_| self.write_zero_err())?;
         }
 
         Ok(())

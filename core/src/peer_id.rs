@@ -72,10 +72,7 @@ impl PeerId {
 
         let multihash = hash_algorithm.digest(&key_enc);
 
-        PeerId {
-            multihash,
-            canonical,
-        }
+        PeerId { multihash, canonical }
     }
 
     /// Checks whether `data` is a valid `PeerId`. If so, returns the `PeerId`. If not, returns
@@ -209,9 +206,7 @@ impl PartialEq<PeerId> for PeerId {
 
 impl Borrow<[u8]> for PeerId {
     fn borrow(&self) -> &[u8] {
-        self.canonical
-            .as_ref()
-            .map_or(self.multihash.as_bytes(), |c| c.as_bytes())
+        self.canonical.as_ref().map_or(self.multihash.as_bytes(), |c| c.as_bytes())
     }
 }
 
@@ -265,18 +260,14 @@ mod tests {
 
     #[test]
     fn peer_id_into_bytes_then_from_bytes() {
-        let peer_id = identity::Keypair::generate_ed25519()
-            .public()
-            .into_peer_id();
+        let peer_id = identity::Keypair::generate_ed25519().public().into_peer_id();
         let second = PeerId::from_bytes(peer_id.clone().into_bytes()).unwrap();
         assert_eq!(peer_id, second);
     }
 
     #[test]
     fn peer_id_to_base58_then_back() {
-        let peer_id = identity::Keypair::generate_ed25519()
-            .public()
-            .into_peer_id();
+        let peer_id = identity::Keypair::generate_ed25519().public().into_peer_id();
         let second: PeerId = peer_id.to_base58().parse().unwrap();
         assert_eq!(peer_id, second);
     }
@@ -285,10 +276,7 @@ mod tests {
     fn random_peer_id_is_valid() {
         for _ in 0..5000 {
             let peer_id = PeerId::random();
-            assert_eq!(
-                peer_id,
-                PeerId::from_bytes(peer_id.clone().into_bytes()).unwrap()
-            );
+            assert_eq!(peer_id, PeerId::from_bytes(peer_id.clone().into_bytes()).unwrap());
         }
     }
 

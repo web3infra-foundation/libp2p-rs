@@ -30,10 +30,7 @@ use prost::Message;
 /// On success, returns an object that implements the `AsyncWrite` and `AsyncRead` trait,
 /// plus the public key of the remote, plus the ephemeral public key used during
 /// negotiation.
-pub(crate) async fn handshake<T>(
-    socket: T,
-    config: Config,
-) -> Result<(SecureStream<T>, PublicKey, EphemeralPublicKey), SecioError>
+pub(crate) async fn handshake<T>(socket: T, config: Config) -> Result<(SecureStream<T>, PublicKey, EphemeralPublicKey), SecioError>
 where
     T: ReadEx + WriteEx + Send + 'static,
 {
@@ -42,15 +39,10 @@ where
 
     // Generate our nonce.
     let local_context = HandshakeContext::new(config).with_local();
-    trace!(
-        "starting handshake; local nonce = {:?}",
-        local_context.state.nonce
-    );
+    trace!("starting handshake; local nonce = {:?}", local_context.state.nonce);
 
     trace!("sending proposition to remote");
-    socket
-        .send_frame(&local_context.state.proposition_bytes)
-        .await?;
+    socket.send_frame(&local_context.state.proposition_bytes).await?;
 
     // Receive the remote's proposition.
     let remote_proposition = socket.recv_frame().await?;
@@ -63,20 +55,14 @@ where
     );
 
     // Generate an ephemeral key for the negotiation.
-    let (tmp_priv_key, tmp_pub_key) =
-        exchange::generate_agreement(remote_context.state.chosen_exchange)?;
+    let (tmp_priv_key, tmp_pub_key) = exchange::generate_agreement(remote_context.state.chosen_exchange)?;
 
     // Send the ephemeral pub key to the remote in an `Exchange` struct. The `Exchange` also
     // contains a signature of the two propositions encoded with our static public key.
     let ephemeral_context = remote_context.with_ephemeral(tmp_priv_key, tmp_pub_key.clone());
 
     let exchanges = {
-        let mut data_to_sign = ephemeral_context
-            .state
-            .remote
-            .local
-            .proposition_bytes
-            .clone();
+        let mut data_to_sign = ephemeral_context.state.remote.local.proposition_bytes.clone();
 
         data_to_sign.extend_from_slice(&ephemeral_context.state.remote.proposition_bytes);
         data_to_sign.extend_from_slice(&tmp_pub_key);
@@ -98,9 +84,7 @@ where
     };
     let local_exchanges = {
         let mut buf = Vec::with_capacity(exchanges.encoded_len());
-        exchanges
-            .encode(&mut buf)
-            .expect("Vec<u8> provides capacity as needed");
+        exchanges.encode(&mut buf).expect("Vec<u8> provides capacity as needed");
         buf
     };
 
@@ -155,10 +139,7 @@ where
     let cipher_key_size = chosen_cipher.key_size();
     let iv_size = chosen_cipher.iv_size();
 
-    let key = Hmac::from_key(
-        pub_ephemeral_context.state.remote.chosen_hash,
-        &key_material,
-    );
+    let key = Hmac::from_key(pub_ephemeral_context.state.remote.chosen_hash, &key_material);
     let mut longer_key = vec![0u8; 2 * (iv_size + cipher_key_size + 20)];
     stretch_key(key, &mut longer_key);
 
@@ -174,11 +155,7 @@ where
         }
     };
 
-    trace!(
-        "local info: {:?}, remote_info: {:?}",
-        local_infos,
-        remote_infos
-    );
+    trace!("local info: {:?}, remote_info: {:?}", local_infos, remote_infos);
 
     let (encode_cipher, encode_hmac) = generate_stream_cipher_and_hmac(
         chosen_cipher,
@@ -209,9 +186,7 @@ where
 
     // We send back their nonce to check if the connection works.
     trace!("checking encryption by sending back remote's nonce");
-    secure_stream
-        .write2(&pub_ephemeral_context.state.remote.nonce)
-        .await?;
+    secure_stream.write2(&pub_ephemeral_context.state.remote.nonce).await?;
     secure_stream.verify_nonce().await?;
 
     info!(
@@ -289,9 +264,7 @@ mod tests {
         let (addr_sender, addr_receiver) = channel::oneshot::channel::<::std::net::SocketAddr>();
 
         task::spawn(async move {
-            let listener = async_std::net::TcpListener::bind("127.0.0.1:0")
-                .await
-                .unwrap();
+            let listener = async_std::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let listener_addr = listener.local_addr().unwrap();
             let _res = addr_sender.send(listener_addr);
             let (connect, _) = listener.accept().await.unwrap();
@@ -303,9 +276,7 @@ mod tests {
 
         task::spawn(async move {
             let listener_addr = addr_receiver.await.unwrap();
-            let connect = async_std::net::TcpStream::connect(&listener_addr)
-                .await
-                .unwrap();
+            let connect = async_std::net::TcpStream::connect(&listener_addr).await.unwrap();
             let (mut handle, _, _) = config_2.handshake(connect).await.unwrap();
             handle.write2(data).await.unwrap();
             let mut data = [0u8; 11];
@@ -335,44 +306,42 @@ mod tests {
         assert_eq!(
             &output,
             &[
-                103, 144, 60, 199, 85, 145, 239, 71, 79, 198, 85, 164, 32, 53, 143, 205, 50, 48,
-                153, 10, 37, 32, 85, 1, 226, 61, 193, 1, 154, 120, 207, 80,
+                103, 144, 60, 199, 85, 145, 239, 71, 79, 198, 85, 164, 32, 53, 143, 205, 50, 48, 153, 10, 37, 32, 85, 1, 226, 61, 193,
+                1, 154, 120, 207, 80,
             ]
         );
 
         let key2 = Hmac::from_key(
             Digest::Sha256,
             &[
-                157, 166, 80, 144, 77, 193, 198, 6, 23, 220, 87, 220, 191, 72, 168, 197, 54, 33,
-                219, 225, 84, 156, 165, 37, 149, 224, 244, 32, 170, 79, 125, 35, 171, 26, 178, 176,
-                92, 168, 22, 27, 205, 44, 229, 61, 152, 21, 222, 81, 241, 81, 116, 236, 74, 166,
-                89, 145, 5, 162, 108, 230, 55, 54, 9, 17,
+                157, 166, 80, 144, 77, 193, 198, 6, 23, 220, 87, 220, 191, 72, 168, 197, 54, 33, 219, 225, 84, 156, 165, 37, 149, 224,
+                244, 32, 170, 79, 125, 35, 171, 26, 178, 176, 92, 168, 22, 27, 205, 44, 229, 61, 152, 21, 222, 81, 241, 81, 116, 236,
+                74, 166, 89, 145, 5, 162, 108, 230, 55, 54, 9, 17,
             ],
         );
         stretch_key(key2, &mut output);
         assert_eq!(
             &output,
             &[
-                39, 151, 182, 63, 180, 175, 224, 139, 42, 131, 130, 116, 55, 146, 62, 31, 157, 95,
-                217, 15, 73, 81, 10, 83, 243, 141, 64, 227, 103, 144, 99, 121,
+                39, 151, 182, 63, 180, 175, 224, 139, 42, 131, 130, 116, 55, 146, 62, 31, 157, 95, 217, 15, 73, 81, 10, 83, 243, 141,
+                64, 227, 103, 144, 99, 121,
             ]
         );
 
         let key3 = Hmac::from_key(
             Digest::Sha256,
             &[
-                98, 219, 94, 104, 97, 70, 139, 13, 185, 110, 56, 36, 66, 3, 80, 224, 32, 205, 102,
-                170, 59, 32, 140, 245, 86, 102, 231, 68, 85, 249, 227, 243, 57, 53, 171, 36, 62,
-                225, 178, 74, 89, 142, 151, 94, 183, 231, 208, 166, 244, 130, 130, 209, 248, 65,
-                19, 48, 127, 127, 55, 82, 117, 154, 124, 108,
+                98, 219, 94, 104, 97, 70, 139, 13, 185, 110, 56, 36, 66, 3, 80, 224, 32, 205, 102, 170, 59, 32, 140, 245, 86, 102,
+                231, 68, 85, 249, 227, 243, 57, 53, 171, 36, 62, 225, 178, 74, 89, 142, 151, 94, 183, 231, 208, 166, 244, 130, 130,
+                209, 248, 65, 19, 48, 127, 127, 55, 82, 117, 154, 124, 108,
             ],
         );
         stretch_key(key3, &mut output);
         assert_eq!(
             &output,
             &[
-                28, 39, 158, 206, 164, 16, 211, 194, 99, 43, 208, 36, 24, 141, 90, 93, 157, 236,
-                238, 111, 170, 0, 60, 11, 49, 174, 177, 121, 30, 12, 182, 25,
+                28, 39, 158, 206, 164, 16, 211, 194, 99, 43, 208, 36, 24, 141, 90, 93, 157, 236, 238, 111, 170, 0, 60, 11, 49, 174,
+                177, 121, 30, 12, 182, 25,
             ]
         );
     }
