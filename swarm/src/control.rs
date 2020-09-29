@@ -18,6 +18,7 @@ use crate::network::NetworkInfo;
 use crate::{ProtocolId, SwarmError};
 use crate::connection::ConnectionId;
 use crate::substream::StreamId;
+use crate::identify::IdentifyInfo;
 
 type Result<T> = std::result::Result<T, SwarmError>;
 
@@ -36,6 +37,8 @@ pub enum SwarmControlCmd<TSubstream> {
     CloseSwarm,
     /// Retrieve network information of Swarm
     NetworkInfo(oneshot::Sender<Result<NetworkInfo>>),
+    /// Retrieve network information of Swarm
+    IdentifyInfo(oneshot::Sender<Result<IdentifyInfo>>),
 }
 
 /// The `Swarm` controller.

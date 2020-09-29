@@ -18,7 +18,7 @@
 //! [`IdentifyInfo`]: self::IdentifyEvent
 
 use async_trait::async_trait;
-use futures::channel::mpsc;
+use futures::channel::{mpsc, oneshot};
 use futures::SinkExt;
 use prost::Message;
 use std::convert::TryFrom;
@@ -33,6 +33,7 @@ use libp2p_traits::{ReadEx, WriteEx};
 use crate::protocol_handler::{IProtocolHandler, ProtocolHandler};
 use crate::substream::Substream;
 use crate::{SwarmError, SwarmEvent};
+use crate::control::SwarmControlCmd;
 
 mod structs_proto {
     include!(concat!(env!("OUT_DIR"), "/structs.rs"));
@@ -136,8 +137,7 @@ where
         }
     };
 
-    log::trace!("Remote observes us as {:?}", observed_addr);
-    log::trace!("Information received: {:?}", info);
+    log::trace!("Identify information received and Remote observes us as {:?}", observed_addr);
 
     Ok(RemoteInfo {
         info,
@@ -160,7 +160,7 @@ where
         agent_version: Some(info.agent_version),
         protocol_version: Some(info.protocol_version),
         public_key: Some(pubkey_bytes),
-        listen_addrs: listen_addrs,
+        listen_addrs,
         observed_addr: None, //Some(observed_addr.to_vec()),
         protocols: info.protocols,
     };
@@ -180,27 +180,29 @@ where
 /// - Server sends the identify message in protobuf to client
 /// - Client receives the data and consume the data.
 ///
-#[derive(Debug, Clone)]
-pub(crate) struct IdentifyHandler {
-    /// The information about ourselves.
-    info: IdentifyInfo,
+#[derive(Debug)]
+pub(crate) struct IdentifyHandler<TSubstream> {
+    /// The channel is used to retrieve IdentifyInfo from Swarm.
+    ctrl: mpsc::Sender<SwarmControlCmd<TSubstream>>,
 }
 
-impl IdentifyHandler {
-    pub(crate) fn new(pubkey: PublicKey, protocols: Vec<String>) -> Self {
+impl<TSubstream> Clone for IdentifyHandler<TSubstream> {
+    fn clone(&self) -> Self {
         Self {
-            info: IdentifyInfo {
-                public_key: pubkey,
-                protocol_version: "".to_string(),
-                agent_version: "".to_string(),
-                listen_addrs: vec![],
-                protocols,
-            },
+            ctrl: self.ctrl.clone()
         }
     }
 }
 
-impl UpgradeInfo for IdentifyHandler {
+impl<TSubstream> IdentifyHandler<TSubstream> {
+    pub(crate) fn new(ctrl: mpsc::Sender<SwarmControlCmd<TSubstream>>) -> Self {
+        Self {
+            ctrl
+        }
+    }
+}
+
+impl<TSubstream: Send> UpgradeInfo for IdentifyHandler<TSubstream> {
     type Info = &'static [u8];
     fn protocol_info(&self) -> Vec<Self::Info> {
         vec![IDENTIFY_PROTOCOL]
@@ -208,7 +210,7 @@ impl UpgradeInfo for IdentifyHandler {
 }
 
 #[async_trait]
-impl<TSocket> ProtocolHandler<TSocket> for IdentifyHandler
+impl<TSocket, TSubstream: Send + 'static> ProtocolHandler<TSocket> for IdentifyHandler<TSubstream>
 where
     TSocket: StreamInfo + ReadEx + WriteEx + Unpin + std::fmt::Debug + 'static,
 {
@@ -217,10 +219,13 @@ where
     async fn handle(&mut self, stream: Substream<TSocket>, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
         log::trace!("Identify Protocol handling on {:?}", stream);
 
-        let info = self.info.clone();
-        log::trace!("Sending identify info to client: {:?}", info);
+        let (tx, rx) = oneshot::channel();
+        self.ctrl.send(SwarmControlCmd::IdentifyInfo(tx)).await?;
+        let identify_info= rx.await??;
 
-        produce_message(stream, info).await.map_err(|e| e.into())
+        log::trace!("IdentifyHandler sending identify info to client...");
+
+        produce_message(stream, identify_info).await.map_err(|e| e.into())
     }
 
     fn box_clone(&self) -> IProtocolHandler<TSocket> {
