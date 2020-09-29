@@ -17,6 +17,7 @@ use libp2p_tcp::TcpConfig;
 use libp2p_traits::{ReadEx, WriteEx};
 use secio;
 use yamux;
+use libp2p_core::muxing::StreamInfo;
 
 //use libp2p_swarm::Swarm::network::NetworkConfig;
 
@@ -59,9 +60,9 @@ fn run_server() {
     #[async_trait]
     impl<C> ProtocolHandler<C> for MyProtocolHandler
     where
-        C: ReadEx + WriteEx + Unpin + Send + std::fmt::Debug + 'static,
+        C: StreamInfo + ReadEx + WriteEx + Unpin + Send + std::fmt::Debug + 'static,
     {
-        async fn handle(&mut self, stream: Substream<C>, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+        async fn handle(&mut self, stream: Substream<C>, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
             let mut stream = stream;
             log::trace!("MyProtocolHandler handling inbound {:?}", stream);
             let mut msg = vec![0; 4096];
@@ -130,15 +131,15 @@ fn run_client() {
 
     task::block_on(async move {
         control.new_connection(remote_peer_id.clone()).await.unwrap();
-        let mut stream = control.new_stream(remote_peer_id, vec![b"/my/1.0.0"]).await.unwrap();
-
-        log::info!("stream {:?} opened, writing something...", stream);
-
-        stream.write_all2(b"hello").await;
+        // let mut stream = control.new_stream(remote_peer_id, vec![b"/my/1.0.0"]).await.unwrap();
+        //
+        // log::info!("stream {:?} opened, writing something...", stream);
+        //
+        // stream.write_all2(b"hello").await;
 
         task::sleep(Duration::from_secs(40)).await;
 
-        control.close_stream(stream).await.unwrap();
+        //stream.close2().await;
 
         log::info!("shutdown is completed");
     });
