@@ -40,9 +40,9 @@ mod muxer;
 mod network;
 mod registry;
 
-pub mod substream;
-pub mod ping;
 pub mod identify;
+pub mod ping;
+pub mod substream;
 
 pub mod protocol_handler;
 
@@ -57,8 +57,8 @@ use futures::future::Either;
 use futures::prelude::*;
 use smallvec::SmallVec;
 use std::collections::HashSet;
-use std::{error, fmt, hash::Hash};
 use std::time::Duration;
+use std::{error, fmt, hash::Hash};
 
 use libp2p_core::peerstore::PeerStore;
 use libp2p_core::secure_io::SecureInfo;
@@ -69,11 +69,11 @@ use libp2p_traits::{ReadEx, WriteEx};
 
 use crate::connection::{Connection, ConnectionId, ConnectionLimit, Direction};
 use crate::control::SwarmControlCmd;
+use crate::identify::{IdentifyConfig, IdentifyHandler, IdentifyPushHandler, RemoteInfo};
 use crate::network::NetworkInfo;
 use crate::ping::{PingConfig, PingHandler};
 use crate::registry::Addresses;
 use crate::substream::{StreamId, Substream};
-use crate::identify::{IdentifyHandler, IdentifyConfig, RemoteInfo, IdentifyPushHandler};
 use libp2p_core::identity::Keypair;
 
 type Result<T> = std::result::Result<T, SwarmError>;
@@ -331,8 +331,7 @@ where
         transport: TTrans,
         local_peer_id: PeerId,
         muxer: Muxer<<TTrans::Output as StreamMuxer>::Substream>, //_config: NetworkConfig,
-    ) -> Self
-    {
+    ) -> Self {
         // unbounded channel for events, so that we can send a message to ourselves
         let (event_tx, event_rx) = mpsc::unbounded();
         let (ctrl_tx, ctrl_rx) = mpsc::channel(0);
@@ -371,7 +370,12 @@ where
     /// Creates Swarm with Identify service.
     pub fn with_identify(mut self, id: IdentifyConfig) -> Self {
         self.identify = Some(id);
-        let protocols = self.muxer.supported_protocols().into_iter().map(|p| p.protocol_name_str().to_string()).collect();
+        let protocols = self
+            .muxer
+            .supported_protocols()
+            .into_iter()
+            .map(|p| p.protocol_name_str().to_string())
+            .collect();
         // TODO: public key
         let handler = IdentifyHandler::new(Keypair::generate_ed25519_fixed().public(), protocols);
         self.muxer.add_protocol_handler(Box::new(handler));
@@ -431,32 +435,32 @@ where
             SwarmEvent::ListenerClosed { addresses: _, reason: _ } => {}
             SwarmEvent::ConnectionEstablished { stream_muxer, direction } => {
                 let _ = self.handle_connection_opened(stream_muxer, direction);
-            },
+            }
             SwarmEvent::ConnectionClosed { cid, error: _ } => {
                 let _ = self.handle_connection_closed(cid);
-            },
+            }
             SwarmEvent::OutgoingConnectionError {
                 peer_id: _,
                 remote_addr: _,
                 error: _,
             } => {
                 // TODO: add statistics
-            },
+            }
             SwarmEvent::StreamError { .. } => {
                 // TODO: add statistics
-            },
+            }
             SwarmEvent::StreamOpened { dir, cid, sid } => {
                 let _ = self.handle_stream_opened(dir, cid, sid);
-            },
+            }
             SwarmEvent::StreamClosed { dir, cid, sid } => {
                 let _ = self.handle_stream_closed(dir, cid, sid);
-            },
+            }
             SwarmEvent::PingResult { cid, result } => {
                 let _ = self.handle_ping_result(cid, result);
-            },
+            }
             SwarmEvent::IdentifyResult { cid, result } => {
                 let _ = self.handle_identify_result(cid, result);
-            },
+            }
 
             // TODO: handle other messages
             e => {
@@ -496,9 +500,8 @@ where
             SwarmControlCmd::CloseSwarm => {
                 log::info!("closing the swarm...");
                 let _ = self.event_sender.close_channel();
-            }
-            // TODO:
-            //_ => {}
+            } // TODO:
+              //_ => {}
         }
 
         Ok(())
@@ -536,7 +539,7 @@ where
         if let Some(connection) = self.get_best_conn(&peer_id) {
             // well, we have a connection, start a task to open the stream
             connection.open_stream(pids, |r| {
-                let _ = reply.send(r.map_err(|e|e.into()));
+                let _ = reply.send(r.map_err(|e| e.into()));
             });
         } else {
             let _ = reply.send(Err(SwarmError::NoConnection(peer_id)));
@@ -1096,18 +1099,18 @@ where
     fn handle_ping_result(&mut self, cid: ConnectionId, result: Result<Duration>) -> Result<()> {
         log::trace!("handle_ping_result: {:?} {:?}", cid, result);
 
-        if let Some(connection)= self.connections_by_id.get_mut(&cid) {
+        if let Some(connection) = self.connections_by_id.get_mut(&cid) {
             match result {
-                Ok(ttl) =>{
+                Ok(ttl) => {
                     //let remote_peer_id = c.remote_peer();
                     log::trace!("ping TTL={:?} for {:?}", ttl, connection);
                     // TODO: update peer store with the TTL
 
                     connection.reset_failure();
-                },
+                }
                 Err(err) => {
                     log::info!("ping failed {:?} for {:?}", err, connection);
-                    let allowed_max_failure = self.ping.as_ref().map_or(0, |config|config.max_failures());
+                    let allowed_max_failure = self.ping.as_ref().map_or(0, |config| config.max_failures());
                     connection.handle_failure(allowed_max_failure);
                 }
             }
@@ -1118,13 +1121,13 @@ where
     fn handle_identify_result(&mut self, cid: ConnectionId, result: Result<RemoteInfo>) -> Result<()> {
         log::trace!("handle_identify_result: {:?}", cid);
 
-        if let Some(connection)= self.connections_by_id.get_mut(&cid) {
+        if let Some(connection) = self.connections_by_id.get_mut(&cid) {
             match result {
-                Ok(info) =>{
+                Ok(info) => {
                     //let remote_peer_id = c.remote_peer();
                     log::trace!("identify info={:?} for {:?}", info, connection);
                     // TODO: update peer store with the TTL
-                },
+                }
                 Err(err) => {
                     log::info!("identify failed {:?} for {:?}", err, connection);
                 }

@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::identity::Keypair;
-use crate::muxing::{StreamMuxer, StreamInfo};
+use crate::muxing::{StreamInfo, StreamMuxer};
 use crate::secure_io::SecureInfo;
 use crate::transport::{ConnectionInfo, TransportError};
 use crate::upgrade::{UpgradeInfo, Upgrader};
@@ -86,20 +86,12 @@ impl UpgradeInfo for DummyUpgrader {
 impl<T: Send + 'static> Upgrader<T> for DummyUpgrader {
     type Output = DummyStream<T>;
 
-    async fn upgrade_inbound(
-        self,
-        socket: T,
-        _info: <Self as UpgradeInfo>::Info,
-    ) -> Result<Self::Output, TransportError> {
+    async fn upgrade_inbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
         trace!("dummy upgrader, upgrade inbound connection");
         Ok(DummyStream(socket))
     }
 
-    async fn upgrade_outbound(
-        self,
-        socket: T,
-        _info: <Self as UpgradeInfo>::Info,
-    ) -> Result<Self::Output, TransportError> {
+    async fn upgrade_outbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
         trace!("dummy upgrader, upgrade outbound connection");
         Ok(DummyStream(socket))
     }
@@ -127,7 +119,9 @@ impl<T: Send + WriteEx> WriteEx for DummyStream<T> {
 }
 
 impl StreamInfo for () {
-    fn id(&self) -> usize { 0 }
+    fn id(&self) -> usize {
+        0
+    }
 }
 
 #[async_trait]

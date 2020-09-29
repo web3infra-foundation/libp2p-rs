@@ -16,9 +16,7 @@ pub struct Negotiator<TProto> {
 
 impl<TProto: AsRef<[u8]> + Clone> Negotiator<TProto> {
     pub fn new() -> Self {
-        Negotiator {
-            protocols: Vec::new(),
-        }
+        Negotiator { protocols: Vec::new() }
     }
 
     pub fn new_with_protocols<Iter>(protocols: Iter) -> Self
@@ -49,10 +47,7 @@ impl<TProto: AsRef<[u8]> + Clone> Negotiator<TProto> {
         Ok(())
     }
 
-    pub async fn negotiate<TSocket>(
-        &self,
-        socket: TSocket,
-    ) -> Result<(TProto, TSocket), NegotiationError>
+    pub async fn negotiate<TSocket>(&self, socket: TSocket) -> Result<(TProto, TSocket), NegotiationError>
     where
         TSocket: ReadEx + WriteEx + Send + Unpin,
     {
@@ -76,32 +71,23 @@ impl<TProto: AsRef<[u8]> + Clone> Negotiator<TProto> {
                     io.send_message(message).await?;
                 }
                 Message::Protocol(p) => {
-                    let protocol = self.protocols.iter().find_map(|(name, proto)| {
-                        if &p == proto {
-                            Some(name.clone())
-                        } else {
-                            None
-                        }
-                    });
+                    let protocol = self
+                        .protocols
+                        .iter()
+                        .find_map(|(name, proto)| if &p == proto { Some(name.clone()) } else { None });
 
                     let message = if protocol.is_some() {
                         log::debug!("Listener: confirming protocol: {}", p);
                         Message::Protocol(p.clone())
                     } else {
-                        log::debug!(
-                            "Listener: rejecting protocol: {}",
-                            String::from_utf8_lossy(p.as_ref())
-                        );
+                        log::debug!("Listener: rejecting protocol: {}", String::from_utf8_lossy(p.as_ref()));
                         Message::NotAvailable
                     };
 
                     io.send_message(message).await?;
 
                     if let Some(protocol) = protocol {
-                        log::debug!(
-                            "Listener: sent confirmed protocol: {}",
-                            String::from_utf8_lossy(protocol.as_ref())
-                        );
+                        log::debug!("Listener: sent confirmed protocol: {}", String::from_utf8_lossy(protocol.as_ref()));
                         let io = io.into_inner();
                         return Ok((protocol, io));
                     }
@@ -111,10 +97,7 @@ impl<TProto: AsRef<[u8]> + Clone> Negotiator<TProto> {
         }
     }
 
-    pub async fn select_one<TSocket>(
-        &self,
-        socket: TSocket,
-    ) -> Result<(TProto, TSocket), NegotiationError>
+    pub async fn select_one<TSocket>(&self, socket: TSocket) -> Result<(TProto, TSocket), NegotiationError>
     where
         TSocket: ReadEx + WriteEx + Send + Unpin,
     {
@@ -201,9 +184,7 @@ impl std::error::Error for NegotiationError {
 impl fmt::Display for NegotiationError {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
-            NegotiationError::ProtocolError(p) => {
-                fmt.write_fmt(format_args!("Protocol error: {}", p))
-            }
+            NegotiationError::ProtocolError(p) => fmt.write_fmt(format_args!("Protocol error: {}", p)),
             NegotiationError::Failed => fmt.write_str("Protocol negotiation failed."),
         }
     }

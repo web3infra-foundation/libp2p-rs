@@ -212,8 +212,7 @@ impl Message {
             return Ok(Message::Header(Version::V1));
         }
 
-        if msg.get(0) == Some(&b'/') && msg.last() == Some(&b'\n') && msg.len() <= MAX_PROTOCOL_LEN
-        {
+        if msg.get(0) == Some(&b'/') && msg.last() == Some(&b'\n') && msg.len() <= MAX_PROTOCOL_LEN {
             let p = Protocol::try_from(msg.split_to(msg.len() - 1))?;
             return Ok(Message::Protocol(p));
         }
@@ -291,10 +290,7 @@ where
     pub async fn send_message(&mut self, msg: Message) -> Result<(), ProtocolError> {
         let mut buf = BytesMut::new();
         msg.encode(&mut buf)?;
-        self.inner
-            .send_message(buf.freeze())
-            .await
-            .map_err(From::from)
+        self.inner.send_message(buf.freeze()).await.map_err(From::from)
     }
 }
 
@@ -366,10 +362,7 @@ mod tests {
     impl Arbitrary for Protocol {
         fn arbitrary<G: Gen>(g: &mut G) -> Protocol {
             let n = g.gen_range(1, g.size());
-            let p: String = iter::repeat(())
-                .map(|()| g.sample(Alphanumeric))
-                .take(n)
-                .collect();
+            let p: String = iter::repeat(()).map(|()| g.sample(Alphanumeric)).take(n).collect();
             Protocol(Bytes::from(format!("/{}", p)))
         }
     }
@@ -391,8 +384,7 @@ mod tests {
     fn encode_decode_message() {
         fn prop(msg: Message) {
             let mut buf = BytesMut::new();
-            msg.encode(&mut buf)
-                .expect(&format!("Encoding message failed: {:?}", msg));
+            msg.encode(&mut buf).expect(&format!("Encoding message failed: {:?}", msg));
             match Message::decode(buf.freeze()) {
                 Ok(m) => assert_eq!(m, msg),
                 Err(e) => panic!("Decoding failed: {:?}", e),

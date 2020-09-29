@@ -82,9 +82,7 @@ async fn roundtrip(address: SocketAddr, nstreams: usize, data: Arc<Vec<u8>>) {
         task::spawn(async move {
             let mut stream = ctrl.open_stream().await?;
             log::debug!("C: opened new stream {}", stream.id());
-            stream
-                .write_all2(&(data.len() as u32).to_be_bytes()[..])
-                .await?;
+            stream.write_all2(&(data.len() as u32).to_be_bytes()[..]).await?;
             stream.write_all2(&data).await?;
             stream.close2().await?;
             log::debug!("C: {}: wrote {} bytes", stream.id(), data.len());
@@ -96,10 +94,7 @@ async fn roundtrip(address: SocketAddr, nstreams: usize, data: Arc<Vec<u8>>) {
             Ok::<(), yamux::ConnectionError>(())
         });
     }
-    let n = rx
-        .take(nstreams)
-        .fold(0, |acc, n| future::ready(acc + n))
-        .await;
+    let n = rx.take(nstreams).fold(0, |acc, n| future::ready(acc + n)).await;
     ctrl.close().await.expect("close connection");
     assert_eq!(nstreams, n)
 }

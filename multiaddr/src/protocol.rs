@@ -228,19 +228,13 @@ impl<'a> Protocol<'a> {
             DNSADDR => {
                 let (n, input) = decode::usize(input)?;
                 let (data, rest) = split_at(n, input)?;
-                Ok((
-                    Protocol::Dnsaddr(Cow::Borrowed(str::from_utf8(data)?)),
-                    rest,
-                ))
+                Ok((Protocol::Dnsaddr(Cow::Borrowed(str::from_utf8(data)?)), rest))
             }
             HTTP => Ok((Protocol::Http, input)),
             HTTPS => Ok((Protocol::Https, input)),
             IP4 => {
                 let (data, rest) = split_at(4, input)?;
-                Ok((
-                    Protocol::Ip4(Ipv4Addr::new(data[0], data[1], data[2], data[3])),
-                    rest,
-                ))
+                Ok((Protocol::Ip4(Ipv4Addr::new(data[0], data[1], data[2], data[3])), rest))
             }
             IP6 => {
                 let (data, rest) = split_at(16, input)?;
@@ -251,9 +245,7 @@ impl<'a> Protocol<'a> {
                     *x = rdr.read_u16::<BigEndian>()?;
                 }
 
-                let addr = Ipv6Addr::new(
-                    seg[0], seg[1], seg[2], seg[3], seg[4], seg[5], seg[6], seg[7],
-                );
+                let addr = Ipv6Addr::new(seg[0], seg[1], seg[2], seg[3], seg[4], seg[5], seg[6], seg[7]);
 
                 Ok((Protocol::Ip6(addr), rest))
             }
@@ -269,18 +261,12 @@ impl<'a> Protocol<'a> {
             ONION => {
                 let (data, rest) = split_at(12, input)?;
                 let port = BigEndian::read_u16(&data[10..]);
-                Ok((
-                    Protocol::Onion(Cow::Borrowed(array_ref!(data, 0, 10)), port),
-                    rest,
-                ))
+                Ok((Protocol::Onion(Cow::Borrowed(array_ref!(data, 0, 10)), port), rest))
             }
             ONION3 => {
                 let (data, rest) = split_at(37, input)?;
                 let port = BigEndian::read_u16(&data[35..]);
-                Ok((
-                    Protocol::Onion3((array_ref!(data, 0, 35), port).into()),
-                    rest,
-                ))
+                Ok((Protocol::Onion3((array_ref!(data, 0, 35), port).into()), rest))
             }
             P2P => {
                 let (n, input) = decode::usize(input)?;
@@ -508,14 +494,12 @@ impl<'a> fmt::Display for Protocol<'a> {
             Utp => f.write_str("/utp"),
             Ws(ref s) if s == "/" => f.write_str("/ws"),
             Ws(s) => {
-                let encoded =
-                    percent_encoding::percent_encode(s.as_bytes(), PATH_SEGMENT_ENCODE_SET);
+                let encoded = percent_encoding::percent_encode(s.as_bytes(), PATH_SEGMENT_ENCODE_SET);
                 write!(f, "/x-parity-ws/{}", encoded)
             }
             Wss(ref s) if s == "/" => f.write_str("/wss"),
             Wss(s) => {
-                let encoded =
-                    percent_encoding::percent_encode(s.as_bytes(), PATH_SEGMENT_ENCODE_SET);
+                let encoded = percent_encoding::percent_encode(s.as_bytes(), PATH_SEGMENT_ENCODE_SET);
                 write!(f, "/x-parity-wss/{}", encoded)
             }
         }
@@ -573,11 +557,7 @@ macro_rules! read_onion_impl {
                 return Err(Error::InvalidMultiaddr);
             }
 
-            if $len
-                != BASE32
-                    .decode_len(b32.len())
-                    .map_err(|_| Error::InvalidMultiaddr)?
-            {
+            if $len != BASE32.decode_len(b32.len()).map_err(|_| Error::InvalidMultiaddr)? {
                 return Err(Error::InvalidMultiaddr);
             }
 

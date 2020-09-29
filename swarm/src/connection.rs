@@ -1,4 +1,4 @@
-use crate::identify::{IDENTIFY_PROTOCOL, IDENTIFY_PUSH_PROTOCOL, IdentifyInfo};
+use crate::identify::{IdentifyInfo, IDENTIFY_PROTOCOL, IDENTIFY_PUSH_PROTOCOL};
 use crate::ping::PING_PROTOCOL;
 use crate::substream::{StreamId, Substream};
 use crate::{identify, ping, Multiaddr, PeerId, ProtocolId, SwarmError, SwarmEvent};
@@ -119,7 +119,7 @@ where
             ping_handle: None,
             identity: None,
             identify_handle: None,
-            identify_push_handle: None
+            identify_push_handle: None,
         }
     }
 
@@ -237,8 +237,7 @@ where
 
     /// Starts the Ping service on this connection. The task handle will be tracked
     /// by the connection for later closing the Ping service
-    pub(crate) fn start_ping(&mut self, timeout: Duration, interval: Duration)
-    {
+    pub(crate) fn start_ping(&mut self, timeout: Duration, interval: Duration) {
         self.ping_running.store(true, Ordering::Relaxed);
 
         let cid = self.id();
@@ -285,7 +284,12 @@ where
                         Err(err)
                     }
                 };
-                let _ = tx2.send(SwarmEvent::PingResult { cid, result: r.map_err(|e|e.into()) }).await;
+                let _ = tx2
+                    .send(SwarmEvent::PingResult {
+                        cid,
+                        result: r.map_err(|e| e.into()),
+                    })
+                    .await;
             }
 
             log::trace!("ping task exiting...");
@@ -295,7 +299,7 @@ where
     }
 
     pub(crate) async fn stop_ping(&mut self) {
-        if let Some(h) =  self.ping_handle.take() {
+        if let Some(h) = self.ping_handle.take() {
             log::debug!("stopping Ping service...");
             self.ping_running.store(false, Ordering::Relaxed);
             h.await;
@@ -304,8 +308,7 @@ where
     }
 
     /// Starts the Identify service on this connection.
-    pub(crate) fn start_identify(&mut self)
-    {
+    pub(crate) fn start_identify(&mut self) {
         let cid = self.id();
         let stream_muxer = self.stream_muxer.clone();
         let tx = self.tx.clone();
@@ -314,7 +317,6 @@ where
         let mut tx2 = tx.clone();
 
         let handle = task::spawn(async move {
-
             let r = open_stream_internal(cid, stream_muxer, pids, tx).await;
             let r = match r {
                 Ok(stream) => {
@@ -338,7 +340,12 @@ where
                     Err(err)
                 }
             };
-            let _ = tx2.send(SwarmEvent::IdentifyResult { cid, result: r.map_err(|e|e.into()) }).await;
+            let _ = tx2
+                .send(SwarmEvent::IdentifyResult {
+                    cid,
+                    result: r.map_err(|e| e.into()),
+                })
+                .await;
 
             log::trace!("identify task exiting...");
         });
@@ -347,16 +354,14 @@ where
     }
 
     pub(crate) async fn stop_identify(&mut self) {
-        if let Some(h) =  self.identify_handle.take() {
+        if let Some(h) = self.identify_handle.take() {
             log::debug!("stopping Identify service...");
             h.cancel().await;
         }
     }
 
-
     /// Starts the Identify service on this connection.
-    pub(crate) fn start_identify_push(&mut self)
-    {
+    pub(crate) fn start_identify_push(&mut self) {
         let cid = self.id();
         let stream_muxer = self.stream_muxer.clone();
         let tx = self.tx.clone();
@@ -373,7 +378,6 @@ where
         };
 
         let handle = task::spawn(async move {
-
             let r = open_stream_internal(cid, stream_muxer, pids, tx).await;
             match r {
                 Ok(stream) => {
@@ -403,13 +407,12 @@ where
         self.identify_push_handle = Some(handle);
     }
     pub(crate) async fn stop_identify_push(&mut self) {
-        if let Some(h) =  self.identify_push_handle.take() {
+        if let Some(h) = self.identify_push_handle.take() {
             log::debug!("stopping Identify Push service...");
             h.cancel().await;
         }
     }
 }
-
 
 async fn open_stream_internal<T>(
     cid: ConnectionId,
@@ -417,9 +420,9 @@ async fn open_stream_internal<T>(
     pids: Vec<ProtocolId>,
     mut tx: mpsc::UnboundedSender<SwarmEvent<T>>,
 ) -> Result<Substream<T::Substream>, TransportError>
-    where
-        T: StreamMuxer,
-        T::Substream: ReadEx + WriteEx + Send + Unpin,
+where
+    T: StreamMuxer,
+    T::Substream: ReadEx + WriteEx + Send + Unpin,
 {
     let raw_stream = stream_muxer.open_stream().await?;
 
@@ -454,7 +457,6 @@ async fn open_stream_internal<T>(
         }
     }
 }
-
 
 /// Information about a connection limit.
 #[derive(Debug, Clone)]

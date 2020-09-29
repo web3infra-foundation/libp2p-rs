@@ -37,7 +37,7 @@ where
 
     async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
         let socket = self.inner.dial(addr).await?;
-        self.pnet.handshake(socket).await.map_err(|e|e.into())
+        self.pnet.handshake(socket).await.map_err(|e| e.into())
     }
 }
 
@@ -62,7 +62,7 @@ where
 
     async fn accept(&mut self) -> Result<Self::Output, TransportError> {
         let stream = self.inner.accept().await?;
-        self.pnet.clone().handshake(stream).await.map_err(|e|e.into())
+        self.pnet.clone().handshake(stream).await.map_err(|e| e.into())
     }
 
     fn multi_addr(&self) -> Multiaddr {

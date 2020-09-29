@@ -267,13 +267,7 @@ impl<T> fmt::Debug for Connection<T> {
 
 impl<T> fmt::Display for Connection<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "(Connection {} {:?} (streams {}))",
-            self.id,
-            self.mode,
-            self.streams.len()
-        )
+        write!(f, "(Connection {} {:?} (streams {}))", self.id, self.mode, self.streams.len())
     }
 }
 
@@ -436,17 +430,13 @@ impl<T: ReadEx + WriteEx + Unpin + Send> Connection<T> {
                     let mut frame = Frame::window_update(id, self.config.receive_window);
                     frame.header_mut().syn();
                     log::trace!("{}: sending initial {}", self.id, frame.header());
-                    self.socket
-                        .send_frame(&frame)
-                        .await
-                        .or(Err(ConnectionError::Closed))?
+                    self.socket.send_frame(&frame).await.or(Err(ConnectionError::Closed))?
                 }
                 let stream = {
                     let config = self.config.clone();
                     let sender = self.stream_sender.clone();
                     let window = self.config.receive_window;
-                    let mut stream =
-                        Stream::new(id, self.id, config, window, DEFAULT_CREDIT, sender);
+                    let mut stream = Stream::new(id, self.id, config, window, DEFAULT_CREDIT, sender);
                     if self.config.lazy_open {
                         stream.set_flag(stream::Flag::Syn)
                     }
@@ -461,10 +451,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send> Connection<T> {
                         let mut header = Header::data(id, 0);
                         header.rst();
                         let frame = Frame::new(header);
-                        self.socket
-                            .send_frame(&frame)
-                            .await
-                            .or(Err(ConnectionError::Closed))?
+                        self.socket.send_frame(&frame).await.or(Err(ConnectionError::Closed))?
                     }
                 }
             }
@@ -510,10 +497,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send> Connection<T> {
         match cmd {
             Some(StreamCommand::SendFrame(frame)) => {
                 log::trace!("{}: sending: {}", self.id, frame.header());
-                self.socket
-                    .send_frame(&frame)
-                    .await
-                    .or(Err(ConnectionError::Closed))?
+                self.socket.send_frame(&frame).await.or(Err(ConnectionError::Closed))?
             }
             Some(StreamCommand::CloseStream { id, ack }) => {
                 log::info!("{}: closing stream {} of {}", self.id, id, self);
@@ -523,10 +507,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send> Connection<T> {
                     header.ack()
                 }
                 let frame = Frame::new(header);
-                self.socket
-                    .send_frame(&frame)
-                    .await
-                    .or(Err(ConnectionError::Closed))?
+                self.socket.send_frame(&frame).await.or(Err(ConnectionError::Closed))?
             }
             None => {
                 // We only get to this point when `self.stream_receiver`
@@ -537,10 +518,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send> Connection<T> {
                 debug_assert!(self.shutdown.is_in_progress());
                 log::debug!("{}: closing {}", self.id, self);
                 let frame = Frame::term();
-                self.socket
-                    .send_frame(&frame)
-                    .await
-                    .or(Err(ConnectionError::Closed))?;
+                self.socket.send_frame(&frame).await.or(Err(ConnectionError::Closed))?;
                 let shutdown = std::mem::replace(&mut self.shutdown, Shutdown::Complete);
                 if let Shutdown::InProgress(tx) = shutdown {
                     // Inform the `Control` that initiated the shutdown.
@@ -580,31 +558,19 @@ impl<T: ReadEx + WriteEx + Unpin + Send> Connection<T> {
             }
             Action::Update(f) => {
                 log::trace!("{}/{}: sending update", self.id, f.header().stream_id());
-                self.socket
-                    .send_frame(&f)
-                    .await
-                    .or(Err(ConnectionError::Closed))?
+                self.socket.send_frame(&f).await.or(Err(ConnectionError::Closed))?
             }
             Action::Ping(f) => {
                 log::trace!("{}/{}: pong", self.id, f.header().stream_id());
-                self.socket
-                    .send_frame(&f)
-                    .await
-                    .or(Err(ConnectionError::Closed))?
+                self.socket.send_frame(&f).await.or(Err(ConnectionError::Closed))?
             }
             Action::Reset(f) => {
                 log::trace!("{}/{}: sending reset", self.id, f.header().stream_id());
-                self.socket
-                    .send_frame(&f)
-                    .await
-                    .or(Err(ConnectionError::Closed))?
+                self.socket.send_frame(&f).await.or(Err(ConnectionError::Closed))?
             }
             Action::Terminate(f) => {
                 log::trace!("{}: sending term", self.id);
-                self.socket
-                    .send_frame(&f)
-                    .await
-                    .or(Err(ConnectionError::Closed))?
+                self.socket.send_frame(&f).await.or(Err(ConnectionError::Closed))?
             }
         }
         Ok(())
@@ -634,11 +600,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send> Connection<T> {
                 return Action::Terminate(Frame::protocol_error());
             }
             if frame.body().len() > DEFAULT_CREDIT as usize {
-                log::error!(
-                    "{}/{}: 1st body of stream exceeds default credit",
-                    self.id,
-                    stream_id
-                );
+                log::error!("{}/{}: 1st body of stream exceeds default credit", self.id, stream_id);
                 return Action::Terminate(Frame::protocol_error());
             }
             if self.streams.contains_key(&stream_id) {
@@ -672,28 +634,15 @@ impl<T: ReadEx + WriteEx + Unpin + Send> Connection<T> {
         if let Some(stream) = self.streams.get_mut(&stream_id) {
             let mut shared = stream.shared().await;
             if frame.body().len() > shared.window as usize {
-                log::error!(
-                    "{}/{}: frame body larger than window of stream",
-                    self.id,
-                    stream_id
-                );
+                log::error!("{}/{}: frame body larger than window of stream", self.id, stream_id);
                 return Action::Terminate(Frame::protocol_error());
             }
             if is_finish {
                 shared.update_state(self.id, stream_id, State::RecvClosed);
             }
             let max_buffer_size = self.config.max_buffer_size;
-            if shared
-                .buffer
-                .len()
-                .map(move |n| n >= max_buffer_size)
-                .unwrap_or(true)
-            {
-                log::error!(
-                    "{}/{}: buffer of stream grows beyond limit",
-                    self.id,
-                    stream_id
-                );
+            if shared.buffer.len().map(move |n| n >= max_buffer_size).unwrap_or(true) {
+                log::error!("{}/{}: buffer of stream grows beyond limit", self.id, stream_id);
                 let mut header = Header::data(stream_id, 0);
                 header.rst();
                 return Action::Reset(Frame::new(header));
@@ -703,10 +652,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send> Connection<T> {
 
             shared.wake_up_reader();
 
-            if !is_finish
-                && shared.window == 0
-                && self.config.window_update_mode == WindowUpdateMode::OnReceive
-            {
+            if !is_finish && shared.window == 0 && self.config.window_update_mode == WindowUpdateMode::OnReceive {
                 shared.window = self.config.receive_window;
                 let frame = Frame::window_update(stream_id, self.config.receive_window);
                 return Action::Update(frame);
@@ -755,16 +701,12 @@ impl<T: ReadEx + WriteEx + Unpin + Send> Connection<T> {
                 let credit = frame.header().credit();
                 let config = self.config.clone();
                 let sender = self.stream_sender.clone();
-                let mut stream =
-                    Stream::new(stream_id, self.id, config, DEFAULT_CREDIT, credit, sender);
+                let mut stream = Stream::new(stream_id, self.id, config, DEFAULT_CREDIT, credit, sender);
                 stream.set_flag(stream::Flag::Ack);
                 stream
             };
             if is_finish {
-                stream
-                    .shared()
-                    .await
-                    .update_state(self.id, stream_id, State::RecvClosed);
+                stream.shared().await.update_state(self.id, stream_id, State::RecvClosed);
             }
             self.streams.insert(stream_id, stream.clone());
             return Action::New(stream);
@@ -778,11 +720,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send> Connection<T> {
             }
             shared.wake_up_writer();
         } else if !is_finish {
-            log::debug!(
-                "{}/{}: window update for unknown stream",
-                self.id,
-                stream_id
-            );
+            log::debug!("{}/{}: window update for unknown stream", self.id, stream_id);
             let mut header = Header::data(stream_id, 0);
             header.rst();
             return Action::Reset(Frame::new(header));
@@ -810,10 +748,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send> Connection<T> {
 
     fn next_stream_id(&mut self) -> Result<StreamId> {
         let proposed = StreamId::new(self.next_id);
-        self.next_id = self
-            .next_id
-            .checked_add(2)
-            .ok_or(ConnectionError::NoMoreStreamIds)?;
+        self.next_id = self.next_id.checked_add(2).ok_or(ConnectionError::NoMoreStreamIds)?;
         match self.mode {
             Mode::Client => assert!(proposed.is_client()),
             Mode::Server => assert!(proposed.is_server()),
@@ -870,8 +805,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send> Connection<T> {
                     // The remote may be out of credit though and blocked on
                     // writing more data. We may need to reset the stream.
                     State::SendClosed => {
-                        if win_update_mode == WindowUpdateMode::OnRead && !shared.buffer.is_empty()
-                        {
+                        if win_update_mode == WindowUpdateMode::OnRead && !shared.buffer.is_empty() {
                             // The stream has unconsumed data left when closed.
                             // The remote may be waiting for a window update
                             // which we will never send, so reset the stream now.
@@ -896,10 +830,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send> Connection<T> {
                 frame
             };
             if let Some(f) = frame {
-                self.socket
-                    .send_frame(&f)
-                    .await
-                    .or(Err(ConnectionError::Closed))?
+                self.socket.send_frame(&f).await.or(Err(ConnectionError::Closed))?
             }
             garbage.push(stream_id)
         }
@@ -913,10 +844,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send> Connection<T> {
 impl<T> Connection<T> {
     /// Close and drop all `Stream`s and wake any pending `Waker`s.
     async fn drop_all_streams(&mut self) {
-        log::info!(
-            "Drop all Streams and wake any pending Wakers, count={}",
-            self.streams.len()
-        );
+        log::info!("Drop all Streams and wake any pending Wakers, count={}", self.streams.len());
         for (id, s) in self.streams.drain() {
             let mut shared = s.shared().await;
             shared.update_state(self.id, id, State::Closed);

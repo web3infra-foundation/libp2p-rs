@@ -27,10 +27,7 @@ pub struct Frame<T> {
 
 impl<T> Frame<T> {
     pub fn new(header: Header<T>) -> Self {
-        Frame {
-            header,
-            body: Vec::new(),
-        }
+        Frame { header, body: Vec::new() }
     }
 
     pub fn header(&self) -> &Header<T> {

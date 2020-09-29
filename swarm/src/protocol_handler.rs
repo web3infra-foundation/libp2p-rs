@@ -37,11 +37,10 @@
 //! >           connection with a remote. In order to handle a protocol that requires knowledge of
 //! >           the network as a whole, see the `NetworkBehaviour` trait.
 
-use async_trait::async_trait;
-use libp2p_core::upgrade::{UpgradeInfo, ProtocolName};
-use crate::{SwarmError, ProtocolId};
 use crate::substream::Substream;
-
+use crate::{ProtocolId, SwarmError};
+use async_trait::async_trait;
+use libp2p_core::upgrade::{ProtocolName, UpgradeInfo};
 
 /// Common trait for upgrades that can be applied on inbound substreams, outbound substreams,
 /// or both.
@@ -53,17 +52,12 @@ pub trait ProtocolHandler<TSocket>: UpgradeInfo {
     /// in a newly spawned task.
     ///
     /// The `info` is the identifier of the protocol, as produced by `protocol_info`.
-    async fn handle(
-        &mut self,
-        stream: Substream<TSocket>,
-        info: <Self as UpgradeInfo>::Info,
-    ) -> Result<(), SwarmError>;
+    async fn handle(&mut self, stream: Substream<TSocket>, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError>;
     /// This is to provide a clone method for the trait object.
     fn box_clone(&self) -> IProtocolHandler<TSocket>;
 }
 
 pub type IProtocolHandler<TSocket> = Box<dyn ProtocolHandler<TSocket, Info = ProtocolId> + Send + Sync>;
-
 
 impl<TSocket> Clone for IProtocolHandler<TSocket> {
     fn clone(&self) -> Self {
@@ -71,18 +65,15 @@ impl<TSocket> Clone for IProtocolHandler<TSocket> {
     }
 }
 
-
 /// Dummy protocol handler, test purpose
 ///
 /// Implementation of `ProtocolHandler` that doesn't handle anything.
 #[derive(Clone, Default)]
-pub struct DummyProtocolHandler {
-}
+pub struct DummyProtocolHandler {}
 
 impl DummyProtocolHandler {
     pub fn new() -> Self {
-        DummyProtocolHandler {
-        }
+        DummyProtocolHandler {}
     }
 }
 
@@ -95,7 +86,6 @@ impl UpgradeInfo for DummyProtocolHandler {
 
 #[async_trait]
 impl<TSocket: Send + std::fmt::Debug + 'static> ProtocolHandler<TSocket> for DummyProtocolHandler {
-
     async fn handle(&mut self, stream: Substream<TSocket>, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
         log::trace!("Dummy Protocol handling inbound {:?} {:?}", stream, info.protocol_name_str());
         Ok(())
@@ -104,8 +94,6 @@ impl<TSocket: Send + std::fmt::Debug + 'static> ProtocolHandler<TSocket> for Dum
         Box::new(self.clone())
     }
 }
-
-
 
 /*
 

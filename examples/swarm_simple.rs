@@ -4,20 +4,19 @@ use std::time::Duration;
 #[macro_use]
 extern crate lazy_static;
 
-use libp2p_traits::{ReadEx, WriteEx};
 use libp2p_core::identity::Keypair;
 use libp2p_core::transport::upgrade::TransportUpgrade;
+use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_core::{Multiaddr, PeerId};
-use libp2p_swarm::{Swarm, DummyProtocolHandler, Muxer, SwarmError};
+use libp2p_swarm::identify::IdentifyConfig;
+use libp2p_swarm::ping::PingConfig;
+use libp2p_swarm::protocol_handler::{IProtocolHandler, ProtocolHandler};
+use libp2p_swarm::substream::Substream;
+use libp2p_swarm::{DummyProtocolHandler, Muxer, Swarm, SwarmError};
 use libp2p_tcp::TcpConfig;
+use libp2p_traits::{ReadEx, WriteEx};
 use secio;
 use yamux;
-use libp2p_swarm::protocol_handler::{ProtocolHandler, IProtocolHandler};
-use libp2p_swarm::ping::{PingConfig};
-use libp2p_core::upgrade::UpgradeInfo;
-use libp2p_swarm::identify::IdentifyConfig;
-use libp2p_swarm::substream::Substream;
-
 
 //use libp2p_swarm::Swarm::network::NetworkConfig;
 
@@ -60,7 +59,7 @@ fn run_server() {
     #[async_trait]
     impl<C> ProtocolHandler<C> for MyProtocolHandler
     where
-        C: ReadEx + WriteEx + Unpin + Send + std::fmt::Debug + 'static
+        C: ReadEx + WriteEx + Unpin + Send + std::fmt::Debug + 'static,
     {
         async fn handle(&mut self, stream: Substream<C>, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
             let mut stream = stream;
@@ -87,7 +86,6 @@ fn run_server() {
         .with_ping(PingConfig::new().with_unsolicited(false).with_interval(Duration::from_secs(1)))
         .with_identify(IdentifyConfig);
 
-
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
 
     let _control = swarm.control();
@@ -113,10 +111,9 @@ fn run_client() {
     // let dummy_handler = Box::new(DummyProtocolHandler::new());
     // muxer.add_protocol_handler(dummy_handler);
 
-    let mut swarm = Swarm::new(tu,PeerId::from_public_key(keys.public()), muxer)
+    let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer)
         .with_ping(PingConfig::new().with_unsolicited(false).with_interval(Duration::from_secs(1)))
         .with_identify(IdentifyConfig);
-
 
     let mut control = swarm.control();
 
@@ -124,17 +121,16 @@ fn run_client() {
 
     log::info!("about to connect to {:?}", remote_peer_id);
 
-    swarm.peers.addrs.add_addr(
-        &remote_peer_id,
-        "/ip4/127.0.0.1/tcp/8086".parse().unwrap(),
-        Duration::default(),
-    );
+    swarm
+        .peers
+        .addrs
+        .add_addr(&remote_peer_id, "/ip4/127.0.0.1/tcp/8086".parse().unwrap(), Duration::default());
 
     swarm.start();
 
     task::block_on(async move {
         control.new_connection(remote_peer_id.clone()).await.unwrap();
-        let mut stream = control.new_stream(remote_peer_id, vec!(b"/my/1.0.0")).await.unwrap();
+        let mut stream = control.new_stream(remote_peer_id, vec![b"/my/1.0.0"]).await.unwrap();
 
         log::info!("stream {:?} opened, writing something...", stream);
 
@@ -143,7 +139,6 @@ fn run_client() {
         task::sleep(Duration::from_secs(40)).await;
 
         control.close_stream(stream).await.unwrap();
-
 
         log::info!("shutdown is completed");
     });

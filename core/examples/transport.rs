@@ -17,7 +17,9 @@ fn main() {
     let t1_addr: Multiaddr = format!("/memory/{}", rand_port).parse().unwrap();
 
     let listen_addr = t1_addr.clone();
-    let psk ="/key/swarm/psk/1.0.0/\n/base16/\n6189c5cf0b87fb800c1a9feeda73c6ab5e998db48fb9e6a978575c770ceef683".parse::<PreSharedKey>().unwrap();
+    let psk = "/key/swarm/psk/1.0.0/\n/base16/\n6189c5cf0b87fb800c1a9feeda73c6ab5e998db48fb9e6a978575c770ceef683"
+        .parse::<PreSharedKey>()
+        .unwrap();
     let pnet = PnetConfig::new(psk);
     let pro_trans = ProtectorTransport::new(MemoryTransport::default(), pnet);
     //let pro_trans = MemoryTransport::default();

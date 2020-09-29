@@ -356,12 +356,7 @@ impl<TUpgr, TErr> ListenerEvent<TUpgr, TErr> {
     /// Returns `None` if the event is not actually an upgrade,
     /// otherwise the upgrade and the remote address.
     pub fn into_upgrade(self) -> Option<(TUpgr, Multiaddr)> {
-        if let ListenerEvent::Upgrade {
-            upgrade,
-            remote_addr,
-            ..
-        } = self
-        {
+        if let ListenerEvent::Upgrade { upgrade, remote_addr, .. } = self {
             Some((upgrade, remote_addr))
         } else {
             None
@@ -491,9 +486,7 @@ impl From<PnetError> for TransportError {
 impl fmt::Display for TransportError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TransportError::MultiaddrNotSupported(addr) => {
-                write!(f, "Multiaddr is not supported: {}", addr)
-            }
+            TransportError::MultiaddrNotSupported(addr) => write!(f, "Multiaddr is not supported: {}", addr),
             TransportError::Timeout => write!(f, "Operation timeout"),
             TransportError::Unreachable => write!(f, "Memory transport unreachable"),
             TransportError::Internal => write!(f, "Internal error"),

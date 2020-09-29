@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::identity::Keypair;
-use crate::muxing::{StreamMuxer, StreamInfo};
+use crate::muxing::{StreamInfo, StreamMuxer};
 use crate::secure_io::SecureInfo;
 use crate::transport::{ConnectionInfo, TransportError};
 use crate::upgrade::ProtocolName;

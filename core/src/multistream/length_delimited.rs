@@ -81,19 +81,13 @@ impl<R: ReadEx + WriteEx + Send> LengthDelimited<R> {
                     .0);
             }
         }
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            unsigned_varint::decode::Error::Overflow,
-        ))
+        Err(io::Error::new(io::ErrorKind::Other, unsigned_varint::decode::Error::Overflow))
     }
 
     pub async fn recv_message(&mut self) -> io::Result<Bytes> {
         let len = self.read_unsigned_varint().await?;
         if len > MAX_FRAME_SIZE {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Maximum frame length exceeded",
-            ));
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "Maximum frame length exceeded"));
         }
         let buf = &mut self.read_buffer;
         buf.clear();
@@ -107,12 +101,7 @@ impl<R: ReadEx + WriteEx + Send> LengthDelimited<R> {
     pub async fn send_message(&mut self, buf: Bytes) -> io::Result<()> {
         let len = match u16::try_from(buf.len()) {
             Ok(len) if len <= MAX_FRAME_SIZE => len,
-            _ => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Maximum frame size exceeded.",
-                ))
-            }
+            _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "Maximum frame size exceeded.")),
         };
         let mut uvi_buf = unsigned_varint::encode::u16_buffer();
         let uvi_len = unsigned_varint::encode::u16(len, &mut uvi_buf);
@@ -137,9 +126,7 @@ mod tests {
     fn basic_read() {
         let data = vec![6, 9, 8, 7, 6, 5, 4];
         let framed = LengthDelimited::new(Cursor::new(data));
-        let s = futures::stream::unfold(framed, |mut f| async move {
-            f.recv_message().await.map(|buf| (buf, f)).ok()
-        });
+        let s = futures::stream::unfold(framed, |mut f| async move { f.recv_message().await.map(|buf| (buf, f)).ok() });
         let recved = futures::executor::block_on(s.collect::<Vec<_>>());
         assert_eq!(recved, vec![vec![9, 8, 7, 6, 5, 4]]);
     }
@@ -148,9 +135,7 @@ mod tests {
     fn basic_read_two() {
         let data = vec![6, 9, 8, 7, 6, 5, 4, 3, 9, 8, 7];
         let framed = LengthDelimited::new(Cursor::new(data));
-        let s = futures::stream::unfold(framed, |mut f| async move {
-            f.recv_message().await.map(|buf| (buf, f)).ok()
-        });
+        let s = futures::stream::unfold(framed, |mut f| async move { f.recv_message().await.map(|buf| (buf, f)).ok() });
         let recved = futures::executor::block_on(s.collect::<Vec<_>>());
         assert_eq!(recved, vec![vec![9, 8, 7, 6, 5, 4], vec![9, 8, 7]]);
     }
@@ -163,8 +148,7 @@ mod tests {
         let mut data = vec![(len & 0x7f) as u8 | 0x80, (len >> 7) as u8];
         data.extend(frame.clone().into_iter());
         let mut framed = LengthDelimited::new(Cursor::new(data));
-        let recved =
-            futures::executor::block_on(async move { framed.recv_message().await }).unwrap();
+        let recved = futures::executor::block_on(async move { framed.recv_message().await }).unwrap();
         assert_eq!(recved, frame);
     }
 
@@ -186,29 +170,16 @@ mod tests {
     fn empty_frames() {
         let data = vec![0, 0, 6, 9, 8, 7, 6, 5, 4, 0, 3, 9, 8, 7];
         let framed = LengthDelimited::new(Cursor::new(data));
-        let s = futures::stream::unfold(framed, |mut f| async move {
-            f.recv_message().await.map(|buf| (buf, f)).ok()
-        });
+        let s = futures::stream::unfold(framed, |mut f| async move { f.recv_message().await.map(|buf| (buf, f)).ok() });
         let recved = futures::executor::block_on(s.collect::<Vec<_>>());
-        assert_eq!(
-            recved,
-            vec![
-                vec![],
-                vec![],
-                vec![9, 8, 7, 6, 5, 4],
-                vec![],
-                vec![9, 8, 7],
-            ]
-        );
+        assert_eq!(recved, vec![vec![], vec![], vec![9, 8, 7, 6, 5, 4], vec![], vec![9, 8, 7],]);
     }
 
     #[test]
     fn unexpected_eof_in_len() {
         let data = vec![0x89];
         let framed = LengthDelimited::new(Cursor::new(data));
-        let s = futures::stream::try_unfold(framed, |mut f| async move {
-            f.recv_message().await.map(|buf| Some((buf, f)))
-        });
+        let s = futures::stream::try_unfold(framed, |mut f| async move { f.recv_message().await.map(|buf| Some((buf, f))) });
         let recved = futures::executor::block_on(s.try_collect::<Vec<_>>());
         if let Err(io_err) = recved {
             assert_eq!(io_err.kind(), ErrorKind::UnexpectedEof)
@@ -221,9 +192,7 @@ mod tests {
     fn unexpected_eof_in_data() {
         let data = vec![5];
         let framed = LengthDelimited::new(Cursor::new(data));
-        let framed = futures::stream::try_unfold(framed, |mut f| async move {
-            f.recv_message().await.map(|buf| Some((buf, f)))
-        });
+        let framed = futures::stream::try_unfold(framed, |mut f| async move { f.recv_message().await.map(|buf| Some((buf, f))) });
         let recved = futures::executor::block_on(framed.try_collect::<Vec<_>>());
         if let Err(io_err) = recved {
             assert_eq!(io_err.kind(), ErrorKind::UnexpectedEof)
@@ -236,9 +205,7 @@ mod tests {
     fn unexpected_eof_in_data2() {
         let data = vec![5, 9, 8, 7];
         let framed = LengthDelimited::new(Cursor::new(data));
-        let framed = futures::stream::try_unfold(framed, |mut f| async move {
-            f.recv_message().await.map(|buf| Some((buf, f)))
-        });
+        let framed = futures::stream::try_unfold(framed, |mut f| async move { f.recv_message().await.map(|buf| Some((buf, f))) });
         let recved = futures::executor::block_on(framed.try_collect::<Vec<_>>());
         if let Err(io_err) = recved {
             assert_eq!(io_err.kind(), ErrorKind::UnexpectedEof)

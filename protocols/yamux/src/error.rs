@@ -31,9 +31,7 @@ impl std::fmt::Display for ConnectionError {
         match self {
             ConnectionError::Io(e) => write!(f, "i/o error: {}", e),
             ConnectionError::Decode(e) => write!(f, "decode error: {}", e),
-            ConnectionError::NoMoreStreamIds => {
-                f.write_str("number of stream ids has been exhausted")
-            }
+            ConnectionError::NoMoreStreamIds => f.write_str("number of stream ids has been exhausted"),
             ConnectionError::Closed => f.write_str("connection is closed"),
             ConnectionError::TooManyStreams => f.write_str("maximum number of streams reached"),
         }
@@ -45,9 +43,7 @@ impl std::error::Error for ConnectionError {
         match self {
             ConnectionError::Io(e) => Some(e),
             ConnectionError::Decode(e) => Some(e),
-            ConnectionError::NoMoreStreamIds
-            | ConnectionError::Closed
-            | ConnectionError::TooManyStreams => None,
+            ConnectionError::NoMoreStreamIds | ConnectionError::Closed | ConnectionError::TooManyStreams => None,
         }
     }
 }
