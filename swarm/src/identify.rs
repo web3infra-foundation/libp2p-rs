@@ -125,9 +125,9 @@ pub(crate) async fn consume_message<T>(mut stream: Substream<T>) -> Result<Remot
 where
     T: StreamInfo + ReadEx + WriteEx + Unpin + std::fmt::Debug + 'static,
 {
-    stream.close2().await?;
-    //let msg = upgrade::read_one(&mut socket, 4096).await?;
     let buf = stream.read_one(4096).await?;
+    stream.close2().await?;
+
     let (info, observed_addr) = match parse_proto_msg(&buf) {
         Ok(v) => v,
         Err(err) => {
@@ -168,7 +168,9 @@ where
     let mut bytes = Vec::with_capacity(message.encoded_len());
     message.encode(&mut bytes).expect("Vec<u8> provides capacity as needed");
 
-    stream.write_one(&bytes).await.map_err(|e| e.into())
+    stream.write_one(&bytes).await?;
+
+    stream.close2().await.map_err(io::Error::into)
 }
 
 /// Represents a prototype for the identify protocol.
