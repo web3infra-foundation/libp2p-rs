@@ -34,6 +34,7 @@ use libp2p_traits::{ReadEx, WriteEx};
 use crate::protocol_handler::{IProtocolHandler, ProtocolHandler};
 use crate::substream::Substream;
 use crate::SwarmError;
+use libp2p_core::muxing::StreamInfo;
 
 /// The configuration for outbound pings.
 #[derive(Clone, Debug)]
@@ -161,6 +162,7 @@ pub async fn ping<T: ReadEx + WriteEx + Send + std::fmt::Debug>(mut stream: T, t
         }
     };
 
+    // TODO: problematic, drop stream without closing, if it got timeout first
     async_std::io::timeout(timeout, ping).await.map_err(|e| e.into())
 }
 
@@ -200,7 +202,7 @@ impl UpgradeInfo for PingHandler {
 #[async_trait]
 impl<C> ProtocolHandler<C> for PingHandler
 where
-    C: ReadEx + WriteEx + Unpin + Send + std::fmt::Debug + 'static,
+    C: StreamInfo + ReadEx + WriteEx + Unpin + Send + std::fmt::Debug + 'static,
 {
     /// The Ping handler's inbound protocol.
     /// Simply wait for any thing that coming in then send back
@@ -244,7 +246,7 @@ mod tests {
 
         async_std::task::spawn(async move {
             let socket = listener.accept().await.unwrap();
-            let socket = Substream::new(socket, Direction::Inbound, b"", ConnectionId::default());
+            let socket = Substream::new(socket, Direction::Inbound, b"", ConnectionId::default(), None);
 
             let mut handler = PingHandler;
             let _ = handler.handle(socket, handler.protocol_info().first().unwrap()).await;

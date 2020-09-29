@@ -20,6 +20,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use std::{error::Error, fmt};
+use crate::control::SwarmControlCmd;
 
 /// The direction of a peer-to-peer communication channel.
 #[derive(Debug, Clone, PartialEq)]
@@ -52,6 +53,8 @@ pub struct Connection<TMuxer: StreamMuxer> {
     stream_muxer: TMuxer,
     /// The tx channel, to send Connection events to Swarm
     tx: mpsc::UnboundedSender<SwarmEvent<TMuxer>>,
+    /// The ctrl tx channel.
+    ctrl: mpsc::Sender<SwarmControlCmd<Substream<TMuxer::Substream>>>,
     /// Handler that processes substreams.
     //pub(crate) substreams: SmallVec<[TMuxer::Substream; 8]>,
     substreams: SmallVec<[StreamId; 8]>,
@@ -106,11 +109,12 @@ where
 {
     /// Builds a new `Connection` from the given substream multiplexer
     /// and a tx channel which will used to send events to Swarm.
-    pub(crate) fn new(id: usize, stream_muxer: TMuxer, dir: Direction, tx: mpsc::UnboundedSender<SwarmEvent<TMuxer>>) -> Self {
+    pub(crate) fn new(id: usize, stream_muxer: TMuxer, dir: Direction, tx: mpsc::UnboundedSender<SwarmEvent<TMuxer>>, ctrl: mpsc::Sender<SwarmControlCmd<Substream<TMuxer::Substream>>>) -> Self {
         Connection {
             id: ConnectionId(id),
             stream_muxer,
             tx,
+            ctrl,
             dir,
             substreams: Default::default(),
             handle: None,
@@ -146,10 +150,38 @@ where
     ) -> JoinHandle<T> {
         let cid = self.id();
         let stream_muxer = self.stream_muxer().clone();
-        let tx = self.tx.clone();
+        let mut tx = self.tx.clone();
+        let ctrl = Some(self.ctrl.clone());
 
         task::spawn(async move {
-            let result = open_stream_internal(cid, stream_muxer, pids, tx).await;
+            let result = open_stream_internal(cid, stream_muxer, pids, ctrl).await;
+
+            // TODO: how to extract the error from TransportError, ??? it doesn't implement 'Clone'
+            // So, at this moment, make a new 'TransportError::Internal'
+            let nr = result.as_ref()
+                .map(|s|s.id())
+                .map_err(|_|TransportError::Internal);
+
+            match nr {
+                Ok(sid) => {
+                    let _ = tx
+                        .send(SwarmEvent::StreamOpened {
+                            dir: Direction::Outbound,
+                            cid,
+                            sid,
+                        })
+                        .await;
+                },
+                Err(err) => {
+                    let _ = tx
+                        .send(SwarmEvent::StreamError {
+                            cid,
+                            error: err,
+                        })
+                        .await;
+                },
+            }
+
             f(result)
         })
     }
@@ -237,6 +269,10 @@ where
 
     /// Starts the Ping service on this connection. The task handle will be tracked
     /// by the connection for later closing the Ping service
+    ///
+    /// Note that we don't generate StreamOpened/Closed event for Ping/Identify outbound
+    /// simply because it doesn't make much sense doing so for a transient outgoing
+    /// stream.
     pub(crate) fn start_ping(&mut self, timeout: Duration, interval: Duration) {
         self.ping_running.store(true, Ordering::Relaxed);
 
@@ -248,7 +284,6 @@ where
 
         let handle = task::spawn(async move {
             let mut tx2 = tx.clone();
-
             loop {
                 if !flag.load(Ordering::Relaxed) {
                     break;
@@ -259,24 +294,11 @@ where
 
                 let stream_muxer = stream_muxer.clone();
                 let pids = pids.clone();
-                let tx = tx.clone();
 
-                let r = open_stream_internal(cid, stream_muxer, pids, tx).await;
+                let r = open_stream_internal(cid, stream_muxer, pids, None).await;
                 let r = match r {
                     Ok(stream) => {
-                        let cid = stream.cid();
-                        let sid = stream.id();
-
-                        let r = ping::ping(stream, timeout).await;
-                        // generate a StreamClosed event so that substream can be removed from Connection
-                        let _ = tx2
-                            .send(SwarmEvent::StreamClosed {
-                                dir: Direction::Outbound,
-                                cid,
-                                sid,
-                            })
-                            .await;
-                        r.map_err(|e| e.into())
+                        ping::ping(stream, timeout).await.map_err(|e| e.into())
                     }
                     Err(err) => {
                         // looks like the peer doesn't support the protocol
@@ -311,30 +333,14 @@ where
     pub(crate) fn start_identify(&mut self) {
         let cid = self.id();
         let stream_muxer = self.stream_muxer.clone();
-        let tx = self.tx.clone();
+        let mut tx = self.tx.clone();
         let pids = vec![IDENTIFY_PROTOCOL];
 
-        let mut tx2 = tx.clone();
-
         let handle = task::spawn(async move {
-            let r = open_stream_internal(cid, stream_muxer, pids, tx).await;
+            let r = open_stream_internal(cid, stream_muxer, pids, None).await;
             let r = match r {
                 Ok(stream) => {
-                    let cid = stream.cid();
-                    let sid = stream.id();
-
-                    let r = identify::consume_message(stream).await;
-
-                    // generate a StreamClosed event so that substream can be removed from Connection
-                    let _ = tx2
-                        .send(SwarmEvent::StreamClosed {
-                            dir: Direction::Outbound,
-                            cid,
-                            sid,
-                        })
-                        .await;
-
-                    r
+                    identify::consume_message(stream).await
                 }
                 Err(err) => {
                     // looks like the peer doesn't support the protocol
@@ -342,10 +348,10 @@ where
                     Err(err)
                 }
             };
-            let _ = tx2
+            let _ = tx
                 .send(SwarmEvent::IdentifyResult {
                     cid,
-                    result: r.map_err(|e| e.into()),
+                    result: r.map_err(TransportError::into),
                 })
                 .await;
 
@@ -366,10 +372,7 @@ where
     pub(crate) fn start_identify_push(&mut self) {
         let cid = self.id();
         let stream_muxer = self.stream_muxer.clone();
-        let tx = self.tx.clone();
         let pids = vec![IDENTIFY_PUSH_PROTOCOL];
-
-        let mut tx2 = tx.clone();
 
         let info = IdentifyInfo {
             public_key: Keypair::generate_ed25519_fixed().public(),
@@ -380,22 +383,11 @@ where
         };
 
         let handle = task::spawn(async move {
-            let r = open_stream_internal(cid, stream_muxer, pids, tx).await;
+            let r = open_stream_internal(cid, stream_muxer, pids, None).await;
             match r {
                 Ok(stream) => {
-                    let cid = stream.cid();
-                    let sid = stream.id();
                     // ignore the error
                     let _ = identify::produce_message(stream, info).await;
-
-                    // generate a StreamClosed event so that substream can be removed from Connection
-                    let _ = tx2
-                        .send(SwarmEvent::StreamClosed {
-                            dir: Direction::Outbound,
-                            cid,
-                            sid,
-                        })
-                        .await;
                 }
                 Err(err) => {
                     // looks like the peer doesn't support the protocol
@@ -421,7 +413,7 @@ async fn open_stream_internal<T>(
     cid: ConnectionId,
     mut stream_muxer: T,
     pids: Vec<ProtocolId>,
-    mut tx: mpsc::UnboundedSender<SwarmEvent<T>>,
+    ctrl: Option<mpsc::Sender<SwarmControlCmd<Substream<T::Substream>>>>,
 ) -> Result<Substream<T::Substream>, TransportError>
 where
     T: StreamMuxer,
@@ -436,27 +428,11 @@ where
     match result {
         Ok((proto, raw_stream)) => {
             log::debug!("selected outbound {:?} {:?}", cid, proto.protocol_name_str());
-
-            let stream = Substream::new(raw_stream, Direction::Outbound, proto, cid);
-
-            let sid = stream.id();
-            let _ = tx
-                .send(SwarmEvent::StreamOpened {
-                    dir: Direction::Outbound,
-                    cid,
-                    sid,
-                })
-                .await;
+            let stream = Substream::new(raw_stream, Direction::Outbound, proto, cid, ctrl);
             Ok(stream)
         }
         Err(err) => {
             log::info!("failed outbound protocol selection {:?} {:?}", cid, err);
-            let _ = tx
-                .send(SwarmEvent::StreamError {
-                    cid,
-                    error: TransportError::Internal,
-                })
-                .await;
             Err(TransportError::NegotiationError(err))
         }
     }

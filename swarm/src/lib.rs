@@ -33,7 +33,6 @@
 //! are supported, when to open a new outbound substream, etc.
 //!
 
-//mod behaviour;
 mod connection;
 mod control;
 mod muxer;
@@ -487,9 +486,9 @@ where
                 // got the peer_id, try opening a new sub stream
                 let _ = self.on_new_stream(peer_id, pids, reply);
             }
-            SwarmControlCmd::CloseStream(stream, reply) => {
+            SwarmControlCmd::CloseStream(cid, sid) => {
                 // got the peer_id, try opening a new sub stream
-                let _ = self.on_close_stream(stream, reply).await;
+                let _ = self.on_close_stream(cid, sid).await;
             }
             SwarmControlCmd::NetworkInfo(reply) => {
                 // got the peer_id, try opening a new sub stream
@@ -549,11 +548,9 @@ where
 
     async fn on_close_stream(
         &mut self,
-        substream: Substream<<TTrans::Output as StreamMuxer>::Substream>,
-        reply: oneshot::Sender<Result<()>>,
+        cid: ConnectionId,
+        sid: StreamId,
     ) -> Result<()> {
-        let cid = substream.cid();
-        let sid = substream.id();
         let _ = self
             .event_sender
             .send(SwarmEvent::StreamClosed {
@@ -563,7 +560,6 @@ where
             })
             .await;
         //self.handle_stream_closed(Direction::Outbound, cid, sid);
-        let _ = reply.send(Ok(()));
         Ok(())
     }
     ///
@@ -921,7 +917,7 @@ where
         log::trace!("handle_connection_opened: {:?} {:?}", stream_muxer, dir);
 
         // clone the stream_muxer, and then wrap into Connection, task_handle will be assigned later
-        let mut connection = Connection::new(self.assign_cid(), stream_muxer.clone(), dir, self.event_sender.clone());
+        let mut connection = Connection::new(self.assign_cid(), stream_muxer.clone(), dir, self.event_sender.clone(), self.ctrl_sender.clone());
 
         // TODO: filtering the multiaddr, Err = AddrFiltered(addr)
 
@@ -944,6 +940,7 @@ where
         let cid = connection.id();
         // clone muxer and move it into the task
         let mut muxer = self.muxer.clone();
+        let ctrl = Some(self.ctrl_sender.clone());
 
         // Note we have to use the original copy of the stream muxer to start the task,
         // instead of the cloned one which doesn't have the task handle at all
@@ -952,6 +949,7 @@ where
             // start the background task of the stream_muxer, the handle can be await'ed by us
             let task_handle = stream_muxer.task().map(task::spawn);
             loop {
+                let ctrl = ctrl.clone();
                 let r = stream_muxer.accept_stream().await;
 
                 // TODO: probably we should spawn a new task for protocol selection
@@ -966,7 +964,7 @@ where
                         let result = muxer.select_inbound(raw_stream).await;
                         match result {
                             Ok((mut handler, raw_stream, proto)) => {
-                                let stream = Substream::new(raw_stream, Direction::Inbound, proto, cid);
+                                let stream = Substream::new(raw_stream, Direction::Inbound, proto, cid, ctrl);
                                 let sid = stream.id();
                                 let _ = tx
                                     .send(SwarmEvent::StreamOpened {
