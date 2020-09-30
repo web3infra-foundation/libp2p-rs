@@ -1,3 +1,4 @@
+use crate::control::SwarmControlCmd;
 use crate::identify::{IdentifyInfo, IDENTIFY_PROTOCOL, IDENTIFY_PUSH_PROTOCOL};
 use crate::ping::PING_PROTOCOL;
 use crate::substream::{StreamId, Substream};
@@ -20,7 +21,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use std::{error::Error, fmt};
-use crate::control::SwarmControlCmd;
 
 /// The direction of a peer-to-peer communication channel.
 #[derive(Debug, Clone, PartialEq)]
@@ -109,7 +109,13 @@ where
 {
     /// Builds a new `Connection` from the given substream multiplexer
     /// and a tx channel which will used to send events to Swarm.
-    pub(crate) fn new(id: usize, stream_muxer: TMuxer, dir: Direction, tx: mpsc::UnboundedSender<SwarmEvent<TMuxer>>, ctrl: mpsc::Sender<SwarmControlCmd<Substream<TMuxer::Substream>>>) -> Self {
+    pub(crate) fn new(
+        id: usize,
+        stream_muxer: TMuxer,
+        dir: Direction,
+        tx: mpsc::UnboundedSender<SwarmEvent<TMuxer>>,
+        ctrl: mpsc::Sender<SwarmControlCmd<Substream<TMuxer::Substream>>>,
+    ) -> Self {
         Connection {
             id: ConnectionId(id),
             stream_muxer,
@@ -158,9 +164,7 @@ where
 
             // TODO: how to extract the error from TransportError, ??? it doesn't implement 'Clone'
             // So, at this moment, make a new 'TransportError::Internal'
-            let nr = result.as_ref()
-                .map(|s|s.id())
-                .map_err(|_|TransportError::Internal);
+            let nr = result.as_ref().map(|s| s.id()).map_err(|_| TransportError::Internal);
 
             match nr {
                 Ok(sid) => {
@@ -171,15 +175,10 @@ where
                             sid,
                         })
                         .await;
-                },
+                }
                 Err(err) => {
-                    let _ = tx
-                        .send(SwarmEvent::StreamError {
-                            cid,
-                            error: err,
-                        })
-                        .await;
-                },
+                    let _ = tx.send(SwarmEvent::StreamError { cid, error: err }).await;
+                }
             }
 
             f(result)
@@ -297,9 +296,7 @@ where
 
                 let r = open_stream_internal(cid, stream_muxer, pids, None).await;
                 let r = match r {
-                    Ok(stream) => {
-                        ping::ping(stream, timeout).await.map_err(|e| e.into())
-                    }
+                    Ok(stream) => ping::ping(stream, timeout).await.map_err(|e| e.into()),
                     Err(err) => {
                         // looks like the peer doesn't support the protocol
                         log::warn!("Ping protocol not supported: {:?}", err);
@@ -339,9 +336,7 @@ where
         let handle = task::spawn(async move {
             let r = open_stream_internal(cid, stream_muxer, pids, None).await;
             let r = match r {
-                Ok(stream) => {
-                    identify::consume_message(stream).await
-                }
+                Ok(stream) => identify::consume_message(stream).await,
                 Err(err) => {
                     // looks like the peer doesn't support the protocol
                     log::warn!("Identify protocol not supported: {:?}", err);
@@ -420,6 +415,8 @@ where
     T::Substream: ReadEx + WriteEx + Send + Unpin,
 {
     let raw_stream = stream_muxer.open_stream().await?;
+    let la = stream_muxer.local_multiaddr();
+    let ra = stream_muxer.remote_multiaddr();
 
     // now it's time to do protocol multiplexing for sub stream
     let negotiator = Negotiator::new_with_protocols(pids);
@@ -428,7 +425,7 @@ where
     match result {
         Ok((proto, raw_stream)) => {
             log::debug!("selected outbound {:?} {:?}", cid, proto.protocol_name_str());
-            let stream = Substream::new(raw_stream, Direction::Outbound, proto, cid, ctrl);
+            let stream = Substream::new(raw_stream, Direction::Outbound, proto, cid, la, ra, ctrl);
             Ok(stream)
         }
         Err(err) => {

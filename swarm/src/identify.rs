@@ -74,16 +74,6 @@ pub struct IdentifyInfo {
     pub protocols: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
-pub struct RemoteInfo {
-    /// Information about the remote.
-    pub info: IdentifyInfo,
-    /// Address the remote sees for us.
-    pub observed_addr: Multiaddr,
-
-    _priv: (),
-}
-
 // Turns a protobuf message into an `IdentifyInfo` and an observed address. If something bad
 // happens, turn it into an `io::Error`.
 fn parse_proto_msg(msg: impl AsRef<[u8]>) -> Result<(IdentifyInfo, Multiaddr), io::Error> {
@@ -122,28 +112,14 @@ fn parse_proto_msg(msg: impl AsRef<[u8]>) -> Result<(IdentifyInfo, Multiaddr), i
     }
 }
 
-pub(crate) async fn consume_message<T>(mut stream: Substream<T>) -> Result<RemoteInfo, TransportError>
+pub(crate) async fn consume_message<T>(mut stream: Substream<T>) -> Result<(IdentifyInfo, Multiaddr), TransportError>
 where
     T: StreamInfo + ReadEx + WriteEx + Unpin + std::fmt::Debug + 'static,
 {
     let buf = stream.read_one(4096).await?;
     stream.close2().await?;
 
-    let (info, observed_addr) = match parse_proto_msg(&buf) {
-        Ok(v) => v,
-        Err(err) => {
-            log::debug!("Failed to parse protobuf message; error = {:?}", err);
-            return Err(err.into());
-        }
-    };
-
-    log::trace!("Identify information received and Remote observes us as {:?}", observed_addr);
-
-    Ok(RemoteInfo {
-        info,
-        observed_addr: observed_addr.clone(),
-        _priv: (),
-    })
+    parse_proto_msg(&buf).map_err(io::Error::into)
 }
 
 pub(crate) async fn produce_message<T>(mut stream: Substream<T>, info: IdentifyInfo) -> Result<(), TransportError>
@@ -154,14 +130,14 @@ where
 
     let pubkey_bytes = info.public_key.into_protobuf_encoding();
 
-    //let observed_addr = stream.
+    let observed_addr = stream.remote_multiaddr();
 
     let message = structs_proto::Identify {
         agent_version: Some(info.agent_version),
         protocol_version: Some(info.protocol_version),
         public_key: Some(pubkey_bytes),
         listen_addrs,
-        observed_addr: None, //Some(observed_addr.to_vec()),
+        observed_addr: Some(observed_addr.to_vec()),
         protocols: info.protocols,
     };
 
@@ -291,13 +267,12 @@ where
 #[cfg(test)]
 mod tests {
     use super::IdentifyHandler;
-    use crate::connection::{ConnectionId, Direction};
     use crate::identify::{IdentifyInfo, IdentifyPushHandler};
     use crate::protocol_handler::ProtocolHandler;
     use crate::substream::Substream;
     use crate::{identify, SwarmEvent};
     use futures::channel::mpsc;
-    use futures::{SinkExt, StreamExt};
+    use futures::{StreamExt};
     use libp2p_core::identity::Keypair;
     use libp2p_core::transport::TransportListener;
     use libp2p_core::upgrade::UpgradeInfo;
@@ -306,6 +281,7 @@ mod tests {
         transport::{memory::MemoryTransport, Transport},
     };
     use rand::{thread_rng, Rng};
+    use crate::control::SwarmControlCmd;
 
     #[test]
     fn produce_and_consume() {
@@ -316,20 +292,40 @@ mod tests {
         let pubkey = Keypair::generate_ed25519_fixed().public();
         let key_cloned = pubkey.clone();
 
+        let (tx, mut rx) = mpsc::channel::<SwarmControlCmd<()>>(0);
+
         async_std::task::spawn(async move {
             let socket = listener.accept().await.unwrap();
-            let socket = Substream::new(socket, Direction::Inbound, b"", ConnectionId::default(), None);
+            let socket = Substream::new_with_default(socket);
 
-            let mut handler = IdentifyHandler::new(key_cloned, vec![]);
+            let mut handler = IdentifyHandler::new(tx);
             let _ = handler.handle(socket, handler.protocol_info().first().unwrap()).await;
+        });
+
+        async_std::task::spawn(async move {
+            let r = rx.next().await.unwrap();
+            match r {
+                SwarmControlCmd::IdentifyInfo(reply) => {
+                    // a fake IdentifyInfo
+                    let info = IdentifyInfo {
+                        public_key: key_cloned,
+                        protocol_version: "".to_string(),
+                        agent_version: "abc".to_string(),
+                        listen_addrs: vec![],
+                        protocols: vec![],
+                    };
+                    let _ = reply.send(Ok(info));
+                }
+                _ => {}
+            }
         });
 
         async_std::task::block_on(async move {
             let socket = MemoryTransport.dial(listener_addr).await.unwrap();
-            let socket = Substream::new(socket, Direction::Inbound, b"", ConnectionId::default(), None);
+            let socket = Substream::new_with_default(socket);
 
-            let ri = identify::consume_message(socket).await.unwrap();
-            assert_eq!(ri.info.public_key, pubkey);
+            let (ri, _addr) = identify::consume_message(socket).await.unwrap();
+            assert_eq!(ri.public_key, pubkey);
         });
     }
 
@@ -342,11 +338,11 @@ mod tests {
         let pubkey = Keypair::generate_ed25519_fixed().public();
         let key_cloned = pubkey.clone();
 
-        let (mut tx, mut rx) = mpsc::unbounded::<SwarmEvent<()>>();
+        let (tx, mut rx) = mpsc::unbounded::<SwarmEvent<()>>();
 
         async_std::task::spawn(async move {
             let socket = MemoryTransport.dial(listener_addr).await.unwrap();
-            let socket = Substream::new(socket, Direction::Inbound, b"", ConnectionId::default(), None);
+            let socket = Substream::new_with_default(socket);
 
             let info = IdentifyInfo {
                 public_key: key_cloned,
@@ -361,20 +357,18 @@ mod tests {
 
         async_std::task::block_on(async move {
             let socket = listener.accept().await.unwrap();
-            let socket = Substream::new(socket, Direction::Inbound, b"", ConnectionId::default(), None);
+            let socket = Substream::new_with_default(socket);
 
             let mut handler = IdentifyPushHandler::new(tx);
             let _ = handler.handle(socket, handler.protocol_info().first().unwrap()).await;
 
             let r = rx.next().await.unwrap();
 
-            if let SwarmEvent::IdentifyResult { cid, result } = r {
-                assert_eq!(result.unwrap().info.public_key, pubkey);
+            if let SwarmEvent::IdentifyResult { cid:_, result } = r {
+                assert_eq!(result.unwrap().0.public_key, pubkey);
             } else {
                 assert!(false);
             }
-
-            //assert_eq!(ri.info.public_key, pubkey);
         });
     }
 }

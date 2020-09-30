@@ -225,7 +225,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::PingHandler;
-    use crate::connection::{ConnectionId, Direction};
     use crate::ping::ping;
     use crate::protocol_handler::ProtocolHandler;
     use crate::substream::Substream;
@@ -246,7 +245,7 @@ mod tests {
 
         async_std::task::spawn(async move {
             let socket = listener.accept().await.unwrap();
-            let socket = Substream::new(socket, Direction::Inbound, b"", ConnectionId::default(), None);
+            let socket = Substream::new_with_default(socket);
 
             let mut handler = PingHandler;
             let _ = handler.handle(socket, handler.protocol_info().first().unwrap()).await;
