@@ -185,7 +185,7 @@ impl UpgradeInfo for Config {
     type Info = &'static [u8];
 
     fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![b"/mplex/1.0.0"]
+        vec![b"/mplex/6.7.0"]
     }
 }
 
