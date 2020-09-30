@@ -115,11 +115,6 @@ pub enum SwarmEvent<TStreamMuxer> {
         stream_muxer: TStreamMuxer,
         /// Direction of the connection
         direction: Direction,
-        /*
-                /// Number of connections_by_peer connections to this peer, including the one that has just been
-                /// opened.
-                num_established: NonZeroU32,
-        */
     },
     /// A connection with the given peer has been closed.
     ConnectionClosed {
@@ -158,22 +153,18 @@ pub enum SwarmEvent<TStreamMuxer> {
     /// This can include, for example, an error during the handshake of the encryption layer, or
     /// the connection unexpectedly closed.
     IncomingConnectionError {
-        /// Local connection address.
-        /// This address has been earlier reported with a [`NewListenAddr`](SwarmEvent::NewListenAddr)
-        /// event.
-        local_addr: Multiaddr,
-        /// Address used to send back data to the remote.
-        send_back_addr: Multiaddr,
-        // The error that happened.
+        /// The remote multiaddr.
+        remote_addr: Multiaddr,
+        // The error that happened when listening.
         error: TransportError,
     },
     OutgoingConnectionError {
-        /// The remote Peer Id
+        /// The remote Peer Id.
         peer_id: PeerId,
-        /// The remote multiaddr
+        /// The remote multiaddr.
         remote_addr: Multiaddr,
-        /// The error that happened when dialing
-        error: SwarmError,
+        /// The error that happened when dialing.
+        error: TransportError,
     },
     /// We connected to a peer, but we immediately closed the connection because that peer is banned.
     BannedPeer {
@@ -622,15 +613,14 @@ where
     /// Returns an error if the address is not supported.
     /// TODO: addr: Multiaddr might be a Vec<Multiaddr>
     pub fn listen_on(&mut self, addr: Multiaddr) -> Result<()> {
+        // TODO: figure out the best transport for listening
+
         let mut listener = self.transport.clone().listen_on(addr)?;
-
         self.listened_addrs.push(listener.multi_addr());
-
-        // let id = self.next_id;
-        // self.next_id = ListenerId(self.next_id.0 + 1);
 
         let mut tx = self.event_sender.clone();
         // start a task for this listener
+        // TODO: remember the task handle of this listener, so that we can 'cancel' it when exiting
         task::spawn(async move {
             loop {
                 let r = listener.accept().await;
@@ -638,7 +628,6 @@ where
                     Ok(muxer) => {
                         // dont have to verify if remote peer id matches its public key
                         // always accept any incoming connection
-
                         // send muxer back to Swarm main task
                         let _ = tx
                             .send(SwarmEvent::ConnectionEstablished {
@@ -649,9 +638,10 @@ where
                     }
                     Err(err) => {
                         let _ = tx
-                            .send(SwarmEvent::ListenerClosed {
-                                addresses: vec![],
-                                reason: err,
+                            .send(SwarmEvent::IncomingConnectionError {
+                                // TODO:
+                                remote_addr: Multiaddr::empty(),
+                                error: err
                             })
                             .await;
                     }
@@ -709,7 +699,7 @@ where
                             .send(SwarmEvent::OutgoingConnectionError {
                                 peer_id,
                                 remote_addr: addr,
-                                error: SwarmError::Internal,
+                                error: TransportError::Internal,
                             })
                             .await;
                         // close this connection
@@ -723,7 +713,7 @@ where
                         .send(SwarmEvent::OutgoingConnectionError {
                             peer_id,
                             remote_addr: addr,
-                            error: SwarmError::Internal,
+                            error: TransportError::Internal,
                         })
                         .await;
 
