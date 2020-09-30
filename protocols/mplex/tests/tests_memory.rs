@@ -80,7 +80,7 @@ fn prop_slow_reader() {
             TestResult::passed()
         })
     }
-    QuickCheck::new().tests(1).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(5).quickcheck(prop as fn() -> _)
 }
 
 #[test]
@@ -132,7 +132,7 @@ fn prop_basic_streams() {
             TestResult::passed()
         })
     }
-    QuickCheck::new().tests(1).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
 }
 
 #[test]
@@ -193,7 +193,7 @@ fn prop_write_after_close() {
             TestResult::passed()
         })
     }
-    QuickCheck::new().tests(1).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
 }
 
 #[test]
@@ -273,7 +273,7 @@ fn prop_p2p() {
             TestResult::passed()
         })
     }
-    QuickCheck::new().tests(1).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
 }
 
 #[test]
@@ -335,7 +335,7 @@ fn prop_echo() {
             TestResult::passed()
         })
     }
-    QuickCheck::new().tests(1).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
 }
 
 #[test]
@@ -402,7 +402,7 @@ fn prop_half_close() {
             TestResult::passed()
         })
     }
-    QuickCheck::new().tests(1).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
 }
 
 #[test]
@@ -448,7 +448,7 @@ fn prop_fuzz_close_connection() {
             TestResult::passed()
         })
     }
-    QuickCheck::new().tests(1).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
 }
 
 #[test]
@@ -492,7 +492,7 @@ fn prop_closing() {
             TestResult::from_bool(na == 0 && nb == 0)
         })
     }
-    QuickCheck::new().tests(1).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
 }
 
 #[test]
@@ -536,6 +536,8 @@ fn prop_reset() {
                 return TestResult::failed();
             }
 
+            task::sleep(Duration::from_millis(200)).await;
+
             if sb.write2(b"test").await.is_ok() {
                 return TestResult::failed();
             }
@@ -552,7 +554,7 @@ fn prop_reset() {
             TestResult::passed()
         })
     }
-    QuickCheck::new().tests(1).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
 }
 
 #[test]
@@ -608,7 +610,7 @@ fn prop_reset_after_eof() {
             TestResult::passed()
         })
     }
-    QuickCheck::new().tests(1).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
 }
 
 #[test]
@@ -661,7 +663,7 @@ fn prop_open_after_close() {
             TestResult::passed()
         })
     }
-    QuickCheck::new().tests(1).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
 }
 
 #[test]
@@ -710,7 +712,7 @@ fn prop_read_after_close() {
             TestResult::passed()
         })
     }
-    QuickCheck::new().tests(1).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
 }
 
 #[test]
@@ -787,7 +789,7 @@ fn prop_fuzz_close_stream() {
             TestResult::from_bool(na == 0 && nb == 0)
         })
     }
-    QuickCheck::new().tests(1).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
 }
 
 #[derive(Debug)]

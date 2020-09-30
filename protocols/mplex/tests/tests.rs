@@ -122,7 +122,7 @@ fn prop_slow_reader() {
             }
         })
     }
-    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(5).quickcheck(prop as fn() -> _)
 }
 
 #[test]
@@ -285,6 +285,7 @@ fn prop_closing() {
             TestResult::from_bool(result.0 == 0 && result.1 == 0)
         })
     }
+    // env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
     QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
 }
 
