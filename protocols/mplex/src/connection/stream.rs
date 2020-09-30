@@ -135,7 +135,7 @@ impl Stream {
         // In order to support [`Clone`]
         // When reference count is 1, we can close stream entirely
         // Otherwise, just close sender channel
-        let count = Arc::<Mutex<mpsc::Receiver<Vec<u8>>>>::strong_count(&self.receiver);
+        let count = Arc::strong_count(&self.receiver);
         if count == 1 {
             let frame = Frame::close_frame(self.id);
             let cmd = StreamCommand::CloseStream(frame);
@@ -143,7 +143,7 @@ impl Stream {
         }
 
         // step3: close channel
-        // self.sender.close().await.expect("send err");
+        self.sender.close().await.expect("send err");
 
         Ok(())
     }
@@ -152,7 +152,7 @@ impl Stream {
         // In order to support [`Clone`]
         // When reference count is 1, we can close stream entirely
         // Otherwise, just close sender channel
-        let count = Arc::<Mutex<mpsc::Receiver<Vec<u8>>>>::strong_count(&self.receiver);
+        let count = Arc::strong_count(&self.receiver);
         if count == 1 {
             let frame = Frame::reset_frame(self.id);
             let cmd = StreamCommand::ResetStream(frame);
