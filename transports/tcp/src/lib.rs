@@ -12,7 +12,7 @@ use async_std::net::{TcpListener, TcpStream};
 use async_trait::async_trait;
 use futures::prelude::*;
 use futures_timer::Delay;
-use libp2p_core::transport::ConnectionInfo;
+use libp2p_core::transport::{ConnectionInfo, IListener};
 use libp2p_core::{
     multiaddr::{Multiaddr, Protocol},
     transport::{TransportError, TransportListener},
@@ -71,9 +71,8 @@ impl TcpConfig {
 #[async_trait]
 impl Transport for TcpConfig {
     type Output = TcpTransStream;
-    type Listener = TcpTransListener;
 
-    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
+    fn listen_on(self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         let socket_addr = if let Ok(sa) = multiaddr_to_socketaddr(&addr) {
             sa
         } else {
@@ -145,7 +144,7 @@ impl Transport for TcpConfig {
             config: self,
         };
 
-        Ok(listener)
+        Ok(Box::new(listener))
     }
 
     async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError> {

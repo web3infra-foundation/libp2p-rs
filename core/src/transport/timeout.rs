@@ -24,7 +24,7 @@
 //! underlying `Transport`.
 // TODO: add example
 
-use crate::transport::TransportListener;
+use crate::transport::{TransportListener, IListener};
 use crate::{transport::TransportError, Multiaddr, Transport};
 use async_trait::async_trait;
 use futures::future::{select, Either};
@@ -74,11 +74,12 @@ impl<InnerTrans> TransportTimeout<InnerTrans> {
 }
 
 #[async_trait]
-impl<InnerTrans: Transport> Transport for TransportTimeout<InnerTrans> {
+impl<InnerTrans: Transport> Transport for TransportTimeout<InnerTrans>
+where InnerTrans::Output: 'static,
+{
     type Output = InnerTrans::Output;
-    type Listener = TimeoutListener<InnerTrans::Listener>;
 
-    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
+    fn listen_on(self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         let listener = self.inner.listen_on(addr)?;
 
         let listener = TimeoutListener {
@@ -86,7 +87,7 @@ impl<InnerTrans: Transport> Transport for TransportTimeout<InnerTrans> {
             timeout: self.incoming_timeout,
         };
 
-        Ok(listener)
+        Ok(Box::new(listener))
     }
 
     async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
@@ -118,14 +119,14 @@ impl<InnerTrans: Transport> Transport for TransportTimeout<InnerTrans> {
     }
 }
 
-pub struct TimeoutListener<InnerListener> {
-    inner: InnerListener,
+pub struct TimeoutListener<TOutput> {
+    inner: IListener<TOutput>,
     timeout: Duration,
 }
 
 #[async_trait]
-impl<InnerListener: TransportListener> TransportListener for TimeoutListener<InnerListener> {
-    type Output = InnerListener::Output;
+impl<TOutput: Send> TransportListener for TimeoutListener<TOutput> {
+    type Output = TOutput;
 
     async fn accept(&mut self) -> Result<Self::Output, TransportError> {
         let output = select(self.inner.accept(), Delay::new(self.timeout)).await;

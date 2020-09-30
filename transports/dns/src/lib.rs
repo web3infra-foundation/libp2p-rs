@@ -40,6 +40,7 @@ use libp2p_core::{
 };
 use log::{error, trace};
 use std::{error, fmt, io, net::ToSocketAddrs};
+use libp2p_core::transport::IListener;
 
 /// Represents the configuration for a DNS transport capability of libp2p.
 ///
@@ -76,9 +77,8 @@ where
     T: Transport + Send + 'static,
 {
     type Output = T::Output;
-    type Listener = T::Listener;
 
-    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
+    fn listen_on(self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         self.inner.listen_on(addr)
     }
 

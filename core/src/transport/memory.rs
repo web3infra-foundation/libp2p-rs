@@ -1,5 +1,5 @@
 use crate::muxing::StreamInfo;
-use crate::transport::{ConnectionInfo, TransportListener};
+use crate::transport::{ConnectionInfo, TransportListener, IListener};
 use crate::{transport::TransportError, Transport};
 use async_trait::async_trait;
 use fnv::FnvHashMap;
@@ -24,9 +24,8 @@ pub struct MemoryTransport;
 #[async_trait]
 impl Transport for MemoryTransport {
     type Output = Channel;
-    type Listener = Listener;
 
-    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
+    fn listen_on(self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         let port = if let Ok(port) = parse_memory_addr(&addr) {
             port
         } else {
@@ -55,11 +54,11 @@ impl Transport for MemoryTransport {
             Entry::Vacant(e) => e.insert(tx),
         };
 
-        let listener = Listener {
+        let listener = Box::new(Listener {
             port,
             addr: Protocol::Memory(port.get()).into(),
             receiver: rx,
-        };
+        });
 
         Ok(listener)
     }

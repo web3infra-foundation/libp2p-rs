@@ -1,4 +1,4 @@
-use crate::transport::{ConnectionInfo, Transport, TransportError, TransportListener};
+use crate::transport::{ConnectionInfo, Transport, TransportError, TransportListener, IListener};
 use crate::Multiaddr;
 use async_trait::async_trait;
 use std::fmt;
@@ -36,9 +36,8 @@ impl Clone for DummyTransport {
 #[async_trait]
 impl Transport for DummyTransport {
     type Output = DummyStream;
-    type Listener = DummyListener;
 
-    fn listen_on(self, _addr: Multiaddr) -> Result<Self::Listener, TransportError> {
+    fn listen_on(self, _addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         Err(TransportError::Internal)
     }
 
