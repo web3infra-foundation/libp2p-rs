@@ -92,23 +92,12 @@ pub trait Transport: Send {
     /// provides APIs for sending and receiving data through the connection.
     type Output: ConnectionInfo;
 
-    /// A stream of [`Output`](Transport::Output)s for inbound connections.
-    ///
-    /// An item should be produced whenever a connection is received at the lowest level of the
-    /// transport stack. The item must be a [`ListenerUpgrade`](Transport::ListenerUpgrade) future
-    /// that resolves to an [`Output`](Transport::Output) value once all protocol upgrades
-    /// have been applied.
-    ///
-    /// If this stream produces an error, it is considered fatal and the listener is killed. It
-    /// is possible to report non-fatal errors by producing a [`ListenerEvent::Error`].
-    type Listener: TransportListener<Output = Self::Output>;
-
     /// Listens on the given [`Multiaddr`], producing a stream of pending, inbound connections
     /// and addresses this transport is listening on (cf. [`ListenerEvent`]).
     ///
     /// Returning an error from the stream is considered fatal. The listener can also report
     /// non-fatal errors by producing a [`ListenerEvent::Error`].
-    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError>
+    fn listen_on(self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError>
     where
         Self: Sized;
 
@@ -244,6 +233,10 @@ pub trait TransportListener: Send {
     // /// Returns the local network address
     // fn local_addr(&self) -> io::Result<SocketAddr>;
 }
+
+pub type IListener<TOutput> = Box<dyn TransportListener<Output = TOutput> + Send>;
+pub type ITransport<TOutput> = Box<dyn Transport<Output = TOutput> + Send>;
+
 
 pub struct Incoming<'a, T>(&'a mut T);
 

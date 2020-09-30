@@ -4,7 +4,7 @@
 
 use crate::muxing::StreamMuxer;
 use crate::secure_io::SecureInfo;
-use crate::transport::{ConnectionInfo, TransportListener};
+use crate::transport::{ConnectionInfo, TransportListener, IListener};
 use crate::upgrade::multistream::Multistream;
 use crate::upgrade::Upgrader;
 use crate::{transport::TransportError, Multiaddr, Transport};
@@ -45,20 +45,19 @@ where
 impl<InnerTrans, TMux, TSec> Transport for TransportUpgrade<InnerTrans, TMux, TSec>
 where
     InnerTrans: Transport,
-    InnerTrans::Output: ConnectionInfo + ReadEx + WriteEx + Unpin,
-    TSec: Upgrader<InnerTrans::Output> + Send + Clone,
+    InnerTrans::Output: ConnectionInfo + ReadEx + WriteEx + Unpin + 'static,
+    TSec: Upgrader<InnerTrans::Output> + Send + Clone + 'static,
     TSec::Output: SecureInfo + ReadEx + WriteEx + Unpin,
-    TMux: Upgrader<TSec::Output>,
+    TMux: Upgrader<TSec::Output> + 'static,
     TMux::Output: StreamMuxer,
 {
     type Output = TMux::Output;
-    type Listener = ListenerUpgrade<InnerTrans::Listener, TMux, TSec>;
 
-    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
+    fn listen_on(self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         let inner_listener = self.inner.listen_on(addr)?;
         let listener = ListenerUpgrade::new(inner_listener, self.mux, self.sec);
 
-        Ok(listener)
+        Ok(Box::new(listener))
     }
 
     async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
@@ -68,25 +67,24 @@ where
         self.mux.select_outbound(sec_socket).await
     }
 }
-pub struct ListenerUpgrade<InnerListener, TMux, TSec> {
-    inner: InnerListener,
+pub struct ListenerUpgrade<TOutput, TMux, TSec> {
+    inner: IListener<TOutput>,
     mux: Multistream<TMux>,
     sec: Multistream<TSec>,
     // TODO: add threshold support here
 }
 
-impl<InnerListener, TMux, TSec> ListenerUpgrade<InnerListener, TMux, TSec> {
-    pub(crate) fn new(inner: InnerListener, mux: Multistream<TMux>, sec: Multistream<TSec>) -> Self {
+impl<TOutput, TMux, TSec> ListenerUpgrade<TOutput, TMux, TSec> {
+    pub(crate) fn new(inner: IListener<TOutput>, mux: Multistream<TMux>, sec: Multistream<TSec>) -> Self {
         Self { inner, mux, sec }
     }
 }
 
 #[async_trait]
-impl<InnerListener, TMux, TSec> TransportListener for ListenerUpgrade<InnerListener, TMux, TSec>
+impl<TOutput, TMux, TSec> TransportListener for ListenerUpgrade<TOutput, TMux, TSec>
 where
-    InnerListener: TransportListener,
-    InnerListener::Output: ConnectionInfo + ReadEx + WriteEx + Unpin,
-    TSec: Upgrader<InnerListener::Output> + Send + Clone,
+    TOutput: ConnectionInfo + ReadEx + WriteEx + Unpin,
+    TSec: Upgrader<TOutput> + Send + Clone,
     TSec::Output: SecureInfo + ReadEx + WriteEx + Unpin,
     TMux: Upgrader<TSec::Output>,
     TMux::Output: StreamMuxer,

@@ -61,7 +61,7 @@ use std::{error, fmt, hash::Hash};
 
 use libp2p_core::peerstore::PeerStore;
 use libp2p_core::secure_io::SecureInfo;
-use libp2p_core::transport::{TransportListener, ConnectionInfo};
+use libp2p_core::transport::{TransportListener, ConnectionInfo, IListener};
 use libp2p_core::upgrade::ProtocolName;
 use libp2p_core::{muxing::StreamMuxer, transport::TransportError, Multiaddr, PeerId, Transport};
 use libp2p_traits::{ReadEx, WriteEx};
@@ -85,7 +85,6 @@ type Result<T> = std::result::Result<T, SwarmError>;
 pub struct ListenerId(u64);
 
 /// A single active listener.
-#[derive(Debug)]
 struct Listener<TTrans>
 where
     TTrans: Transport,
@@ -93,7 +92,7 @@ where
     /// The ID of this listener.
     id: ListenerId,
     /// The object that actually listens.
-    listener: TTrans::Listener,
+    listener: IListener<TTrans::Output>,
 }
 
 #[allow(dead_code)]
@@ -101,7 +100,7 @@ impl<TTrans> Listener<TTrans>
 where
     TTrans: Transport,
 {
-    pub fn new(listener: TTrans::Listener, id: ListenerId) -> Self {
+    pub fn new(listener: IListener<TTrans::Output>, id: ListenerId) -> Self {
         Listener { id, listener }
     }
 }
@@ -312,7 +311,6 @@ where
 impl<TTrans> Swarm<TTrans>
 where
     TTrans: Transport + Clone + 'static,
-    TTrans::Listener: 'static,
     TTrans::Output: StreamMuxer + SecureInfo,
     <TTrans::Output as StreamMuxer>::Substream: ReadEx + WriteEx + Send + Unpin,
 {

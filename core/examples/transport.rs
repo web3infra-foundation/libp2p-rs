@@ -3,11 +3,15 @@ use libp2p_core::pnet::{PnetConfig, PreSharedKey};
 use libp2p_core::transport::memory::MemoryTransport;
 use libp2p_core::transport::protector::ProtectorTransport;
 use libp2p_core::transport::upgrade::TransportUpgrade;
-use libp2p_core::transport::TransportListener;
+use libp2p_core::transport::{TransportListener, ITransport};
 use libp2p_core::upgrade::DummyUpgrader;
 use libp2p_core::{Multiaddr, Transport};
 use libp2p_traits::{ReadEx, WriteEx};
 use log;
+
+fn ttt<T>(trans: ITransport<T>) {
+}
+
 
 fn main() {
     env_logger::init();
@@ -22,9 +26,14 @@ fn main() {
         .unwrap();
     let pnet = PnetConfig::new(psk);
     let pro_trans = ProtectorTransport::new(MemoryTransport::default(), pnet);
+
+    let it = Box::new(pro_trans);
+    //ttt(it);
+
+
     //let pro_trans = MemoryTransport::default();
     task::spawn(async move {
-        let t1 = TransportUpgrade::new(pro_trans, DummyUpgrader::new(), DummyUpgrader::new());
+        let t1 = Box::new(TransportUpgrade::new(pro_trans, DummyUpgrader::new(), DummyUpgrader::new()));
         let mut listener = t1.listen_on(listen_addr).unwrap();
 
         loop {
