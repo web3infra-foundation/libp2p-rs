@@ -24,7 +24,7 @@
 //! underlying `Transport`.
 // TODO: add example
 
-use crate::transport::{TransportListener, IListener};
+use crate::transport::{TransportListener, IListener, ITransport};
 use crate::{transport::TransportError, Multiaddr, Transport};
 use async_trait::async_trait;
 use futures::future::{select, Either};
@@ -37,7 +37,7 @@ use std::time::Duration;
 ///
 /// **Note**: `listen_on` is never subject to a timeout, only the setup of each
 /// individual accepted connection.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct TransportTimeout<InnerTrans> {
     inner: InnerTrans,
     outgoing_timeout: Duration,
@@ -74,12 +74,14 @@ impl<InnerTrans> TransportTimeout<InnerTrans> {
 }
 
 #[async_trait]
-impl<InnerTrans: Transport> Transport for TransportTimeout<InnerTrans>
-where InnerTrans::Output: 'static,
+impl<InnerTrans> Transport for TransportTimeout<InnerTrans>
+where
+    InnerTrans: Transport + Clone + 'static,
+    InnerTrans::Output: 'static,
 {
     type Output = InnerTrans::Output;
 
-    fn listen_on(self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
+    fn listen_on(&mut self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         let listener = self.inner.listen_on(addr)?;
 
         let listener = TimeoutListener {
@@ -90,7 +92,7 @@ where InnerTrans::Output: 'static,
         Ok(Box::new(listener))
     }
 
-    async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
+    async fn dial(&mut self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
         let output = select(self.inner.dial(addr), Delay::new(self.outgoing_timeout)).await;
         match output {
             Either::Left((stream, _)) => {
@@ -116,6 +118,10 @@ where InnerTrans::Output: 'static,
         //         Err(TransportError::Timeout)
         //     }
         // }
+    }
+
+    fn box_clone(&self) -> ITransport<Self::Output> {
+        Box::new(self.clone())
     }
 }
 

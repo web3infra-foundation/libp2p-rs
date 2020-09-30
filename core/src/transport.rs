@@ -97,17 +97,15 @@ pub trait Transport: Send {
     ///
     /// Returning an error from the stream is considered fatal. The listener can also report
     /// non-fatal errors by producing a [`ListenerEvent::Error`].
-    fn listen_on(self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError>
-    where
-        Self: Sized;
+    fn listen_on(&mut self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError>;
 
     /// Dials the given [`Multiaddr`], returning a future for a pending outbound connection.
     ///
     /// If [`TransportError::MultiaddrNotSupported`] is returned, it may be desirable to
     /// try an alternative [`Transport`], if available.
-    async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError>
-    where
-        Self: Sized;
+    async fn dial(&mut self, addr: Multiaddr) -> Result<Self::Output, TransportError>;
+
+    fn box_clone(&self) -> ITransport<Self::Output>;
 
     /// Adds a timeout to the connection setup (including upgrades) for all
     /// inbound and outbound connections established through the transport.

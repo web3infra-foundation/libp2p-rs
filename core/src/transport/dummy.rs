@@ -1,4 +1,4 @@
-use crate::transport::{ConnectionInfo, Transport, TransportError, TransportListener, IListener};
+use crate::transport::{ConnectionInfo, Transport, TransportError, TransportListener, IListener, ITransport};
 use crate::Multiaddr;
 use async_trait::async_trait;
 use std::fmt;
@@ -6,6 +6,7 @@ use std::fmt;
 /// Implementation of `Transport` that doesn't support any multiaddr.
 ///
 /// Useful for testing purposes, or as a fallback implementation when no protocol is available.
+#[derive(Clone)]
 pub struct DummyTransport;
 
 impl DummyTransport {
@@ -27,22 +28,20 @@ impl fmt::Debug for DummyTransport {
     }
 }
 
-impl Clone for DummyTransport {
-    fn clone(&self) -> Self {
-        DummyTransport
-    }
-}
-
 #[async_trait]
 impl Transport for DummyTransport {
     type Output = DummyStream;
 
-    fn listen_on(self, _addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
+    fn listen_on(&mut self, _addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         Err(TransportError::Internal)
     }
 
-    async fn dial(self, _addr: Multiaddr) -> Result<Self::Output, TransportError> {
+    async fn dial(&mut self, _addr: Multiaddr) -> Result<Self::Output, TransportError> {
         Err(TransportError::Internal)
+    }
+
+    fn box_clone(&self) -> ITransport<Self::Output> {
+        Box::new(self.clone())
     }
 }
 

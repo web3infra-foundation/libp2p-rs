@@ -18,6 +18,7 @@ use libp2p_traits::{ReadEx, WriteEx};
 use secio;
 use yamux;
 use libp2p_core::muxing::StreamInfo;
+use libp2p_core::transport::ITransport;
 
 //use libp2p_swarm::Swarm::network::NetworkConfig;
 
@@ -83,9 +84,16 @@ fn run_server() {
     muxer.add_protocol_handler(dummy_handler);
     muxer.add_protocol_handler(Box::new(MyProtocolHandler));
 
-    let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer)
+    let mut transports = Vec::new();
+
+    let mut swarm = Swarm::new( PeerId::from_public_key(keys.public()), transports, muxer)
         .with_ping(PingConfig::new().with_unsolicited(false).with_interval(Duration::from_secs(1)))
         .with_identify(IdentifyConfig::new(false));
+
+    let itu = Box::new(tu);
+    //transports.push(itu as Box<ITransport<_>>);
+    swarm.add_transport(itu);
+
 
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
 
@@ -112,9 +120,15 @@ fn run_client() {
     // let dummy_handler = Box::new(DummyProtocolHandler::new());
     // muxer.add_protocol_handler(dummy_handler);
 
-    let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer)
+    let mut transports = Vec::new();
+
+    let mut swarm = Swarm::new(PeerId::from_public_key(keys.public()), transports, muxer)
         .with_ping(PingConfig::new().with_unsolicited(false).with_interval(Duration::from_secs(1)))
         .with_identify(IdentifyConfig::new(false));
+
+    let itu = Box::new(tu);
+    //transports.push(itu as Box<ITransport<_>>);
+    swarm.add_transport(itu);
 
     let mut control = swarm.control();
 

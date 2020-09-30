@@ -1,5 +1,5 @@
 use crate::pnet::{Pnet, PnetConfig, PnetOutput};
-use crate::transport::{ConnectionInfo, IListener};
+use crate::transport::{ConnectionInfo, IListener, ITransport};
 use crate::{
     transport::{TransportError, TransportListener},
     Multiaddr, Transport,
@@ -7,7 +7,7 @@ use crate::{
 use async_trait::async_trait;
 use libp2p_traits::{ReadEx, WriteEx};
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct ProtectorTransport<InnerTrans> {
     inner: InnerTrans,
     pnet: PnetConfig,
@@ -23,20 +23,24 @@ impl<InnerTrans> ProtectorTransport<InnerTrans> {
 #[async_trait]
 impl<InnerTrans> Transport for ProtectorTransport<InnerTrans>
 where
-    InnerTrans: Transport,
+    InnerTrans: Transport + Clone + 'static,
     InnerTrans::Output: ConnectionInfo + ReadEx + WriteEx + Unpin + 'static,
 {
     type Output = PnetOutput<InnerTrans::Output>;
 
-    fn listen_on(self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
+    fn listen_on(&mut self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         let inner_listener = self.inner.listen_on(addr)?;
         let listener = ProtectorListener::new(inner_listener, self.pnet);
         Ok(Box::new(listener))
     }
 
-    async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
+    async fn dial(&mut self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
         let socket = self.inner.dial(addr).await?;
         self.pnet.handshake(socket).await.map_err(|e| e.into())
+    }
+
+    fn box_clone(&self) -> ITransport<Self::Output> {
+        Box::new(self.clone())
     }
 }
 
