@@ -61,14 +61,14 @@ use std::{error, fmt, hash::Hash};
 
 use libp2p_core::peerstore::PeerStore;
 use libp2p_core::secure_io::SecureInfo;
-use libp2p_core::transport::TransportListener;
+use libp2p_core::transport::{TransportListener, ConnectionInfo};
 use libp2p_core::upgrade::ProtocolName;
 use libp2p_core::{muxing::StreamMuxer, transport::TransportError, Multiaddr, PeerId, Transport};
 use libp2p_traits::{ReadEx, WriteEx};
 
 use crate::connection::{Connection, ConnectionId, ConnectionLimit, Direction};
 use crate::control::SwarmControlCmd;
-use crate::identify::{IdentifyConfig, IdentifyHandler, IdentifyPushHandler, RemoteInfo, IdentifyInfo};
+use crate::identify::{IdentifyConfig, IdentifyHandler, IdentifyPushHandler, IdentifyInfo};
 use crate::network::NetworkInfo;
 use crate::ping::{PingConfig, PingHandler};
 use crate::registry::Addresses;
@@ -229,7 +229,7 @@ pub enum SwarmEvent<TStreamMuxer> {
         cid: ConnectionId,
         /// The result.
         /// Duration means the TTL when succeeded, or SwarmError for failed.
-        result: Result<RemoteInfo>,
+        result: Result<(IdentifyInfo, Multiaddr)>,
     },
 }
 
@@ -972,7 +972,9 @@ where
                         let result = muxer.select_inbound(raw_stream).await;
                         match result {
                             Ok((mut handler, raw_stream, proto)) => {
-                                let stream = Substream::new(raw_stream, Direction::Inbound, proto, cid, ctrl);
+                                let la = stream_muxer.local_multiaddr();
+                                let ra = stream_muxer.remote_multiaddr();
+                                let stream = Substream::new(raw_stream, Direction::Inbound, proto, cid, la, ra, ctrl);
                                 let sid = stream.id();
                                 let _ = tx
                                     .send(SwarmEvent::StreamOpened {
@@ -1128,15 +1130,17 @@ where
 
         Ok(())
     }
-    fn handle_identify_result(&mut self, cid: ConnectionId, result: Result<RemoteInfo>) -> Result<()> {
+    fn handle_identify_result(&mut self, cid: ConnectionId, result: Result<(IdentifyInfo, Multiaddr)>) -> Result<()> {
         log::trace!("handle_identify_result: {:?}", cid);
 
         if let Some(connection) = self.connections_by_id.get_mut(&cid) {
             match result {
-                Ok(info) => {
+                Ok((info, observed_addr)) => {
                     //let remote_peer_id = c.remote_peer();
-                    log::trace!("identify info={:?} for {:?}", info, connection);
-                    // TODO: update peer store with the TTL
+                    log::trace!("identify observed_addr: {} info={:?} for {:?}", observed_addr, info, connection);
+
+                    // TODO: update peer store with the
+                    //
                 }
                 Err(err) => {
                     log::info!("identify failed {:?} for {:?}", err, connection);
