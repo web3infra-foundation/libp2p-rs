@@ -676,7 +676,7 @@ where
         task::spawn(async move {
             let r = transport.dial(addr.clone()).await;
             let response = match r {
-                Ok(mut stream_muxer) => {
+                Ok(stream_muxer) => {
                     // test if the PeerId matches expectation, otherwise,
                     // it is a bad outgoing connection
                     if peer_id == stream_muxer.remote_peer() {
@@ -702,8 +702,6 @@ where
                                 error: TransportError::Internal,
                             })
                             .await;
-                        // close this connection
-                        let _ = stream_muxer.close().await;
 
                         Err(SwarmError::InvalidPeerId(wrong_id))
                     }
