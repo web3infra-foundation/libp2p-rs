@@ -9,10 +9,20 @@ use libp2p_core::upgrade::ProtocolName;
 use crate::control::SwarmControlCmd;
 use crate::connection::{ConnectionId, Direction};
 use crate::ProtocolId;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 /// The Id of sub stream
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StreamId(usize);
+
+#[derive(Debug, Default)]
+pub struct SubstreamStats {
+    pkt_sent: AtomicUsize,
+    pkt_recv: AtomicUsize,
+    byte_sent: AtomicUsize,
+    byte_recv: AtomicUsize,
+}
 
 #[derive(Clone)]
 pub struct Substream<TStream> {
@@ -27,6 +37,8 @@ pub struct Substream<TStream> {
     cid: ConnectionId,
     /// The control channel for closing stream
     ctrl: Option<mpsc::Sender<SwarmControlCmd<Substream<TStream>>>>,
+    /// The statistics of this substream
+    stats: Arc<SubstreamStats>,
 }
 
 impl<TStream: fmt::Debug> fmt::Debug for Substream<TStream> {
@@ -42,23 +54,23 @@ impl<TStream: fmt::Debug> fmt::Debug for Substream<TStream> {
 
 impl<TStream: StreamInfo> Substream<TStream> {
     pub(crate) fn new(inner: TStream, dir: Direction, protocol: ProtocolId, cid: ConnectionId, ctrl: Option<mpsc::Sender<SwarmControlCmd<Substream<TStream>>>>,) -> Self {
-        Self { inner, protocol, dir, cid, ctrl }
+        Self { inner, protocol, dir, cid, ctrl, stats: Arc::new(SubstreamStats::default()) }
     }
-    /// Returns the protocol of the sub stream
+    /// Returns the protocol of the sub stream.
     pub fn protocol(&self) -> ProtocolId {
         self.protocol
     }
-    /// Returns the connection id of the sub stream
+    /// Returns the connection id of the sub stream.
     pub fn cid(&self) -> ConnectionId {
         self.cid
     }
-    /// Returns the sub stream Id
+    /// Returns the sub stream Id.
     pub fn id(&self) -> StreamId {
         StreamId(self.inner.id())
     }
-    /// Returns the inner sub stream
-    pub fn stream(self) -> TStream {
-        self.inner
+    /// Returns the statistics of the sub stream.
+    pub fn stats(&self) -> &SubstreamStats {
+        &self.stats
     }
 }
 
@@ -66,6 +78,11 @@ impl<TStream: StreamInfo> Substream<TStream> {
 impl<TStream: ReadEx + Send> ReadEx for Substream<TStream> {
     async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
         self.inner.read2(buf).await
+            .map(|n|{
+                self.stats.byte_recv.fetch_add(n, Ordering::SeqCst);
+                self.stats.pkt_recv.fetch_add(1, Ordering::SeqCst);
+                n
+        })
     }
 }
 
@@ -73,6 +90,11 @@ impl<TStream: ReadEx + Send> ReadEx for Substream<TStream> {
 impl<TStream: StreamInfo + WriteEx + Send> WriteEx for Substream<TStream> {
     async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
         self.inner.write2(buf).await
+            .map(|n|{
+                self.stats.byte_sent.fetch_add(n, Ordering::SeqCst);
+                self.stats.pkt_sent.fetch_add(1, Ordering::SeqCst);
+                n
+            })
     }
 
     async fn flush2(&mut self) -> Result<(), io::Error> {
