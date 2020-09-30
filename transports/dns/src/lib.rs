@@ -39,7 +39,8 @@ use libp2p_core::{
     transport::TransportError,
 };
 use log::{error, trace};
-use std::{error, fmt, io, net::ToSocketAddrs};
+use std::{error, fmt, io};
+use async_std::net::ToSocketAddrs;
 
 /// Represents the configuration for a DNS transport capability of libp2p.
 ///
@@ -108,7 +109,7 @@ where
         let to_resolve = format!("{}:0", name);
 
 
-        let list = to_resolve[..].to_socket_addrs().map_err(|_| {
+        let list = to_resolve[..].to_socket_addrs().await.map_err(|_| {
             error!("DNS resolver crashed");
             TransportError::ResolveFail(name.clone())
         })?;
@@ -195,7 +196,7 @@ mod tests {
     fn basic_resolve_v4() {
         task::block_on(async move {
             let listen_addr: Multiaddr = "/ip4/127.0.0.1/tcp/8384".parse().unwrap();
-            let addr: Multiaddr = "/dns4/example.com/tcp/8384".parse().unwrap();
+            let addr: Multiaddr = "/dns4/localhost/tcp/8384".parse().unwrap();
             let transport = DnsConfig::new(TcpConfig::default());
             let client = transport.clone();
 
@@ -227,7 +228,7 @@ mod tests {
     fn basic_resolve_v6() {
         task::block_on(async move {
             let listen_addr: Multiaddr = "/ip6/::1/tcp/8384".parse().unwrap();
-            let addr: Multiaddr = "/dns6/example.com/tcp/8384".parse().unwrap();
+            let addr: Multiaddr = "/dns6/localhost/tcp/8384".parse().unwrap();
             let transport = DnsConfig::new(TcpConfig::default());
             let client = transport.clone();
 
