@@ -5,6 +5,9 @@ use std::time::Duration;
 extern crate lazy_static;
 
 use async_std::io;
+use std::io::Write;
+use std::str::FromStr;
+
 use libp2p_core::identity::Keypair;
 use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::upgrade::UpgradeInfo;
@@ -14,8 +17,9 @@ use libp2p_swarm::substream::Substream;
 use libp2p_swarm::{Muxer, Swarm, SwarmError};
 use libp2p_tcp::TcpConfig;
 use libp2p_traits::{ReadEx, WriteEx};
+use libp2p_core::muxing::StreamInfo;
+use libp2p_swarm::identify::IdentifyConfig;
 use secio;
-use std::io::Write;
 use yamux;
 
 fn main() {
@@ -79,7 +83,7 @@ impl UpgradeInfo for ChatHandler {
 #[async_trait]
 impl<C> ProtocolHandler<C> for ChatHandler
 where
-    C: ReadEx + WriteEx + Unpin + Clone + Send + std::fmt::Debug + 'static,
+    C: StreamInfo + ReadEx + WriteEx + Unpin + Clone + Send + std::fmt::Debug + 'static,
 {
     async fn handle(&mut self, stream: Substream<C>, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
         let stream = stream;
@@ -135,11 +139,14 @@ fn run_client() {
 
     let muxer = Muxer::new();
 
-    let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer);
+    let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer)
+        .with_identify(IdentifyConfig::new(false));
 
     let mut control = swarm.control();
 
     let remote_peer_id = PeerId::from_public_key(SERVER_KEY.public());
+
+    //let remote_peer_id = PeerId::from_str("QmQEBrDwz5MU8gpnrJz77vmAebRUtrqfoxsQxPsWSBeQUU").unwrap();
 
     log::info!("about to connect to {:?}", remote_peer_id);
 
@@ -165,6 +172,8 @@ fn run_client() {
             write_data(s2).await;
         });
 
-        loop {}
+        loop {
+            task::sleep(Duration::from_secs(10)).await;
+        }
     });
 }
