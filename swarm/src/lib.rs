@@ -61,9 +61,9 @@ use std::{error, fmt, hash::Hash};
 
 use libp2p_core::peerstore::PeerStore;
 use libp2p_core::secure_io::SecureInfo;
-use libp2p_core::transport::{TransportListener, ConnectionInfo, IListener};
+use libp2p_core::transport::{IListener, ITransport};
 use libp2p_core::upgrade::ProtocolName;
-use libp2p_core::{muxing::StreamMuxer, transport::TransportError, Multiaddr, PeerId, Transport};
+use libp2p_core::{muxing::StreamMuxer, transport::TransportError, Multiaddr, PeerId};
 use libp2p_traits::{ReadEx, WriteEx};
 
 use crate::connection::{Connection, ConnectionId, ConnectionLimit, Direction};
@@ -85,22 +85,22 @@ type Result<T> = std::result::Result<T, SwarmError>;
 pub struct ListenerId(u64);
 
 /// A single active listener.
-struct Listener<TTrans>
+struct Listener<TStreamMuxer>
 where
-    TTrans: Transport,
+    TStreamMuxer: StreamMuxer,
 {
     /// The ID of this listener.
     id: ListenerId,
     /// The object that actually listens.
-    listener: IListener<TTrans::Output>,
+    listener: IListener<TStreamMuxer>,
 }
 
 #[allow(dead_code)]
-impl<TTrans> Listener<TTrans>
+impl<TStreamMuxer> Listener<TStreamMuxer>
 where
-    TTrans: Transport,
+    TStreamMuxer: StreamMuxer,
 {
-    pub fn new(listener: IListener<TTrans::Output>, id: ListenerId) -> Self {
+    pub fn new(listener: IListener<TStreamMuxer>, id: ListenerId) -> Self {
         Listener { id, listener }
     }
 }
@@ -235,18 +235,18 @@ pub enum SwarmEvent<TStreamMuxer> {
 type ProtocolId = &'static [u8];
 
 /// Contains the state of the network, plus the way it should behave.
-pub struct Swarm<TTrans>
+pub struct Swarm<TStreamMuxer>
 where
-    TTrans: Transport + Clone,
-    TTrans::Output: StreamMuxer,
+    TStreamMuxer: StreamMuxer,
 {
     pub peers: PeerStore,
 
-    muxer: Muxer<<TTrans::Output as StreamMuxer>::Substream>,
+    muxer: Muxer<TStreamMuxer::Substream>,
 
-    //protocol_handlers: FnvHashMap<ProtocolId, IProtocolHandler<<TTrans::Output as StreamMuxer>::Substream>>,
+    //protocol_handlers: FnvHashMap<ProtocolId, IProtocolHandler<TStreamMuxer::Substream>>,
     /// The Transport
-    transport: TTrans,
+
+    transports: Vec<ITransport<TStreamMuxer>>,
 
     /// The local peer ID.
     local_peer_id: PeerId,
@@ -271,7 +271,7 @@ where
     banned_peers: HashSet<PeerId>,
 
     /// The all connections_by_peer connections organized by their Ids
-    connections_by_id: FnvHashMap<ConnectionId, Connection<TTrans::Output>>,
+    connections_by_id: FnvHashMap<ConnectionId, Connection<TStreamMuxer>>,
     /// The all connections_by_peer connections by  peer Id
     /// There might be more than one connections for a remote peer
     connections_by_peer: FnvHashMap<PeerId, Vec<ConnectionId>>,
@@ -290,14 +290,14 @@ where
     // /// can be polled again.
     // pending_event: Option<(PeerId, PendingNotifyHandler, TInEvent)>
     /// Swarm will listen on this channel, waiting for events generated from underlying transport
-    event_receiver: mpsc::UnboundedReceiver<SwarmEvent<TTrans::Output>>,
+    event_receiver: mpsc::UnboundedReceiver<SwarmEvent<TStreamMuxer>>,
     /// The Swarm event sender wil be cloned and then taken by underlying parts
-    event_sender: mpsc::UnboundedSender<SwarmEvent<TTrans::Output>>,
+    event_sender: mpsc::UnboundedSender<SwarmEvent<TStreamMuxer>>,
 
     /// Swarm will listen on this channel, for external control commands
-    ctrl_receiver: mpsc::Receiver<SwarmControlCmd<Substream<<TTrans::Output as StreamMuxer>::Substream>>>,
+    ctrl_receiver: mpsc::Receiver<SwarmControlCmd<Substream<TStreamMuxer::Substream>>>,
     /// The Swarm event sender wil be cloned and then taken by others
-    ctrl_sender: mpsc::Sender<SwarmControlCmd<Substream<<TTrans::Output as StreamMuxer>::Substream>>>,
+    ctrl_sender: mpsc::Sender<SwarmControlCmd<Substream<TStreamMuxer::Substream>>>,
 }
 
 // impl<TBehaviour, TInEvent, TOutEvent, THandler, TConnInfo> Unpin for
@@ -308,17 +308,16 @@ where
 // {
 // }
 #[allow(dead_code)]
-impl<TTrans> Swarm<TTrans>
+impl<TStreamMuxer> Swarm<TStreamMuxer>
 where
-    TTrans: Transport + Clone + 'static,
-    TTrans::Output: StreamMuxer + SecureInfo,
-    <TTrans::Output as StreamMuxer>::Substream: ReadEx + WriteEx + Send + Unpin,
+    TStreamMuxer: StreamMuxer + SecureInfo + 'static,
+    TStreamMuxer::Substream: ReadEx + WriteEx + Send + Unpin + 'static,
 {
     /// Builds a new `Swarm`.
     pub fn new(
-        transport: TTrans,
         local_peer_id: PeerId,
-        muxer: Muxer<<TTrans::Output as StreamMuxer>::Substream>, //_config: NetworkConfig,
+        transports: Vec<ITransport<TStreamMuxer>>,
+        muxer: Muxer<TStreamMuxer::Substream>, //_config: NetworkConfig,
     ) -> Self {
         // unbounded channel for events, so that we can send a message to ourselves
         let (event_tx, event_rx) = mpsc::unbounded();
@@ -326,7 +325,7 @@ where
         Swarm {
             peers: PeerStore::default(),
             muxer,
-            transport,
+            transports,
             local_peer_id,
             // listeners: SmallVec::with_capacity(16),
             next_connection_id: 0,
@@ -349,6 +348,10 @@ where
         self.next_connection_id
     }
 
+    pub fn add_transport(&mut self, transport: ITransport<TStreamMuxer>) {
+        self.transports.push(transport);
+    }
+
     /// Creates Swarm with Ping service.
     pub fn with_ping(mut self, ping: PingConfig) -> Self {
         self.ping = Some(ping);
@@ -365,7 +368,8 @@ where
         self
     }
     /// Get a controller for Swarm.
-    pub fn control(&self) -> Control<Substream<<TTrans::Output as StreamMuxer>::Substream>> {
+    pub fn control(&self) -> Control<Substream<TStreamMuxer
+::Substream>> {
         Control::new(self.ctrl_sender.clone())
     }
 
@@ -409,7 +413,7 @@ where
         }
     }
 
-    fn on_event(&mut self, event: SwarmEvent<TTrans::Output>) -> Result<()> {
+    fn on_event(&mut self, event: SwarmEvent<TStreamMuxer>) -> Result<()> {
         log::trace!("Swarm event={:?}", event);
 
         match event {
@@ -452,7 +456,8 @@ where
         Ok(())
     }
 
-    async fn on_command(&mut self, cmd: SwarmControlCmd<Substream<<TTrans::Output as StreamMuxer>::Substream>>) -> Result<()> {
+    async fn on_command(&mut self, cmd: SwarmControlCmd<Substream<TStreamMuxer
+::Substream>>) -> Result<()> {
         log::trace!("Swarm control command={:?}", cmd);
 
         match cmd {
@@ -521,7 +526,7 @@ where
         &mut self,
         peer_id: PeerId,
         pids: Vec<ProtocolId>,
-        reply: oneshot::Sender<Result<Substream<<TTrans::Output as StreamMuxer>::Substream>>>,
+        reply: oneshot::Sender<Result<Substream<TStreamMuxer::Substream>>>,
     ) -> Result<()> {
         if let Some(connection) = self.get_best_conn(&peer_id) {
             // well, we have a connection, start a task to open the stream
@@ -568,12 +573,12 @@ where
 
         task::spawn(async move { while let Ok(()) = swarm.next().await {} });
     }
-
-    /// Returns the transport passed when building this object.
-    pub fn transport(&self) -> &TTrans {
-        &self.transport
-    }
-
+    //
+    // /// Returns the transport passed when building this object.
+    // pub fn transport(&self) -> &TTrans {
+    //     &self.transport
+    // }
+    //
     /// Returns network information about the `Swarm`.
     pub fn network_info(&self) -> NetworkInfo {
         // TODO: add stats later on
@@ -612,8 +617,9 @@ where
     /// TODO: addr: Multiaddr might be a Vec<Multiaddr>
     pub fn listen_on(&mut self, addr: Multiaddr) -> Result<()> {
         // TODO: figure out the best transport for listening
-
-        let mut listener = self.transport.clone().listen_on(addr)?;
+        // TODO: first_mut ==> per protocol
+        let mut transport = self.transports.first_mut().unwrap();
+        let mut listener = transport.listen_on(addr)?;
         self.listened_addrs.push(listener.multi_addr());
 
         let mut tx = self.event_sender.clone();
@@ -670,7 +676,8 @@ where
         log::trace!("dialing addr={:?}, expecting {:?}", addr, peer_id);
 
         let mut tx = self.event_sender.clone();
-        let transport = self.transport().clone();
+        // TODO: first_mut ==> per protocol
+        let mut transport = self.transports.first_mut().unwrap().box_clone();
         task::spawn(async move {
             let r = transport.dial(addr.clone()).await;
             let response = match r {
@@ -750,7 +757,7 @@ where
         }
     }
 
-    fn get_best_conn(&mut self, peer_id: &PeerId) -> Option<&mut Connection<TTrans::Output>> {
+    fn get_best_conn(&mut self, peer_id: &PeerId) -> Option<&mut Connection<TStreamMuxer>> {
         let mut best = None;
         // selects the best connection we have to the peer.
         // TODO: we might have multiple connections towards a PeerId
@@ -831,7 +838,8 @@ where
     /// Set a handler for sub streams, with a protocol id
     ///
     /// , f: F)
-    //     where F: FnMut(<TTrans::Output as StreamMuxer>::Substream
+    //     where F: FnMut(TStreamMuxer
+::Substream
     fn set_stream_handler<F>(&mut self, pid: TProto)
     {
         self.muxer.add_handler(pid, Box::new(f));
@@ -892,7 +900,7 @@ where
         self.banned_peers.remove(peer_id.as_ref());
     }
 
-    fn add_connection(&mut self, connection: Connection<TTrans::Output>) {
+    fn add_connection(&mut self, connection: Connection<TStreamMuxer>) {
         let cid = connection.id();
         let remote_peer_id = connection.remote_peer();
 
@@ -917,7 +925,7 @@ where
     /// Handles a new connection
     ///
     /// start a Task for accepting new sub-stream from the connection
-    fn handle_connection_opened(&mut self, stream_muxer: TTrans::Output, dir: Direction) -> Result<()> {
+    fn handle_connection_opened(&mut self, stream_muxer: TStreamMuxer, dir: Direction) -> Result<()> {
         log::trace!("handle_connection_opened: {:?} {:?}", stream_muxer, dir);
 
         // clone the stream_muxer, and then wrap into Connection, task_handle will be assigned later

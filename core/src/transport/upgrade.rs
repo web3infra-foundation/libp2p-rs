@@ -4,7 +4,7 @@
 
 use crate::muxing::StreamMuxer;
 use crate::secure_io::SecureInfo;
-use crate::transport::{ConnectionInfo, TransportListener, IListener};
+use crate::transport::{ConnectionInfo, TransportListener, IListener, ITransport};
 use crate::upgrade::multistream::Multistream;
 use crate::upgrade::Upgrader;
 use crate::{transport::TransportError, Multiaddr, Transport};
@@ -26,7 +26,7 @@ impl<InnerTrans, TMux, TSec> TransportUpgrade<InnerTrans, TMux, TSec>
 where
     InnerTrans: Transport,
     InnerTrans::Output: ConnectionInfo + ReadEx + WriteEx + Unpin,
-    TSec: Upgrader<InnerTrans::Output> + Send + Clone,
+    TSec: Upgrader<InnerTrans::Output>,
     TSec::Output: SecureInfo + ReadEx + WriteEx + Unpin,
     TMux: Upgrader<TSec::Output>,
     TMux::Output: StreamMuxer,
@@ -44,27 +44,32 @@ where
 #[async_trait]
 impl<InnerTrans, TMux, TSec> Transport for TransportUpgrade<InnerTrans, TMux, TSec>
 where
-    InnerTrans: Transport,
+    InnerTrans: Transport + Clone + 'static,
     InnerTrans::Output: ConnectionInfo + ReadEx + WriteEx + Unpin + 'static,
-    TSec: Upgrader<InnerTrans::Output> + Send + Clone + 'static,
+    TSec: Upgrader<InnerTrans::Output> + 'static,
     TSec::Output: SecureInfo + ReadEx + WriteEx + Unpin,
     TMux: Upgrader<TSec::Output> + 'static,
     TMux::Output: StreamMuxer,
 {
     type Output = TMux::Output;
 
-    fn listen_on(self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
+    fn listen_on(&mut self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         let inner_listener = self.inner.listen_on(addr)?;
-        let listener = ListenerUpgrade::new(inner_listener, self.mux, self.sec);
+        let listener = ListenerUpgrade::new(inner_listener, self.mux.clone(), self.sec.clone());
 
         Ok(Box::new(listener))
     }
 
-    async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
+    async fn dial(&mut self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
         let socket = self.inner.dial(addr).await?;
-        let sec_socket = self.sec.select_outbound(socket).await?;
+        let sec = self.sec.clone();
+        let sec_socket = sec.select_outbound(socket).await?;
+        let mux = self.mux.clone();
+        mux.select_outbound(sec_socket).await
+    }
 
-        self.mux.select_outbound(sec_socket).await
+    fn box_clone(&self) -> ITransport<Self::Output> {
+        Box::new(self.clone())
     }
 }
 pub struct ListenerUpgrade<TOutput, TMux, TSec> {

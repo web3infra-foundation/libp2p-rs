@@ -40,7 +40,7 @@ use libp2p_core::{
 };
 use log::{error, trace};
 use std::{error, fmt, io, net::ToSocketAddrs};
-use libp2p_core::transport::IListener;
+use libp2p_core::transport::{IListener, ITransport};
 
 /// Represents the configuration for a DNS transport capability of libp2p.
 ///
@@ -74,15 +74,15 @@ where
 #[async_trait]
 impl<T> Transport for DnsConfig<T>
 where
-    T: Transport + Send + 'static,
+    T: Transport + Clone + 'static,
 {
     type Output = T::Output;
 
-    fn listen_on(self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
+    fn listen_on(&mut self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         self.inner.listen_on(addr)
     }
 
-    async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
+    async fn dial(&mut self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
         // one step complete all task
         let mut iter = addr.iter();
         let proto = iter.find_map(|x| match x {
@@ -140,6 +140,10 @@ where
         }
 
         Err(TransportError::ResolveFail(name))
+    }
+
+    fn box_clone(&self) -> ITransport<Self::Output> {
+        Box::new(self.clone())
     }
 }
 
