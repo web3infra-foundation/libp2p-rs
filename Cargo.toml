@@ -24,6 +24,7 @@ multiaddr = { path = "multiaddr", package = "parity-multiaddr", version = "0.9.1
 libp2p-core = { path = "core", version = "0.1.0", package = "libp2p-core" }
 libp2p-tcp = { path = "transports/tcp", version = "0.0.1", package = "libp2p-tcp" }
 libp2p-dns = { path = "transports/dns", version = "0.0.1", package = "libp2p-dns" }
+libp2p-websocket = { path = "transports/websocket", version = "0.0.1", package = "libp2p-websocket" }
 libp2p-swarm = { path = "swarm", version = "0.1.0", package = "libp2p-swarm" }
 
 
@@ -67,6 +68,7 @@ members = [
   "core",
   "transports/tcp",
   "transports/dns",
+  "transports/websocket",
   "multiaddr",
   "swarm",
 ]
