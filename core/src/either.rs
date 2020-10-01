@@ -26,56 +26,118 @@ use crate::upgrade::ProtocolName;
 use crate::{Multiaddr, PeerId, PublicKey};
 use async_trait::async_trait;
 use futures::future::BoxFuture;
-use libp2p_traits::{ReadEx, WriteEx};
-use std::io;
+use futures::{
+    io::{IoSlice, IoSliceMut},
+    prelude::*,
+};
+//use libp2p_traits::{ReadEx, WriteEx};
+use pin_project::pin_project;
+//use std::io;
+//use std::fmt;
+use std::{io::Error as IoError, pin::Pin, task::Context, task::Poll};
 
+#[pin_project(project = EitherOutputProj)]
 #[derive(Debug, Copy, Clone)]
 pub enum EitherOutput<A, B> {
-    A(A),
-    B(B),
+    A(#[pin] A),
+    B(#[pin] B),
 }
 
-#[async_trait]
-impl<A, B> ReadEx for EitherOutput<A, B>
+impl<A, B> AsyncRead for EitherOutput<A, B>
 where
-    A: ReadEx + Send,
-    B: ReadEx + Send,
+    A: AsyncRead,
+    B: AsyncRead,
 {
-    async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match self {
-            EitherOutput::A(a) => ReadEx::read2(a, buf).await,
-            EitherOutput::B(b) => ReadEx::read2(b, buf).await,
+    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<Result<usize, IoError>> {
+        match self.project() {
+            EitherOutputProj::A(a) => AsyncRead::poll_read(a, cx, buf),
+            EitherOutputProj::B(b) => AsyncRead::poll_read(b, cx, buf),
+        }
+    }
+
+    fn poll_read_vectored(self: Pin<&mut Self>, cx: &mut Context<'_>, bufs: &mut [IoSliceMut<'_>]) -> Poll<Result<usize, IoError>> {
+        match self.project() {
+            EitherOutputProj::A(a) => AsyncRead::poll_read_vectored(a, cx, bufs),
+            EitherOutputProj::B(b) => AsyncRead::poll_read_vectored(b, cx, bufs),
         }
     }
 }
 
-#[async_trait]
-impl<A, B> WriteEx for EitherOutput<A, B>
+impl<A, B> AsyncWrite for EitherOutput<A, B>
 where
-    A: WriteEx + Send,
-    B: WriteEx + Send,
+    A: AsyncWrite,
+    B: AsyncWrite,
 {
-    async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
-        match self {
-            EitherOutput::A(a) => WriteEx::write2(a, buf).await,
-            EitherOutput::B(b) => WriteEx::write2(b, buf).await,
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, IoError>> {
+        match self.project() {
+            EitherOutputProj::A(a) => AsyncWrite::poll_write(a, cx, buf),
+            EitherOutputProj::B(b) => AsyncWrite::poll_write(b, cx, buf),
         }
     }
 
-    async fn flush2(&mut self) -> io::Result<()> {
-        match self {
-            EitherOutput::A(a) => WriteEx::flush2(a).await,
-            EitherOutput::B(b) => WriteEx::flush2(b).await,
+    fn poll_write_vectored(self: Pin<&mut Self>, cx: &mut Context<'_>, bufs: &[IoSlice<'_>]) -> Poll<Result<usize, IoError>> {
+        match self.project() {
+            EitherOutputProj::A(a) => AsyncWrite::poll_write_vectored(a, cx, bufs),
+            EitherOutputProj::B(b) => AsyncWrite::poll_write_vectored(b, cx, bufs),
         }
     }
 
-    async fn close2(&mut self) -> io::Result<()> {
-        match self {
-            EitherOutput::A(a) => WriteEx::close2(a).await,
-            EitherOutput::B(b) => WriteEx::close2(b).await,
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), IoError>> {
+        match self.project() {
+            EitherOutputProj::A(a) => AsyncWrite::poll_flush(a, cx),
+            EitherOutputProj::B(b) => AsyncWrite::poll_flush(b, cx),
+        }
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), IoError>> {
+        match self.project() {
+            EitherOutputProj::A(a) => AsyncWrite::poll_close(a, cx),
+            EitherOutputProj::B(b) => AsyncWrite::poll_close(b, cx),
         }
     }
 }
+
+// #[async_trait]
+// impl<A, B> ReadEx for EitherOutput<A, B>
+// where
+//     A: ReadEx + Send,
+//     B: ReadEx + Send,
+// {
+//     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+//         match self {
+//             EitherOutput::A(a) => ReadEx::read2(a, buf).await,
+//             EitherOutput::B(b) => ReadEx::read2(b, buf).await,
+//         }
+//     }
+// }
+
+// #[async_trait]
+// impl<A, B> WriteEx for EitherOutput<A, B>
+// where
+//     A: WriteEx + Send,
+//     B: WriteEx + Send,
+// {
+//     async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
+//         match self {
+//             EitherOutput::A(a) => WriteEx::write2(a, buf).await,
+//             EitherOutput::B(b) => WriteEx::write2(b, buf).await,
+//         }
+//     }
+
+//     async fn flush2(&mut self) -> io::Result<()> {
+//         match self {
+//             EitherOutput::A(a) => WriteEx::flush2(a).await,
+//             EitherOutput::B(b) => WriteEx::flush2(b).await,
+//         }
+//     }
+
+//     async fn close2(&mut self) -> io::Result<()> {
+//         match self {
+//             EitherOutput::A(a) => WriteEx::close2(a).await,
+//             EitherOutput::B(b) => WriteEx::close2(b).await,
+//         }
+//     }
+// }
 
 impl<A, B> SecureInfo for EitherOutput<A, B>
 where

@@ -301,7 +301,7 @@ impl TcpListenStream {
 */
 /// Wraps around a `TcpStream` and adds logging for important events.
 #[cfg_attr(docsrs, doc(cfg(feature = $feature_name)))]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TcpTransStream {
     inner: TcpStream,
     la: Multiaddr,
