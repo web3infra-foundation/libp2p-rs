@@ -222,7 +222,11 @@ impl<C> Clone for Yamux<C> {
 
 impl<C> fmt::Debug for Yamux<C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Yamux").field("Id", &self.id).finish()
+        f.debug_struct("Yamux")
+            .field("Id", &self.id)
+            .field("Ra", &self.ra)
+            .field("Rid", &self.remote_peer_id)
+            .finish()
     }
 }
 
