@@ -41,7 +41,7 @@ pub struct Substream<TStream> {
     /// The remote multiaddr of the sub stream.
     ra: Multiaddr,
     /// The control channel for closing stream
-    ctrl: Option<mpsc::Sender<SwarmControlCmd<Substream<TStream>>>>,
+    ctrl: mpsc::Sender<SwarmControlCmd<Substream<TStream>>>,
     /// The statistics of the substream
     stats: Arc<SubstreamStats>,
 }
@@ -64,7 +64,7 @@ impl<TStream: StreamInfo> Substream<TStream> {
                       cid: ConnectionId,
                       la: Multiaddr,
                       ra: Multiaddr,
-                      ctrl: Option<mpsc::Sender<SwarmControlCmd<Substream<TStream>>>>,)
+                      ctrl: mpsc::Sender<SwarmControlCmd<Substream<TStream>>>,)
         -> Self {
         Self { inner, protocol, dir, cid, la, ra, ctrl, stats: Arc::new(SubstreamStats::default()) }
     }
@@ -76,11 +76,16 @@ impl<TStream: StreamInfo> Substream<TStream> {
         let cid = ConnectionId::default();
         let la = Multiaddr::empty();
         let ra = Multiaddr::empty();
-        Self { inner, protocol, dir, cid, la, ra, ctrl: None, stats: Arc::new(SubstreamStats::default()) }
+        let (ctrl, _) = mpsc::channel(0);
+        Self { inner, protocol, dir, cid, la, ra, ctrl, stats: Arc::new(SubstreamStats::default()) }
     }
     /// Returns the protocol of the sub stream.
     pub fn protocol(&self) -> ProtocolId {
         self.protocol
+    }
+    /// Returns the direction of the sub stream.
+    pub fn dir(&self) -> Direction {
+        self.dir
     }
     /// Returns the connection id of the sub stream.
     pub fn cid(&self) -> ConnectionId {
@@ -133,12 +138,10 @@ impl<TStream: StreamInfo + WriteEx + Send> WriteEx for Substream<TStream> {
 
     // try to send a CloseStream command to Swarm, then close inner stream
     async fn close2(&mut self) -> Result<(), io::Error> {
-        if let Some(mut cmd) = self.ctrl.take() {
-            // to ask Swarm to remove myself
-            let cid = self.cid;
-            let sid = self.id();
-            let _ = cmd.send(SwarmControlCmd::CloseStream(cid, sid)).await;
-        }
+        // to ask Swarm to remove myself
+        let cid = self.cid;
+        let sid = self.id();
+        let _ = self.ctrl.send(SwarmControlCmd::CloseStream(cid, sid)).await;
         self.inner.close2().await
     }
 }
