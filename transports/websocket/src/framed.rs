@@ -5,12 +5,13 @@ use either::Either;
 use futures::prelude::*;
 use libp2p_core::transport::ConnectionInfo;
 use libp2p_core::{
-    either::EitherOutput,
+    either::{EitherOutput,EitherTransport,EitherTransportListener},
     multiaddr::{Multiaddr, Protocol},
     transport::{TransportError, TransportListener},
     Transport,
 };
 use libp2p_tcp::{TcpConfig, TcpTransListener, TcpTransStream};
+use libp2p_dns::DnsConfig;
 use log::{debug, error, trace};
 use soketto::{connection, extension::deflate::Deflate, handshake};
 use url::Url;
@@ -23,12 +24,12 @@ const MAX_DATA_SIZE: usize = 256 * 1024 * 1024;
 /// [`AsyncWrite`]. See [`crate::WsConfig`] if you require the latter.
 #[derive(Debug, Clone)]
 pub struct WsConfig {
-    transport: TcpConfig,
-    pub inner_config: InnerConfig,
+    transport: EitherTransport<TcpConfig,DnsConfig<TcpConfig>>,
+    pub(crate) inner_config: InnerConfig,
 }
 
 #[derive(Debug, Clone)]
-pub struct InnerConfig {
+pub(crate) struct InnerConfig {
     max_data_size: usize,
     tls_config: tls::Config,
     max_redirects: u8,
@@ -37,7 +38,7 @@ pub struct InnerConfig {
 
 impl WsConfig {
     /// Create a new websocket transport based on another transport.
-    pub fn new(transport: TcpConfig) -> Self {
+    pub fn new(transport: EitherTransport<TcpConfig,DnsConfig<TcpConfig>>) -> Self {
         WsConfig {
             transport,
             inner_config: InnerConfig::new(),
@@ -93,13 +94,13 @@ impl InnerConfig {
 
 #[derive(Debug)]
 pub struct WsTransListener {
-    inner: TcpTransListener,
+    inner: EitherTransportListener<TcpTransListener, TcpTransListener>,
     inner_config: InnerConfig,
     use_tls: bool,
 }
 
 impl WsTransListener {
-    pub(crate) fn new(inner: TcpTransListener, inner_config: InnerConfig, use_tls: bool) -> Self {
+    pub(crate) fn new(inner: EitherTransportListener<TcpTransListener, TcpTransListener>, inner_config: InnerConfig, use_tls: bool) -> Self {
         Self {
             inner,
             inner_config,
@@ -110,7 +111,7 @@ impl WsTransListener {
 
 #[async_trait]
 impl TransportListener for WsTransListener {
-    type Output = Connection<TcpTransStream>;
+    type Output = Connection<EitherOutput<TcpTransStream,TcpTransStream>>;
     async fn accept(&mut self) -> Result<Self::Output, TransportError> {
         let raw_stream = self.inner.accept().await?;
         let inner_raw_stream = raw_stream.clone();
@@ -176,7 +177,7 @@ impl TransportListener for WsTransListener {
 
 #[async_trait]
 impl Transport for WsConfig {
-    type Output = Connection<TcpTransStream>;
+    type Output = Connection<EitherOutput<TcpTransStream,TcpTransStream>>;
     type Listener = WsTransListener;
     fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
         let mut inner_addr = addr.clone();
@@ -235,10 +236,12 @@ impl Transport for WsConfig {
 
 impl WsConfig {
     /// Attempty to dial the given address and perform a websocket handshake.
-    async fn dial_once(self, address: Multiaddr) -> Result<Either<String, Connection<TcpTransStream>>, WsError> {
+    async fn dial_once(self, address: Multiaddr) -> Result<Either<String, Connection<EitherOutput<TcpTransStream,TcpTransStream>>>, WsError> {
         trace!("dial address: {}", address);
         let (host_port, dns_name) = host_and_dnsname(&address)?;
-
+        if dns_name.is_some(){
+         trace!("host_port: {:?}  dns_name:{:?}", host_port,dns_name.clone().unwrap());
+        }
         let mut inner_addr = address.clone();
 
         let (use_tls, path) = match inner_addr.pop() {

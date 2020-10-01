@@ -8,6 +8,8 @@ pub mod tls;
 use async_trait::async_trait;
 use libp2p_core::{multiaddr::Multiaddr, transport::TransportError, Transport};
 use libp2p_tcp::{TcpConfig, TcpTransStream};
+use libp2p_core::either::{EitherTransport,EitherOutput};
+use libp2p_dns::DnsConfig;
 
 /// A Websocket transport.
 #[derive(Debug, Clone)]
@@ -18,7 +20,12 @@ pub struct WsConfig {
 impl WsConfig {
     /// Create a new websocket transport based on the given transport.
     pub fn new() -> Self {
-        framed::WsConfig::new(TcpConfig::default()).into()
+        framed::WsConfig::new(EitherTransport::A(TcpConfig::default())).into()
+    }
+
+     /// Create a new websocket transport based on the given transport.
+     pub fn new_with_dns() -> Self {
+        framed::WsConfig::new(EitherTransport::B(DnsConfig::new(TcpConfig::default()))).into()
     }
 
     /// Return the configured maximum number of redirects.
@@ -64,7 +71,7 @@ impl From<framed::WsConfig> for WsConfig {
 
 #[async_trait]
 impl Transport for WsConfig {
-    type Output = connection::Connection<TcpTransStream>;
+    type Output = connection::Connection<EitherOutput<TcpTransStream,TcpTransStream>>;
     type Listener = framed::WsTransListener;
     fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
         self.inner.listen_on(addr)
@@ -93,7 +100,23 @@ mod tests {
             server(listen_addr).await;
         });
         let c = task::spawn(async {
-            client(dial_addr).await;
+            client(dial_addr,false).await;
+        });
+        futures::executor::block_on(async {
+            futures::join!(s, c);
+        });
+    }
+
+    #[test]
+    fn dialer_connects_to_listener_dns() {
+        env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();
+        let listen_addr = "/ip4/127.0.0.1/tcp/38099/ws".parse().unwrap();
+        let dial_addr = "/dns4/localhost/tcp/38099/ws".parse().unwrap();
+        let s = task::spawn(async {
+            server(listen_addr).await;
+        });
+        let c = task::spawn(async {
+            client(dial_addr,true).await;
         });
         futures::executor::block_on(async {
             futures::join!(s, c);
@@ -109,7 +132,7 @@ mod tests {
             server(listen_addr).await;
         });
         let c = task::spawn(async {
-            client(dial_addr).await;
+            client(dial_addr,false).await;
         });
         futures::executor::block_on(async {
             futures::join!(s, c);
@@ -117,7 +140,7 @@ mod tests {
     }
 
     async fn server(listen_addr: Multiaddr) {
-        let ws_config = WsConfig::new();
+        let ws_config:WsConfig= WsConfig::new();
         let mut listener = ws_config.clone().listen_on(listen_addr.clone()).expect("listener");
         let mut stream = listener.accept().await.expect("no error");
         while let Some(data) = stream.next().await {
@@ -125,8 +148,13 @@ mod tests {
         }
     }
 
-    async fn client(dial_addr: Multiaddr) {
-        let ws_config = WsConfig::new();
+    async fn client(dial_addr: Multiaddr,dns:bool) {
+        let ws_config:WsConfig;
+        if dns {
+            ws_config = WsConfig::new_with_dns();
+        }else{
+            ws_config = WsConfig::new();
+        }
         let conn = ws_config.dial(dial_addr.clone()).await;
         assert_eq!(true, conn.is_ok());
         let r = conn.unwrap().send_data(vec![1, 23, 5]).await;

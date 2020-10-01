@@ -12,13 +12,13 @@ use std::{convert::TryInto, fmt, io, mem, pin::Pin, task::Context, task::Poll};
 
 //type SokettoReceiver<T>=soketto::Receiver<EitherOutput<EitherOutput<client::TlsStream<T>, server::TlsStream<T>>, T>>;
 //type SokettoSender<T>=soketto::Sender<EitherOutput<EitherOutput<client::TlsStream<T>, server::TlsStream<T>>, T>>;
-pub type TlsOrPlain<T> = EitherOutput<EitherOutput<client::TlsStream<T>, server::TlsStream<T>>, T>;
+pub(crate) type TlsOrPlain<T> = EitherOutput<EitherOutput<client::TlsStream<T>, server::TlsStream<T>>, T>;
 
 /// The websocket connection.
 pub struct Connection<T> {
     //reader:SokettoReceiver<T>,
     //writer:SokettoSender<T>,
-    inner: TcpTransStream,
+    inner: EitherOutput<TcpTransStream,TcpTransStream>,
     receiver: BoxStream<'static, Result<IncomingData, connection::Error>>,
     sender: Pin<Box<dyn Sink<OutgoingData, Error = connection::Error> + Send>>,
     _marker: std::marker::PhantomData<T>,
@@ -49,6 +49,7 @@ pub enum IncomingData {
     Pong(Vec<u8>),
 }
 
+#[allow(dead_code)]
 impl IncomingData {
     pub fn is_data(&self) -> bool {
         self.is_binary() || self.is_text()
@@ -119,7 +120,7 @@ impl<T> Connection<T>
 where
     T: AsyncRead + AsyncWrite + Send + Unpin + 'static,
 {
-    pub(crate) fn new(inner: TcpTransStream, builder: connection::Builder<TlsOrPlain<T>>, la: Multiaddr, ra: Multiaddr) -> Self {
+    pub(crate) fn new(inner: EitherOutput<TcpTransStream,TcpTransStream>, builder: connection::Builder<TlsOrPlain<T>>, la: Multiaddr, ra: Multiaddr) -> Self {
         let (sender, receiver) = builder.finish();
         let sink = quicksink::make_sink(sender, |mut sender, action| async move {
             match action {
@@ -266,6 +267,7 @@ where
     T: AsyncRead + AsyncWrite + Send + Unpin + 'static,
 {
     async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
+        trace!("write buf : {:?}", buf);
         let _ = self.send_data(buf.to_vec()).await;
         Ok(buf.len())
     }

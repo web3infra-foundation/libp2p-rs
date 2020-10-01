@@ -62,6 +62,7 @@ impl Config {
             server: None,
         }
     }
+
 }
 
 /// Setup the rustls client configuration.
@@ -72,6 +73,7 @@ fn client_config() -> rustls::ClientConfig {
 }
 
 /// TLS configuration builder.
+#[derive(Clone)]
 pub struct Builder {
     client: rustls::ClientConfig,
     server: Option<rustls::ServerConfig>,

@@ -30,11 +30,13 @@ use futures::{
     io::{IoSlice, IoSliceMut},
     prelude::*,
 };
-//use libp2p_traits::{ReadEx, WriteEx};
+use libp2p_traits::{ReadEx, WriteEx};
 use pin_project::pin_project;
 //use std::io;
 //use std::fmt;
 use std::{io::Error as IoError, pin::Pin, task::Context, task::Poll};
+use crate::transport::{Transport};
+use crate::transport::TransportListener;
 
 #[pin_project(project = EitherOutputProj)]
 #[derive(Debug, Copy, Clone)]
@@ -259,3 +261,67 @@ impl<A: ProtocolName, B: ProtocolName> ProtocolName for EitherName<A, B> {
         }
     }
 }
+
+
+
+#[derive(Debug, Copy, Clone)]
+pub enum EitherTransport<A, B> {
+    A(A),
+    B(B),
+}
+
+#[async_trait]
+impl<A, B> Transport for EitherTransport<A, B>
+where
+    B: Transport,
+    A: Transport,
+{
+    type Output = EitherOutput<A::Output, B::Output>;
+    type Listener = EitherTransportListener<A::Listener, B::Listener>;
+
+    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
+        match self {
+            EitherTransport::A(a) => Ok(EitherTransportListener::A(a.listen_on(addr)?)),
+            EitherTransport::B(b) => Ok(EitherTransportListener::B(b.listen_on(addr)?)),
+        }
+    }
+
+    async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
+        match self {
+            EitherTransport::A(a) => Ok(EitherOutput::A(a.dial(addr).await?)),
+            EitherTransport::B(b) => Ok(EitherOutput::B(b.dial(addr).await?)),
+        }
+    }
+}
+
+
+
+
+#[derive(Debug, Copy, Clone)]
+pub enum EitherTransportListener<A, B> {
+    A(A),
+    B(B),
+}
+#[async_trait]
+impl<A, B> TransportListener for EitherTransportListener<A, B> 
+where
+    B: TransportListener,
+    A: TransportListener,
+{
+    type Output = EitherOutput<A::Output, B::Output>;
+
+    async fn accept(&mut self) -> Result<Self::Output, TransportError> {
+        match self {
+            EitherTransportListener::A(a) => Ok(EitherOutput::A(a.accept().await?)),
+            EitherTransportListener::B(b) => Ok(EitherOutput::B(b.accept().await?)),
+        }
+    }
+
+    fn multi_addr(&self) -> Multiaddr {
+        match self {
+            EitherTransportListener::A(a) =>a.multi_addr(),
+            EitherTransportListener::B(b) => b.multi_addr(),
+        }
+    }
+}
+
