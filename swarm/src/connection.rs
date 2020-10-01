@@ -25,7 +25,7 @@ use crate::substream::{StreamId, Substream};
 use crate::{identify, ping, Multiaddr, PeerId, ProtocolId, SwarmError, SwarmEvent};
 
 /// The direction of a peer-to-peer communication channel.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Direction {
     /// The socket comes from a dialer.
     Outbound,
@@ -58,8 +58,8 @@ pub struct Connection<TMuxer: StreamMuxer> {
     /// The ctrl tx channel.
     ctrl: mpsc::Sender<SwarmControlCmd<Substream<TMuxer::Substream>>>,
     /// Handler that processes substreams.
-    //pub(crate) substreams: SmallVec<[TMuxer::Substream; 8]>,
-    substreams: SmallVec<[StreamId; 8]>,
+    substreams: SmallVec<[Substream<TMuxer::Substream>; 8]>,
+    //substreams: SmallVec<[StreamId; 8]>,
     /// Direction of this connection
     dir: Direction,
     /// Indicates if Ping task is running.
@@ -155,24 +155,17 @@ where
         let cid = self.id();
         let stream_muxer = self.stream_muxer().clone();
         let mut tx = self.tx.clone();
-        let ctrl = Some(self.ctrl.clone());
+        let ctrl = self.ctrl.clone();
 
         task::spawn(async move {
             let result = open_stream_internal(cid, stream_muxer, pids, ctrl).await;
 
             // TODO: how to extract the error from TransportError, ??? it doesn't implement 'Clone'
             // So, at this moment, make a new 'TransportError::Internal'
-            let nr = result.as_ref().map(|s| s.id()).map_err(|_| TransportError::Internal);
-
+            let nr = result.as_ref().map(|s| s.clone()).map_err(|_| TransportError::Internal);
             match nr {
-                Ok(sid) => {
-                    let _ = tx
-                        .send(SwarmEvent::StreamOpened {
-                            dir: Direction::Outbound,
-                            cid,
-                            sid,
-                        })
-                        .await;
+                Ok(sub_stream) => {
+                    let _ = tx.send(SwarmEvent::StreamOpened { sub_stream }).await;
                 }
                 Err(err) => {
                     let _ = tx.send(SwarmEvent::StreamError { cid, error: err }).await;
@@ -234,14 +227,14 @@ where
     }
 
     /// Adds a substream id to the list.
-    pub(crate) fn add_stream(&mut self, sid: StreamId) {
-        log::trace!("adding sub {:?} to {:?}", sid, self);
-        self.substreams.push(sid);
+    pub(crate) fn add_stream(&mut self, sub_stream: Substream<TMuxer::Substream>) {
+        log::trace!("adding sub {:?} to {:?}", sub_stream, self);
+        self.substreams.push(sub_stream);
     }
     /// Removes a substream id from the list.
     pub(crate) fn del_stream(&mut self, sid: StreamId) {
         log::trace!("removing sub {:?} from {:?}", sid, self);
-        self.substreams.retain(|id| id != &sid);
+        self.substreams.retain(|s| s.id() != sid);
     }
 
     /// Returns how many substreams in the list.
@@ -275,12 +268,12 @@ where
 
         let cid = self.id();
         let stream_muxer = self.stream_muxer.clone();
-        let tx = self.tx.clone();
+        let mut tx = self.tx.clone();
         let flag = self.ping_running.clone();
         let pids = vec![PING_PROTOCOL];
+        let ctrl = self.ctrl.clone();
 
         let handle = task::spawn(async move {
-            let mut tx2 = tx.clone();
             loop {
                 if !flag.load(Ordering::Relaxed) {
                     break;
@@ -292,16 +285,21 @@ where
                 let stream_muxer = stream_muxer.clone();
                 let pids = pids.clone();
 
-                let r = open_stream_internal(cid, stream_muxer, pids, None).await;
+                let ctrl2 = ctrl.clone();
+                let r = open_stream_internal(cid, stream_muxer, pids, ctrl2).await;
                 let r = match r {
-                    Ok(stream) => ping::ping(stream, timeout).await.map_err(|e| e.into()),
+                    Ok(stream) => {
+                        let sub_stream = stream.clone();
+                        let _ = tx.send(SwarmEvent::StreamOpened { sub_stream }).await;
+                        ping::ping(stream, timeout).await.map_err(|e| e.into())
+                    },
                     Err(err) => {
                         // looks like the peer doesn't support the protocol
                         log::warn!("Ping protocol not supported: {:?}", err);
                         Err(err)
                     }
                 };
-                let _ = tx2
+                let _ = tx
                     .send(SwarmEvent::PingResult {
                         cid,
                         result: r.map_err(|e| e.into()),
@@ -329,12 +327,17 @@ where
         let cid = self.id();
         let stream_muxer = self.stream_muxer.clone();
         let mut tx = self.tx.clone();
+        let ctrl = self.ctrl.clone();
         let pids = vec![IDENTIFY_PROTOCOL];
 
         let handle = task::spawn(async move {
-            let r = open_stream_internal(cid, stream_muxer, pids, None).await;
+            let r = open_stream_internal(cid, stream_muxer, pids, ctrl).await;
             let r = match r {
-                Ok(stream) => identify::consume_message(stream).await,
+                Ok(stream) => {
+                    let sub_stream = stream.clone();
+                    let _ = tx.send(SwarmEvent::StreamOpened { sub_stream }).await;
+                    identify::consume_message(stream).await
+                },
                 Err(err) => {
                     // looks like the peer doesn't support the protocol
                     log::warn!("Identify protocol not supported: {:?}", err);
@@ -366,6 +369,7 @@ where
         let cid = self.id();
         let stream_muxer = self.stream_muxer.clone();
         let pids = vec![IDENTIFY_PUSH_PROTOCOL];
+        let ctrl = self.ctrl.clone();
 
         let info = IdentifyInfo {
             public_key: Keypair::generate_ed25519_fixed().public(),
@@ -375,10 +379,14 @@ where
             protocols: vec!["/p1".to_string(), "/p1".to_string()],
         };
 
+        let mut tx = self.tx.clone();
+
         let handle = task::spawn(async move {
-            let r = open_stream_internal(cid, stream_muxer, pids, None).await;
+            let r = open_stream_internal(cid, stream_muxer, pids, ctrl).await;
             match r {
                 Ok(stream) => {
+                    let sub_stream = stream.clone();
+                    let _ = tx.send(SwarmEvent::StreamOpened { sub_stream }).await;
                     // ignore the error
                     let _ = identify::produce_message(stream, info).await;
                 }
@@ -400,13 +408,32 @@ where
             h.cancel().await;
         }
     }
+
+    pub(crate) fn info(&self) -> ConnectionInfo {
+        // calculate inbound
+        let num_inbound_streams = self.substreams.iter().fold(0usize,|mut acc, s| {
+            if s.dir() == Direction::Inbound {
+                acc += 1;
+            }
+            acc
+        });
+        let num_outbound_streams = self.substreams.len() - num_inbound_streams;
+        ConnectionInfo {
+            la: self.local_addr(),
+            ra: self.remote_addr(),
+            local_peer_id: self.local_peer(),
+            remote_peer_id: self.remote_peer(),
+            num_inbound_streams,
+            num_outbound_streams,
+        }
+    }
 }
 
 async fn open_stream_internal<T>(
     cid: ConnectionId,
     mut stream_muxer: T,
     pids: Vec<ProtocolId>,
-    ctrl: Option<mpsc::Sender<SwarmControlCmd<Substream<T::Substream>>>>,
+    ctrl: mpsc::Sender<SwarmControlCmd<Substream<T::Substream>>>,
 ) -> Result<Substream<T::Substream>, TransportError>
 where
     T: StreamMuxer,
@@ -450,3 +477,23 @@ impl fmt::Display for ConnectionLimit {
 
 /// A `ConnectionLimit` can represent an error if it has been exceeded.
 impl Error for ConnectionLimit {}
+
+
+/// Information about the network obtained by [`Network::info()`].
+#[derive(Debug)]
+pub struct ConnectionInfo {
+    /// The local multiaddr of this connection.
+    pub la: Multiaddr,
+    /// The remote multiaddr of this connection.
+    pub ra: Multiaddr,
+    /// The local peer ID.
+    pub local_peer_id: PeerId,
+    /// The remote peer ID.
+    pub remote_peer_id: PeerId,
+    /// The total number of inbound sub streams.
+    pub num_inbound_streams: usize,
+    /// The total number of outbound sub streams.
+    pub num_outbound_streams: usize,
+    // /// The Sub-streams.
+    // pub streams: Vec<StreamStats>,
+}
