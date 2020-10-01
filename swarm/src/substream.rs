@@ -1,17 +1,17 @@
 use async_trait::async_trait;
-use std::{fmt, io};
 use futures::channel::mpsc;
 use futures::SinkExt;
+use std::{fmt, io};
 
-use libp2p_traits::{ReadEx, WriteEx};
+use crate::connection::{ConnectionId, Direction};
+use crate::control::SwarmControlCmd;
+use crate::ProtocolId;
 use libp2p_core::muxing::StreamInfo;
 use libp2p_core::upgrade::ProtocolName;
-use crate::control::SwarmControlCmd;
-use crate::connection::{ConnectionId, Direction};
-use crate::ProtocolId;
+use libp2p_core::Multiaddr;
+use libp2p_traits::{ReadEx, WriteEx};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use libp2p_core::Multiaddr;
 
 /// The Id of sub stream
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -58,15 +58,25 @@ impl<TStream: fmt::Debug> fmt::Debug for Substream<TStream> {
 }
 
 impl<TStream: StreamInfo> Substream<TStream> {
-    pub(crate) fn new(inner: TStream,
-                      dir: Direction,
-                      protocol: ProtocolId,
-                      cid: ConnectionId,
-                      la: Multiaddr,
-                      ra: Multiaddr,
-                      ctrl: Option<mpsc::Sender<SwarmControlCmd<Substream<TStream>>>>,)
-        -> Self {
-        Self { inner, protocol, dir, cid, la, ra, ctrl, stats: Arc::new(SubstreamStats::default()) }
+    pub(crate) fn new(
+        inner: TStream,
+        dir: Direction,
+        protocol: ProtocolId,
+        cid: ConnectionId,
+        la: Multiaddr,
+        ra: Multiaddr,
+        ctrl: Option<mpsc::Sender<SwarmControlCmd<Substream<TStream>>>>,
+    ) -> Self {
+        Self {
+            inner,
+            protocol,
+            dir,
+            cid,
+            la,
+            ra,
+            ctrl,
+            stats: Arc::new(SubstreamStats::default()),
+        }
     }
     /// For internal test only
     #[allow(dead_code)]
@@ -76,7 +86,16 @@ impl<TStream: StreamInfo> Substream<TStream> {
         let cid = ConnectionId::default();
         let la = Multiaddr::empty();
         let ra = Multiaddr::empty();
-        Self { inner, protocol, dir, cid, la, ra, ctrl: None, stats: Arc::new(SubstreamStats::default()) }
+        Self {
+            inner,
+            protocol,
+            dir,
+            cid,
+            la,
+            ra,
+            ctrl: None,
+            stats: Arc::new(SubstreamStats::default()),
+        }
     }
     /// Returns the protocol of the sub stream.
     pub fn protocol(&self) -> ProtocolId {
@@ -107,11 +126,10 @@ impl<TStream: StreamInfo> Substream<TStream> {
 #[async_trait]
 impl<TStream: ReadEx + Send> ReadEx for Substream<TStream> {
     async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
-        self.inner.read2(buf).await
-            .map(|n|{
-                self.stats.byte_recv.fetch_add(n, Ordering::SeqCst);
-                self.stats.pkt_recv.fetch_add(1, Ordering::SeqCst);
-                n
+        self.inner.read2(buf).await.map(|n| {
+            self.stats.byte_recv.fetch_add(n, Ordering::SeqCst);
+            self.stats.pkt_recv.fetch_add(1, Ordering::SeqCst);
+            n
         })
     }
 }
@@ -119,12 +137,11 @@ impl<TStream: ReadEx + Send> ReadEx for Substream<TStream> {
 #[async_trait]
 impl<TStream: StreamInfo + WriteEx + Send> WriteEx for Substream<TStream> {
     async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
-        self.inner.write2(buf).await
-            .map(|n|{
-                self.stats.byte_sent.fetch_add(n, Ordering::SeqCst);
-                self.stats.pkt_sent.fetch_add(1, Ordering::SeqCst);
-                n
-            })
+        self.inner.write2(buf).await.map(|n| {
+            self.stats.byte_sent.fetch_add(n, Ordering::SeqCst);
+            self.stats.pkt_sent.fetch_add(1, Ordering::SeqCst);
+            n
+        })
     }
 
     async fn flush2(&mut self) -> Result<(), io::Error> {

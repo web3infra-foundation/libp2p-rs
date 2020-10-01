@@ -32,15 +32,15 @@
 //! `/dns/`, `/dns4/`, or `/dns6/` component, a DNS resolve will be performed and the component
 //! will be replaced with `/ip4/` and/or `/ip6/` components.
 //!
+use async_std::net::ToSocketAddrs;
 use async_trait::async_trait;
 use libp2p_core::{
-    Transport,
-    multiaddr::{Protocol, Multiaddr},
+    multiaddr::{Multiaddr, Protocol},
     transport::TransportError,
+    Transport,
 };
 use log::{error, trace};
 use std::{error, fmt, io};
-use async_std::net::ToSocketAddrs;
 
 /// Represents the configuration for a DNS transport capability of libp2p.
 ///
@@ -58,7 +58,7 @@ pub struct DnsConfig<T> {
 impl<T> DnsConfig<T> {
     /// Creates a new configuration object for DNS.
     pub fn new(inner: T) -> Self {
-        DnsConfig{inner}
+        DnsConfig { inner }
     }
 }
 
@@ -108,14 +108,14 @@ where
         let name = name.to_string();
         let to_resolve = format!("{}:0", name);
 
-
         let list = to_resolve[..].to_socket_addrs().await.map_err(|_| {
             error!("DNS resolver crashed");
             TransportError::ResolveFail(name.clone())
         })?;
         let list = list.map(|s| s.ip()).collect::<Vec<_>>();
 
-        let outcome = list.into_iter()
+        let outcome = list
+            .into_iter()
             .filter_map(|addr| {
                 if (dns4 && addr.is_ipv4()) || (dns6 && addr.is_ipv6()) {
                     Some(Protocol::from(addr))
@@ -125,7 +125,6 @@ where
             })
             .next()
             .ok_or_else(|| TransportError::ResolveFail(name.clone()))?;
-
 
         // let iter = addr.iter().map( |x| match x {
         //     Protocol::Dns(_) | Protocol::Dns4(_) | Protocol::Dns6(_) => {
@@ -150,29 +149,22 @@ pub enum DnsErr {
     /// Failed to find any IP address for this DNS address.
     ResolveFail(String),
     /// Error while resolving a DNS address.
-    ResolveError {
-        domain_name: String,
-        error: io::Error,
-    },
+    ResolveError { domain_name: String, error: io::Error },
     /// Found an IP address, but the underlying transport doesn't support the multiaddr.
     MultiaddrNotSupported,
 }
 
-impl fmt::Display for DnsErr
-{
+impl fmt::Display for DnsErr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DnsErr::ResolveFail(addr) => write!(f, "Failed to resolve DNS address: {:?}", addr),
-            DnsErr::ResolveError { domain_name, error } => {
-                write!(f, "Failed to resolve DNS address: {:?}; {:?}", domain_name, error)
-            },
+            DnsErr::ResolveError { domain_name, error } => write!(f, "Failed to resolve DNS address: {:?}; {:?}", domain_name, error),
             DnsErr::MultiaddrNotSupported => write!(f, "Resolve multiaddr not supported"),
         }
     }
 }
 
-impl error::Error for DnsErr
-{
+impl error::Error for DnsErr {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
             DnsErr::ResolveFail(_) => None,
@@ -185,12 +177,12 @@ impl error::Error for DnsErr
 #[cfg(test)]
 mod tests {
     use super::DnsConfig;
-    use libp2p_tcp::TcpConfig;
-    use multiaddr::Multiaddr;
-    use libp2p_core::Transport;
-    use libp2p_core::transport::TransportListener;
     use async_std::task;
+    use libp2p_core::transport::TransportListener;
+    use libp2p_core::Transport;
+    use libp2p_tcp::TcpConfig;
     use libp2p_traits::{ReadEx, WriteEx};
+    use multiaddr::Multiaddr;
 
     #[test]
     fn basic_resolve_v4() {
@@ -204,7 +196,7 @@ mod tests {
 
             let handle = task::spawn(async move {
                 let mut listener = transport.listen_on(listen_addr).unwrap();
-                let mut conn =  listener.accept().await.unwrap();
+                let mut conn = listener.accept().await.unwrap();
 
                 let mut buf = vec![0; msg.len()];
                 conn.read_exact2(&mut buf).await.expect("server read exact");
@@ -214,11 +206,9 @@ mod tests {
                 conn.close2().await.expect("server close connection");
             });
 
-
             let mut conn = client.dial(addr).await.expect("client dial");
             conn.write_all2(&msg[..]).await.expect("client write all");
             conn.close2().await.expect("client close connection");
-
 
             handle.await;
         });
@@ -236,7 +226,7 @@ mod tests {
 
             let handle = task::spawn(async move {
                 let mut listener = transport.listen_on(listen_addr).expect("S listen");
-                let mut conn =  listener.accept().await.unwrap();
+                let mut conn = listener.accept().await.unwrap();
 
                 let mut buf = vec![0; msg.len()];
                 conn.read_exact2(&mut buf).await.expect("S read exact");
@@ -245,7 +235,6 @@ mod tests {
 
                 conn.close2().await.expect("S close connection");
             });
-
 
             let mut conn = client.dial(addr).await.expect("C dial");
             conn.write_all2(&msg[..]).await.expect("C write all");

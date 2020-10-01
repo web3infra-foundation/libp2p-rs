@@ -4,8 +4,8 @@ use log::{error, info};
 use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::transport::TransportListener;
 use libp2p_core::{Multiaddr, Transport};
-use libp2p_tcp::TcpConfig;
 use libp2p_dns::DnsConfig;
+use libp2p_tcp::TcpConfig;
 use libp2p_traits::{ReadEx, WriteEx};
 
 use libp2p_core::identity::Keypair;

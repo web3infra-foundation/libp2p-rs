@@ -5,6 +5,7 @@ use std::time::Duration;
 extern crate lazy_static;
 
 use libp2p_core::identity::Keypair;
+use libp2p_core::muxing::StreamInfo;
 use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_core::{Multiaddr, PeerId};
@@ -17,7 +18,6 @@ use libp2p_tcp::TcpConfig;
 use libp2p_traits::{ReadEx, WriteEx};
 use secio;
 use yamux;
-use libp2p_core::muxing::StreamInfo;
 
 //use libp2p_swarm::Swarm::network::NetworkConfig;
 

@@ -34,9 +34,9 @@ use libp2p_traits::{ReadEx, WriteEx};
 use pin_project::pin_project;
 //use std::io;
 //use std::fmt;
-use std::{io::Error as IoError, pin::Pin, task::Context, task::Poll};
-use crate::transport::{Transport};
+use crate::transport::Transport;
 use crate::transport::TransportListener;
+use std::{io::Error as IoError, pin::Pin, task::Context, task::Poll};
 
 #[pin_project(project = EitherOutputProj)]
 #[derive(Debug, Copy, Clone)]
@@ -262,8 +262,6 @@ impl<A: ProtocolName, B: ProtocolName> ProtocolName for EitherName<A, B> {
     }
 }
 
-
-
 #[derive(Debug, Copy, Clone)]
 pub enum EitherTransport<A, B> {
     A(A),
@@ -294,16 +292,13 @@ where
     }
 }
 
-
-
-
 #[derive(Debug, Copy, Clone)]
 pub enum EitherTransportListener<A, B> {
     A(A),
     B(B),
 }
 #[async_trait]
-impl<A, B> TransportListener for EitherTransportListener<A, B> 
+impl<A, B> TransportListener for EitherTransportListener<A, B>
 where
     B: TransportListener,
     A: TransportListener,
@@ -319,9 +314,8 @@ where
 
     fn multi_addr(&self) -> Multiaddr {
         match self {
-            EitherTransportListener::A(a) =>a.multi_addr(),
+            EitherTransportListener::A(a) => a.multi_addr(),
             EitherTransportListener::B(b) => b.multi_addr(),
         }
     }
 }
-

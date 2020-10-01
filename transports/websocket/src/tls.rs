@@ -62,7 +62,6 @@ impl Config {
             server: None,
         }
     }
-
 }
 
 /// Setup the rustls client configuration.

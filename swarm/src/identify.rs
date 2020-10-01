@@ -30,10 +30,10 @@ use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_core::{Multiaddr, PublicKey};
 use libp2p_traits::{ReadEx, WriteEx};
 
+use crate::control::SwarmControlCmd;
 use crate::protocol_handler::{IProtocolHandler, ProtocolHandler};
 use crate::substream::Substream;
 use crate::{SwarmError, SwarmEvent};
-use crate::control::SwarmControlCmd;
 
 mod structs_proto {
     include!(concat!(env!("OUT_DIR"), "/structs.rs"));
@@ -51,9 +51,7 @@ pub struct IdentifyConfig {
 
 impl IdentifyConfig {
     pub fn new(push: bool) -> Self {
-        Self {
-            push,
-        }
+        Self { push }
     }
 }
 
@@ -164,17 +162,13 @@ pub(crate) struct IdentifyHandler<TSubstream> {
 
 impl<TSubstream> Clone for IdentifyHandler<TSubstream> {
     fn clone(&self) -> Self {
-        Self {
-            ctrl: self.ctrl.clone()
-        }
+        Self { ctrl: self.ctrl.clone() }
     }
 }
 
 impl<TSubstream> IdentifyHandler<TSubstream> {
     pub(crate) fn new(ctrl: mpsc::Sender<SwarmControlCmd<TSubstream>>) -> Self {
-        Self {
-            ctrl
-        }
+        Self { ctrl }
     }
 }
 
@@ -197,7 +191,7 @@ where
 
         let (tx, rx) = oneshot::channel();
         self.ctrl.send(SwarmControlCmd::IdentifyInfo(tx)).await?;
-        let identify_info= rx.await??;
+        let identify_info = rx.await??;
 
         log::trace!("IdentifyHandler sending identify info to client...");
 
@@ -267,12 +261,13 @@ where
 #[cfg(test)]
 mod tests {
     use super::IdentifyHandler;
+    use crate::control::SwarmControlCmd;
     use crate::identify::{IdentifyInfo, IdentifyPushHandler};
     use crate::protocol_handler::ProtocolHandler;
     use crate::substream::Substream;
     use crate::{identify, SwarmEvent};
     use futures::channel::mpsc;
-    use futures::{StreamExt};
+    use futures::StreamExt;
     use libp2p_core::identity::Keypair;
     use libp2p_core::transport::TransportListener;
     use libp2p_core::upgrade::UpgradeInfo;
@@ -281,7 +276,6 @@ mod tests {
         transport::{memory::MemoryTransport, Transport},
     };
     use rand::{thread_rng, Rng};
-    use crate::control::SwarmControlCmd;
 
     #[test]
     fn produce_and_consume() {
@@ -364,7 +358,7 @@ mod tests {
 
             let r = rx.next().await.unwrap();
 
-            if let SwarmEvent::IdentifyResult { cid:_, result } = r {
+            if let SwarmEvent::IdentifyResult { cid: _, result } = r {
                 assert_eq!(result.unwrap().0.public_key, pubkey);
             } else {
                 assert!(false);

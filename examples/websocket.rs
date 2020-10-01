@@ -5,6 +5,7 @@ use std::time::Duration;
 extern crate lazy_static;
 
 use libp2p_core::identity::Keypair;
+use libp2p_core::muxing::StreamInfo;
 use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_core::{Multiaddr, PeerId};
@@ -14,9 +15,8 @@ use libp2p_swarm::protocol_handler::{IProtocolHandler, ProtocolHandler};
 use libp2p_swarm::substream::Substream;
 use libp2p_swarm::{DummyProtocolHandler, Muxer, Swarm, SwarmError};
 use libp2p_traits::{ReadEx, WriteEx};
-use secio;
-use libp2p_core::muxing::StreamInfo;
 use libp2p_websocket::WsConfig;
+use secio;
 
 fn main() {
     env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -128,7 +128,7 @@ fn run_client() {
         assert_eq!(msg, &buf);
         task::sleep(Duration::from_secs(40)).await;
 
-        let _=stream.close2().await;
+        let _ = stream.close2().await;
 
         log::info!("shutdown is completed");
     });
