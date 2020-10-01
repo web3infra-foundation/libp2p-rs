@@ -8,7 +8,7 @@ use libp2p_traits::{ReadEx, WriteEx};
 
 /// Muxer that uses multistream-select to select and handle protocols.
 ///
-pub struct Muxer<TRaw> {
+pub(crate) struct Muxer<TRaw> {
     protocol_handlers: FnvHashMap<ProtocolId, IProtocolHandler<TRaw>>,
 }
 
@@ -38,7 +38,7 @@ impl<TRaw> Muxer<TRaw> {
 }
 
 impl<TRaw> Muxer<TRaw> {
-    pub fn add_protocol_handler(&mut self, p: IProtocolHandler<TRaw>) {
+    pub(crate) fn add_protocol_handler(&mut self, p: IProtocolHandler<TRaw>) {
         log::trace!(
             "adding protocol handler: {:?}",
             p.protocol_info().iter().map(|n| n.protocol_name_str()).collect::<Vec<_>>()
