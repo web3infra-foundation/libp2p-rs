@@ -14,7 +14,7 @@ use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_core::{Multiaddr, PeerId};
 use libp2p_swarm::protocol_handler::{IProtocolHandler, ProtocolHandler};
 use libp2p_swarm::substream::Substream;
-use libp2p_swarm::{Muxer, Swarm, SwarmError};
+use libp2p_swarm::{Swarm, SwarmError};
 use libp2p_tcp::TcpConfig;
 use libp2p_traits::{ReadEx, WriteEx};
 use libp2p_core::muxing::StreamInfo;
@@ -113,11 +113,9 @@ fn run_server() {
     let mux = yamux::Config::new();
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
 
-    let mut muxer = Muxer::new();
-
-    muxer.add_protocol_handler(Box::new(ChatHandler {}));
-
-    let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer);
+    let mut swarm = Swarm::new(PeerId::from_public_key(keys.public()))
+        .with_transport(Box::new(tu))
+        .with_protocol(Box::new(ChatHandler {}));
 
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
 
@@ -137,9 +135,9 @@ fn run_client() {
     let mux = yamux::Config::new();
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
 
-    let muxer = Muxer::new();
-
-    let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer)
+    let mut swarm = Swarm::new(PeerId::from_public_key(keys.public()))
+        .with_transport(Box::new(tu))
+        .with_protocol(Box::new(ChatHandler {}))
         .with_identify(IdentifyConfig::new(false));
 
     let mut control = swarm.control();

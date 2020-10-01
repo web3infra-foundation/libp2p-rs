@@ -1,12 +1,15 @@
-use crate::control::SwarmControlCmd;
-use crate::identify::{IdentifyInfo, IDENTIFY_PROTOCOL, IDENTIFY_PUSH_PROTOCOL};
-use crate::ping::PING_PROTOCOL;
-use crate::substream::{StreamId, Substream};
-use crate::{identify, ping, Multiaddr, PeerId, ProtocolId, SwarmError, SwarmEvent};
+use smallvec::SmallVec;
+use std::hash::Hash;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+use std::{error::Error, fmt};
 use async_std::task;
 use async_std::task::JoinHandle;
 use futures::channel::mpsc;
 use futures::prelude::*;
+
+use libp2p_traits::{ReadEx, WriteEx};
 use libp2p_core::identity::Keypair;
 use libp2p_core::multistream::Negotiator;
 use libp2p_core::muxing::StreamMuxer;
@@ -14,13 +17,12 @@ use libp2p_core::secure_io::SecureInfo;
 use libp2p_core::transport::TransportError;
 use libp2p_core::upgrade::ProtocolName;
 use libp2p_core::PublicKey;
-use libp2p_traits::{ReadEx, WriteEx};
-use smallvec::SmallVec;
-use std::hash::Hash;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
-use std::{error::Error, fmt};
+
+use crate::control::SwarmControlCmd;
+use crate::identify::{IdentifyInfo, IDENTIFY_PROTOCOL, IDENTIFY_PUSH_PROTOCOL};
+use crate::ping::PING_PROTOCOL;
+use crate::substream::{StreamId, Substream};
+use crate::{identify, ping, Multiaddr, PeerId, ProtocolId, SwarmError, SwarmEvent};
 
 /// The direction of a peer-to-peer communication channel.
 #[derive(Debug, Clone, PartialEq)]
