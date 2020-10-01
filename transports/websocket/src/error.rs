@@ -4,8 +4,9 @@ use libp2p_core::Multiaddr;
 use std::{error, fmt};
 
 /// Error in WebSockets.
+#[allow(dead_code)]
 #[derive(Debug)]
-pub enum WsError {
+pub(crate) enum WsError {
     /// Error in the transport layer underneath.
     Transport(TransportError),
     /// A TLS related error.

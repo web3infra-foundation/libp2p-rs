@@ -26,7 +26,9 @@ webpki-roots = "0.18"
 async-trait = "0.1"
 async-std = { version = "1.6"}
 libp2p-tcp = { path = "../tcp"}
+libp2p-dns = { path = "../dns"}
 
 [dev-dependencies]
 env_logger = "0.6.0"
 libp2p-tcp = { path = "../tcp"}
+libp2p-dns = { path = "../dns"}
