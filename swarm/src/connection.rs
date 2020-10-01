@@ -85,15 +85,11 @@ impl<TMuxer: StreamMuxer> PartialEq for Connection<TMuxer> {
     }
 }
 
-impl<TMuxer> fmt::Debug for Connection<TMuxer>
-where
-    TMuxer: StreamMuxer + SecureInfo + 'static,
-    TMuxer::Substream: ReadEx + WriteEx + Send + Unpin,
+impl<TMuxer: StreamMuxer> fmt::Debug for Connection<TMuxer>
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Connection")
             .field("id", &self.id)
-            .field("remote", &self.remote_peer())
             .field("muxer", &self.stream_muxer)
             .field("dir", &self.dir)
             .field("subs", &self.substreams)
