@@ -12,13 +12,12 @@ use libp2p_swarm::identify::IdentifyConfig;
 use libp2p_swarm::ping::PingConfig;
 use libp2p_swarm::protocol_handler::{IProtocolHandler, ProtocolHandler};
 use libp2p_swarm::substream::Substream;
-use libp2p_swarm::{DummyProtocolHandler, Muxer, Swarm, SwarmError};
+use libp2p_swarm::{DummyProtocolHandler, Swarm, SwarmError};
 use libp2p_tcp::TcpConfig;
 use libp2p_traits::{ReadEx, WriteEx};
+use libp2p_core::muxing::StreamInfo;
 use secio;
 use yamux;
-use libp2p_core::muxing::StreamInfo;
-use libp2p_core::transport::ITransport;
 
 //use libp2p_swarm::Swarm::network::NetworkConfig;
 
@@ -79,21 +78,12 @@ fn run_server() {
         }
     }
 
-    let mut muxer = Muxer::new();
-    let dummy_handler = Box::new(DummyProtocolHandler::new());
-    muxer.add_protocol_handler(dummy_handler);
-    muxer.add_protocol_handler(Box::new(MyProtocolHandler));
-
-    let mut transports = Vec::new();
-
-    let mut swarm = Swarm::new( PeerId::from_public_key(keys.public()), transports, muxer)
+    let mut swarm = Swarm::new( PeerId::from_public_key(keys.public()))
+        .with_transport(Box::new(tu))
+        .with_protocol(Box::new(DummyProtocolHandler::new()))
+        .with_protocol(Box::new(MyProtocolHandler))
         .with_ping(PingConfig::new().with_unsolicited(false).with_interval(Duration::from_secs(1)))
         .with_identify(IdentifyConfig::new(false));
-
-    let itu = Box::new(tu);
-    //transports.push(itu as Box<ITransport<_>>);
-    swarm.add_transport(itu);
-
 
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
 
@@ -116,19 +106,10 @@ fn run_client() {
     //let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
 
-    let mut muxer = Muxer::new();
-    // let dummy_handler = Box::new(DummyProtocolHandler::new());
-    // muxer.add_protocol_handler(dummy_handler);
-
-    let mut transports = Vec::new();
-
-    let mut swarm = Swarm::new(PeerId::from_public_key(keys.public()), transports, muxer)
+    let mut swarm = Swarm::new(PeerId::from_public_key(keys.public()))
+        .with_transport(Box::new(tu))
         .with_ping(PingConfig::new().with_unsolicited(false).with_interval(Duration::from_secs(1)))
         .with_identify(IdentifyConfig::new(false));
-
-    let itu = Box::new(tu);
-    //transports.push(itu as Box<ITransport<_>>);
-    swarm.add_transport(itu);
 
     let mut control = swarm.control();
 

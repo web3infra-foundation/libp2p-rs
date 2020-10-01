@@ -20,6 +20,12 @@ impl<TRaw> Clone for Muxer<TRaw> {
     }
 }
 
+impl<TRaw> Default for Muxer<TRaw> {
+    fn default() -> Self {
+        Muxer::new()
+    }
+}
+
 impl<TRaw> Muxer<TRaw> {
     /// Add `Muxer` on top of any `ProtoclHandler`·
     ///
