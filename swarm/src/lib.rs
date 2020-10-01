@@ -61,14 +61,14 @@ use std::{error, fmt, hash::Hash};
 
 use libp2p_core::peerstore::PeerStore;
 use libp2p_core::secure_io::SecureInfo;
-use libp2p_core::transport::{TransportListener, ConnectionInfo};
+use libp2p_core::transport::{ConnectionInfo, TransportListener};
 use libp2p_core::upgrade::ProtocolName;
 use libp2p_core::{muxing::StreamMuxer, transport::TransportError, Multiaddr, PeerId, Transport};
 use libp2p_traits::{ReadEx, WriteEx};
 
 use crate::connection::{Connection, ConnectionId, ConnectionLimit, Direction};
 use crate::control::SwarmControlCmd;
-use crate::identify::{IdentifyConfig, IdentifyHandler, IdentifyPushHandler, IdentifyInfo};
+use crate::identify::{IdentifyConfig, IdentifyHandler, IdentifyInfo, IdentifyPushHandler};
 use crate::network::NetworkInfo;
 use crate::ping::{PingConfig, PingHandler};
 use crate::registry::Addresses;
@@ -536,11 +536,7 @@ where
         Ok(())
     }
 
-    async fn on_close_stream(
-        &mut self,
-        cid: ConnectionId,
-        sid: StreamId,
-    ) -> Result<()> {
+    async fn on_close_stream(&mut self, cid: ConnectionId, sid: StreamId) -> Result<()> {
         let _ = self
             .event_sender
             .send(SwarmEvent::StreamClosed {
@@ -594,9 +590,11 @@ where
     }
     /// Returns identify information about the `Swarm`.
     pub fn identify_info(&self) -> IdentifyInfo {
-        let protocols = self.muxer.supported_protocols()
+        let protocols = self
+            .muxer
+            .supported_protocols()
             .into_iter()
-            .map(|p|p.protocol_name_str().to_string())
+            .map(|p| p.protocol_name_str().to_string())
             .collect();
         IdentifyInfo {
             // TODO: fix the pubkey
@@ -604,7 +602,7 @@ where
             protocol_version: "".to_string(),
             agent_version: "abc".to_string(),
             listen_addrs: self.listened_addrs.to_vec(),
-            protocols
+            protocols,
         }
     }
 
@@ -641,7 +639,7 @@ where
                             .send(SwarmEvent::IncomingConnectionError {
                                 // TODO:
                                 remote_addr: Multiaddr::empty(),
-                                error: err
+                                error: err,
                             })
                             .await;
                     }
@@ -923,7 +921,13 @@ where
         log::trace!("handle_connection_opened: {:?} {:?}", stream_muxer, dir);
 
         // clone the stream_muxer, and then wrap into Connection, task_handle will be assigned later
-        let mut connection = Connection::new(self.assign_cid(), stream_muxer.clone(), dir, self.event_sender.clone(), self.ctrl_sender.clone());
+        let mut connection = Connection::new(
+            self.assign_cid(),
+            stream_muxer.clone(),
+            dir,
+            self.event_sender.clone(),
+            self.ctrl_sender.clone(),
+        );
 
         // TODO: filtering the multiaddr, Err = AddrFiltered(addr)
 

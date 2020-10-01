@@ -9,16 +9,16 @@ use std::io::Write;
 use std::str::FromStr;
 
 use libp2p_core::identity::Keypair;
+use libp2p_core::muxing::StreamInfo;
 use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_core::{Multiaddr, PeerId};
+use libp2p_swarm::identify::IdentifyConfig;
 use libp2p_swarm::protocol_handler::{IProtocolHandler, ProtocolHandler};
 use libp2p_swarm::substream::Substream;
 use libp2p_swarm::{Muxer, Swarm, SwarmError};
 use libp2p_tcp::TcpConfig;
 use libp2p_traits::{ReadEx, WriteEx};
-use libp2p_core::muxing::StreamInfo;
-use libp2p_swarm::identify::IdentifyConfig;
 use secio;
 use yamux;
 
@@ -139,8 +139,7 @@ fn run_client() {
 
     let muxer = Muxer::new();
 
-    let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer)
-        .with_identify(IdentifyConfig::new(false));
+    let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer).with_identify(IdentifyConfig::new(false));
 
     let mut control = swarm.control();
 

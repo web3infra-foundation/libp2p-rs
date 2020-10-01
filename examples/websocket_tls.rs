@@ -5,6 +5,7 @@ use std::time::Duration;
 extern crate lazy_static;
 
 use libp2p_core::identity::Keypair;
+use libp2p_core::muxing::StreamInfo;
 use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_core::{Multiaddr, PeerId};
@@ -12,11 +13,8 @@ use libp2p_swarm::protocol_handler::{IProtocolHandler, ProtocolHandler};
 use libp2p_swarm::substream::Substream;
 use libp2p_swarm::{DummyProtocolHandler, Muxer, Swarm, SwarmError};
 use libp2p_traits::{ReadEx, WriteEx};
+use libp2p_websocket::{tls, WsConfig};
 use secio;
-use plaintext;
-use libp2p_core::muxing::StreamInfo;
-use libp2p_websocket::{WsConfig,tls};
-
 
 use async_std::io;
 use rustls::internal::pemfile::{certs, rsa_private_keys};
@@ -26,7 +24,6 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 
-
 /// server:
 /// RUST_LOG=trace cargo run --example websocket_tls server
 /// client:
@@ -34,7 +31,7 @@ use structopt::StructOpt;
 #[allow(dead_code)]
 #[derive(StructOpt)]
 struct ServerTlsConfig {
-    client_or_server:String,
+    client_or_server: String,
 
     /// The host to connect to
     #[structopt(short = "h", long = "host", default_value = "127.0.0.1")]
@@ -45,18 +42,18 @@ struct ServerTlsConfig {
     port: u16,
 
     /// cert file
-    #[structopt(short = "c", long = "cert", parse(from_os_str),default_value="examples/cert/end.cert")]
+    #[structopt(short = "c", long = "cert", parse(from_os_str), default_value = "examples/cert/end.cert")]
     cert: PathBuf,
 
     /// key file
-    #[structopt(short = "k", long = "key", parse(from_os_str),default_value="examples/cert/end.rsa")]
+    #[structopt(short = "k", long = "key", parse(from_os_str), default_value = "examples/cert/end.rsa")]
     key: PathBuf,
 }
 
 #[allow(dead_code)]
 #[derive(StructOpt)]
 struct ClientTlsConfig {
-    client_or_server:String,
+    client_or_server: String,
 
     /// The host to connect to
     #[structopt(short = "h", long = "host", default_value = "127.0.0.1")]
@@ -72,34 +69,29 @@ struct ClientTlsConfig {
 
     /// A file with a certificate authority chain, allows to connect
     /// to certificate authories not included in the default set
-    #[structopt(short = "c", long = "cafile", parse(from_os_str),default_value="examples/cert/ca.cert")]
+    #[structopt(short = "c", long = "cafile", parse(from_os_str), default_value = "examples/cert/ca.cert")]
     cafile: PathBuf,
 }
 
 /// Load the passed certificates file
 fn load_certs(path: &Path) -> io::Result<Vec<Certificate>> {
-    certs(&mut BufReader::new(File::open(path)?))
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid cert"))
+    certs(&mut BufReader::new(File::open(path)?)).map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid cert"))
 }
 
 /// Load the passed keys file
 fn load_keys(path: &Path) -> io::Result<Vec<PrivateKey>> {
-    rsa_private_keys(&mut BufReader::new(File::open(path)?))
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid key"))
+    rsa_private_keys(&mut BufReader::new(File::open(path)?)).map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid key"))
 }
-
 
 /// A TLS server needs a certificate and a fitting private key
-fn load_config(options: &ServerTlsConfig) -> io::Result<(PrivateKey,Vec<Certificate>)> {
+fn load_config(options: &ServerTlsConfig) -> io::Result<(PrivateKey, Vec<Certificate>)> {
     let certs = load_certs(&options.cert)?;
     let keys = load_keys(&options.key)?;
-    let one=keys.get(0).unwrap().to_owned();
-    Ok((one,certs))
+    let one = keys.get(0).unwrap().to_owned();
+    Ok((one, certs))
 }
 
-
-
-fn main()-> io::Result<()> {
+fn main() -> io::Result<()> {
     env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
     if std::env::args().nth(1) == Some("server".to_string()) {
         log::info!("Starting server ......");
@@ -114,22 +106,22 @@ lazy_static! {
     static ref SERVER_KEY: Keypair = Keypair::generate_ed25519_fixed();
 }
 
-fn run_server()-> io::Result<()>  {
+fn run_server() -> io::Result<()> {
     let options = ServerTlsConfig::from_args();
     let host = &options.host;
     let port = &options.port;
-    let addr= format!("/ip4/{}/tcp/{}/wss",host,port);
-    log::info!("server addr {}",&addr);
+    let addr = format!("/ip4/{}/tcp/{}/wss", host, port);
+    log::info!("server addr {}", &addr);
     let keys = SERVER_KEY.clone();
 
     let listen_addr: Multiaddr = addr.parse().unwrap();
     let sec = secio::Config::new(keys.clone());
     let mux = mplex::Config::new();
-  
-    let (pk,certs) = load_config(&options).unwrap();
-    let cert_iter=certs.into_iter().map(|c| tls::Certificate::new(c.0));
-    let tls_cfg=tls::Config::new(tls::PrivateKey::new(pk.0), cert_iter).unwrap();
-    let ws= WsConfig::new().set_tls_config(tls_cfg).to_owned();
+
+    let (pk, certs) = load_config(&options).unwrap();
+    let cert_iter = certs.into_iter().map(|c| tls::Certificate::new(c.0));
+    let tls_cfg = tls::Config::new(tls::PrivateKey::new(pk.0), cert_iter).unwrap();
+    let ws = WsConfig::new().set_tls_config(tls_cfg).to_owned();
     let tu = TransportUpgrade::new(ws, mux, sec);
 
     #[derive(Clone)]
@@ -182,23 +174,23 @@ fn run_server()-> io::Result<()>  {
     loop {}
 }
 
-fn run_client() -> Result<(),std::io::Error> {
+fn run_client() -> Result<(), std::io::Error> {
     let options = ClientTlsConfig::from_args();
     let host = &options.domain;
     let port = &options.port;
-    let addr= format!("/dns4/{}/tcp/{}/wss",host,port);
-    log::info!("client addr {}",&addr);
+    let addr = format!("/dns4/{}/tcp/{}/wss", host, port);
+    log::info!("client addr {}", &addr);
     let keys = Keypair::generate_secp256k1();
     let addr: Multiaddr = addr.parse().unwrap();
     let sec = secio::Config::new(keys.clone());
     let mux = mplex::Config::new();
 
-    let ca=load_certs(&options.cafile).unwrap();
-    let ca_cert=&tls::Certificate::new(ca.get(0).unwrap().as_ref().to_vec());
-    log::trace!("ca_cert  {:?}",&ca_cert);
-    let builder=tls::Config::builder();
-    let config=builder.clone().add_trust(ca_cert).unwrap().clone().finish();
-    let ws= WsConfig::new_with_dns().set_tls_config(config).to_owned();
+    let ca = load_certs(&options.cafile).unwrap();
+    let ca_cert = &tls::Certificate::new(ca.get(0).unwrap().as_ref().to_vec());
+    log::trace!("ca_cert  {:?}", &ca_cert);
+    let builder = tls::Config::builder();
+    let config = builder.clone().add_trust(ca_cert).unwrap().clone().finish();
+    let ws = WsConfig::new_with_dns().set_tls_config(config).to_owned();
     let tu = TransportUpgrade::new(ws, mux, sec);
 
     let muxer = Muxer::new();
@@ -228,7 +220,7 @@ fn run_client() -> Result<(),std::io::Error> {
         assert_eq!(msg, &buf);
         task::sleep(Duration::from_secs(40)).await;
 
-        let _=stream.close2().await;
+        let _ = stream.close2().await;
 
         log::info!("shutdown is completed");
     });

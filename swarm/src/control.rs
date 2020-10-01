@@ -8,17 +8,17 @@
 // at https://www.apache.org/licenses/LICENSE-2.0 and a copy of the MIT license
 // at https://opensource.org/licenses/MIT.
 
+use crate::connection::ConnectionId;
+use crate::identify::IdentifyInfo;
+use crate::network::NetworkInfo;
+use crate::substream::StreamId;
+use crate::{ProtocolId, SwarmError};
 use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
 };
 use libp2p_core::PeerId;
 use libp2p_traits::{ReadEx, WriteEx};
-use crate::network::NetworkInfo;
-use crate::{ProtocolId, SwarmError};
-use crate::connection::ConnectionId;
-use crate::substream::StreamId;
-use crate::identify::IdentifyInfo;
 
 type Result<T> = std::result::Result<T, SwarmError>;
 

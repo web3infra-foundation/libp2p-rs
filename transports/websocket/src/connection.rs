@@ -18,7 +18,7 @@ pub(crate) type TlsOrPlain<T> = EitherOutput<EitherOutput<client::TlsStream<T>, 
 pub struct Connection<T> {
     //reader:SokettoReceiver<T>,
     //writer:SokettoSender<T>,
-    inner: EitherOutput<TcpTransStream,TcpTransStream>,
+    inner: EitherOutput<TcpTransStream, TcpTransStream>,
     receiver: BoxStream<'static, Result<IncomingData, connection::Error>>,
     sender: Pin<Box<dyn Sink<OutgoingData, Error = connection::Error> + Send>>,
     _marker: std::marker::PhantomData<T>,
@@ -120,7 +120,12 @@ impl<T> Connection<T>
 where
     T: AsyncRead + AsyncWrite + Send + Unpin + 'static,
 {
-    pub(crate) fn new(inner: EitherOutput<TcpTransStream,TcpTransStream>, builder: connection::Builder<TlsOrPlain<T>>, la: Multiaddr, ra: Multiaddr) -> Self {
+    pub(crate) fn new(
+        inner: EitherOutput<TcpTransStream, TcpTransStream>,
+        builder: connection::Builder<TlsOrPlain<T>>,
+        la: Multiaddr,
+        ra: Multiaddr,
+    ) -> Self {
         let (sender, receiver) = builder.finish();
         let sink = quicksink::make_sink(sender, |mut sender, action| async move {
             match action {
@@ -278,7 +283,7 @@ where
     }
 
     async fn close2(&mut self) -> Result<(), io::Error> {
-         //todo: call ws connection Sender close
+        //todo: call ws connection Sender close
         self.inner.close2().await
     }
 }
