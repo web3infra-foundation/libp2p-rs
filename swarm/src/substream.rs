@@ -19,20 +19,33 @@ pub struct StreamId(usize);
 
 #[derive(Debug, Default)]
 pub struct SubstreamStats {
+    /// The accumulative counter of packets sent.
     pkt_sent: AtomicUsize,
+    /// The accumulative counter of packets received.
     pkt_recv: AtomicUsize,
+    /// The accumulative counter of bytes sent.
     byte_sent: AtomicUsize,
+    /// The accumulative counter of bytes received.
     byte_recv: AtomicUsize,
 }
 
 #[derive(Debug)]
-struct SubstreamInfo {
-    /// The protocol of the sub stream
+pub struct SubstreamInfo {
+    /// The protocol of the sub stream.
     protocol: ProtocolId,
-    /// The direction of the sub stream
+    /// The direction of the sub stream.
+    dir: Direction,
+}
+
+
+#[derive(Debug)]
+struct SubstreamMeta {
+    /// The protocol of the sub stream.
+    protocol: ProtocolId,
+    /// The direction of the sub stream.
     dir: Direction,
     /// The connection ID of the sub stream
-    /// It can be used to back track to the stream muxer
+    /// It can be used to back track to the stream muxer.
     cid: ConnectionId,
     /// The local multiaddr of the sub stream.
     la: Multiaddr,
@@ -45,7 +58,7 @@ pub struct Substream<TStream> {
     /// The inner sub stream, created by the StreamMuxer
     inner: TStream,
     /// The inner information of the sub-stream
-    info: Arc<SubstreamInfo>,
+    info: Arc<SubstreamMeta>,
     /// The control channel for closing stream
     ctrl: mpsc::Sender<SwarmControlCmd<Substream<TStream>>>,
     /// The statistics of the substream
@@ -75,7 +88,7 @@ impl<TStream: StreamInfo> Substream<TStream> {
     ) -> Self {
         Self {
             inner,
-            info: Arc::new(SubstreamInfo {
+            info: Arc::new(SubstreamMeta {
                 protocol,
                 dir,
                 cid,
@@ -97,7 +110,7 @@ impl<TStream: StreamInfo> Substream<TStream> {
         let (ctrl, _) = mpsc::channel(0);
         Self {
             inner,
-            info: Arc::new(SubstreamInfo {
+            info: Arc::new(SubstreamMeta {
                 protocol,
                 dir,
                 cid,
@@ -135,6 +148,13 @@ impl<TStream: StreamInfo> Substream<TStream> {
     /// Returns the statistics of the sub stream.
     pub fn stats(&self) -> &SubstreamStats {
         &self.stats
+    }
+    /// Returns the info of the sub stream.
+    pub fn info(&self) -> SubstreamInfo {
+        SubstreamInfo {
+            protocol: self.protocol(),
+            dir: self.dir()
+        }
     }
 }
 
