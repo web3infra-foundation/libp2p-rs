@@ -1,5 +1,5 @@
 [package]
-name = "libp2p-plaintext"
+name = "plaintext"
 version = "0.1.0"
 license = "MIT"
 description = "plaintext encryption protocol for p2p"
