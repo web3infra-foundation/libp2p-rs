@@ -14,7 +14,8 @@ use libp2p_swarm::substream::Substream;
 use libp2p_swarm::{DummyProtocolHandler, Muxer, Swarm, SwarmError};
 use libp2p_traits::{ReadEx, WriteEx};
 use libp2p_websocket::{tls, WsConfig};
-use secio;
+//use secio;
+use plaintext;
 
 use async_std::io;
 use rustls::internal::pemfile::{certs, rsa_private_keys};
@@ -23,6 +24,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
+
 
 /// server:
 /// RUST_LOG=trace cargo run --example websocket_tls server
@@ -115,7 +117,8 @@ fn run_server() -> io::Result<()> {
     let keys = SERVER_KEY.clone();
 
     let listen_addr: Multiaddr = addr.parse().unwrap();
-    let sec = secio::Config::new(keys.clone());
+    //let sec = secio::Config::new(keys.clone());
+    let sec=plaintext::PlainTextConfig::new(keys.clone());
     let mux = mplex::Config::new();
 
     let (pk, certs) = load_config(&options).unwrap();
@@ -182,7 +185,8 @@ fn run_client() -> Result<(), std::io::Error> {
     log::info!("client addr {}", &addr);
     let keys = Keypair::generate_secp256k1();
     let addr: Multiaddr = addr.parse().unwrap();
-    let sec = secio::Config::new(keys.clone());
+    //let sec = secio::Config::new(keys.clone());
+    let sec=plaintext::PlainTextConfig::new(keys.clone());
     let mux = mplex::Config::new();
 
     let ca = load_certs(&options.cafile).unwrap();

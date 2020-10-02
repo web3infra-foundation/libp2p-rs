@@ -20,6 +20,7 @@ libp2p-traits = { path = "traits", version = "0.1.0", package = "libp2p-traits" 
 yamux = { path = "protocols/yamux", version = "0.1.0", package = "yamux" }
 mplex = { path = "protocols/mplex", version = "0.1.0", package = "mplex" }
 secio = { path = "protocols/secio", version = "0.1.0", package = "secio" }
+plaintext = { path = "protocols/plaintext", version = "0.1.0", package = "plaintext" }
 multiaddr = { path = "multiaddr", package = "parity-multiaddr", version = "0.9.1" }
 libp2p-core = { path = "core", version = "0.1.0", package = "libp2p-core" }
 libp2p-tcp = { path = "transports/tcp", version = "0.0.1", package = "libp2p-tcp" }
