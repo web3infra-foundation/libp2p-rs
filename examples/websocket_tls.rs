@@ -11,10 +11,9 @@ use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_core::{Multiaddr, PeerId};
 use libp2p_swarm::protocol_handler::{IProtocolHandler, ProtocolHandler};
 use libp2p_swarm::substream::Substream;
-use libp2p_swarm::{DummyProtocolHandler, Muxer, Swarm, SwarmError};
+use libp2p_swarm::{Muxer, Swarm, SwarmError};
 use libp2p_traits::{ReadEx, WriteEx};
 use libp2p_websocket::{tls, WsConfig};
-//use secio;
 use plaintext;
 
 use async_std::io;
@@ -26,9 +25,9 @@ use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 
 
-/// server:
+/// run server:
 /// RUST_LOG=trace cargo run --example websocket_tls server
-/// client:
+/// run client:
 /// RUST_LOG=trace cargo run --example websocket_tls client
 #[allow(dead_code)]
 #[derive(StructOpt)]
@@ -93,6 +92,55 @@ fn load_config(options: &ServerTlsConfig) -> io::Result<(PrivateKey, Vec<Certifi
     Ok((one, certs))
 }
 
+// Build tls client config
+fn build_client_tls_config(options: &ClientTlsConfig)->tls::Config{
+    let ca = load_certs(&options.cafile).unwrap();
+    let ca_cert = &tls::Certificate::new(ca.get(0).unwrap().as_ref().to_vec());
+    log::trace!("ca cert  {:?}", &ca_cert);
+    let builder = tls::Config::builder();
+    builder.clone().add_trust(ca_cert).unwrap().clone().finish()
+}
+// Build tls server config
+fn build_server_tls_config(options: &ServerTlsConfig)->tls::Config{
+    let (pk, certs) = load_config(&options).unwrap();
+    log::trace!("pk  {:?}", &pk);
+    log::trace!("certs  {:?}", &certs);
+    let cert_iter = certs.into_iter().map(|c| tls::Certificate::new(c.0));
+    tls::Config::new(tls::PrivateKey::new(pk.0), cert_iter).unwrap()
+}
+
+#[derive(Clone)]
+struct MyProtocolHandler;
+
+impl UpgradeInfo for MyProtocolHandler {
+    type Info = &'static [u8];
+
+    fn protocol_info(&self) -> Vec<Self::Info> {
+        vec![b"/my/1.0.0"]
+    }
+}
+
+#[async_trait]
+impl<C> ProtocolHandler<C> for MyProtocolHandler
+where
+    C: StreamInfo + ReadEx + WriteEx + Unpin + Send + std::fmt::Debug + 'static,
+{
+    async fn handle(&mut self, stream: Substream<C>, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+        let mut stream = stream;
+        log::trace!("MyProtocolHandler handling inbound {:?}", stream);
+        let mut msg = vec![0; 4096];
+        loop {
+            let n = stream.read2(&mut msg).await?;
+            log::info!("received: {:?}", &msg[..n]);
+            stream.write2(&msg[..n]).await?;
+        }
+    }
+
+    fn box_clone(&self) -> IProtocolHandler<C> {
+        Box::new(self.clone())
+    }
+}
+
 fn main() -> io::Result<()> {
     env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
     if std::env::args().nth(1) == Some("server".to_string()) {
@@ -110,58 +158,20 @@ lazy_static! {
 
 fn run_server() -> io::Result<()> {
     let options = ServerTlsConfig::from_args();
-    let host = &options.host;
-    let port = &options.port;
-    let addr = format!("/ip4/{}/tcp/{}/wss", host, port);
+    let addr = format!("/ip4/{}/tcp/{}/wss",  &options.host, &options.port);
     log::info!("server addr {}", &addr);
+
     let keys = SERVER_KEY.clone();
 
     let listen_addr: Multiaddr = addr.parse().unwrap();
-    //let sec = secio::Config::new(keys.clone());
+
     let sec=plaintext::PlainTextConfig::new(keys.clone());
     let mux = mplex::Config::new();
 
-    let (pk, certs) = load_config(&options).unwrap();
-    let cert_iter = certs.into_iter().map(|c| tls::Certificate::new(c.0));
-    let tls_cfg = tls::Config::new(tls::PrivateKey::new(pk.0), cert_iter).unwrap();
-    let ws = WsConfig::new().set_tls_config(tls_cfg).to_owned();
+    let ws = WsConfig::new().set_tls_config(build_server_tls_config(&options)).to_owned();
     let tu = TransportUpgrade::new(ws, mux, sec);
 
-    #[derive(Clone)]
-    struct MyProtocolHandler;
-
-    impl UpgradeInfo for MyProtocolHandler {
-        type Info = &'static [u8];
-
-        fn protocol_info(&self) -> Vec<Self::Info> {
-            vec![b"/my/1.0.0"]
-        }
-    }
-
-    #[async_trait]
-    impl<C> ProtocolHandler<C> for MyProtocolHandler
-    where
-        C: StreamInfo + ReadEx + WriteEx + Unpin + Send + std::fmt::Debug + 'static,
-    {
-        async fn handle(&mut self, stream: Substream<C>, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
-            let mut stream = stream;
-            log::trace!("MyProtocolHandler handling inbound {:?}", stream);
-            let mut msg = vec![0; 4096];
-            loop {
-                let n = stream.read2(&mut msg).await?;
-                log::info!("received: {:?}", &msg[..n]);
-                stream.write2(&msg[..n]).await?;
-            }
-        }
-
-        fn box_clone(&self) -> IProtocolHandler<C> {
-            Box::new(self.clone())
-        }
-    }
-
     let mut muxer = Muxer::new();
-    let dummy_handler = Box::new(DummyProtocolHandler::new());
-    muxer.add_protocol_handler(dummy_handler);
     muxer.add_protocol_handler(Box::new(MyProtocolHandler));
 
     let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer);
@@ -177,24 +187,19 @@ fn run_server() -> io::Result<()> {
     loop {}
 }
 
-fn run_client() -> Result<(), std::io::Error> {
+
+fn run_client() -> io::Result<()> {
     let options = ClientTlsConfig::from_args();
-    let host = &options.domain;
-    let port = &options.port;
-    let addr = format!("/dns4/{}/tcp/{}/wss", host, port);
+    let addr = format!("/dns4/{}/tcp/{}/wss", &options.domain, &options.port);
     log::info!("client addr {}", &addr);
+
     let keys = Keypair::generate_secp256k1();
     let addr: Multiaddr = addr.parse().unwrap();
-    //let sec = secio::Config::new(keys.clone());
+
     let sec=plaintext::PlainTextConfig::new(keys.clone());
     let mux = mplex::Config::new();
 
-    let ca = load_certs(&options.cafile).unwrap();
-    let ca_cert = &tls::Certificate::new(ca.get(0).unwrap().as_ref().to_vec());
-    log::trace!("ca_cert  {:?}", &ca_cert);
-    let builder = tls::Config::builder();
-    let config = builder.clone().add_trust(ca_cert).unwrap().clone().finish();
-    let ws = WsConfig::new_with_dns().set_tls_config(config).to_owned();
+    let ws = WsConfig::new_with_dns().set_tls_config(build_client_tls_config(&options)).to_owned();
     let tu = TransportUpgrade::new(ws, mux, sec);
 
     let muxer = Muxer::new();
@@ -215,14 +220,14 @@ fn run_client() -> Result<(), std::io::Error> {
         control.new_connection(remote_peer_id.clone()).await.unwrap();
         let mut stream = control.new_stream(remote_peer_id, vec![b"/my/1.0.0"]).await.unwrap();
         log::info!("stream {:?} opened, writing something...", stream);
+
         let msg = b"hello";
         let _ = stream.write2(msg).await;
-
         let mut buf = [0; 5];
+
         let _ = stream.read2(&mut buf).await;
         log::info!("receiv msg ======={}", String::from_utf8_lossy(&buf[..]));
         assert_eq!(msg, &buf);
-        task::sleep(Duration::from_secs(40)).await;
 
         let _ = stream.close2().await;
 
