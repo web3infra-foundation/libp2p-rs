@@ -8,11 +8,12 @@ use crate::handshake::handshake_plaintext::Remote;
 use crate::secure_stream::SecureStream;
 use libp2p_core::identity::Keypair;
 use libp2p_core::secure_io::SecureInfo;
-use libp2p_core::transport::TransportError;
+use libp2p_core::transport::{ConnectionInfo,TransportError};
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
-use libp2p_core::{PeerId, PublicKey};
+use libp2p_core::{Multiaddr,PeerId, PublicKey};
 use libp2p_traits::{ReadEx, WriteEx};
 use std::io;
+
 
 use async_trait::async_trait;
 
@@ -55,7 +56,7 @@ impl UpgradeInfo for PlainTextConfig {
 #[async_trait]
 impl<T> Upgrader<T> for PlainTextConfig
 where
-    T: ReadEx + WriteEx + Send + Unpin + 'static,
+    T: ConnectionInfo+ ReadEx + WriteEx + Send + Unpin + 'static,
 {
     type Output = PlainTextOutput<T>;
 
@@ -70,10 +71,11 @@ where
 
 async fn make_secure_output<T>(config: PlainTextConfig, socket: T) -> Result<PlainTextOutput<T>, TransportError>
 where
-    T: ReadEx + WriteEx + Send + Unpin + 'static,
+    T: ConnectionInfo+ ReadEx + WriteEx + Send + Unpin + 'static,
 {
     let pri_key = config.key.clone();
-
+    let la = socket.local_multiaddr();
+    let ra = socket.remote_multiaddr();
     let (secure_stream, remote) = config.handshake(socket).await?;
     let output = PlainTextOutput {
         stream: secure_stream,
@@ -81,6 +83,8 @@ where
         local_peer_id: pri_key.public().into_peer_id(),
         remote_pub_key: remote.public_key,
         remote_peer_id: remote.peer_id,
+        la,
+        ra,
     };
     Ok(output)
 }
@@ -94,6 +98,10 @@ pub struct PlainTextOutput<T> {
     pub remote_pub_key: PublicKey,
     /// For convenience, put a PeerId here, which is actually calculated from remote_key
     pub remote_peer_id: PeerId,
+    /// The local multiaddr of this connection
+    pub la: Multiaddr,
+    /// The remote multiaddr of this connection
+    pub ra: Multiaddr,
 }
 
 impl<T> SecureInfo for PlainTextOutput<T> {
@@ -113,6 +121,16 @@ impl<T> SecureInfo for PlainTextOutput<T> {
         self.remote_pub_key.clone()
     }
 }
+
+impl<T: Send> ConnectionInfo for PlainTextOutput<T> {
+    fn local_multiaddr(&self) -> Multiaddr {
+        self.la.clone()
+    }
+    fn remote_multiaddr(&self) -> Multiaddr {
+        self.ra.clone()
+    }
+}
+
 
 #[async_trait]
 impl<S: ReadEx + WriteEx + Unpin + Send + 'static> ReadEx for PlainTextOutput<S> {
