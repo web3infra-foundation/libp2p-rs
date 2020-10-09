@@ -24,7 +24,7 @@ use prost::Message;
 use std::convert::TryFrom;
 use std::io;
 
-use libp2p_core::muxing::StreamInfo;
+use libp2p_core::muxing::{StreamInfo, StreamMuxer};
 use libp2p_core::transport::TransportError;
 use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_core::{Multiaddr, PublicKey};
@@ -212,23 +212,23 @@ where
 /// - Client sends/pushes the the identify message to server side.
 ///
 #[derive(Debug)]
-pub(crate) struct IdentifyPushHandler<T> {
+pub(crate) struct IdentifyPushHandler<T: StreamMuxer> {
     tx: mpsc::UnboundedSender<SwarmEvent<T>>,
 }
 
-impl<T> Clone for IdentifyPushHandler<T> {
+impl<T: StreamMuxer> Clone for IdentifyPushHandler<T> {
     fn clone(&self) -> Self {
         Self { tx: self.tx.clone() }
     }
 }
 
-impl<T: Send> IdentifyPushHandler<T> {
+impl<T: StreamMuxer> IdentifyPushHandler<T> {
     pub(crate) fn new(tx: mpsc::UnboundedSender<SwarmEvent<T>>) -> Self {
         Self { tx }
     }
 }
 
-impl<T: Send> UpgradeInfo for IdentifyPushHandler<T> {
+impl<T: StreamMuxer> UpgradeInfo for IdentifyPushHandler<T> {
     type Info = &'static [u8];
     fn protocol_info(&self) -> Vec<Self::Info> {
         vec![IDENTIFY_PUSH_PROTOCOL]
@@ -239,7 +239,7 @@ impl<T: Send> UpgradeInfo for IdentifyPushHandler<T> {
 impl<TSocket, T> ProtocolHandler<TSocket> for IdentifyPushHandler<T>
 where
     TSocket: StreamInfo + ReadEx + WriteEx + Unpin + std::fmt::Debug + 'static,
-    T: Send + 'static,
+    T: StreamMuxer + 'static,
 {
     // receive the message and consume it
     async fn handle(&mut self, stream: Substream<TSocket>, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {

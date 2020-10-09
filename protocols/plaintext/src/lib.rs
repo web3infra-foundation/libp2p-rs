@@ -8,12 +8,11 @@ use crate::handshake::handshake_plaintext::Remote;
 use crate::secure_stream::SecureStream;
 use libp2p_core::identity::Keypair;
 use libp2p_core::secure_io::SecureInfo;
-use libp2p_core::transport::{ConnectionInfo,TransportError};
+use libp2p_core::transport::{ConnectionInfo, TransportError};
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
-use libp2p_core::{Multiaddr,PeerId, PublicKey};
+use libp2p_core::{Multiaddr, PeerId, PublicKey};
 use libp2p_traits::{ReadEx, WriteEx};
 use std::io;
-
 
 use async_trait::async_trait;
 
@@ -56,7 +55,7 @@ impl UpgradeInfo for PlainTextConfig {
 #[async_trait]
 impl<T> Upgrader<T> for PlainTextConfig
 where
-    T: ConnectionInfo+ ReadEx + WriteEx + Send + Unpin + 'static,
+    T: ConnectionInfo + ReadEx + WriteEx + Send + Unpin + 'static,
 {
     type Output = PlainTextOutput<T>;
 
@@ -71,7 +70,7 @@ where
 
 async fn make_secure_output<T>(config: PlainTextConfig, socket: T) -> Result<PlainTextOutput<T>, TransportError>
 where
-    T: ConnectionInfo+ ReadEx + WriteEx + Send + Unpin + 'static,
+    T: ConnectionInfo + ReadEx + WriteEx + Send + Unpin + 'static,
 {
     let pri_key = config.key.clone();
     let la = socket.local_multiaddr();
@@ -130,7 +129,6 @@ impl<T: Send> ConnectionInfo for PlainTextOutput<T> {
         self.ra.clone()
     }
 }
-
 
 #[async_trait]
 impl<S: ReadEx + WriteEx + Unpin + Send + 'static> ReadEx for PlainTextOutput<S> {

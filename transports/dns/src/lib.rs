@@ -34,6 +34,7 @@
 //!
 use async_std::net::ToSocketAddrs;
 use async_trait::async_trait;
+use libp2p_core::transport::{IListener, ITransport};
 use libp2p_core::{
     multiaddr::{Multiaddr, Protocol},
     transport::TransportError,
@@ -74,16 +75,15 @@ where
 #[async_trait]
 impl<T> Transport for DnsConfig<T>
 where
-    T: Transport + Send + 'static,
+    T: Transport + Clone + 'static,
 {
     type Output = T::Output;
-    type Listener = T::Listener;
 
-    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
+    fn listen_on(&mut self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         self.inner.listen_on(addr)
     }
 
-    async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
+    async fn dial(&mut self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
         // one step complete all task
         let mut iter = addr.iter();
         let proto = iter.find_map(|x| match x {
@@ -140,6 +140,10 @@ where
         }
 
         Err(TransportError::ResolveFail(name))
+    }
+
+    fn box_clone(&self) -> ITransport<Self::Output> {
+        Box::new(self.clone())
     }
 }
 

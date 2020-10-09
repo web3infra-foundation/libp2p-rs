@@ -4,16 +4,17 @@ use async_trait::async_trait;
 use either::Either;
 use futures::prelude::*;
 use libp2p_core::transport::ConnectionInfo;
+use libp2p_core::transport::{IListener, ITransport};
 use libp2p_core::{
-    either::{EitherOutput, EitherTransport, EitherTransportListener},
+    either::EitherOutput,
     multiaddr::{Multiaddr, Protocol},
     transport::{TransportError, TransportListener},
     Transport,
 };
-use libp2p_dns::DnsConfig;
-use libp2p_tcp::{TcpConfig, TcpTransListener, TcpTransStream};
+use libp2p_tcp::TcpTransStream;
 use log::{debug, error, trace};
 use soketto::{connection, extension::deflate::Deflate, handshake};
+use std::fmt;
 use url::Url;
 
 /// Max. number of payload bytes of a single frame.
@@ -22,10 +23,25 @@ const MAX_DATA_SIZE: usize = 256 * 1024 * 1024;
 /// A Websocket transport whose output type is a [`Stream`] and [`Sink`] of
 /// frame payloads which does not implement [`AsyncRead`] or
 /// [`AsyncWrite`]. See [`crate::WsConfig`] if you require the latter.
-#[derive(Debug, Clone)]
+
 pub struct WsConfig {
-    transport: EitherTransport<TcpConfig, DnsConfig<TcpConfig>>,
+    transport: ITransport<TcpTransStream>,
     pub(crate) inner_config: InnerConfig,
+}
+
+impl Clone for WsConfig {
+    fn clone(&self) -> Self {
+        Self {
+            transport: self.transport.box_clone(),
+            inner_config: self.inner_config.clone(),
+        }
+    }
+}
+
+impl fmt::Debug for WsConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "WsConfig")
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -38,7 +54,7 @@ pub(crate) struct InnerConfig {
 
 impl WsConfig {
     /// Create a new websocket transport based on another transport.
-    pub fn new(transport: EitherTransport<TcpConfig, DnsConfig<TcpConfig>>) -> Self {
+    pub fn new(transport: ITransport<TcpTransStream>) -> Self {
         WsConfig {
             transport,
             inner_config: InnerConfig::new(),
@@ -92,19 +108,20 @@ impl InnerConfig {
     }
 }
 
-#[derive(Debug)]
 pub struct WsTransListener {
-    inner: EitherTransportListener<TcpTransListener, TcpTransListener>,
+    inner: IListener<TcpTransStream>,
     inner_config: InnerConfig,
     use_tls: bool,
 }
 
+impl fmt::Debug for WsTransListener {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "WsTransListener")
+    }
+}
+
 impl WsTransListener {
-    pub(crate) fn new(
-        inner: EitherTransportListener<TcpTransListener, TcpTransListener>,
-        inner_config: InnerConfig,
-        use_tls: bool,
-    ) -> Self {
+    pub(crate) fn new(inner: IListener<TcpTransStream>, inner_config: InnerConfig, use_tls: bool) -> Self {
         Self {
             inner,
             inner_config,
@@ -115,7 +132,7 @@ impl WsTransListener {
 
 #[async_trait]
 impl TransportListener for WsTransListener {
-    type Output = Connection<EitherOutput<TcpTransStream, TcpTransStream>>;
+    type Output = Connection<TcpTransStream>;
     async fn accept(&mut self) -> Result<Self::Output, TransportError> {
         let raw_stream = self.inner.accept().await?;
         let inner_raw_stream = raw_stream.clone();
@@ -181,9 +198,9 @@ impl TransportListener for WsTransListener {
 
 #[async_trait]
 impl Transport for WsConfig {
-    type Output = Connection<EitherOutput<TcpTransStream, TcpTransStream>>;
-    type Listener = WsTransListener;
-    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
+    type Output = Connection<TcpTransStream>;
+    //type Listener = WsTransListener;
+    fn listen_on(&mut self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         let mut inner_addr = addr.clone();
 
         let (use_tls, _proto) = match inner_addr.pop() {
@@ -202,11 +219,11 @@ impl Transport for WsConfig {
             }
         };
         let inner_listener = self.transport.listen_on(addr)?;
-        let listener = WsTransListener::new(inner_listener, self.inner_config, use_tls);
-        Ok(listener)
+        let listener = WsTransListener::new(inner_listener, self.inner_config.clone(), use_tls);
+        Ok(Box::new(listener))
     }
 
-    async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
+    async fn dial(&mut self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
         // Quick sanity check of the provided Multiaddr.
         if let Some(Protocol::Ws(_)) | Some(Protocol::Wss(_)) = addr.iter().last() {
             // ok
@@ -219,7 +236,7 @@ impl Transport for WsConfig {
         let mut remaining_redirects = self.inner_config.max_redirects;
         let mut addr = addr;
         loop {
-            match self.clone().dial_once(addr).await {
+            match self.dial_once(addr).await {
                 Ok(Either::Left(redirect)) => {
                     if remaining_redirects == 0 {
                         debug!("too many redirects");
@@ -236,14 +253,15 @@ impl Transport for WsConfig {
             }
         }
     }
+
+    fn box_clone(&self) -> ITransport<Self::Output> {
+        Box::new(self.clone())
+    }
 }
 
 impl WsConfig {
     /// Attempty to dial the given address and perform a websocket handshake.
-    async fn dial_once(
-        self,
-        address: Multiaddr,
-    ) -> Result<Either<String, Connection<EitherOutput<TcpTransStream, TcpTransStream>>>, WsError> {
+    async fn dial_once(&mut self, address: Multiaddr) -> Result<Either<String, Connection<TcpTransStream>>, WsError> {
         trace!("dial address: {}", address);
         let (host_port, dns_name) = host_and_dnsname(&address)?;
         if dns_name.is_some() {
@@ -334,8 +352,8 @@ impl From<WsError> for TransportError {
     fn from(e: WsError) -> Self {
         //TransportError::Internal
         match e {
-            WsError::InvalidMultiaddr(a) => return TransportError::MultiaddrNotSupported(a),
-            _ => return TransportError::Internal,
+            WsError::InvalidMultiaddr(a) => TransportError::MultiaddrNotSupported(a),
+            _ => TransportError::Internal,
         }
     }
 }
