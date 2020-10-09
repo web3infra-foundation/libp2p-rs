@@ -235,6 +235,26 @@ pub trait TransportListener: Send {
 pub type IListener<TOutput> = Box<dyn TransportListener<Output = TOutput> + Send>;
 pub type ITransport<TOutput> = Box<dyn Transport<Output = TOutput> + Send>;
 
+impl<TOutput> fmt::Debug for IListener<TOutput> {
+    fn fmt(&self,f: &mut fmt::Formatter<'_>) -> fmt::Result {
+       write!(f,"IListener<TOutput>")
+    }
+}
+
+impl<TOutput> fmt::Debug for ITransport<TOutput> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f,"ITransport<TOutput>")
+    }
+}
+
+impl<TOutput:ConnectionInfo> Clone for ITransport<TOutput> {
+    fn clone(&self) -> Self{
+        self.box_clone()
+    }
+}
+
+
+
 pub struct Incoming<'a, T>(&'a mut T);
 
 /// Implements Stream for Listener
