@@ -146,7 +146,7 @@ fn main() -> io::Result<()> {
     if std::env::args().nth(1) == Some("server".to_string()) {
         log::info!("Starting server ......");
         run_server()
-    } else {
+    } else if std::env::args().nth(1) == Some("client".to_string())  {
         log::info!("Starting client ......");
         run_client()
     }
