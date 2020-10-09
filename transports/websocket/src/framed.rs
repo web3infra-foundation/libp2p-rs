@@ -14,7 +14,6 @@ use libp2p_core::{
 use libp2p_tcp::TcpTransStream;
 use log::{debug, error, trace};
 use soketto::{connection, extension::deflate::Deflate, handshake};
-use std::fmt;
 use url::Url;
 
 /// Max. number of payload bytes of a single frame.
@@ -24,32 +23,10 @@ const MAX_DATA_SIZE: usize = 256 * 1024 * 1024;
 /// frame payloads which does not implement [`AsyncRead`] or
 /// [`AsyncWrite`]. See [`crate::WsConfig`] if you require the latter.
 
+#[derive(Debug,Clone)]
 pub struct WsConfig {
     transport: ITransport<TcpTransStream>,
     pub(crate) inner_config: InnerConfig,
-}
-
-impl Clone for WsConfig {
-    fn clone(&self) -> Self {
-        Self {
-            transport: self.transport.box_clone(),
-            inner_config: self.inner_config.clone(),
-        }
-    }
-}
-
-impl fmt::Debug for WsConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "WsConfig")
-    }
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct InnerConfig {
-    max_data_size: usize,
-    tls_config: tls::Config,
-    max_redirects: u8,
-    use_deflate: bool,
 }
 
 impl WsConfig {
@@ -60,6 +37,14 @@ impl WsConfig {
             inner_config: InnerConfig::new(),
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct InnerConfig {
+    max_data_size: usize,
+    tls_config: tls::Config,
+    max_redirects: u8,
+    use_deflate: bool,
 }
 
 impl InnerConfig {
@@ -107,18 +92,13 @@ impl InnerConfig {
         self
     }
 }
-
+#[derive(Debug)]
 pub struct WsTransListener {
     inner: IListener<TcpTransStream>,
     inner_config: InnerConfig,
     use_tls: bool,
 }
 
-impl fmt::Debug for WsTransListener {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "WsTransListener")
-    }
-}
 
 impl WsTransListener {
     pub(crate) fn new(inner: IListener<TcpTransStream>, inner_config: InnerConfig, use_tls: bool) -> Self {
@@ -199,7 +179,6 @@ impl TransportListener for WsTransListener {
 #[async_trait]
 impl Transport for WsConfig {
     type Output = Connection<TcpTransStream>;
-    //type Listener = WsTransListener;
     fn listen_on(&mut self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         let mut inner_addr = addr.clone();
 
@@ -350,7 +329,6 @@ impl WsConfig {
 
 impl From<WsError> for TransportError {
     fn from(e: WsError) -> Self {
-        //TransportError::Internal
         match e {
             WsError::InvalidMultiaddr(a) => TransportError::MultiaddrNotSupported(a),
             _ => TransportError::Internal,
