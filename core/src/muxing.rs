@@ -45,7 +45,7 @@ pub trait StreamInfo: Send {
 #[async_trait]
 pub trait StreamMuxer: ConnectionInfo + SecureInfo + Clone + std::fmt::Debug {
     /// Type of the object that represents the raw substream where data can be read and written.
-    type Substream: StreamInfo + std::fmt::Debug;
+    type Substream: StreamInfo + Clone + std::fmt::Debug;
 
     /// Opens a new outgoing substream, and produces the equivalent to a future that will be
     /// resolved when it becomes available.

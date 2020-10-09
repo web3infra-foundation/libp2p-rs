@@ -6,13 +6,13 @@ pub mod framed;
 pub mod tls;
 
 use async_trait::async_trait;
-use libp2p_core::either::{EitherOutput, EitherTransport};
+use libp2p_core::transport::{IListener, ITransport};
 use libp2p_core::{multiaddr::Multiaddr, transport::TransportError, Transport};
 use libp2p_dns::DnsConfig;
 use libp2p_tcp::{TcpConfig, TcpTransStream};
 
 /// A Websocket transport.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct WsConfig {
     inner: framed::WsConfig,
 }
@@ -20,12 +20,12 @@ pub struct WsConfig {
 impl WsConfig {
     /// Create a new websocket transport based on the given transport.
     pub fn new() -> Self {
-        framed::WsConfig::new(EitherTransport::A(TcpConfig::default())).into()
+        framed::WsConfig::new(TcpConfig::default().box_clone()).into()
     }
 
     /// Create a new websocket transport based on the given transport.
     pub fn new_with_dns() -> Self {
-        framed::WsConfig::new(EitherTransport::B(DnsConfig::new(TcpConfig::default()))).into()
+        framed::WsConfig::new(DnsConfig::new(TcpConfig::default()).box_clone()).into()
     }
 
     /// Return the configured maximum number of redirects.
@@ -63,6 +63,12 @@ impl WsConfig {
     }
 }
 
+impl Default for WsConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl From<framed::WsConfig> for WsConfig {
     fn from(framed: framed::WsConfig) -> Self {
         WsConfig { inner: framed }
@@ -71,14 +77,17 @@ impl From<framed::WsConfig> for WsConfig {
 
 #[async_trait]
 impl Transport for WsConfig {
-    type Output = connection::Connection<EitherOutput<TcpTransStream, TcpTransStream>>;
-    type Listener = framed::WsTransListener;
-    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
+    type Output = connection::Connection<TcpTransStream>;
+    fn listen_on(&mut self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         self.inner.listen_on(addr)
     }
 
-    async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
+    async fn dial(&mut self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
         self.inner.dial(addr).await
+    }
+
+    fn box_clone(&self) -> ITransport<Self::Output> {
+        Box::new(self.clone())
     }
 }
 
@@ -149,7 +158,7 @@ mod tests {
     }
 
     async fn client(dial_addr: Multiaddr, dns: bool) {
-        let ws_config: WsConfig;
+        let mut ws_config: WsConfig;
         if dns {
             ws_config = WsConfig::new_with_dns();
         } else {

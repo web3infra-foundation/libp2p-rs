@@ -3,8 +3,8 @@ use env_logger;
 use libp2p_core::identity::Keypair;
 use log::info;
 
-use plaintext::PlainTextConfig;
 use libp2p_traits::{ReadEx, WriteEx};
+use plaintext::PlainTextConfig;
 
 fn main() {
     env_logger::init();

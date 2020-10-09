@@ -1,5 +1,7 @@
+use crate::connection::ConnectionInfo;
+
 /// Information about the network obtained by [`Network::info()`].
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct NetworkInfo {
     /// The total number of connected peers.
     pub num_peers: usize,
@@ -11,6 +13,8 @@ pub struct NetworkInfo {
     pub num_connections_established: usize,
     /// The total number of active sub streams.
     pub num_active_streams: usize,
+    /// The information of all established connections.
+    pub connection_info: Vec<ConnectionInfo>,
 }
 
 /// The (optional) configuration for a [`Network`].

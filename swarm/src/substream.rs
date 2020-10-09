@@ -19,29 +19,47 @@ pub struct StreamId(usize);
 
 #[derive(Debug, Default)]
 pub struct SubstreamStats {
+    /// The accumulative counter of packets sent.
     pkt_sent: AtomicUsize,
+    /// The accumulative counter of packets received.
     pkt_recv: AtomicUsize,
+    /// The accumulative counter of bytes sent.
     byte_sent: AtomicUsize,
+    /// The accumulative counter of bytes received.
     byte_recv: AtomicUsize,
+}
+
+#[derive(Debug)]
+pub struct SubstreamInfo {
+    /// The protocol of the sub stream.
+    protocol: ProtocolId,
+    /// The direction of the sub stream.
+    dir: Direction,
+}
+
+#[derive(Debug)]
+struct SubstreamMeta {
+    /// The protocol of the sub stream.
+    protocol: ProtocolId,
+    /// The direction of the sub stream.
+    dir: Direction,
+    /// The connection ID of the sub stream
+    /// It can be used to back track to the stream muxer.
+    cid: ConnectionId,
+    /// The local multiaddr of the sub stream.
+    la: Multiaddr,
+    /// The remote multiaddr of the sub stream.
+    ra: Multiaddr,
 }
 
 #[derive(Clone)]
 pub struct Substream<TStream> {
     /// The inner sub stream, created by the StreamMuxer
     inner: TStream,
-    /// The protocol of the sub stream
-    protocol: ProtocolId,
-    /// The direction of the sub stream
-    dir: Direction,
-    /// The connection ID of the sub stream
-    /// It can be used to back track to the stream muxer
-    cid: ConnectionId,
-    /// The local multiaddr of the sub stream.
-    la: Multiaddr,
-    /// The remote multiaddr of the sub stream.
-    ra: Multiaddr,
+    /// The inner information of the sub-stream
+    info: Arc<SubstreamMeta>,
     /// The control channel for closing stream
-    ctrl: Option<mpsc::Sender<SwarmControlCmd<Substream<TStream>>>>,
+    ctrl: mpsc::Sender<SwarmControlCmd<Substream<TStream>>>,
     /// The statistics of the substream
     stats: Arc<SubstreamStats>,
 }
@@ -50,9 +68,9 @@ impl<TStream: fmt::Debug> fmt::Debug for Substream<TStream> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Substream")
             .field("inner", &self.inner)
-            .field("protocol", &self.protocol.protocol_name_str())
-            .field("dir", &self.dir)
-            .field("cid", &self.cid)
+            .field("protocol", &self.info.protocol.protocol_name_str())
+            .field("dir", &self.info.dir)
+            .field("cid", &self.info.cid)
             .finish()
     }
 }
@@ -65,15 +83,17 @@ impl<TStream: StreamInfo> Substream<TStream> {
         cid: ConnectionId,
         la: Multiaddr,
         ra: Multiaddr,
-        ctrl: Option<mpsc::Sender<SwarmControlCmd<Substream<TStream>>>>,
+        ctrl: mpsc::Sender<SwarmControlCmd<Substream<TStream>>>,
     ) -> Self {
         Self {
             inner,
-            protocol,
-            dir,
-            cid,
-            la,
-            ra,
+            info: Arc::new(SubstreamMeta {
+                protocol,
+                dir,
+                cid,
+                la,
+                ra,
+            }),
             ctrl,
             stats: Arc::new(SubstreamStats::default()),
         }
@@ -86,24 +106,31 @@ impl<TStream: StreamInfo> Substream<TStream> {
         let cid = ConnectionId::default();
         let la = Multiaddr::empty();
         let ra = Multiaddr::empty();
+        let (ctrl, _) = mpsc::channel(0);
         Self {
             inner,
-            protocol,
-            dir,
-            cid,
-            la,
-            ra,
-            ctrl: None,
+            info: Arc::new(SubstreamMeta {
+                protocol,
+                dir,
+                cid,
+                la,
+                ra,
+            }),
+            ctrl,
             stats: Arc::new(SubstreamStats::default()),
         }
     }
     /// Returns the protocol of the sub stream.
     pub fn protocol(&self) -> ProtocolId {
-        self.protocol
+        self.info.protocol
+    }
+    /// Returns the direction of the sub stream.
+    pub fn dir(&self) -> Direction {
+        self.info.dir
     }
     /// Returns the connection id of the sub stream.
     pub fn cid(&self) -> ConnectionId {
-        self.cid
+        self.info.cid
     }
     /// Returns the sub stream Id.
     pub fn id(&self) -> StreamId {
@@ -111,15 +138,22 @@ impl<TStream: StreamInfo> Substream<TStream> {
     }
     /// Returns the remote multiaddr of the sub stream.
     pub fn remote_multiaddr(&self) -> Multiaddr {
-        self.ra.clone()
+        self.info.ra.clone()
     }
     /// Returns the remote multiaddr of the sub stream.
     pub fn local_multiaddr(&self) -> Multiaddr {
-        self.la.clone()
+        self.info.la.clone()
     }
     /// Returns the statistics of the sub stream.
     pub fn stats(&self) -> &SubstreamStats {
         &self.stats
+    }
+    /// Returns the info of the sub stream.
+    pub fn info(&self) -> SubstreamInfo {
+        SubstreamInfo {
+            protocol: self.protocol(),
+            dir: self.dir(),
+        }
     }
 }
 
@@ -150,12 +184,10 @@ impl<TStream: StreamInfo + WriteEx + Send> WriteEx for Substream<TStream> {
 
     // try to send a CloseStream command to Swarm, then close inner stream
     async fn close2(&mut self) -> Result<(), io::Error> {
-        if let Some(mut cmd) = self.ctrl.take() {
-            // to ask Swarm to remove myself
-            let cid = self.cid;
-            let sid = self.id();
-            let _ = cmd.send(SwarmControlCmd::CloseStream(cid, sid)).await;
-        }
+        // to ask Swarm to remove myself
+        let cid = self.cid();
+        let sid = self.id();
+        let _ = self.ctrl.send(SwarmControlCmd::CloseStream(cid, sid)).await;
         self.inner.close2().await
     }
 }
