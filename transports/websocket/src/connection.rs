@@ -18,7 +18,7 @@ pub(crate) type TlsOrPlain<T> = EitherOutput<EitherOutput<client::TlsStream<T>, 
 pub struct Connection<T> {
     //reader:SokettoReceiver<T>,
     //writer:SokettoSender<T>,
-    inner: EitherOutput<TcpTransStream, TcpTransStream>,
+    inner: TcpTransStream,
     receiver: BoxStream<'static, Result<IncomingData, connection::Error>>,
     sender: Pin<Box<dyn Sink<OutgoingData, Error = connection::Error> + Send>>,
     _marker: std::marker::PhantomData<T>,
@@ -120,12 +120,7 @@ impl<T> Connection<T>
 where
     T: AsyncRead + AsyncWrite + Send + Unpin + 'static,
 {
-    pub(crate) fn new(
-        inner: EitherOutput<TcpTransStream, TcpTransStream>,
-        builder: connection::Builder<TlsOrPlain<T>>,
-        la: Multiaddr,
-        ra: Multiaddr,
-    ) -> Self {
+    pub(crate) fn new(inner: TcpTransStream, builder: connection::Builder<TlsOrPlain<T>>, la: Multiaddr, ra: Multiaddr) -> Self {
         let (sender, receiver) = builder.finish();
         let sink = quicksink::make_sink(sender, |mut sender, action| async move {
             match action {
@@ -240,7 +235,7 @@ where
     async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
         // return the buffer first
         let n = buf.len();
-        if self.buf.len() > 0 {
+        if !self.buf.is_empty() {
             buf.copy_from_slice(&self.buf[0..n]);
             self.buf.drain(0..n);
             trace!("read buf : {:?}", buf);
@@ -257,11 +252,11 @@ where
                 self.buf.copy_from_slice(&bytes[..]);
                 buf.copy_from_slice(&self.buf[0..n]);
                 self.buf.drain(0..n);
-                return Ok(n);
+                Ok(n)
             }
-            Some(Err(e)) => return Err(e),
+            Some(Err(e)) => Err(e),
             //todo: other IncomingData
-            _ => return Ok(0),
+            _ => Ok(0),
         }
     }
 }

@@ -1,5 +1,5 @@
 use crate::muxing::StreamInfo;
-use crate::transport::{ConnectionInfo, TransportListener};
+use crate::transport::{ConnectionInfo, IListener, ITransport, TransportListener};
 use crate::{transport::TransportError, Transport};
 use async_trait::async_trait;
 use fnv::FnvHashMap;
@@ -18,15 +18,14 @@ lazy_static! {
 }
 
 /// Transport that supports `/memory/N` multiaddresses.
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct MemoryTransport;
 
 #[async_trait]
 impl Transport for MemoryTransport {
     type Output = Channel;
-    type Listener = Listener;
 
-    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
+    fn listen_on(&mut self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         let port = if let Ok(port) = parse_memory_addr(&addr) {
             port
         } else {
@@ -55,16 +54,16 @@ impl Transport for MemoryTransport {
             Entry::Vacant(e) => e.insert(tx),
         };
 
-        let listener = Listener {
+        let listener = Box::new(Listener {
             port,
             addr: Protocol::Memory(port.get()).into(),
             receiver: rx,
-        };
+        });
 
         Ok(listener)
     }
 
-    async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
+    async fn dial(&mut self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
         let port = if let Ok(port) = parse_memory_addr(&addr) {
             if let Some(port) = NonZeroU64::new(port) {
                 port
@@ -109,6 +108,10 @@ impl Transport for MemoryTransport {
         };
         sender.send(channel_to_send).await.map_err(|_| TransportError::Unreachable)?;
         Ok(channel_to_return)
+    }
+
+    fn box_clone(&self) -> ITransport<Self::Output> {
+        Box::new(self.clone())
     }
 }
 
@@ -271,7 +274,7 @@ mod tests {
 
     #[test]
     fn listening_twice() {
-        let transport = MemoryTransport::default();
+        let mut transport = MemoryTransport::default();
         assert!(transport.listen_on("/memory/1639174018481".parse().unwrap()).is_ok());
         assert!(transport.listen_on("/memory/1639174018481".parse().unwrap()).is_ok());
         let _listener = transport.listen_on("/memory/1639174018481".parse().unwrap()).unwrap();
@@ -285,7 +288,7 @@ mod tests {
     #[test]
     fn port_not_in_use() {
         futures::executor::block_on(async move {
-            let transport = MemoryTransport::default();
+            let mut transport = MemoryTransport::default();
             assert!(transport.dial("/memory/810172461024613".parse().unwrap()).await.is_err());
             let _listener = transport.listen_on("/memory/810172461024613".parse().unwrap()).unwrap();
             assert!(transport.dial("/memory/810172461024613".parse().unwrap()).await.is_ok());
@@ -317,7 +320,7 @@ mod tests {
 
         // Setup dialer.
 
-        let t2 = MemoryTransport::default();
+        let mut t2 = MemoryTransport::default();
         let dialer = async move {
             let mut socket = t2.dial(cloned_t1_addr).await.unwrap();
             socket.write_all2(&msg).await.unwrap();

@@ -56,6 +56,12 @@ pub struct PingConfig {
     keep_alive: bool,
 }
 
+impl Default for PingConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PingConfig {
     /// Creates a new `PingConfig` with the following default settings:
     ///
@@ -210,7 +216,7 @@ where
         log::trace!("Ping Protocol handling on {:?}", stream);
 
         let mut payload = [0u8; PING_SIZE];
-        while let Ok(_) = stream.read_exact2(&mut payload).await {
+        while stream.read_exact2(&mut payload).await.is_ok() {
             stream.write_all2(&payload).await?;
         }
         stream.close2().await?;

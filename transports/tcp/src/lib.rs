@@ -12,7 +12,7 @@ use async_std::net::{TcpListener, TcpStream};
 use async_trait::async_trait;
 use futures::prelude::*;
 use futures_timer::Delay;
-use libp2p_core::transport::ConnectionInfo;
+use libp2p_core::transport::{ConnectionInfo, IListener, ITransport};
 use libp2p_core::{
     multiaddr::{Multiaddr, Protocol},
     transport::{TransportError, TransportListener},
@@ -71,9 +71,8 @@ impl TcpConfig {
 #[async_trait]
 impl Transport for TcpConfig {
     type Output = TcpTransStream;
-    type Listener = TcpTransListener;
 
-    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError> {
+    fn listen_on(&mut self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         let socket_addr = if let Ok(sa) = multiaddr_to_socketaddr(&addr) {
             sa
         } else {
@@ -142,13 +141,13 @@ impl Transport for TcpConfig {
             pause_duration: self.sleep_on_error,
             port,
             ma,
-            config: self,
+            config: self.clone(),
         };
 
-        Ok(listener)
+        Ok(Box::new(listener))
     }
 
-    async fn dial(self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
+    async fn dial(&mut self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
         let socket_addr = if let Ok(socket_addr) = multiaddr_to_socketaddr(&addr) {
             if socket_addr.port() == 0 || socket_addr.ip().is_unspecified() {
                 debug!("Instantly refusing dialing {}, as it is invalid", addr);
@@ -172,6 +171,10 @@ impl Transport for TcpConfig {
             la,
             ra: addr,
         })
+    }
+
+    fn box_clone(&self) -> ITransport<Self::Output> {
+        Box::new(self.clone())
     }
 }
 

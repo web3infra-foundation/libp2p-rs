@@ -44,7 +44,6 @@ impl State {
     }
 }
 
-#[derive(Clone)]
 pub struct Stream {
     id: StreamID,
     conn_id: Id,
@@ -65,6 +64,19 @@ impl fmt::Display for Stream {
     }
 }
 
+impl Clone for Stream {
+    /// impl [`Clone`] trait
+    fn clone(&self) -> Self {
+        Stream {
+            id: self.id,
+            conn_id: self.conn_id,
+            read_buffer: Default::default(),
+            sender: self.sender.clone(),
+            receiver: self.receiver.clone(),
+        }
+    }
+}
+
 impl Stream {
     pub(crate) fn new(id: StreamID, conn_id: Id, sender: mpsc::Sender<StreamCommand>, receiver: mpsc::Receiver<Vec<u8>>) -> Self {
         Stream {
@@ -79,17 +91,6 @@ impl Stream {
     /// Get this stream's identifier.
     pub fn id(&self) -> u32 {
         self.id.val()
-    }
-
-    /// impl [`Clone`] trait
-    pub fn clone(&self) -> Self {
-        Stream {
-            id: self.id,
-            conn_id: self.conn_id,
-            read_buffer: Default::default(),
-            sender: self.sender.clone(),
-            receiver: self.receiver.clone(),
-        }
     }
 
     // TODO: handle the case: buf capacity is not enough
