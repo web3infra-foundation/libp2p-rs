@@ -97,12 +97,11 @@ mod tests {
     use super::WsConfig;
     use async_std::task;
     use futures::prelude::*;
-    use libp2p_core::transport::TransportListener;
     use libp2p_core::Multiaddr;
     use libp2p_core::Transport;
     #[test]
     fn dialer_connects_to_listener_ipv4() {
-        env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();
+        env_logger::init();
         let listen_addr = "/ip4/127.0.0.1/tcp/38099/ws".parse().unwrap();
         let dial_addr = "/ip4/127.0.0.1/tcp/38099/ws".parse().unwrap();
         let s = task::spawn(async {
@@ -118,7 +117,7 @@ mod tests {
 
     #[test]
     fn dialer_connects_to_listener_dns() {
-        env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();
+        env_logger::init();
         let listen_addr = "/ip4/127.0.0.1/tcp/38099/ws".parse().unwrap();
         let dial_addr = "/dns4/localhost/tcp/38099/ws".parse().unwrap();
         let s = task::spawn(async {
@@ -134,7 +133,7 @@ mod tests {
 
     #[test]
     fn dialer_connects_to_listener_ipv6() {
-        env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();
+        env_logger::init();
         let listen_addr = "/ip6/::1/tcp/38088/ws".parse().unwrap();
         let dial_addr = "/ip6/::1/tcp/38088/ws".parse().unwrap();
         let s = task::spawn(async {
