@@ -13,7 +13,7 @@ use libp2p_swarm::identify::IdentifyConfig;
 use libp2p_swarm::ping::PingConfig;
 use libp2p_swarm::protocol_handler::{IProtocolHandler, ProtocolHandler};
 use libp2p_swarm::substream::Substream;
-use libp2p_swarm::{DummyProtocolHandler, Muxer, Swarm, SwarmError};
+use libp2p_swarm::{DummyProtocolHandler, Swarm, SwarmError};
 use libp2p_traits::{ReadEx, WriteEx};
 use libp2p_websocket::WsConfig;
 use secio;
@@ -73,13 +73,10 @@ fn run_server() {
         }
     }
 
-    let mut muxer = Muxer::new();
-    let dummy_handler = Box::new(DummyProtocolHandler::new());
-    muxer.add_protocol_handler(dummy_handler);
-    muxer.add_protocol_handler(Box::new(MyProtocolHandler));
-
-    let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer)
-        .with_ping(PingConfig::new().with_unsolicited(false).with_interval(Duration::from_secs(1)))
+    let mut swarm = Swarm::new(PeerId::from_public_key(keys.public()))
+        .with_transport(Box::new(tu))
+        .with_protocol(Box::new(DummyProtocolHandler::new()))
+        .with_protocol(Box::new(MyProtocolHandler))
         .with_identify(IdentifyConfig::new(false));
 
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
@@ -101,9 +98,9 @@ fn run_client() {
     let mux = mplex::Config::new();
     let tu = TransportUpgrade::new(WsConfig::new(), mux, sec);
 
-    let muxer = Muxer::new();
-
-    let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer);
+    let mut swarm = Swarm::new(PeerId::from_public_key(keys.public()))
+        .with_transport(Box::new(tu))
+        .with_identify(IdentifyConfig::new(false));
 
     let mut control = swarm.control();
 

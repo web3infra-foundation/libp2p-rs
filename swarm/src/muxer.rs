@@ -8,7 +8,7 @@ use libp2p_traits::{ReadEx, WriteEx};
 
 /// Muxer that uses multistream-select to select and handle protocols.
 ///
-pub struct Muxer<TRaw> {
+pub(crate) struct Muxer<TRaw> {
     protocol_handlers: FnvHashMap<ProtocolId, IProtocolHandler<TRaw>>,
 }
 
@@ -17,6 +17,12 @@ impl<TRaw> Clone for Muxer<TRaw> {
         Muxer {
             protocol_handlers: self.protocol_handlers.clone(),
         }
+    }
+}
+
+impl<TRaw> Default for Muxer<TRaw> {
+    fn default() -> Self {
+        Muxer::new()
     }
 }
 
@@ -32,7 +38,7 @@ impl<TRaw> Muxer<TRaw> {
 }
 
 impl<TRaw> Muxer<TRaw> {
-    pub fn add_protocol_handler(&mut self, p: IProtocolHandler<TRaw>) {
+    pub(crate) fn add_protocol_handler(&mut self, p: IProtocolHandler<TRaw>) {
         log::trace!(
             "adding protocol handler: {:?}",
             p.protocol_info().iter().map(|n| n.protocol_name_str()).collect::<Vec<_>>()
@@ -43,7 +49,7 @@ impl<TRaw> Muxer<TRaw> {
     }
 
     pub(crate) fn supported_protocols(&self) -> impl IntoIterator<Item = ProtocolId> + '_ {
-        self.protocol_handlers.keys().into_iter().map(|k| k.clone())
+        self.protocol_handlers.keys().copied().map(|k| <&[u8]>::clone(&k))
     }
 
     pub(crate) async fn select_inbound(&mut self, socket: TRaw) -> Result<(IProtocolHandler<TRaw>, TRaw, ProtocolId), TransportError>

@@ -9,9 +9,10 @@ use libp2p_core::muxing::StreamInfo;
 use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_core::{Multiaddr, PeerId};
+use libp2p_swarm::identify::IdentifyConfig;
 use libp2p_swarm::protocol_handler::{IProtocolHandler, ProtocolHandler};
 use libp2p_swarm::substream::Substream;
-use libp2p_swarm::{Muxer, Swarm, SwarmError};
+use libp2p_swarm::{Swarm, SwarmError};
 use libp2p_traits::{ReadEx, WriteEx};
 use libp2p_websocket::{tls, WsConfig};
 use plaintext;
@@ -23,7 +24,6 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
-
 
 /// run server:
 /// RUST_LOG=trace cargo run --example websocket_tls server
@@ -93,7 +93,7 @@ fn load_config(options: &ServerTlsConfig) -> io::Result<(PrivateKey, Vec<Certifi
 }
 
 // Build tls client config
-fn build_client_tls_config(options: &ClientTlsConfig)->tls::Config{
+fn build_client_tls_config(options: &ClientTlsConfig) -> tls::Config {
     let ca = load_certs(&options.cafile).unwrap();
     let ca_cert = &tls::Certificate::new(ca.get(0).unwrap().as_ref().to_vec());
     log::trace!("ca cert  {:?}", &ca_cert);
@@ -101,7 +101,7 @@ fn build_client_tls_config(options: &ClientTlsConfig)->tls::Config{
     builder.clone().add_trust(ca_cert).unwrap().clone().finish()
 }
 // Build tls server config
-fn build_server_tls_config(options: &ServerTlsConfig)->tls::Config{
+fn build_server_tls_config(options: &ServerTlsConfig) -> tls::Config {
     let (pk, certs) = load_config(&options).unwrap();
     log::trace!("pk  {:?}", &pk);
     log::trace!("certs  {:?}", &certs);
@@ -158,23 +158,23 @@ lazy_static! {
 
 fn run_server() -> io::Result<()> {
     let options = ServerTlsConfig::from_args();
-    let addr = format!("/ip4/{}/tcp/{}/wss",  &options.host, &options.port);
+    let addr = format!("/ip4/{}/tcp/{}/wss", &options.host, &options.port);
     log::info!("server addr {}", &addr);
 
     let keys = SERVER_KEY.clone();
 
     let listen_addr: Multiaddr = addr.parse().unwrap();
 
-    let sec=plaintext::PlainTextConfig::new(keys.clone());
+    let sec = plaintext::PlainTextConfig::new(keys.clone());
     let mux = mplex::Config::new();
 
     let ws = WsConfig::new().set_tls_config(build_server_tls_config(&options)).to_owned();
     let tu = TransportUpgrade::new(ws, mux, sec);
 
-    let mut muxer = Muxer::new();
-    muxer.add_protocol_handler(Box::new(MyProtocolHandler));
-
-    let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer);
+    let mut swarm = Swarm::new(PeerId::from_public_key(keys.public()))
+        .with_transport(Box::new(tu))
+        .with_protocol(Box::new(MyProtocolHandler))
+        .with_identify(IdentifyConfig::new(false));
 
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
 
@@ -187,7 +187,6 @@ fn run_server() -> io::Result<()> {
     loop {}
 }
 
-
 fn run_client() -> io::Result<()> {
     let options = ClientTlsConfig::from_args();
     let addr = format!("/dns4/{}/tcp/{}/wss", &options.domain, &options.port);
@@ -196,15 +195,15 @@ fn run_client() -> io::Result<()> {
     let keys = Keypair::generate_secp256k1();
     let addr: Multiaddr = addr.parse().unwrap();
 
-    let sec=plaintext::PlainTextConfig::new(keys.clone());
+    let sec = plaintext::PlainTextConfig::new(keys.clone());
     let mux = mplex::Config::new();
 
-    let ws = WsConfig::new_with_dns().set_tls_config(build_client_tls_config(&options)).to_owned();
+    let ws = WsConfig::new_with_dns()
+        .set_tls_config(build_client_tls_config(&options))
+        .to_owned();
     let tu = TransportUpgrade::new(ws, mux, sec);
 
-    let muxer = Muxer::new();
-
-    let mut swarm = Swarm::new(tu, PeerId::from_public_key(keys.public()), muxer);
+    let mut swarm = Swarm::new(PeerId::from_public_key(keys.public())).with_transport(Box::new(tu));
 
     let mut control = swarm.control();
 

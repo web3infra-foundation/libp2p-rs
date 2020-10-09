@@ -82,7 +82,11 @@ impl<C> Clone for Mplex<C> {
 
 impl<C> fmt::Debug for Mplex<C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Mplex").field("Id", &self.id).finish()
+        f.debug_struct("Mplex")
+            .field("Id", &self.id)
+            .field("Ra", &self.ra)
+            .field("Rid", &self.remote_peer_id)
+            .finish()
     }
 }
 
