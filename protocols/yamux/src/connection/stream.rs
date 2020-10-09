@@ -87,7 +87,7 @@ pub struct Stream {
     id: StreamId,
     conn: connection::Id,
     config: Arc<Config>,
-    sender: mpsc::Sender<StreamCommand>,
+    sender: mpsc::UnboundedSender<StreamCommand>,
     flag: Flag,
     shared: Arc<Mutex<Shared>>,
 }
@@ -114,7 +114,7 @@ impl Stream {
         config: Arc<Config>,
         window: u32,
         credit: u32,
-        sender: mpsc::Sender<StreamCommand>,
+        sender: mpsc::UnboundedSender<StreamCommand>,
     ) -> Self {
         Stream {
             id,

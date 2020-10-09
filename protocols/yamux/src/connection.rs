@@ -170,8 +170,8 @@ pub struct Connection<T> {
     streams: IntMap<StreamId, Stream>,
     control_sender: mpsc::Sender<ControlCommand>,
     control_receiver: Pausable<mpsc::Receiver<ControlCommand>>,
-    stream_sender: mpsc::Sender<StreamCommand>,
-    stream_receiver: mpsc::Receiver<StreamCommand>,
+    stream_sender: mpsc::UnboundedSender<StreamCommand>,
+    stream_receiver: mpsc::UnboundedReceiver<StreamCommand>,
     waiting_stream_sender: Option<oneshot::Sender<Result<stream::Stream>>>,
     pending_streams: VecDeque<stream::Stream>,
     shutdown: Shutdown,
@@ -276,7 +276,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send> Connection<T> {
     pub fn new(socket: T, cfg: Config, mode: Mode) -> Self {
         let id = Id::random(mode);
         log::debug!("new connection: {} ({:?})", id, mode);
-        let (stream_sender, stream_receiver) = mpsc::channel(MAX_COMMAND_BACKLOG);
+        let (stream_sender, stream_receiver) = mpsc::unbounded();
         let (control_sender, control_receiver) = mpsc::channel(MAX_COMMAND_BACKLOG);
         let socket = frame::Io::new(id, socket, cfg.max_buffer_size);
         Connection {
@@ -830,7 +830,9 @@ impl<T: ReadEx + WriteEx + Unpin + Send> Connection<T> {
                 frame
             };
             if let Some(f) = frame {
-                self.socket.send_frame(&f).await.or(Err(ConnectionError::Closed))?
+                // self.socket.send_frame(&f).await.or(Err(ConnectionError::Closed))?
+                let cmd = StreamCommand::SendFrame(f.left());
+                self.stream_sender.send(cmd).await.or(Err(ConnectionError::Closed))?
             }
             garbage.push(stream_id)
         }
