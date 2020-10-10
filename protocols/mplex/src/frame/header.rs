@@ -14,7 +14,16 @@ impl StreamID {
         StreamID { id, initiator }
     }
 
+    /// used by mplex protocol
     pub fn val(self) -> u32 {
+        self.id
+    }
+
+    /// identify by u32, only used by swarm
+    pub fn id(self) -> u32 {
+        if self.initiator {
+            return self.id + 1000000;
+        }
         self.id
     }
 }
@@ -34,7 +43,7 @@ impl PartialEq for StreamID {
 // HashMap insert() required key impl Hash trait
 impl std::hash::Hash for StreamID {
     fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
-        hasher.write_u32(self.id)
+        hasher.write_u32(self.id);
     }
 }
 impl nohash_hasher::IsEnabled for StreamID {}
@@ -76,11 +85,12 @@ impl fmt::Display for Header {
 
 pub(crate) fn encode(hdr: &Header) -> u32 {
     let tag = hdr.tag as u32;
+    let mut id = hdr.stream_id.id;
     if tag == 0 || hdr.stream_id.initiator {
-        return (hdr.stream_id.id << 3) + tag;
+        return (id << 3) + tag;
     }
 
-    (hdr.stream_id.id << 3) + tag - 1
+    (id << 3) + tag - 1
 }
 
 /// Decode a [`Header`] value.
