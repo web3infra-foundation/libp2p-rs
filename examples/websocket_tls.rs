@@ -142,14 +142,15 @@ where
 }
 
 fn main() -> io::Result<()> {
-    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();
     if std::env::args().nth(1) == Some("server".to_string()) {
         log::info!("Starting server ......");
         run_server()
-    } else if std::env::args().nth(1) == Some("client".to_string())  {
+    }else {
         log::info!("Starting client ......");
         run_client()
     }
+
 }
 
 lazy_static! {
