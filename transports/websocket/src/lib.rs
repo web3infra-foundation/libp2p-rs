@@ -163,7 +163,10 @@ mod tests {
         } else {
             ws_config = WsConfig::new();
         }
-        let conn = ws_config.outbound_timeout(std::time::Duration::new(5,0)).dial(dial_addr.clone()).await;
+        let conn = ws_config
+            .outbound_timeout(std::time::Duration::new(5, 0))
+            .dial(dial_addr.clone())
+            .await;
         assert_eq!(true, conn.is_ok());
         let r = conn.unwrap().send_data(vec![1, 23, 5]).await;
         assert_eq!(true, r.is_ok());

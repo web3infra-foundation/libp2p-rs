@@ -236,24 +236,22 @@ pub type IListener<TOutput> = Box<dyn TransportListener<Output = TOutput> + Send
 pub type ITransport<TOutput> = Box<dyn Transport<Output = TOutput> + Send>;
 
 impl<TOutput> fmt::Debug for IListener<TOutput> {
-    fn fmt(&self,f: &mut fmt::Formatter<'_>) -> fmt::Result {
-       write!(f,"IListener<TOutput>")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "IListener<TOutput>")
     }
 }
 
 impl<TOutput> fmt::Debug for ITransport<TOutput> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f,"ITransport<TOutput>")
+        write!(f, "ITransport<TOutput>")
     }
 }
 
-impl<TOutput:ConnectionInfo> Clone for ITransport<TOutput> {
-    fn clone(&self) -> Self{
+impl<TOutput: ConnectionInfo> Clone for ITransport<TOutput> {
+    fn clone(&self) -> Self {
         self.box_clone()
     }
 }
-
-
 
 pub struct Incoming<'a, T>(&'a mut T);
 
@@ -527,7 +525,7 @@ impl Error for TransportError {
             TransportError::ProtectorError(err) => Some(err),
             TransportError::SecurityError => None,
             TransportError::StreamMuxerError => None,
-            TransportError::WsError(err) =>  Some(&**err),
+            TransportError::WsError(err) => Some(&**err),
         }
     }
 }
