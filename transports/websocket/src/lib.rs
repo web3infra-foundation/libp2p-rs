@@ -157,13 +157,13 @@ mod tests {
     }
 
     async fn client(dial_addr: Multiaddr, dns: bool) {
-        let mut ws_config: WsConfig;
+        let ws_config: WsConfig;
         if dns {
             ws_config = WsConfig::new_with_dns();
         } else {
             ws_config = WsConfig::new();
         }
-        let conn = ws_config.dial(dial_addr.clone()).await;
+        let conn = ws_config.outbound_timeout(std::time::Duration::new(5,0)).dial(dial_addr.clone()).await;
         assert_eq!(true, conn.is_ok());
         let r = conn.unwrap().send_data(vec![1, 23, 5]).await;
         assert_eq!(true, r.is_ok());
