@@ -90,7 +90,7 @@ impl Stream {
 
     /// Get this stream's identifier.
     pub fn id(&self) -> u32 {
-        self.id.val()
+        self.id.id()
     }
 
     // TODO: handle the case: buf capacity is not enough

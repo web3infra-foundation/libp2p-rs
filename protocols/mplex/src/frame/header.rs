@@ -14,6 +14,15 @@ impl StreamID {
         StreamID { id, initiator }
     }
 
+    /// identity by u32, used by swarm
+    pub fn id(self) -> u32 {
+        if self.initiator {
+            return 1000000 + self.id;
+        }
+        self.id
+    }
+
+    /// use by mplex
     pub fn val(self) -> u32 {
         self.id
     }
@@ -34,7 +43,7 @@ impl PartialEq for StreamID {
 // HashMap insert() required key impl Hash trait
 impl std::hash::Hash for StreamID {
     fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
-        hasher.write_u32(self.id)
+        hasher.write_u32(self.id);
     }
 }
 impl nohash_hasher::IsEnabled for StreamID {}
