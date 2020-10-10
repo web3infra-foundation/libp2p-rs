@@ -474,7 +474,7 @@ pub enum TransportError {
     StreamMuxerError,
 
     /// websocket error
-    WsError,
+    WsError(Box<dyn std::error::Error + Send + Sync>),
 }
 
 impl From<std::io::Error> for TransportError {
@@ -509,7 +509,7 @@ impl fmt::Display for TransportError {
             TransportError::ProtectorError(err) => write!(f, "Protector error {:?}", err),
             TransportError::SecurityError => write!(f, "SecurityError layer error"),
             TransportError::StreamMuxerError => write!(f, "StreamMuxerError layer error"),
-            TransportError::WsError => write!(f, "Websocket transport  error"),
+            TransportError::WsError(err) => write!(f, "Websocket transport  error: {}", err),
         }
     }
 }
@@ -527,7 +527,7 @@ impl Error for TransportError {
             TransportError::ProtectorError(err) => Some(err),
             TransportError::SecurityError => None,
             TransportError::StreamMuxerError => None,
-            TransportError::WsError => None,
+            TransportError::WsError(err) =>  Some(&**err),
         }
     }
 }

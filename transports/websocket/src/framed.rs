@@ -331,7 +331,7 @@ impl From<WsError> for TransportError {
     fn from(e: WsError) -> Self {
         match e {
             WsError::InvalidMultiaddr(a) => TransportError::MultiaddrNotSupported(a),
-            _ => TransportError::WsError,
+            _ => TransportError::WsError(Box::new(e)),
         }
     }
 }
