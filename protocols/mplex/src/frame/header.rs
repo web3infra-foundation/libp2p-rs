@@ -14,16 +14,16 @@ impl StreamID {
         StreamID { id, initiator }
     }
 
-    /// identity by u32, used by swarm
-    pub fn id(self) -> u32 {
-        if self.initiator {
-            return 1000000 + self.id;
-        }
+    /// used by mplex protocol
+    pub fn val(self) -> u32 {
         self.id
     }
 
-    /// use by mplex
-    pub fn val(self) -> u32 {
+    /// identify by u32, only used by swarm
+    pub fn id(self) -> u32 {
+        if self.initiator {
+            return self.id + 1000000;
+        }
         self.id
     }
 }
@@ -85,11 +85,12 @@ impl fmt::Display for Header {
 
 pub(crate) fn encode(hdr: &Header) -> u32 {
     let tag = hdr.tag as u32;
+    let mut id = hdr.stream_id.id;
     if tag == 0 || hdr.stream_id.initiator {
-        return (hdr.stream_id.id << 3) + tag;
+        return (id << 3) + tag;
     }
 
-    (hdr.stream_id.id << 3) + tag - 1
+    (id << 3) + tag - 1
 }
 
 /// Decode a [`Header`] value.
