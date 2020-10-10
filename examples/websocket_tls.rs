@@ -146,11 +146,10 @@ fn main() -> io::Result<()> {
     if std::env::args().nth(1) == Some("server".to_string()) {
         log::info!("Starting server ......");
         run_server()
-    }else {
+    } else {
         log::info!("Starting client ......");
         run_client()
     }
-
 }
 
 lazy_static! {

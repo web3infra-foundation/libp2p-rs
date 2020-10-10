@@ -23,7 +23,7 @@ const MAX_DATA_SIZE: usize = 256 * 1024 * 1024;
 /// frame payloads which does not implement [`AsyncRead`] or
 /// [`AsyncWrite`]. See [`crate::WsConfig`] if you require the latter.
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct WsConfig {
     transport: ITransport<TcpTransStream>,
     pub(crate) inner_config: InnerConfig,
@@ -98,7 +98,6 @@ pub struct WsTransListener {
     inner_config: InnerConfig,
     use_tls: bool,
 }
-
 
 impl WsTransListener {
     pub(crate) fn new(inner: IListener<TcpTransStream>, inner_config: InnerConfig, use_tls: bool) -> Self {
@@ -219,7 +218,7 @@ impl Transport for WsConfig {
                 Ok(Either::Left(redirect)) => {
                     if remaining_redirects == 0 {
                         debug!("too many redirects");
-                        return Err(TransportError::Internal);
+                        return Err(WsError::TooManyRedirects.into());
                     }
                     remaining_redirects -= 1;
                     addr = location_to_multiaddr(&redirect)?;
@@ -267,7 +266,6 @@ impl WsConfig {
             .transport
             .dial(inner_addr)
             .map_err(|e| match e {
-                TransportError::MultiaddrNotSupported(a) => WsError::InvalidMultiaddr(a),
                 _ => WsError::Transport(e),
             })
             .await?;
