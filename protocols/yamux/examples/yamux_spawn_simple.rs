@@ -82,7 +82,7 @@ fn run_client() {
         });
 
         let mut handles = VecDeque::new();
-        for _ in 0..10 {
+        for _ in 0..100 {
             let mut stream = ctrl.clone().open_stream().await.unwrap();
             info!("C: opened new stream {}", stream.id());
             let handle = task::spawn(async move {
