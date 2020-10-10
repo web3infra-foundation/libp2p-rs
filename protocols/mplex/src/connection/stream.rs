@@ -54,13 +54,13 @@ pub struct Stream {
 
 impl fmt::Debug for Stream {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "(Stream {}/{})", self.conn_id, self.id.val())
+        write!(f, "(Stream {}/{})", self.conn_id, self.id.id())
     }
 }
 
 impl fmt::Display for Stream {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "(Stream {}/{})", self.conn_id, self.id.val())
+        write!(f, "(Stream {}/{})", self.conn_id, self.id.id())
     }
 }
 
