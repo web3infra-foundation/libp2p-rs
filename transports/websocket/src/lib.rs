@@ -89,6 +89,10 @@ impl Transport for WsConfig {
     fn box_clone(&self) -> ITransport<Self::Output> {
         Box::new(self.clone())
     }
+
+    fn protocols(&self) -> Vec<u32> {
+        self.inner.protocols()
+    }
 }
 
 #[cfg(test)]

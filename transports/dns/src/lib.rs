@@ -36,7 +36,7 @@ use async_std::net::ToSocketAddrs;
 use async_trait::async_trait;
 use libp2p_core::transport::{IListener, ITransport};
 use libp2p_core::{
-    multiaddr::{Multiaddr, Protocol},
+    multiaddr::{protocol, protocol::Protocol, Multiaddr},
     transport::TransportError,
     Transport,
 };
@@ -144,6 +144,10 @@ where
 
     fn box_clone(&self) -> ITransport<Self::Output> {
         Box::new(self.clone())
+    }
+
+    fn protocols(&self) -> Vec<u32> {
+        vec![protocol::DNS]
     }
 }
 

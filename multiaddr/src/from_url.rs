@@ -1,4 +1,4 @@
-use crate::{Multiaddr, Protocol};
+use crate::{protocol::Protocol, Multiaddr};
 use std::{error, fmt, iter, net::IpAddr};
 
 /// Attempts to parse an URL into a multiaddress.

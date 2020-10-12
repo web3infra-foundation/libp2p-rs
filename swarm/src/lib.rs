@@ -35,6 +35,7 @@
 
 mod connection;
 mod control;
+//mod dial;
 mod muxer;
 mod network;
 mod registry;
@@ -62,7 +63,12 @@ use libp2p_core::peerstore::PeerStore;
 use libp2p_core::secure_io::SecureInfo;
 use libp2p_core::transport::ITransport;
 use libp2p_core::upgrade::ProtocolName;
-use libp2p_core::{muxing::StreamMuxer, transport::TransportError, Multiaddr, PeerId};
+use libp2p_core::{
+    multiaddr::{protocol, Multiaddr},
+    muxing::StreamMuxer,
+    transport::TransportError,
+    PeerId,
+};
 use libp2p_traits::{ReadEx, WriteEx};
 
 use crate::connection::{Connection, ConnectionId, ConnectionLimit, Direction};
@@ -212,7 +218,7 @@ where
     muxer: Muxer<TStreamMuxer::Substream>,
 
     /// The Transports.
-    transports: Vec<ITransport<TStreamMuxer>>,
+    transports: FnvHashMap<u32, ITransport<TStreamMuxer>>,
 
     /// The local peer ID.
     local_peer_id: PeerId,
@@ -284,7 +290,7 @@ where
         Swarm {
             peers: PeerStore::default(),
             muxer: Muxer::new(),
-            transports: vec![],
+            transports: Default::default(),
             local_peer_id,
             // listeners: SmallVec::with_capacity(16),
             next_connection_id: 0,
@@ -306,10 +312,36 @@ where
         self.next_connection_id += 1;
         self.next_connection_id
     }
-
+    /// Creates Swarm with transports.(TODO: only support one Transport,so far)
+    pub fn with_transports(self, transports: Vec<ITransport<TStreamMuxer>>) -> Self {
+        let mut me = self;
+        for transport in transports {
+            me = me.with_transport(transport);
+        }
+        me
+    }
     /// Creates Swarm with transport.
     pub fn with_transport(mut self, transport: ITransport<TStreamMuxer>) -> Self {
-        self.transports.push(transport);
+        let protocols = transport.protocols();
+        if protocols.is_empty() {
+            log::error!("useless transport handles no protocols: {:?}", transport);
+            //todo: return err?
+        }
+        let mut registered: Vec<protocol::Protocol> = vec![];
+        for p in protocols.iter() {
+            if self.transports.get(p).is_some() {
+                let proto = protocol::Protocol::get_enum(*p).unwrap();
+                registered.push(proto);
+            }
+        }
+        if !registered.is_empty() {
+            log::warn!("transports already registered for protocol(s): {:?}", registered);
+        }
+
+        for p in protocols.iter() {
+            log::info!("insert protocol={}", p);
+            self.transports.insert(*p, transport.clone());
+        }
         self
     }
     /// Creates Swarm with protocol handler.
@@ -574,13 +606,47 @@ where
     /// Starts listening on the given address.
     ///
     /// Returns an error if the address is not supported.
-    /// TODO: addr: Multiaddr might be a Vec<Multiaddr>
-    pub fn listen_on(&mut self, addr: Multiaddr) -> Result<()> {
-        // TODO: figure out the best transport for listening
-        // TODO: first_mut ==> per protocol
-        let _protocols = addr.iter();
+    pub fn listen_on(&mut self, addrs: Vec<Multiaddr>) -> Result<()> {
+        let mut succeeded: u32 = 0;
+        let mut errs = Vec::new();
+        for addr in addrs.clone() {
+            let r = self.add_listen_addr(addr);
+            match r {
+                Ok(_) => {
+                    succeeded += 1
+                }
+                Err(e) => {
+                    errs.push(e);
+                }
+            };
+        }
 
-        let transport = self.transports.first_mut().unwrap();
+        for (i, n) in errs.iter().enumerate() {
+            log::warn!("listen on {} failed: {}", addrs[i], n)
+        }
+
+        if succeeded == 0 && !addrs.is_empty(){
+            log::error!("failed to listen on any addresses:{:?}", addrs);
+            return Err(SwarmError::CanNotListenOnAny);
+        }
+
+        Ok(())
+    }
+
+    /*    /// Remove some listener.
+        ///
+        /// Returns `Ok(())` if there was a listener with this ID.
+        pub fn remove_listener(&mut self, id: ListenerId) -> Result<()> {
+            if let Some(i) = self.listeners.iter().position(|l| l.id == id) {
+                self.listeners.remove(i);
+                Ok(())
+            } else {
+                Err(SwarmError::Internal)
+            }
+        }
+    */
+    fn add_listen_addr(&mut self, addr: Multiaddr) -> Result<()> {
+        let mut transport = self.get_best_transport(addr.clone())?;
         let mut listener = transport.listen_on(addr)?;
         self.listened_addrs.push(listener.multi_addr());
 
@@ -616,19 +682,23 @@ where
         });
         Ok(())
     }
-
-    /*    /// Remove some listener.
-        ///
-        /// Returns `Ok(())` if there was a listener with this ID.
-        pub fn remove_listener(&mut self, id: ListenerId) -> Result<()> {
-            if let Some(i) = self.listeners.iter().position(|l| l.id == id) {
-                self.listeners.remove(i);
-                Ok(())
-            } else {
-                Err(SwarmError::Internal)
+    ///  retrieves the appropriate transport for listening on or dial the given multiaddr.
+    fn get_best_transport(&self, mut addr: Multiaddr) -> Result<ITransport<TStreamMuxer>> {
+        let protocol = addr.pop();
+        match protocol {
+            Some(d) => {
+                log::info!("get best transport, protocol={}", &d);
+                let id = d
+                    .get_key()
+                    .map_err(|_| SwarmError::Transport(TransportError::MultiaddrNotSupported(addr)))?;
+                if let Some(selected) = self.transports.get(&id).map(|s| s.to_owned()) {
+                    return Ok(selected);
+                }
+                Err(SwarmError::TransportsNotRegistered)
             }
+            None => Err(SwarmError::Transport(TransportError::MultiaddrNotSupported(addr))),
         }
-    */
+    }
     /// Tries to dial the given address.
     ///
     /// Returns an error if the address is not supported.
@@ -639,7 +709,8 @@ where
 
         let mut tx = self.event_sender.clone();
         // TODO: first_mut ==> per protocol
-        let mut transport = self.transports.first_mut().unwrap().box_clone();
+        //let mut transport = self.transports.first_mut().unwrap().box_clone();
+        let mut transport = self.get_best_transport(addr.clone()).unwrap();
         task::spawn(async move {
             let r = transport.dial(addr.clone()).await;
             let response = match r {
@@ -1151,6 +1222,12 @@ pub enum SwarmError {
 
     /// Internal, tentatively for convenience
     Internal,
+
+    /// listen on fail
+    CanNotListenOnAny,
+
+    /// Transports not registered
+    TransportsNotRegistered,
 }
 
 impl fmt::Display for SwarmError {
@@ -1163,6 +1240,8 @@ impl fmt::Display for SwarmError {
             SwarmError::Transport(err) => write!(f, "Swarm Transport error: {}.", err),
             SwarmError::Internal => write!(f, "Swarm internal error."),
             SwarmError::Closing(s) => write!(f, "Swarm channel closed source={}.", s),
+            SwarmError::CanNotListenOnAny => write!(f, "Failed to listen on any addresses"),
+            SwarmError::TransportsNotRegistered => write!(f, "Transports not registered"),
         }
     }
 }
@@ -1177,6 +1256,8 @@ impl error::Error for SwarmError {
             SwarmError::Transport(err) => Some(err),
             SwarmError::Internal => None,
             SwarmError::Closing(_) => None,
+            SwarmError::CanNotListenOnAny => None,
+            SwarmError::TransportsNotRegistered => None,
         }
     }
 }

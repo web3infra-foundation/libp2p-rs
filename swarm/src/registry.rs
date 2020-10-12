@@ -164,7 +164,7 @@ fn isort(xs: &mut [Record]) {
 #[cfg(test)]
 mod tests {
     use super::{isort, Addresses, Record};
-    use libp2p_core::multiaddr::{Multiaddr, Protocol};
+    use libp2p_core::multiaddr::{protocol::Protocol, Multiaddr};
     use quickcheck::{Arbitrary, Gen, QuickCheck};
     use rand::Rng;
     use std::num::NonZeroUsize;

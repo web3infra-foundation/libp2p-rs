@@ -4,12 +4,12 @@ pub use multihash;
 mod errors;
 mod from_url;
 mod onion_addr;
-mod protocol;
+pub mod protocol;
 
 pub use self::errors::{Error, Result};
 pub use self::from_url::{from_url, from_url_lossy, FromUrlErr};
 pub use self::onion_addr::Onion3Addr;
-pub use self::protocol::Protocol;
+use self::protocol::Protocol;
 use serde::{
     de::{self, Error as DeserializerError},
     Deserialize, Deserializer, Serialize, Serializer,

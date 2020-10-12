@@ -14,7 +14,7 @@ use futures::prelude::*;
 use futures_timer::Delay;
 use libp2p_core::transport::{ConnectionInfo, IListener, ITransport};
 use libp2p_core::{
-    multiaddr::{Multiaddr, Protocol},
+    multiaddr::{protocol, protocol::Protocol, Multiaddr},
     transport::{TransportError, TransportListener},
     Transport,
 };
@@ -71,7 +71,6 @@ impl TcpConfig {
 #[async_trait]
 impl Transport for TcpConfig {
     type Output = TcpTransStream;
-
     fn listen_on(&mut self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         let socket_addr = if let Ok(sa) = multiaddr_to_socketaddr(&addr) {
             sa
@@ -176,6 +175,10 @@ impl Transport for TcpConfig {
     fn box_clone(&self) -> ITransport<Self::Output> {
         Box::new(self.clone())
     }
+
+    fn protocols(&self) -> Vec<u32> {
+        vec![protocol::TCP]
+    }
 }
 
 /// Wraps around a `TcpListener`.
@@ -198,7 +201,6 @@ pub struct TcpTransListener {
 #[async_trait]
 impl TransportListener for TcpTransListener {
     type Output = TcpTransStream;
-
     async fn accept(&mut self) -> Result<Self::Output, TransportError> {
         let (stream, sock_addr) = self.inner.accept().await?;
         apply_config(&self.config, &stream)?;

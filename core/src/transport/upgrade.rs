@@ -71,6 +71,10 @@ where
     fn box_clone(&self) -> ITransport<Self::Output> {
         Box::new(self.clone())
     }
+
+    fn protocols(&self) -> Vec<u32> {
+        self.inner.protocols()
+    }
 }
 pub struct ListenerUpgrade<TOutput, TMux, TSec> {
     inner: IListener<TOutput>,
