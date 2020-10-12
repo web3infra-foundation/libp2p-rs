@@ -1,11 +1,11 @@
 use async_std::task;
 use libp2p_core::identity;
+use libp2p_core::secure_io::SecureInfo;
+use libp2p_noise::{Keypair, NoiseConfig, X25519};
 use libp2p_traits::{ReadEx, WriteEx};
 use log::info;
 use log::LevelFilter;
 use std::string::ToString;
-use libp2p_noise::{X25519, Keypair, NoiseConfig};
-use libp2p_core::secure_io::SecureInfo;
 
 fn main() {
     env_logger::builder().filter_level(LevelFilter::Info).init();
@@ -20,9 +20,7 @@ fn main() {
 
 fn run_server() {
     task::block_on(async {
-        let listener = async_std::net::TcpListener::bind("127.0.0.1:3214")
-            .await
-            .unwrap();
+        let listener = async_std::net::TcpListener::bind("127.0.0.1:3214").await.unwrap();
 
         while let Ok((socket, _)) = listener.accept().await {
             task::spawn(async move {
@@ -62,9 +60,7 @@ fn run_server() {
 
 fn run_client() {
     task::block_on(async {
-        let socket = async_std::net::TcpStream::connect("127.0.0.1:3214")
-            .await
-            .unwrap();
+        let socket = async_std::net::TcpStream::connect("127.0.0.1:3214").await.unwrap();
         info!("[client] connected to server: {:?}", socket.peer_addr());
 
         let client_id = identity::Keypair::generate_ed25519();

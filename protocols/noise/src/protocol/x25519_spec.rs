@@ -22,7 +22,7 @@
 //!
 //! [libp2p-noise-spec]: https://github.com/libp2p/specs/tree/master/noise
 
-use crate::{NoiseConfig, NoiseError, Protocol, ProtocolParams, protocol};
+use crate::{protocol, NoiseConfig, NoiseError, Protocol, ProtocolParams};
 use libp2p_core::identity;
 use rand::Rng;
 use x25519_dalek::{x25519, X25519_BASEPOINT_BYTES};
@@ -131,20 +131,12 @@ impl Protocol<X25519Spec> for X25519Spec {
         Ok(PublicKey(X25519Spec(pk)))
     }
 
-    fn verify(
-        id_pk: &identity::PublicKey,
-        dh_pk: &PublicKey<X25519Spec>,
-        sig: &Option<Vec<u8>>,
-    ) -> bool {
-        sig.as_ref().map_or(false, |s| {
-            id_pk.verify(&[STATIC_KEY_DOMAIN.as_bytes(), dh_pk.as_ref()].concat(), s)
-        })
+    fn verify(id_pk: &identity::PublicKey, dh_pk: &PublicKey<X25519Spec>, sig: &Option<Vec<u8>>) -> bool {
+        sig.as_ref()
+            .map_or(false, |s| id_pk.verify(&[STATIC_KEY_DOMAIN.as_bytes(), dh_pk.as_ref()].concat(), s))
     }
 
-    fn sign(
-        id_keys: &identity::Keypair,
-        dh_pk: &PublicKey<X25519Spec>,
-    ) -> Result<Vec<u8>, NoiseError> {
+    fn sign(id_keys: &identity::Keypair, dh_pk: &PublicKey<X25519Spec>) -> Result<Vec<u8>, NoiseError> {
         Ok(id_keys.sign(&[STATIC_KEY_DOMAIN.as_bytes(), dh_pk.as_ref()].concat())?)
     }
 }

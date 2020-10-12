@@ -128,9 +128,9 @@ pub async fn rt1_initiator<T, C>(
     identity_x: IdentityExchange,
     keypair: identity::Keypair,
 ) -> Result<(RemoteIdentity<C>, NoiseOutput<T>), NoiseError>
-    where
-        T: WriteEx + ReadEx + Send + Unpin + 'static,
-        C: Protocol<C> + AsRef<[u8]>,
+where
+    T: WriteEx + ReadEx + Send + Unpin + 'static,
+    C: Protocol<C> + AsRef<[u8]>,
 {
     let mut state = State::new(io, session, identity, identity_x)?;
     send_identity(&mut state).await?;
@@ -161,9 +161,9 @@ pub async fn rt1_responder<T, C>(
     identity_x: IdentityExchange,
     keypair: identity::Keypair,
 ) -> Result<(RemoteIdentity<C>, NoiseOutput<T>), NoiseError>
-    where
-        T: WriteEx + ReadEx + Send + Unpin + 'static,
-        C: Protocol<C> + AsRef<[u8]>,
+where
+    T: WriteEx + ReadEx + Send + Unpin + 'static,
+    C: Protocol<C> + AsRef<[u8]>,
 {
     let mut state = State::new(io, session, identity, identity_x)?;
     recv_identity(&mut state).await?;
@@ -196,9 +196,9 @@ pub async fn rt15_initiator<T, C>(
     identity_x: IdentityExchange,
     priv_key: identity::Keypair,
 ) -> Result<(RemoteIdentity<C>, NoiseOutput<T>), NoiseError>
-    where
-        T: WriteEx + ReadEx + Unpin + Send + 'static,
-        C: Protocol<C> + AsRef<[u8]>,
+where
+    T: WriteEx + ReadEx + Unpin + Send + 'static,
+    C: Protocol<C> + AsRef<[u8]>,
 {
     let mut state = State::new(io, session, identity, identity_x)?;
     send_empty(&mut state).await?;
@@ -234,9 +234,9 @@ pub async fn rt15_responder<T, C>(
     identity_x: IdentityExchange,
     keypair: identity::Keypair,
 ) -> Result<(RemoteIdentity<C>, NoiseOutput<T>), NoiseError>
-    where
-        T: WriteEx + ReadEx + Unpin + Send + 'static,
-        C: Protocol<C> + AsRef<[u8]>,
+where
+    T: WriteEx + ReadEx + Unpin + Send + 'static,
+    C: Protocol<C> + AsRef<[u8]>,
 {
     let mut state = State::new(io, session, identity, identity_x)?;
     recv_empty(&mut state).await?;
@@ -295,19 +295,14 @@ impl<T> State<T> {
 impl<T> State<T> {
     /// Finish a handshake, yielding the established remote identity and the
     /// [`NoiseOutput`] for communicating on the encrypted channel.
-    fn finish<C>(
-        self,
-        keypair: identity::Keypair,
-    ) -> Result<(RemoteIdentity<C>, NoiseOutput<T>), NoiseError>
-        where
-            C: Protocol<C> + AsRef<[u8]>,
+    fn finish<C>(self, keypair: identity::Keypair) -> Result<(RemoteIdentity<C>, NoiseOutput<T>), NoiseError>
+    where
+        C: Protocol<C> + AsRef<[u8]>,
     {
         let (pubkey, mut io) = self.io.into_transport(keypair)?;
         let remote = match (self.id_remote_pubkey, pubkey) {
             (_, None) => RemoteIdentity::Unknown,
-            (None, Some(dh_pk)) => {
-                RemoteIdentity::StaticDhKey(dh_pk)
-            }
+            (None, Some(dh_pk)) => RemoteIdentity::StaticDhKey(dh_pk),
             (Some(id_pk), Some(dh_pk)) => {
                 let pubkey = id_pk.clone();
                 io.remote_pub_key = pubkey;
@@ -327,8 +322,8 @@ impl<T> State<T> {
 
 /// A future for receiving a Noise handshake message.
 async fn recv<T>(state: &mut State<T>) -> Result<Bytes, NoiseError>
-    where
-        T: ReadEx + WriteEx + Unpin + Send,
+where
+    T: ReadEx + WriteEx + Unpin + Send,
 {
     match state.io.next().await {
         None => Err(io::Error::new(io::ErrorKind::UnexpectedEof, "eof").into()),
@@ -339,22 +334,20 @@ async fn recv<T>(state: &mut State<T>) -> Result<Bytes, NoiseError>
 
 /// A future for receiving a Noise handshake message with an empty payload.
 async fn recv_empty<T>(state: &mut State<T>) -> Result<(), NoiseError>
-    where
-        T: ReadEx + WriteEx + Unpin + Send,
+where
+    T: ReadEx + WriteEx + Unpin + Send,
 {
     let msg = recv(state).await?;
     if !msg.is_empty() {
-        return Err(
-            io::Error::new(io::ErrorKind::InvalidData, "Unexpected handshake payload.").into(),
-        );
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "Unexpected handshake payload.").into());
     }
     Ok(())
 }
 
 /// A future for sending a Noise handshake message with an empty payload.
 async fn send_empty<T>(state: &mut State<T>) -> Result<(), NoiseError>
-    where
-        T: WriteEx + ReadEx + Unpin + Send,
+where
+    T: WriteEx + ReadEx + Unpin + Send,
 {
     let u = Vec::<u8>::new();
     state.io.send2(&u).await?;
@@ -366,8 +359,8 @@ async fn send_empty<T>(state: &mut State<T>) -> Result<(), NoiseError>
 /// A future for receiving a Noise handshake message with a payload
 /// identifying the remote.
 async fn recv_identity<T>(state: &mut State<T>) -> Result<(), NoiseError>
-    where
-        T: ReadEx + WriteEx + Unpin + Send,
+where
+    T: ReadEx + WriteEx + Unpin + Send,
 {
     let msg = recv(state).await?;
 
@@ -408,8 +401,7 @@ async fn recv_identity<T>(state: &mut State<T>) -> Result<(), NoiseError>
     info!("pb parsed ok");
 
     if !pb.identity_key.is_empty() {
-        let pk = identity::PublicKey::from_protobuf_encoding(&pb.identity_key)
-            .map_err(|_| NoiseError::InvalidKey)?;
+        let pk = identity::PublicKey::from_protobuf_encoding(&pb.identity_key).map_err(|_| NoiseError::InvalidKey)?;
         if let Some(ref k) = state.id_remote_pubkey {
             if k != &pk {
                 return Err(NoiseError::InvalidKey);
@@ -428,8 +420,8 @@ async fn recv_identity<T>(state: &mut State<T>) -> Result<(), NoiseError>
 
 /// Send a Noise handshake message with a payload identifying the local node to the remote.
 async fn send_identity<T>(state: &mut State<T>) -> Result<(), NoiseError>
-    where
-        T: WriteEx + ReadEx + Unpin + Send,
+where
+    T: WriteEx + ReadEx + Unpin + Send,
 {
     let mut pb = payload_proto::NoiseHandshakePayload::default();
     if state.send_identity {
@@ -442,8 +434,7 @@ async fn send_identity<T>(state: &mut State<T>) -> Result<(), NoiseError>
     // for a short while to permit migration.
     let mut msg = Vec::with_capacity(pb.encoded_len() + 2);
     msg.extend_from_slice(&(pb.encoded_len() as u16).to_be_bytes());
-    pb.encode(&mut msg)
-        .expect("Vec<u8> provides capacity as needed");
+    pb.encode(&mut msg).expect("Vec<u8> provides capacity as needed");
     state.io.send2(&msg).await?;
 
     state.io.flush2().await?;

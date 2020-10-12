@@ -86,12 +86,9 @@ impl<T> NoiseFramed<T, snow::HandshakeState> {
     /// transitioning to transport mode because the handshake is incomplete,
     /// an error is returned. Similarly if the remote's static DH key, if
     /// present, cannot be parsed.
-    pub fn into_transport<C>(
-        self,
-        keypair: identity::Keypair,
-    ) -> Result<(Option<PublicKey<C>>, NoiseOutput<T>), NoiseError>
-        where
-            C: Protocol<C> + AsRef<[u8]>,
+    pub fn into_transport<C>(self, keypair: identity::Keypair) -> Result<(Option<PublicKey<C>>, NoiseOutput<T>), NoiseError>
+    where
+        C: Protocol<C> + AsRef<[u8]>,
     {
         let dh_remote_pubkey = match self.session.get_remote_static() {
             None => None,
@@ -141,11 +138,7 @@ enum WriteState {
     /// Ready to write another frame.
     Ready,
     /// Writing the frame length.
-    WriteLen {
-        len: usize,
-        buf: [u8; 2],
-        off: usize,
-    },
+    WriteLen { len: usize, buf: [u8; 2], off: usize },
     /// Writing the frame data.
     WriteData { len: usize, off: usize },
     /// EOF has been reached unexpectedly (terminal state).
@@ -164,20 +157,15 @@ enum WriteState {
 // }
 
 impl<T, S> NoiseFramed<T, S>
-    where
-        T: WriteEx + ReadEx + Unpin + Send,
-        S: SessionState + Unpin,
+where
+    T: WriteEx + ReadEx + Unpin + Send,
+    S: SessionState + Unpin,
 {
     /// Read data
     pub(crate) async fn next(&mut self) -> Option<io::Result<Bytes>> {
         loop {
             match self.read_state {
-                ReadState::Ready => {
-                    self.read_state = ReadState::ReadLen {
-                        buf: [0, 0],
-                        off: 0,
-                    }
-                }
+                ReadState::Ready => self.read_state = ReadState::ReadLen { buf: [0, 0], off: 0 },
                 ReadState::ReadLen { mut buf, mut off } => {
                     let n = match read_frame_len(&mut self.io, &mut buf, &mut off).await {
                         Ok(Some(n)) => n,
@@ -219,10 +207,7 @@ impl<T, S> NoiseFramed<T, S>
                     if len == *off {
                         trace!("read: decrypting {} bytes", len);
                         self.decrypt_buffer.resize(len, 0);
-                        if let Ok(n) = self
-                            .session
-                            .read_message(&self.read_buffer, &mut self.decrypt_buffer)
-                        {
+                        if let Ok(n) = self.session.read_message(&self.read_buffer, &mut self.decrypt_buffer) {
                             self.decrypt_buffer.truncate(n);
                             trace!("read: payload len = {} bytes", n);
                             self.read_state = ReadState::Ready;
@@ -262,11 +247,7 @@ impl<T, S> NoiseFramed<T, S>
                 WriteState::Ready => {
                     return Ok(());
                 }
-                WriteState::WriteLen {
-                    len,
-                    buf,
-                    mut off,
-                } => {
+                WriteState::WriteLen { len, buf, mut off } => {
                     trace!("write: frame len ({}, {:?}, {}/2)", len, buf, off);
                     match write_frame_len(&mut self.io, &buf, &mut off).await {
                         Ok(true) => (),
@@ -278,9 +259,9 @@ impl<T, S> NoiseFramed<T, S>
                         Err(e) => {
                             return Err(e);
                         } // Poll::Pending => {
-                        //     self.write_state = WriteState::WriteLen { len, buf, off };
-                        //     return Poll::Pending;
-                        // }
+                          //     self.write_state = WriteState::WriteLen { len, buf, off };
+                          //     return Poll::Pending;
+                          // }
                     }
                     self.write_state = WriteState::WriteData { len, off: 0 }
                 }
@@ -315,12 +296,8 @@ impl<T, S> NoiseFramed<T, S>
 
     /// Use noise protocol to cipher data
     pub(crate) async fn send2(&mut self, frame: &[u8]) -> io::Result<()> {
-        self.write_buffer
-            .resize(frame.len() + EXTRA_ENCRYPT_SPACE, 0u8);
-        match self
-            .session
-            .write_message(frame, &mut self.write_buffer[..])
-        {
+        self.write_buffer.resize(frame.len() + EXTRA_ENCRYPT_SPACE, 0u8);
+        match self.session.write_message(frame, &mut self.write_buffer[..]) {
             Ok(n) => {
                 trace!("write: cipher text len = {} bytes", n);
                 self.write_buffer.truncate(n);
@@ -389,19 +366,11 @@ impl SessionState for snow::TransportState {
 /// for the next invocation.
 ///
 /// Returns `None` if EOF has been encountered.
-async fn read_frame_len<R: ReadEx + Unpin + Send>(
-    io: &mut R,
-    buf: &mut [u8; 2],
-    off: &mut usize,
-) -> io::Result<Option<u16>> {
+async fn read_frame_len<R: ReadEx + Unpin + Send>(io: &mut R, buf: &mut [u8; 2], off: &mut usize) -> io::Result<Option<u16>> {
     // match ready!(Pin::new(&mut io).poll_read(cx, &mut buf[*off ..])) {
     match io.read_exact2(&mut buf[*off..]).await {
-        Ok(()) => {
-            return Ok(Some(u16::from_be_bytes(*buf)));
-        }
-        Err(e) => {
-            return Err(e);
-        }
+        Ok(()) => Ok(Some(u16::from_be_bytes(*buf))),
+        Err(e) => Err(e),
     }
     // match io.read2(&mut buf[*off..]).await {
     //     Ok(n) => {
@@ -428,11 +397,7 @@ async fn read_frame_len<R: ReadEx + Unpin + Send>(
 /// be preserved for the next invocation.
 ///
 /// Returns `false` if EOF has been encountered.
-async fn write_frame_len<W: WriteEx + Unpin>(
-    io: &mut W,
-    buf: &[u8; 2],
-    off: &mut usize,
-) -> io::Result<bool> {
+async fn write_frame_len<W: WriteEx + Unpin>(io: &mut W, buf: &[u8; 2], off: &mut usize) -> io::Result<bool> {
     loop {
         match io.write2(&buf[*off..]).await {
             Ok(n) => {

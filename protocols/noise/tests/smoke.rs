@@ -1,10 +1,10 @@
-use libp2p_core::identity;
-use noise::{Keypair, X25519, NoiseConfig};
-use libp2p_core::upgrade::{Upgrader, UpgradeInfo};
-use libp2p_traits::{ReadEx, WriteEx};
 use async_std::task;
+use libp2p_core::identity;
+use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
+use libp2p_noise::{Keypair, X25519};
+use libp2p_traits::{ReadEx, WriteEx};
 use log::info;
-use libp2p_noise::{X25519, Keypair};
+use noise::{Keypair, NoiseConfig, X25519};
 
 // // Copyright 2019 Parity Technologies (UK) Ltd.
 // //
@@ -70,8 +70,7 @@ fn xx() {
             let listener = async_std::net::TcpListener::bind("127.0.0.1:9876").await.unwrap();
             while let Ok((socket, _)) = listener.accept().await {
                 task::spawn(async move {
-                    let (_, output) =
-                        server_config.handshake(listener, false).await.unwrap();
+                    let (_, output) = server_config.handshake(listener, false).await.unwrap();
 
                     info!("handshake finished");
 
@@ -99,8 +98,10 @@ fn xx() {
 
         //client
         let socket = async_std::net::TcpStream::connect("127.0.0.1:9876").await.unwrap();
-        let output =
-            client_config.upgrade_outbound(socket, b"/noise/xx/25519/chachapoly/sha256/0.1.0").await.unwrap();
+        let output = client_config
+            .upgrade_outbound(socket, b"/noise/xx/25519/chachapoly/sha256/0.1.0")
+            .await
+            .unwrap();
         let data = b"hello world";
         output.write2(data).await;
         info!("write finished");
