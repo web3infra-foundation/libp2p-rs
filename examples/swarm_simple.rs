@@ -19,6 +19,7 @@ use libp2p_tcp::TcpConfig;
 use libp2p_traits::{ReadEx, WriteEx};
 use secio;
 use yamux;
+use libp2p_core::transport::memory::MemoryTransport;
 
 //use libp2p_swarm::Swarm::network::NetworkConfig;
 
@@ -43,9 +44,10 @@ fn run_server() {
     let listen_addr: Multiaddr = "/ip4/127.0.0.1/tcp/8086".parse().unwrap();
     let sec = secio::Config::new(keys.clone());
     let mux = yamux::Config::new();
-    // let mux = mplex::Config::new();
-    let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
-    let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
+    //let mux = mplex::Config::new();
+    //let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
+    let tu = TransportUpgrade::new(TcpConfig::default(), mux.clone(), sec.clone());
+    let tu2 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
 
     #[derive(Clone)]
     struct MyProtocolHandler;
@@ -59,11 +61,9 @@ fn run_server() {
     }
 
     #[async_trait]
-    impl<C> ProtocolHandler<C> for MyProtocolHandler
-    where
-        C: StreamInfo + ReadEx + WriteEx + Unpin + Send + std::fmt::Debug + 'static,
+    impl ProtocolHandler for MyProtocolHandler
     {
-        async fn handle(&mut self, stream: Substream<C>, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+        async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
             let mut stream = stream;
             log::trace!("MyProtocolHandler handling inbound {:?}", stream);
             let mut msg = vec![0; 4096];
@@ -74,13 +74,14 @@ fn run_server() {
             }
         }
 
-        fn box_clone(&self) -> IProtocolHandler<C> {
+        fn box_clone(&self) -> IProtocolHandler {
             Box::new(self.clone())
         }
     }
 
     let mut swarm = Swarm::new(PeerId::from_public_key(keys.public()))
         .with_transport(Box::new(tu))
+        .with_transport(Box::new(tu2))
         .with_protocol(Box::new(DummyProtocolHandler::new()))
         .with_protocol(Box::new(MyProtocolHandler))
         .with_ping(PingConfig::new().with_unsolicited(false).with_interval(Duration::from_secs(1)))
@@ -103,7 +104,7 @@ fn run_client() {
     let _addr: Multiaddr = "/ip4/127.0.0.1/tcp/8086".parse().unwrap();
     let sec = secio::Config::new(keys.clone());
     let mux = yamux::Config::new();
-    // let mux = mplex::Config::new();
+    //let mux = mplex::Config::new();
     //let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
 

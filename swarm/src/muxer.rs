@@ -5,14 +5,15 @@ use libp2p_core::multistream::Negotiator;
 use libp2p_core::transport::TransportError;
 use libp2p_core::upgrade::ProtocolName;
 use libp2p_traits::{ReadEx, WriteEx};
+use libp2p_core::muxing::IReadWrite;
 
 /// Muxer that uses multistream-select to select and handle protocols.
 ///
-pub(crate) struct Muxer<TRaw> {
-    protocol_handlers: FnvHashMap<ProtocolId, IProtocolHandler<TRaw>>,
+pub(crate) struct Muxer {
+    protocol_handlers: FnvHashMap<ProtocolId, IProtocolHandler>,
 }
 
-impl<TRaw> Clone for Muxer<TRaw> {
+impl Clone for Muxer {
     fn clone(&self) -> Self {
         Muxer {
             protocol_handlers: self.protocol_handlers.clone(),
@@ -20,13 +21,13 @@ impl<TRaw> Clone for Muxer<TRaw> {
     }
 }
 
-impl<TRaw> Default for Muxer<TRaw> {
+impl Default for Muxer {
     fn default() -> Self {
         Muxer::new()
     }
 }
 
-impl<TRaw> Muxer<TRaw> {
+impl Muxer {
     /// Add `Muxer` on top of any `ProtoclHandler`·
     ///
     /// The protocols supported by the first element have a higher priority.
@@ -37,8 +38,8 @@ impl<TRaw> Muxer<TRaw> {
     }
 }
 
-impl<TRaw> Muxer<TRaw> {
-    pub(crate) fn add_protocol_handler(&mut self, p: IProtocolHandler<TRaw>) {
+impl Muxer {
+    pub(crate) fn add_protocol_handler(&mut self, p: IProtocolHandler) {
         log::trace!(
             "adding protocol handler: {:?}",
             p.protocol_info().iter().map(|n| n.protocol_name_str()).collect::<Vec<_>>()
@@ -52,9 +53,7 @@ impl<TRaw> Muxer<TRaw> {
         self.protocol_handlers.keys().copied().map(|k| <&[u8]>::clone(&k))
     }
 
-    pub(crate) async fn select_inbound(&mut self, socket: TRaw) -> Result<(IProtocolHandler<TRaw>, TRaw, ProtocolId), TransportError>
-    where
-        TRaw: ReadEx + WriteEx + Send + Unpin,
+    pub(crate) async fn select_inbound(&mut self, socket: IReadWrite) -> Result<(IProtocolHandler, IReadWrite, ProtocolId), TransportError>
     {
         let protocols = self.supported_protocols();
         let negotiator = Negotiator::new_with_protocols(protocols);

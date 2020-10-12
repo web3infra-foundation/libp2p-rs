@@ -8,7 +8,7 @@ use futures::FutureExt;
 use log::{info, trace};
 use std::fmt;
 
-use libp2p_core::muxing::{StreamInfo, StreamMuxer};
+use libp2p_core::muxing::{StreamInfo, StreamMuxer, IStreamMuxer, StreamMuxerEx, ReadWrite, IReadWrite};
 use libp2p_core::transport::{ConnectionInfo, TransportError};
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
 use libp2p_traits::{ReadEx, WriteEx};
@@ -151,19 +151,27 @@ impl StreamInfo for Stream {
     }
 }
 
+impl ReadWrite for Stream {
+    fn box_clone(&self) -> IReadWrite {
+        Box::new(self.clone())
+    }
+}
+
+impl<C: ReadEx + WriteEx + Unpin + Send + 'static> StreamMuxerEx for Mplex<C> {}
+
 #[async_trait]
 impl<C: ReadEx + WriteEx + Unpin + Send + 'static> StreamMuxer for Mplex<C> {
-    type Substream = Stream;
 
-    async fn open_stream(&mut self) -> Result<Self::Substream, TransportError> {
+    async fn open_stream(&mut self) -> Result<IReadWrite, TransportError> {
         trace!("opening a new outbound substream for mplex...");
         let s = self.ctrl.open_stream().await?;
-        Ok(s)
+        Ok(Box::new(s))
     }
 
-    async fn accept_stream(&mut self) -> Result<Self::Substream, TransportError> {
+    async fn accept_stream(&mut self) -> Result<IReadWrite, TransportError> {
         trace!("waiting for a new inbound substream for yamux...");
-        self.ctrl.accept_stream().await.or(Err(TransportError::Internal))
+        let s = self.ctrl.accept_stream().await?;
+        Ok(Box::new(s))
     }
 
     async fn close(&mut self) -> Result<(), TransportError> {
@@ -182,6 +190,10 @@ impl<C: ReadEx + WriteEx + Unpin + Send + 'static> StreamMuxer for Mplex<C> {
             );
         }
         None
+    }
+
+    fn box_clone(&self) -> IStreamMuxer {
+        Box::new(self.clone())
     }
 }
 

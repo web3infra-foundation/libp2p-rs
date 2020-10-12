@@ -90,7 +90,7 @@ pub trait Transport: Send {
     /// Typically the output contains at least a handle to a data stream (i.e. a
     /// connection or a substream multiplexer on top of a connection) that
     /// provides APIs for sending and receiving data through the connection.
-    type Output: ConnectionInfo;
+    type Output;
 
     /// Listens on the given [`Multiaddr`], producing a stream of pending, inbound connections
     /// and addresses this transport is listening on (cf. [`ListenerEvent`]).
