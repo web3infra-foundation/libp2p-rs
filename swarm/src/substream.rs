@@ -6,7 +6,7 @@ use std::{fmt, io};
 use crate::connection::{ConnectionId, Direction};
 use crate::control::SwarmControlCmd;
 use crate::ProtocolId;
-use libp2p_core::muxing::StreamInfo;
+use libp2p_core::muxing::{StreamInfo, IReadWrite};
 use libp2p_core::upgrade::ProtocolName;
 use libp2p_core::Multiaddr;
 use libp2p_traits::{ReadEx, WriteEx};
@@ -53,18 +53,18 @@ struct SubstreamMeta {
 }
 
 #[derive(Clone)]
-pub struct Substream<TStream> {
+pub struct Substream {
     /// The inner sub stream, created by the StreamMuxer
-    inner: TStream,
+    inner: IReadWrite,
     /// The inner information of the sub-stream
     info: Arc<SubstreamMeta>,
     /// The control channel for closing stream
-    ctrl: mpsc::Sender<SwarmControlCmd<Substream<TStream>>>,
+    ctrl: mpsc::Sender<SwarmControlCmd>,
     /// The statistics of the substream
     stats: Arc<SubstreamStats>,
 }
 
-impl<TStream: fmt::Debug> fmt::Debug for Substream<TStream> {
+impl fmt::Debug for Substream {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Substream")
             .field("inner", &self.inner)
@@ -75,15 +75,15 @@ impl<TStream: fmt::Debug> fmt::Debug for Substream<TStream> {
     }
 }
 
-impl<TStream: StreamInfo> Substream<TStream> {
+impl Substream {
     pub(crate) fn new(
-        inner: TStream,
+        inner: IReadWrite,
         dir: Direction,
         protocol: ProtocolId,
         cid: ConnectionId,
         la: Multiaddr,
         ra: Multiaddr,
-        ctrl: mpsc::Sender<SwarmControlCmd<Substream<TStream>>>,
+        ctrl: mpsc::Sender<SwarmControlCmd>,
     ) -> Self {
         Self {
             inner,
@@ -100,7 +100,7 @@ impl<TStream: StreamInfo> Substream<TStream> {
     }
     /// For internal test only
     #[allow(dead_code)]
-    pub(crate) fn new_with_default(inner: TStream) -> Self {
+    pub(crate) fn new_with_default(inner: IReadWrite) -> Self {
         let protocol = b"/test";
         let dir = Direction::Outbound;
         let cid = ConnectionId::default();
@@ -158,7 +158,7 @@ impl<TStream: StreamInfo> Substream<TStream> {
 }
 
 #[async_trait]
-impl<TStream: ReadEx + Send> ReadEx for Substream<TStream> {
+impl ReadEx for Substream {
     async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
         self.inner.read2(buf).await.map(|n| {
             self.stats.byte_recv.fetch_add(n, Ordering::SeqCst);
@@ -169,7 +169,7 @@ impl<TStream: ReadEx + Send> ReadEx for Substream<TStream> {
 }
 
 #[async_trait]
-impl<TStream: StreamInfo + WriteEx + Send> WriteEx for Substream<TStream> {
+impl WriteEx for Substream {
     async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
         self.inner.write2(buf).await.map(|n| {
             self.stats.byte_sent.fetch_add(n, Ordering::SeqCst);

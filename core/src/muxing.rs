@@ -35,6 +35,8 @@ use crate::secure_io::SecureInfo;
 use crate::transport::{ConnectionInfo, TransportError};
 use async_trait::async_trait;
 use futures::future::BoxFuture;
+use libp2p_traits::{ReadEx, WriteEx};
+use futures::io::Error;
 
 /// Information about a stream.
 pub trait StreamInfo: Send {
@@ -42,21 +44,65 @@ pub trait StreamInfo: Send {
     fn id(&self) -> usize;
 }
 
+pub trait ReadWrite: ReadEx + WriteEx + StreamInfo + Unpin + std::fmt::Debug {
+    fn box_clone(&self) -> IReadWrite;
+}
+
+pub type IReadWrite = Box<dyn ReadWrite>;
+
+impl Clone for IReadWrite {
+    fn clone(&self) -> Self {
+        self.box_clone()
+    }
+}
+
 #[async_trait]
-pub trait StreamMuxer: ConnectionInfo + SecureInfo + Clone + std::fmt::Debug {
-    /// Type of the object that represents the raw substream where data can be read and written.
-    type Substream: StreamInfo + Clone + std::fmt::Debug;
+impl ReadEx for IReadWrite {
+    async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
+        ReadEx::read2(self as &mut (dyn ReadEx + Send), buf).await
+    }
+}
+#[async_trait]
+impl WriteEx for IReadWrite {
+    async fn write2(&mut self, buf: &[u8]) -> Result<usize, Error> {
+        (self as &mut (dyn WriteEx + Send)).write2(buf).await
+    }
+
+    async fn flush2(&mut self) -> Result<(), Error> {
+        (self as &mut (dyn WriteEx + Send)).flush2().await
+    }
+
+    async fn close2(&mut self) -> Result<(), Error> {
+        (self as &mut (dyn WriteEx + Send)).close2().await
+    }
+}
+
+
+#[async_trait]
+pub trait StreamMuxer {
 
     /// Opens a new outgoing substream, and produces the equivalent to a future that will be
     /// resolved when it becomes available.
     ///
     /// The API of `OutboundSubstream` is totally opaque, and the object can only be interfaced
     /// through the methods on the `StreamMuxer` trait.
-    async fn open_stream(&mut self) -> Result<Self::Substream, TransportError>;
+    async fn open_stream(&mut self) -> Result<IReadWrite, TransportError>;
 
-    async fn accept_stream(&mut self) -> Result<Self::Substream, TransportError>;
+    async fn accept_stream(&mut self) -> Result<IReadWrite, TransportError>;
 
     async fn close(&mut self) -> Result<(), TransportError>;
 
     fn task(&mut self) -> Option<BoxFuture<'static, ()>>;
+
+    fn box_clone(&self) -> IStreamMuxer;
+}
+
+pub trait StreamMuxerEx: StreamMuxer + ConnectionInfo + SecureInfo + std::fmt::Debug {}
+
+pub type IStreamMuxer = Box<dyn StreamMuxerEx>;
+
+impl Clone for IStreamMuxer {
+    fn clone(&self) -> Self {
+        self.box_clone()
+    }
 }

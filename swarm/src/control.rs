@@ -11,7 +11,7 @@
 use crate::connection::ConnectionId;
 use crate::identify::IdentifyInfo;
 use crate::network::NetworkInfo;
-use crate::substream::StreamId;
+use crate::substream::{StreamId, Substream};
 use crate::{ProtocolId, SwarmError};
 use futures::{
     channel::{mpsc, oneshot},
@@ -24,13 +24,13 @@ type Result<T> = std::result::Result<T, SwarmError>;
 
 #[derive(Debug)]
 #[allow(dead_code)]
-pub enum SwarmControlCmd<TSubstream> {
+pub enum SwarmControlCmd {
     /// Open a connection to the remote peer.
     NewConnection(PeerId, oneshot::Sender<Result<()>>),
     /// Close any connection to the remote peer.
     CloseConnection(PeerId, oneshot::Sender<Result<()>>),
     /// Open a new stream specified with protocol Ids to the remote peer.
-    NewStream(PeerId, Vec<ProtocolId>, oneshot::Sender<Result<TSubstream>>),
+    NewStream(PeerId, Vec<ProtocolId>, oneshot::Sender<Result<Substream>>),
     /// Close a stream specified.
     CloseStream(ConnectionId, StreamId),
     /// Close the whole connection.
@@ -51,12 +51,12 @@ pub enum SwarmControlCmd<TSubstream> {
 /// as poll-based variants which may be useful inside of other poll based
 /// environments such as certain trait implementations.
 //#[derive(Debug)]
-pub struct Control<TSubstream> {
+pub struct Control {
     /// Command channel to `Connection`.
-    sender: mpsc::Sender<SwarmControlCmd<TSubstream>>,
+    sender: mpsc::Sender<SwarmControlCmd>,
 }
 
-impl<TSubstream> Clone for Control<TSubstream> {
+impl Clone for Control {
     fn clone(&self) -> Self {
         Control {
             sender: self.sender.clone(),
@@ -64,11 +64,9 @@ impl<TSubstream> Clone for Control<TSubstream> {
     }
 }
 
-impl<TSubstream> Control<TSubstream>
-where
-    TSubstream: ReadEx + WriteEx,
+impl Control
 {
-    pub(crate) fn new(sender: mpsc::Sender<SwarmControlCmd<TSubstream>>) -> Self {
+    pub(crate) fn new(sender: mpsc::Sender<SwarmControlCmd>) -> Self {
         Control { sender }
     }
 
@@ -80,7 +78,7 @@ where
     }
 
     /// Open a new outbound stream towards the remote.
-    pub async fn new_stream(&mut self, peerd_id: PeerId, pids: Vec<ProtocolId>) -> Result<TSubstream> {
+    pub async fn new_stream(&mut self, peerd_id: PeerId, pids: Vec<ProtocolId>) -> Result<Substream> {
         let (tx, rx) = oneshot::channel();
         self.sender.send(SwarmControlCmd::NewStream(peerd_id.clone(), pids, tx)).await?;
         rx.await?

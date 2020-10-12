@@ -110,9 +110,7 @@ fn parse_proto_msg(msg: impl AsRef<[u8]>) -> Result<(IdentifyInfo, Multiaddr), i
     }
 }
 
-pub(crate) async fn consume_message<T>(mut stream: Substream<T>) -> Result<(IdentifyInfo, Multiaddr), TransportError>
-where
-    T: StreamInfo + ReadEx + WriteEx + Unpin + std::fmt::Debug + 'static,
+pub(crate) async fn consume_message(mut stream: Substream) -> Result<(IdentifyInfo, Multiaddr), TransportError>
 {
     let buf = stream.read_one(4096).await?;
     stream.close2().await?;
@@ -120,9 +118,7 @@ where
     parse_proto_msg(&buf).map_err(io::Error::into)
 }
 
-pub(crate) async fn produce_message<T>(mut stream: Substream<T>, info: IdentifyInfo) -> Result<(), TransportError>
-where
-    T: StreamInfo + ReadEx + WriteEx + Unpin + std::fmt::Debug + 'static,
+pub(crate) async fn produce_message(mut stream: Substream, info: IdentifyInfo) -> Result<(), TransportError>
 {
     let listen_addrs = info.listen_addrs.into_iter().map(|addr| addr.to_vec()).collect();
 
@@ -155,24 +151,24 @@ where
 /// - Client receives the data and consume the data.
 ///
 #[derive(Debug)]
-pub(crate) struct IdentifyHandler<TSubstream> {
+pub(crate) struct IdentifyHandler {
     /// The channel is used to retrieve IdentifyInfo from Swarm.
-    ctrl: mpsc::Sender<SwarmControlCmd<TSubstream>>,
+    ctrl: mpsc::Sender<SwarmControlCmd>,
 }
 
-impl<TSubstream> Clone for IdentifyHandler<TSubstream> {
+impl Clone for IdentifyHandler {
     fn clone(&self) -> Self {
         Self { ctrl: self.ctrl.clone() }
     }
 }
 
-impl<TSubstream> IdentifyHandler<TSubstream> {
-    pub(crate) fn new(ctrl: mpsc::Sender<SwarmControlCmd<TSubstream>>) -> Self {
+impl IdentifyHandler {
+    pub(crate) fn new(ctrl: mpsc::Sender<SwarmControlCmd>) -> Self {
         Self { ctrl }
     }
 }
 
-impl<TSubstream: Send> UpgradeInfo for IdentifyHandler<TSubstream> {
+impl UpgradeInfo for IdentifyHandler {
     type Info = &'static [u8];
     fn protocol_info(&self) -> Vec<Self::Info> {
         vec![IDENTIFY_PROTOCOL]
@@ -180,13 +176,11 @@ impl<TSubstream: Send> UpgradeInfo for IdentifyHandler<TSubstream> {
 }
 
 #[async_trait]
-impl<TSocket, TSubstream: Send + 'static> ProtocolHandler<TSocket> for IdentifyHandler<TSubstream>
-where
-    TSocket: StreamInfo + ReadEx + WriteEx + Unpin + std::fmt::Debug + 'static,
+impl ProtocolHandler for IdentifyHandler
 {
     /// The Ping handler's inbound protocol.
     /// Simply wait for any thing that coming in then send back
-    async fn handle(&mut self, stream: Substream<TSocket>, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+    async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
         log::trace!("Identify Protocol handling on {:?}", stream);
 
         let (tx, rx) = oneshot::channel();
@@ -198,7 +192,7 @@ where
         produce_message(stream, identify_info).await.map_err(|e| e.into())
     }
 
-    fn box_clone(&self) -> IProtocolHandler<TSocket> {
+    fn box_clone(&self) -> IProtocolHandler {
         Box::new(self.clone())
     }
 }
@@ -212,23 +206,23 @@ where
 /// - Client sends/pushes the the identify message to server side.
 ///
 #[derive(Debug)]
-pub(crate) struct IdentifyPushHandler<T: StreamMuxer> {
-    tx: mpsc::UnboundedSender<SwarmEvent<T>>,
+pub(crate) struct IdentifyPushHandler {
+    tx: mpsc::UnboundedSender<SwarmEvent>,
 }
 
-impl<T: StreamMuxer> Clone for IdentifyPushHandler<T> {
+impl Clone for IdentifyPushHandler {
     fn clone(&self) -> Self {
         Self { tx: self.tx.clone() }
     }
 }
 
-impl<T: StreamMuxer> IdentifyPushHandler<T> {
-    pub(crate) fn new(tx: mpsc::UnboundedSender<SwarmEvent<T>>) -> Self {
+impl IdentifyPushHandler {
+    pub(crate) fn new(tx: mpsc::UnboundedSender<SwarmEvent>) -> Self {
         Self { tx }
     }
 }
 
-impl<T: StreamMuxer> UpgradeInfo for IdentifyPushHandler<T> {
+impl UpgradeInfo for IdentifyPushHandler {
     type Info = &'static [u8];
     fn protocol_info(&self) -> Vec<Self::Info> {
         vec![IDENTIFY_PUSH_PROTOCOL]
@@ -236,13 +230,10 @@ impl<T: StreamMuxer> UpgradeInfo for IdentifyPushHandler<T> {
 }
 
 #[async_trait]
-impl<TSocket, T> ProtocolHandler<TSocket> for IdentifyPushHandler<T>
-where
-    TSocket: StreamInfo + ReadEx + WriteEx + Unpin + std::fmt::Debug + 'static,
-    T: StreamMuxer + 'static,
+impl ProtocolHandler for IdentifyPushHandler
 {
     // receive the message and consume it
-    async fn handle(&mut self, stream: Substream<TSocket>, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+    async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
         let cid = stream.cid();
         log::trace!("Identify Push Protocol handling on {:?}", stream);
 
@@ -253,7 +244,7 @@ where
         Ok(())
     }
 
-    fn box_clone(&self) -> IProtocolHandler<TSocket> {
+    fn box_clone(&self) -> IProtocolHandler {
         Box::new(self.clone())
     }
 }

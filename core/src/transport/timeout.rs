@@ -24,7 +24,7 @@
 //! underlying `Transport`.
 // TODO: add example
 
-use crate::transport::{IListener, ITransport, TransportListener};
+use crate::transport::{IListener, ITransport, TransportListener, ConnectionInfo};
 use crate::{transport::TransportError, Multiaddr, Transport};
 use async_trait::async_trait;
 use futures::future::{select, Either};
@@ -77,7 +77,7 @@ impl<InnerTrans> TransportTimeout<InnerTrans> {
 impl<InnerTrans> Transport for TransportTimeout<InnerTrans>
 where
     InnerTrans: Transport + Clone + 'static,
-    InnerTrans::Output: 'static,
+    InnerTrans::Output: ConnectionInfo + 'static,
 {
     type Output = InnerTrans::Output;
 
