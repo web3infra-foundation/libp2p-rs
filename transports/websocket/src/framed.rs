@@ -6,7 +6,7 @@ use futures::prelude::*;
 use libp2p_core::transport::ConnectionInfo;
 use libp2p_core::transport::{IListener, ITransport};
 use libp2p_core::{
-    either::EitherOutput,
+    either::AsyncEitherOutput,
     multiaddr::{Multiaddr, Protocol},
     transport::{TransportError, TransportListener},
     Transport,
@@ -133,11 +133,11 @@ impl TransportListener for WsTransListener {
                 })
                 .await?;
 
-            let stream: TlsOrPlain<_> = EitherOutput::A(EitherOutput::B(stream));
+            let stream: TlsOrPlain<_> = AsyncEitherOutput::A(AsyncEitherOutput::B(stream));
             stream
         } else {
             // continue with plain stream
-            EitherOutput::B(raw_stream)
+            AsyncEitherOutput::B(raw_stream)
         };
 
         trace!("receiving websocket handshake request from {}", remote2);
@@ -288,11 +288,11 @@ impl WsConfig {
                 })
                 .await?;
 
-            let stream: TlsOrPlain<_> = EitherOutput::A(EitherOutput::A(stream));
+            let stream: TlsOrPlain<_> = AsyncEitherOutput::A(AsyncEitherOutput::A(stream));
             stream
         } else {
             // continue with plain stream
-            EitherOutput::B(raw_stream)
+            AsyncEitherOutput::B(raw_stream)
         };
 
         trace!("sending websocket handshake request to {}", address);
