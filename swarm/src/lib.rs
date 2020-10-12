@@ -609,19 +609,19 @@ where
     pub fn listen_on(&mut self, addrs: Vec<Multiaddr>) -> Result<()> {
         let mut succeeded: u32 = 0;
         let mut errs = Vec::new();
-        for addr in addrs.clone() {
-            let r = self.add_listen_addr(addr);
+        for (i,n) in addrs.clone().into_iter().enumerate(){
+            let r = self.add_listen_addr(n);
             match r {
                 Ok(_) => {
                     succeeded += 1
                 }
                 Err(e) => {
-                    errs.push(e);
+                   errs.insert(i, e);
                 }
             };
         }
 
-        for (i, n) in errs.iter().enumerate() {
+        for (i, n) in errs.into_iter().enumerate() {
             log::warn!("listen on {} failed: {}", addrs[i], n)
         }
 
