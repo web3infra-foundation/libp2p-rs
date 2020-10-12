@@ -27,7 +27,7 @@ libp2p-tcp = { path = "transports/tcp", version = "0.0.1", package = "libp2p-tcp
 libp2p-dns = { path = "transports/dns", version = "0.0.1", package = "libp2p-dns" }
 libp2p-websocket = { path = "transports/websocket", version = "0.0.1", package = "libp2p-websocket" }
 libp2p-swarm = { path = "swarm", version = "0.1.0", package = "libp2p-swarm" }
-
+libp2p-noise = { path = "protocols/noise", version = "0.1.0", package = "libp2p-noise" }
 
 async-std = { version = "1.6", features = ["attributes", "unstable"] }
 async-trait = "0.1"
@@ -72,6 +72,7 @@ members = [
   "protocols/mplex",
   "protocols/secio",
   "protocols/plaintext",
+  "protocols/noise",
   "core",
   "transports/tcp",
   "transports/dns",
