@@ -291,7 +291,6 @@ mod tests {
             let mut output = [0u8; 3];
             let bytes = reader.read2(&mut output[..]).await.unwrap();
 
-
             assert_eq!(bytes, 3);
             assert_eq!(output, [1, 2, 3]);
         });
@@ -347,7 +346,7 @@ mod tests {
             let mut reader = Test(Cursor::new(vec![11, 104, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100]));
             let output = match reader.read_one(11).await {
                 Ok(v) => v,
-                _ => Vec::new()
+                _ => Vec::new(),
             };
 
             assert_eq!(output, b"hello world");
@@ -371,7 +370,6 @@ mod tests {
             let mut writer = Test(Cursor::new(vec![0u8; 4]));
             let mut output = vec![1, 2, 3, 4, 5];
             let bytes = writer.write_all2(&mut output[..]).await.unwrap();
-
 
             assert_eq!(writer.0.get_mut(), &[1, 2, 3, 4, 5]);
         });

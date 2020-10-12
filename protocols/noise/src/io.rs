@@ -29,11 +29,11 @@ use framed::{NoiseFramed, MAX_FRAME_LEN};
 use futures::io::Error;
 use libp2p_core::identity::Keypair;
 use libp2p_core::secure_io::SecureInfo;
-use libp2p_core::{PeerId, PublicKey, Multiaddr};
+use libp2p_core::transport::ConnectionInfo;
+use libp2p_core::{Multiaddr, PeerId, PublicKey};
 use libp2p_traits::{ReadEx, WriteEx};
 use log::trace;
 use std::{cmp::min, fmt, io};
-use libp2p_core::transport::ConnectionInfo;
 
 /// A noise session to a remote.
 ///
@@ -69,7 +69,7 @@ impl<T> fmt::Debug for NoiseOutput<T> {
 
 impl<T> NoiseOutput<T> {
     fn new(io: NoiseFramed<T, snow::TransportState>, keypair: Keypair) -> Self {
-        let remote_pub_key = keypair.clone().public();
+        let remote_pub_key = keypair.public();
         NoiseOutput {
             io,
             la: Multiaddr::empty(),

@@ -94,10 +94,7 @@ pub trait Protocol<C> {
     where
         C: AsRef<[u8]>,
     {
-        Self::linked(id_pk, dh_pk)
-            || sig
-                .as_ref()
-                .map_or(false, |s| id_pk.verify(dh_pk.as_ref(), s))
+        Self::linked(id_pk, dh_pk) || sig.as_ref().map_or(false, |s| id_pk.verify(dh_pk.as_ref(), s))
     }
 
     fn sign(id_keys: &identity::Keypair, dh_pk: &PublicKey<C>) -> Result<Vec<u8>, NoiseError>
@@ -164,10 +161,7 @@ impl<T: Zeroize> Keypair<T> {
 
     /// Turn this DH keypair into a [`AuthenticKeypair`], i.e. a DH keypair that
     /// is authentic w.r.t. the given identity keypair, by signing the DH public key.
-    pub fn into_authentic(
-        self,
-        id_keys: &identity::Keypair,
-    ) -> Result<AuthenticKeypair<T>, NoiseError>
+    pub fn into_authentic(self, id_keys: &identity::Keypair) -> Result<AuthenticKeypair<T>, NoiseError>
     where
         T: AsRef<[u8]>,
         T: Protocol<T>,
@@ -179,10 +173,7 @@ impl<T: Zeroize> Keypair<T> {
             signature: Some(sig),
         };
 
-        Ok(AuthenticKeypair {
-            keypair: self,
-            identity,
-        })
+        Ok(AuthenticKeypair { keypair: self, identity })
     }
 }
 
@@ -239,10 +230,7 @@ impl snow::resolvers::CryptoResolver for Resolver {
         }
     }
 
-    fn resolve_hash(
-        &self,
-        choice: &snow::params::HashChoice,
-    ) -> Option<Box<dyn snow::types::Hash>> {
+    fn resolve_hash(&self, choice: &snow::params::HashChoice) -> Option<Box<dyn snow::types::Hash>> {
         #[cfg(target_arch = "wasm32")]
         {
             snow::resolvers::DefaultResolver.resolve_hash(choice)
@@ -253,10 +241,7 @@ impl snow::resolvers::CryptoResolver for Resolver {
         }
     }
 
-    fn resolve_cipher(
-        &self,
-        choice: &snow::params::CipherChoice,
-    ) -> Option<Box<dyn snow::types::Cipher>> {
+    fn resolve_cipher(&self, choice: &snow::params::CipherChoice) -> Option<Box<dyn snow::types::Cipher>> {
         #[cfg(target_arch = "wasm32")]
         {
             snow::resolvers::DefaultResolver.resolve_cipher(choice)

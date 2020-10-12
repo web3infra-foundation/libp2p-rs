@@ -12,7 +12,7 @@ pub use protocol::{Protocol, ProtocolParams, IK, IX, XX};
 
 use async_trait::async_trait;
 use libp2p_core::identity;
-use libp2p_core::transport::{TransportError, ConnectionInfo};
+use libp2p_core::transport::{ConnectionInfo, TransportError};
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
 use libp2p_traits::{ReadEx, WriteEx};
 use zeroize::Zeroize;
@@ -28,26 +28,18 @@ pub struct NoiseConfig<P, C: Zeroize> {
 
 #[async_trait]
 impl<T, C> Upgrader<T> for NoiseConfig<XX, C>
-    where
-        NoiseConfig<XX, C>: UpgradeInfo,
-        T: ConnectionInfo + ReadEx + WriteEx + Send + Unpin + 'static,
-        C: Protocol<C> + Zeroize + AsRef<[u8]> + Clone + Send,
+where
+    NoiseConfig<XX, C>: UpgradeInfo,
+    T: ConnectionInfo + ReadEx + WriteEx + Send + Unpin + 'static,
+    C: Protocol<C> + Zeroize + AsRef<[u8]> + Clone + Send,
 {
     type Output = NoiseOutput<T>;
 
-    async fn upgrade_inbound(
-        self,
-        socket: T,
-        _info: <Self as UpgradeInfo>::Info,
-    ) -> Result<Self::Output, TransportError> {
+    async fn upgrade_inbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
         make_secure_output(self, socket, false).await
     }
 
-    async fn upgrade_outbound(
-        self,
-        socket: T,
-        _info: <Self as UpgradeInfo>::Info,
-    ) -> Result<Self::Output, TransportError> {
+    async fn upgrade_outbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
         make_secure_output(self, socket, true).await
     }
 }
@@ -57,8 +49,8 @@ async fn make_secure_output<T, C: Protocol<C> + Zeroize + AsRef<[u8]>>(
     socket: T,
     initiator: bool,
 ) -> Result<NoiseOutput<T>, TransportError>
-    where
-        T: ConnectionInfo + ReadEx + WriteEx + Send + Unpin + 'static,
+where
+    T: ConnectionInfo + ReadEx + WriteEx + Send + Unpin + 'static,
 {
     let la = socket.local_multiaddr();
     let ra = socket.remote_multiaddr();
@@ -120,8 +112,8 @@ async fn make_secure_output<T, C: Protocol<C> + Zeroize + AsRef<[u8]>>(
 // }
 
 impl<C> NoiseConfig<XX, C>
-    where
-        C: Protocol<C> + Zeroize + AsRef<[u8]>,
+where
+    C: Protocol<C> + Zeroize + AsRef<[u8]>,
 {
     /// Create a new `NoiseConfig` for the `XX` handshake pattern.
     // pub fn xx(dh_keys: AuthenticKeypair<C>) -> Self {
@@ -135,13 +127,9 @@ impl<C> NoiseConfig<XX, C>
         }
     }
 
-    pub async fn handshake<T>(
-        self,
-        socket: T,
-        initiator: bool,
-    ) -> Result<(RemoteIdentity<C>, NoiseOutput<T>), NoiseError>
-        where
-            T: ReadEx + WriteEx + Unpin + Send + 'static,
+    pub async fn handshake<T>(self, socket: T, initiator: bool) -> Result<(RemoteIdentity<C>, NoiseOutput<T>), NoiseError>
+    where
+        T: ReadEx + WriteEx + Unpin + Send + 'static,
     {
         if initiator {
             let session = self
@@ -159,7 +147,7 @@ impl<C> NoiseConfig<XX, C>
                 IdentityExchange::Mutual,
                 self.local_priv_key,
             )
-                .await
+            .await
         } else {
             let session = self
                 .params
@@ -175,7 +163,7 @@ impl<C> NoiseConfig<XX, C>
                 IdentityExchange::Mutual,
                 self.local_priv_key,
             )
-                .await
+            .await
         }
     }
 }

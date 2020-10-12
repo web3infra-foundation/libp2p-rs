@@ -23,7 +23,7 @@
 //! **Note**: This set of protocols is not interoperable with other
 //! libp2p implementations.
 
-use crate::{NoiseConfig, NoiseError, Protocol, ProtocolParams, protocol};
+use crate::{protocol, NoiseConfig, NoiseError, Protocol, ProtocolParams};
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use lazy_static::lazy_static;
 use libp2p_core::{identity, identity::ed25519};
@@ -177,10 +177,7 @@ impl Keypair<X25519> {
                     public: id_keys.public(),
                     signature: None,
                 };
-                Some(AuthenticKeypair {
-                    keypair: kp,
-                    identity: id,
-                })
+                Some(AuthenticKeypair { keypair: kp, identity: id })
             }
             _ => None,
         }
@@ -295,8 +292,7 @@ mod tests {
             let x25519 = Keypair::from(SecretKey::from_ed25519(&ed25519.secret()));
 
             let sodium_sec = ed25519_sk_to_curve25519(&sign::SecretKey(ed25519.encode()));
-            let sodium_pub =
-                ed25519_pk_to_curve25519(&sign::PublicKey(ed25519.public().encode().clone()));
+            let sodium_pub = ed25519_pk_to_curve25519(&sign::PublicKey(ed25519.public().encode().clone()));
 
             let our_pub = x25519.public.0;
             // libsodium does the [clamping] of the scalar upon key construction,
