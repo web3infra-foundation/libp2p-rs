@@ -255,58 +255,155 @@ impl<T: AsyncWrite + Unpin + Send> WriteEx for T {
     }
 }
 
-/*
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::io::{self, AsyncReadExt, Cursor};
+
+    struct Test(Cursor<Vec<u8>>);
+
+    #[async_trait]
+    impl ReadEx for Test {
+        async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
+            self.0.read(buf).await
+        }
+    }
+
+    #[async_trait]
+    impl WriteEx for Test {
+        async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
+            self.0.write(buf).await
+        }
+
+        async fn flush2(&mut self) -> Result<(), io::Error> {
+            self.0.flush().await
+        }
+
+        async fn close2(&mut self) -> Result<(), io::Error> {
+            self.0.close().await
+        }
+    }
 
     #[test]
-    fn test_split() {
+    fn test_read() {
         async_std::task::block_on(async {
-            use futures::io::{self, AsyncReadExt, Cursor};
+            let mut reader = Test(Cursor::new(vec![1, 2, 3, 4]));
+            let mut output = [0u8; 3];
+            let bytes = reader.read2(&mut output[..]).await.unwrap();
 
-            struct Test(Cursor<Vec<u8>>);
+            assert_eq!(bytes, 3);
+            assert_eq!(output, [1, 2, 3]);
+        });
+    }
 
-            #[async_trait]
-            impl ReadEx for Test {
-                async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
-                    self.0.read(buf).await
-                }
-            }
+    #[test]
+    fn test_read_string() {
+        async_std::task::block_on(async {
+            let mut reader = Test(Cursor::new(b"hello world".to_vec()));
+            let mut output = [0u8; 3];
+            let bytes = reader.read2(&mut output[..]).await.unwrap();
 
-            #[async_trait]
-            impl WriteEx for Test {
-                async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
-                    self.0.write(buf).await
-                }
+            assert_eq!(bytes, 3);
+            assert_eq!(output, [104, 101, 108]);
+        });
+    }
 
-                async fn flush2(&mut self) -> Result<(), io::Error> {
-                    self.0.flush().await
-                }
+    #[test]
+    fn test_read_exact() {
+        async_std::task::block_on(async {
+            let mut reader = Test(Cursor::new(vec![1, 2, 3, 4]));
+            let mut output = [0u8; 3];
+            let _bytes = reader.read_exact2(&mut output[..]).await;
 
-                async fn close2(&mut self) -> Result<(), io::Error> {
-                    self.0.close().await
-                }
-            }
+            assert_eq!(output, [1, 2, 3]);
+        });
+    }
 
-            // Note that for `Cursor` the read and write halves share a single
-            // seek position. This may or may not be true for other types that
-            // implement both `AsyncRead` and `AsyncWrite`.
+    #[test]
+    fn test_read_fixed_u32() {
+        async_std::task::block_on(async {
+            let mut reader = Test(Cursor::new(b"hello world".to_vec()));
+            let size = reader.read_fixed_u32().await.unwrap();
 
-            let reader = Cursor::new(vec![1u8,2,3,4]);
-            let mut buffer = Test(Cursor::new(vec![0, 0, 0, 0, 5, 6, 7, 8]));
-            let mut writer = Cursor::new(vec![0u8; 5]);
+            assert_eq!(size, 1751477356);
+            // assert_eq!(output, [1, 2, 3, 4, 0]);
+        });
+    }
 
-            {
-                let (buffer_reader, buffer_writer) = buffer.split();
-                copy(reader, buffer_writer).await?;
-                copy(buffer_reader, &mut writer).await?;
-            }
+    #[test]
+    fn test_read_varint() {
+        async_std::task::block_on(async {
+            let mut reader = Test(Cursor::new(vec![1, 2, 3, 4, 5, 6]));
+            let size = reader.read_varint().await.unwrap();
 
-            // assert_eq!(buffer.into_inner(), [1, 2, 3, 4, 5, 6, 7, 8]);
-            // assert_eq!(writer.into_inner(), [5, 6, 7, 8, 0]);
-            Ok::<(), Box<dyn std::error::Error>>(())
-        }).unwrap();
+            assert_eq!(size, 1);
+        });
+    }
+
+    #[test]
+    fn test_read_one() {
+        async_std::task::block_on(async {
+            let mut reader = Test(Cursor::new(vec![11, 104, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100]));
+            let output = match reader.read_one(11).await {
+                Ok(v) => v,
+                _ => Vec::new(),
+            };
+
+            assert_eq!(output, b"hello world");
+        });
+    }
+
+    #[test]
+    fn test_write() {
+        async_std::task::block_on(async {
+            let mut writer = Test(Cursor::new(vec![0u8; 5]));
+            let size = writer.write2(&[1, 2, 3, 4]).await.unwrap();
+
+            assert_eq!(size, 4);
+            assert_eq!(writer.0.get_mut(), &[1, 2, 3, 4, 0])
+        });
+    }
+
+    #[test]
+    fn test_write_all2() {
+        async_std::task::block_on(async {
+            let mut writer = Test(Cursor::new(vec![0u8; 4]));
+            let mut output = vec![1, 2, 3, 4, 5];
+            let bytes = writer.write_all2(&mut output[..]).await.unwrap();
+
+            assert_eq!(writer.0.get_mut(), &[1, 2, 3, 4, 5]);
+        });
+    }
+
+    #[test]
+    fn test_write_fixed_u32() {
+        async_std::task::block_on(async {
+            let mut writer = Test(Cursor::new(b"hello world".to_vec()));
+            let _result = writer.write_fixed_u32(1751477356).await.unwrap();
+
+            // Binary of `hell` is 17751477356, if write successfully, current
+            // pointer ought to stay on 4
+            assert_eq!(writer.0.position(), 4);
+        });
+    }
+
+    #[test]
+    fn test_write_varint() {
+        async_std::task::block_on(async {
+            let mut writer = Test(Cursor::new(vec![2, 2, 3, 4, 5, 6]));
+            let _result = writer.write_varint(1).await.unwrap();
+
+            assert_eq!(writer.0.position(), 1);
+            // assert_eq!(output, [1, 2, 3, 4, 0]);
+        });
+    }
+
+    #[test]
+    fn test_write_one() {
+        async_std::task::block_on(async {
+            let mut writer = Test(Cursor::new(vec![0u8; 0]));
+            let _result = writer.write_one("hello world".as_ref()).await;
+            assert_eq!(writer.0.get_mut(), &[11, 104, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100]);
+        });
     }
 }
- */
