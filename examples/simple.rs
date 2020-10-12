@@ -32,7 +32,7 @@ fn main() {
         let mux = Selector::new(yamux::Config::new(), Selector::new(yamux::Config::new(), yamux::Config::new()));
         //let mux = yamux::Config::new();
         //let mux = mplex::Config::new();
-        let t1 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
+        let mut t1 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
         let mut listener = t1.listen_on(listen_addr).unwrap();
 
         loop {
@@ -85,7 +85,7 @@ fn main() {
                 //let mux = yamux::Config::new();
                 //let mux = mplex::Config::new();
                 let mux = Selector::new(yamux::Config::new(), Selector::new(yamux::Config::new(), yamux::Config::new()));
-                let t2 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
+                let mut t2 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
                 let mut stream_muxer = t2.dial(addr).await.expect("listener is started already");
 
                 if let Some(task) = stream_muxer.task() {

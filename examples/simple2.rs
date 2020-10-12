@@ -34,7 +34,7 @@ fn run_server() {
     // let mux = yamux::Config::new();
     // let mux = mplex::Config::new();
     let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
-    let tu = TransportUpgrade::new(DnsConfig::new(TcpConfig::default()), mux, sec);
+    let mut tu = TransportUpgrade::new(DnsConfig::new(TcpConfig::default()), mux, sec);
 
     task::block_on(async move {
         let mut listener = tu.listen_on(listen_addr).unwrap();
@@ -84,7 +84,7 @@ fn run_client() {
     // let mux = yamux::Config::new();
     // let mux = mplex::Config::new();
     let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
-    let tu = TransportUpgrade::new(DnsConfig::new(TcpConfig::default()), mux, sec);
+    let mut tu = TransportUpgrade::new(DnsConfig::new(TcpConfig::default()), mux, sec);
 
     task::block_on(async move {
         let mut stream_muxer = tu.dial(addr).await.expect("listener is started already");

@@ -30,17 +30,18 @@ use futures::{
     io::{IoSlice, IoSliceMut},
     prelude::*,
 };
+use libp2p_traits::{ReadEx, WriteEx};
 use pin_project::pin_project;
-use std::{io::Error as IoError, pin::Pin, task::Context, task::Poll};
+use std::{io, io::Error as IoError, pin::Pin, task::Context, task::Poll};
 
 #[pin_project(project = EitherOutputProj)]
 #[derive(Debug, Copy, Clone)]
-pub enum EitherOutput<A, B> {
+pub enum AsyncEitherOutput<A, B> {
     A(#[pin] A),
     B(#[pin] B),
 }
 
-impl<A, B> AsyncRead for EitherOutput<A, B>
+impl<A, B> AsyncRead for AsyncEitherOutput<A, B>
 where
     A: AsyncRead,
     B: AsyncRead,
@@ -60,7 +61,7 @@ where
     }
 }
 
-impl<A, B> AsyncWrite for EitherOutput<A, B>
+impl<A, B> AsyncWrite for AsyncEitherOutput<A, B>
 where
     A: AsyncWrite,
     B: AsyncWrite,
@@ -93,48 +94,53 @@ where
         }
     }
 }
+#[derive(Debug, Copy, Clone)]
+pub enum EitherOutput<A, B> {
+    A(A),
+    B(B),
+}
 
-// #[async_trait]
-// impl<A, B> ReadEx for EitherOutput<A, B>
-// where
-//     A: ReadEx + Send,
-//     B: ReadEx + Send,
-// {
-//     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-//         match self {
-//             EitherOutput::A(a) => ReadEx::read2(a, buf).await,
-//             EitherOutput::B(b) => ReadEx::read2(b, buf).await,
-//         }
-//     }
-// }
+#[async_trait]
+impl<A, B> ReadEx for EitherOutput<A, B>
+where
+    A: ReadEx + Send,
+    B: ReadEx + Send,
+{
+    async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            EitherOutput::A(a) => ReadEx::read2(a, buf).await,
+            EitherOutput::B(b) => ReadEx::read2(b, buf).await,
+        }
+    }
+}
 
-// #[async_trait]
-// impl<A, B> WriteEx for EitherOutput<A, B>
-// where
-//     A: WriteEx + Send,
-//     B: WriteEx + Send,
-// {
-//     async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
-//         match self {
-//             EitherOutput::A(a) => WriteEx::write2(a, buf).await,
-//             EitherOutput::B(b) => WriteEx::write2(b, buf).await,
-//         }
-//     }
+#[async_trait]
+impl<A, B> WriteEx for EitherOutput<A, B>
+where
+    A: WriteEx + Send,
+    B: WriteEx + Send,
+{
+    async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self {
+            EitherOutput::A(a) => WriteEx::write2(a, buf).await,
+            EitherOutput::B(b) => WriteEx::write2(b, buf).await,
+        }
+    }
 
-//     async fn flush2(&mut self) -> io::Result<()> {
-//         match self {
-//             EitherOutput::A(a) => WriteEx::flush2(a).await,
-//             EitherOutput::B(b) => WriteEx::flush2(b).await,
-//         }
-//     }
+    async fn flush2(&mut self) -> io::Result<()> {
+        match self {
+            EitherOutput::A(a) => WriteEx::flush2(a).await,
+            EitherOutput::B(b) => WriteEx::flush2(b).await,
+        }
+    }
 
-//     async fn close2(&mut self) -> io::Result<()> {
-//         match self {
-//             EitherOutput::A(a) => WriteEx::close2(a).await,
-//             EitherOutput::B(b) => WriteEx::close2(b).await,
-//         }
-//     }
-// }
+    async fn close2(&mut self) -> io::Result<()> {
+        match self {
+            EitherOutput::A(a) => WriteEx::close2(a).await,
+            EitherOutput::B(b) => WriteEx::close2(b).await,
+        }
+    }
+}
 
 impl<A, B> SecureInfo for EitherOutput<A, B>
 where

@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use futures::prelude::*;
 use futures::{ready, stream::BoxStream};
 use libp2p_core::transport::ConnectionInfo;
-use libp2p_core::{either::EitherOutput, multiaddr::Multiaddr};
+use libp2p_core::{either::AsyncEitherOutput, multiaddr::Multiaddr};
 use libp2p_tcp::TcpTransStream;
 use libp2p_traits::{ReadEx, WriteEx};
 use log::trace;
@@ -12,7 +12,7 @@ use std::{convert::TryInto, fmt, io, mem, pin::Pin, task::Context, task::Poll};
 
 //type SokettoReceiver<T>=soketto::Receiver<EitherOutput<EitherOutput<client::TlsStream<T>, server::TlsStream<T>>, T>>;
 //type SokettoSender<T>=soketto::Sender<EitherOutput<EitherOutput<client::TlsStream<T>, server::TlsStream<T>>, T>>;
-pub(crate) type TlsOrPlain<T> = EitherOutput<EitherOutput<client::TlsStream<T>, server::TlsStream<T>>, T>;
+pub(crate) type TlsOrPlain<T> = AsyncEitherOutput<AsyncEitherOutput<client::TlsStream<T>, server::TlsStream<T>>, T>;
 
 /// The websocket connection.
 pub struct Connection<T> {
