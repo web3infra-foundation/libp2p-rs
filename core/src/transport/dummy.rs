@@ -43,6 +43,10 @@ impl Transport for DummyTransport {
     fn box_clone(&self) -> ITransport<Self::Output> {
         Box::new(self.clone())
     }
+
+    fn protocols(&self) -> Vec<u32> {
+        vec![0]
+    }
 }
 
 pub struct DummyListener;

@@ -107,6 +107,8 @@ pub trait Transport: Send {
 
     fn box_clone(&self) -> ITransport<Self::Output>;
 
+    fn protocols(&self) -> Vec<u32>;
+
     /// Adds a timeout to the connection setup (including upgrades) for all
     /// inbound and outbound connections established through the transport.
     fn timeout(self, timeout: Duration) -> timeout::TransportTimeout<Self>

@@ -7,7 +7,7 @@ use libp2p_core::transport::ConnectionInfo;
 use libp2p_core::transport::{IListener, ITransport};
 use libp2p_core::{
     either::AsyncEitherOutput,
-    multiaddr::{Multiaddr, Protocol},
+    multiaddr::{protocol, protocol::Protocol, Multiaddr},
     transport::{TransportError, TransportListener},
     Transport,
 };
@@ -235,6 +235,10 @@ impl Transport for WsConfig {
     fn box_clone(&self) -> ITransport<Self::Output> {
         Box::new(self.clone())
     }
+
+    fn protocols(&self) -> Vec<u32> {
+        vec![protocol::WS, protocol::WSS]
+    }
 }
 
 impl WsConfig {
@@ -265,9 +269,7 @@ impl WsConfig {
         let raw_stream = self
             .transport
             .dial(inner_addr)
-            .map_err(|e| match e {
-                _ => WsError::Transport(e),
-            })
+            .map_err(WsError::Transport)
             .await?;
         let inner_raw_stream = raw_stream.clone();
         trace!("connected to {}", address);

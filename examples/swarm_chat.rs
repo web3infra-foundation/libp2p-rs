@@ -121,7 +121,7 @@ fn run_server() {
 
     let _control = swarm.control();
 
-    swarm.listen_on(listen_addr).unwrap();
+    swarm.listen_on(vec![listen_addr]).unwrap();
 
     swarm.start();
     loop {}

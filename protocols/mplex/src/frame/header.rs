@@ -85,7 +85,7 @@ impl fmt::Display for Header {
 
 pub(crate) fn encode(hdr: &Header) -> u32 {
     let tag = hdr.tag as u32;
-    let mut id = hdr.stream_id.id;
+    let id = hdr.stream_id.id;
     if tag == 0 || hdr.stream_id.initiator {
         return (id << 3) + tag;
     }

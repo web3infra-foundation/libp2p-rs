@@ -14,34 +14,34 @@ use std::{
 };
 use unsigned_varint::{decode, encode};
 
-const DCCP: u32 = 33;
-const DNS: u32 = 53;
-const DNS4: u32 = 54;
-const DNS6: u32 = 55;
-const DNSADDR: u32 = 56;
-const HTTP: u32 = 480;
-const HTTPS: u32 = 443;
-const IP4: u32 = 4;
-const IP6: u32 = 41;
-const P2P_WEBRTC_DIRECT: u32 = 276;
-const P2P_WEBRTC_STAR: u32 = 275;
-const P2P_WEBSOCKET_STAR: u32 = 479;
-const MEMORY: u32 = 777;
-const ONION: u32 = 444;
-const ONION3: u32 = 445;
-const P2P: u32 = 421;
-const P2P_CIRCUIT: u32 = 290;
-const QUIC: u32 = 460;
-const SCTP: u32 = 132;
-const TCP: u32 = 6;
-const UDP: u32 = 273;
-const UDT: u32 = 301;
-const UNIX: u32 = 400;
-const UTP: u32 = 302;
-const WS: u32 = 477;
-const WS_WITH_PATH: u32 = 4770; // Note: not standard
-const WSS: u32 = 478;
-const WSS_WITH_PATH: u32 = 4780; // Note: not standard
+pub const DCCP: u32 = 33;
+pub const DNS: u32 = 53;
+pub const DNS4: u32 = 54;
+pub const DNS6: u32 = 55;
+pub const DNSADDR: u32 = 56;
+pub const HTTP: u32 = 480;
+pub const HTTPS: u32 = 443;
+pub const IP4: u32 = 4;
+pub const IP6: u32 = 41;
+pub const P2P_WEBRTC_DIRECT: u32 = 276;
+pub const P2P_WEBRTC_STAR: u32 = 275;
+pub const P2P_WEBSOCKET_STAR: u32 = 479;
+pub const MEMORY: u32 = 777;
+pub const ONION: u32 = 444;
+pub const ONION3: u32 = 445;
+pub const P2P: u32 = 421;
+pub const P2P_CIRCUIT: u32 = 290;
+pub const QUIC: u32 = 460;
+pub const SCTP: u32 = 132;
+pub const TCP: u32 = 6;
+pub const UDP: u32 = 273;
+pub const UDT: u32 = 301;
+pub const UNIX: u32 = 400;
+pub const UTP: u32 = 302;
+pub const WS: u32 = 477;
+pub const WS_WITH_PATH: u32 = 4770; // Note: not standard
+pub const WSS: u32 = 478;
+pub const WSS_WITH_PATH: u32 = 4780; // Note: not standard
 
 const PATH_SEGMENT_ENCODE_SET: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
     .add(b'%')
@@ -193,6 +193,29 @@ impl<'a> Protocol<'a> {
         }
     }
 
+    pub fn get_enum(id: u32) -> Result<Self> {
+        match id {
+            MEMORY => Ok(Protocol::Memory(0)),
+            TCP => Ok(Protocol::Tcp(0)),
+            QUIC => Ok(Protocol::Quic),
+            DNS => Ok(Protocol::Dns(Cow::Borrowed(""))),
+            WS => Ok(Protocol::Ws(Cow::Borrowed("/"))),
+            WSS => Ok(Protocol::Wss(Cow::Borrowed("/"))),
+            _ => Err(Error::UnknownProtocolId(id)),
+        }
+    }
+
+    pub fn get_key(&self) -> Result<u32> {
+        match self {
+            Protocol::Memory(_) => Ok(MEMORY),
+            Protocol::Tcp(_) => Ok(TCP),
+            Protocol::Quic => Ok(QUIC),
+            Protocol::Dns(_) => Ok(DNS),
+            Protocol::Ws(_) => Ok(WS),
+            Protocol::Wss(_) => Ok(WSS),
+            _ => Err(Error::InvalidProtocolString),
+        }
+    }
     /// Parse a single `Protocol` value from its byte slice representation,
     /// returning the protocol as well as the remaining byte slice.
     pub fn from_bytes(input: &'a [u8]) -> Result<(Self, &'a [u8])> {

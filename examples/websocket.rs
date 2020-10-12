@@ -10,7 +10,6 @@ use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_core::{Multiaddr, PeerId};
 use libp2p_swarm::identify::IdentifyConfig;
-use libp2p_swarm::ping::PingConfig;
 use libp2p_swarm::protocol_handler::{IProtocolHandler, ProtocolHandler};
 use libp2p_swarm::substream::Substream;
 use libp2p_swarm::{DummyProtocolHandler, Swarm, SwarmError};
@@ -83,7 +82,7 @@ fn run_server() {
 
     let _control = swarm.control();
 
-    swarm.listen_on(listen_addr).unwrap();
+    swarm.listen_on(vec![listen_addr]).unwrap();
 
     swarm.start();
 
@@ -123,7 +122,7 @@ fn run_client() {
         let _ = stream.read2(&mut buf).await;
         log::info!("receiv msg ======={}", String::from_utf8_lossy(&buf[..]));
         assert_eq!(msg, &buf);
-        task::sleep(Duration::from_secs(40)).await;
+        task::sleep(Duration::from_secs(1)).await;
 
         let _ = stream.close2().await;
 

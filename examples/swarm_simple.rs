@@ -7,6 +7,7 @@ extern crate lazy_static;
 use libp2p_core::identity::Keypair;
 use libp2p_core::muxing::StreamInfo;
 use libp2p_core::transport::upgrade::TransportUpgrade;
+use libp2p_core::upgrade::Selector;
 use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_core::{Multiaddr, PeerId};
 use libp2p_swarm::identify::IdentifyConfig;
@@ -43,7 +44,7 @@ fn run_server() {
     let sec = secio::Config::new(keys.clone());
     let mux = yamux::Config::new();
     // let mux = mplex::Config::new();
-    //let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
+    let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
 
     #[derive(Clone)]
@@ -89,7 +90,7 @@ fn run_server() {
 
     let _control = swarm.control();
 
-    swarm.listen_on(listen_addr).unwrap();
+    swarm.listen_on(vec![listen_addr]).unwrap();
 
     swarm.start();
 

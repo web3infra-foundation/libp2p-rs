@@ -8,7 +8,7 @@ use futures::{channel::mpsc, prelude::*, task::Context, task::Poll, AsyncReadExt
 use futures::{SinkExt, StreamExt};
 use lazy_static::lazy_static;
 use libp2p_traits::{ReadEx, WriteEx};
-use multiaddr::{Multiaddr, Protocol};
+use multiaddr::{protocol, protocol::Protocol, Multiaddr};
 use parking_lot::Mutex;
 use rw_stream_sink::RwStreamSink;
 use std::{collections::hash_map::Entry, fmt, io, num::NonZeroU64, pin::Pin};
@@ -112,6 +112,10 @@ impl Transport for MemoryTransport {
 
     fn box_clone(&self) -> ITransport<Self::Output> {
         Box::new(self.clone())
+    }
+
+    fn protocols(&self) -> Vec<u32> {
+        vec![protocol::MEMORY]
     }
 }
 

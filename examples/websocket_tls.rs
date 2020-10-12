@@ -159,8 +159,7 @@ lazy_static! {
 fn run_server() -> io::Result<()> {
     let options = ServerTlsConfig::from_args();
     let addr = format!("/ip4/{}/tcp/{}/wss", &options.host, &options.port);
-    log::info!("server addr {}", &addr);
-
+    log::info!("server addr1 {}", &addr);
     let keys = SERVER_KEY.clone();
 
     let listen_addr: Multiaddr = addr.parse().unwrap();
@@ -169,7 +168,7 @@ fn run_server() -> io::Result<()> {
     let mux = mplex::Config::new();
 
     let ws = WsConfig::new().set_tls_config(build_server_tls_config(&options)).to_owned();
-    let tu = TransportUpgrade::new(ws, mux, sec);
+    let tu = TransportUpgrade::new(ws.clone(), mux.clone(), sec.clone());
 
     let mut swarm = Swarm::new(PeerId::from_public_key(keys.public()))
         .with_transport(Box::new(tu))
@@ -180,7 +179,7 @@ fn run_server() -> io::Result<()> {
 
     let _control = swarm.control();
 
-    swarm.listen_on(listen_addr).unwrap();
+    swarm.listen_on(vec![listen_addr]).unwrap();
 
     swarm.start();
 
