@@ -36,6 +36,7 @@ pub use crate::frame::{
     FrameDecodeError,
 };
 use futures::future::BoxFuture;
+use futures::io::Error;
 use libp2p_core::identity::Keypair;
 use libp2p_core::muxing::{IReadWrite, IStreamMuxer, ReadWrite, StreamInfo, StreamMuxer, StreamMuxerEx};
 use libp2p_core::secure_io::SecureInfo;
@@ -300,19 +301,19 @@ impl ReadWrite for Stream {
         Box::new(self.clone())
     }
 
-    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, futures::io::Error> {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
         self.read2(buf).await
     }
 
-    async fn write(&mut self, buf: &[u8]) -> Result<usize, futures::io::Error> {
+    async fn write(&mut self, buf: &[u8]) -> Result<usize, Error> {
         self.write2(buf).await
     }
 
-    async fn flush(&mut self) -> Result<(), futures::io::Error> {
+    async fn flush(&mut self) -> Result<(), Error> {
         self.flush2().await
     }
 
-    async fn close(&mut self) -> Result<(), futures::io::Error> {
+    async fn close(&mut self) -> Result<(), Error> {
         self.close2().await
     }
 }
