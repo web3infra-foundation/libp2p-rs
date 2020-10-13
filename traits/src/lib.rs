@@ -232,10 +232,6 @@ pub trait WriteEx {
     async fn close2(&mut self) -> Result<(), io::Error>;
 }
 
-
-
-
-
 #[async_trait]
 impl<T: AsyncRead + Unpin + Send> ReadEx for T {
     async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {

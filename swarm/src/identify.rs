@@ -110,16 +110,14 @@ fn parse_proto_msg(msg: impl AsRef<[u8]>) -> Result<(IdentifyInfo, Multiaddr), i
     }
 }
 
-pub(crate) async fn consume_message(mut stream: Substream) -> Result<(IdentifyInfo, Multiaddr), TransportError>
-{
+pub(crate) async fn consume_message(mut stream: Substream) -> Result<(IdentifyInfo, Multiaddr), TransportError> {
     let buf = stream.read_one(4096).await?;
     stream.close2().await?;
 
     parse_proto_msg(&buf).map_err(io::Error::into)
 }
 
-pub(crate) async fn produce_message(mut stream: Substream, info: IdentifyInfo) -> Result<(), TransportError>
-{
+pub(crate) async fn produce_message(mut stream: Substream, info: IdentifyInfo) -> Result<(), TransportError> {
     let listen_addrs = info.listen_addrs.into_iter().map(|addr| addr.to_vec()).collect();
 
     let pubkey_bytes = info.public_key.into_protobuf_encoding();
@@ -176,8 +174,7 @@ impl UpgradeInfo for IdentifyHandler {
 }
 
 #[async_trait]
-impl ProtocolHandler for IdentifyHandler
-{
+impl ProtocolHandler for IdentifyHandler {
     /// The Ping handler's inbound protocol.
     /// Simply wait for any thing that coming in then send back
     async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
@@ -230,8 +227,7 @@ impl UpgradeInfo for IdentifyPushHandler {
 }
 
 #[async_trait]
-impl ProtocolHandler for IdentifyPushHandler
-{
+impl ProtocolHandler for IdentifyPushHandler {
     // receive the message and consume it
     async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
         let cid = stream.cid();

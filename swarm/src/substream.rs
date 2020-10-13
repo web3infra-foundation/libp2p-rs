@@ -6,7 +6,7 @@ use std::{fmt, io};
 use crate::connection::{ConnectionId, Direction};
 use crate::control::SwarmControlCmd;
 use crate::ProtocolId;
-use libp2p_core::muxing::{StreamInfo, IReadWrite};
+use libp2p_core::muxing::{IReadWrite, StreamInfo};
 use libp2p_core::upgrade::ProtocolName;
 use libp2p_core::Multiaddr;
 use libp2p_traits::{ReadEx, WriteEx};

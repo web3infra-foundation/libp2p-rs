@@ -6,6 +6,7 @@ extern crate lazy_static;
 
 use libp2p_core::identity::Keypair;
 use libp2p_core::muxing::StreamInfo;
+use libp2p_core::transport::memory::MemoryTransport;
 use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::upgrade::Selector;
 use libp2p_core::upgrade::UpgradeInfo;
@@ -19,7 +20,6 @@ use libp2p_tcp::TcpConfig;
 use libp2p_traits::{ReadEx, WriteEx};
 use secio;
 use yamux;
-use libp2p_core::transport::memory::MemoryTransport;
 
 //use libp2p_swarm::Swarm::network::NetworkConfig;
 
@@ -61,8 +61,7 @@ fn run_server() {
     }
 
     #[async_trait]
-    impl ProtocolHandler for MyProtocolHandler
-    {
+    impl ProtocolHandler for MyProtocolHandler {
         async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
             let mut stream = stream;
             log::trace!("MyProtocolHandler handling inbound {:?}", stream);

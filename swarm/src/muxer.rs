@@ -2,10 +2,10 @@ use crate::protocol_handler::IProtocolHandler;
 use crate::ProtocolId;
 use fnv::FnvHashMap;
 use libp2p_core::multistream::Negotiator;
+use libp2p_core::muxing::IReadWrite;
 use libp2p_core::transport::TransportError;
 use libp2p_core::upgrade::ProtocolName;
 use libp2p_traits::{ReadEx, WriteEx};
-use libp2p_core::muxing::IReadWrite;
 
 /// Muxer that uses multistream-select to select and handle protocols.
 ///
@@ -53,8 +53,10 @@ impl Muxer {
         self.protocol_handlers.keys().copied().map(|k| <&[u8]>::clone(&k))
     }
 
-    pub(crate) async fn select_inbound(&mut self, socket: IReadWrite) -> Result<(IProtocolHandler, IReadWrite, ProtocolId), TransportError>
-    {
+    pub(crate) async fn select_inbound(
+        &mut self,
+        socket: IReadWrite,
+    ) -> Result<(IProtocolHandler, IReadWrite, ProtocolId), TransportError> {
         let protocols = self.supported_protocols();
         let negotiator = Negotiator::new_with_protocols(protocols);
 

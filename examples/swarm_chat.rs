@@ -81,11 +81,8 @@ impl UpgradeInfo for ChatHandler {
 }
 
 #[async_trait]
-impl<C> ProtocolHandler<C> for ChatHandler
-where
-    C: StreamInfo + ReadEx + WriteEx + Unpin + Clone + Send + std::fmt::Debug + 'static,
-{
-    async fn handle(&mut self, stream: Substream<C>, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+impl ProtocolHandler for ChatHandler {
+    async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
         let stream = stream;
         log::trace!("ChatHandler handling inbound {:?}", stream);
         let s1 = stream.clone();
@@ -101,7 +98,7 @@ where
         Ok(())
     }
 
-    fn box_clone(&self) -> IProtocolHandler<C> {
+    fn box_clone(&self) -> IProtocolHandler {
         Box::new(self.clone())
     }
 }

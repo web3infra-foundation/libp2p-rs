@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::identity::Keypair;
-use crate::muxing::{StreamInfo, StreamMuxer, IStreamMuxer, IReadWrite, StreamMuxerEx};
+use crate::muxing::{IReadWrite, IStreamMuxer, StreamInfo, StreamMuxer, StreamMuxerEx};
 use crate::secure_io::SecureInfo;
 use crate::transport::{ConnectionInfo, TransportError};
 use crate::upgrade::ProtocolName;
@@ -257,7 +257,6 @@ where
     B: StreamMuxer + ConnectionInfo + SecureInfo + std::fmt::Debug,
 {
 }
-
 
 #[derive(Debug, Clone)]
 pub enum EitherName<A, B> {
