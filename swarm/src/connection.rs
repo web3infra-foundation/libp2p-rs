@@ -11,7 +11,7 @@ use std::{error::Error, fmt};
 
 use libp2p_core::identity::Keypair;
 use libp2p_core::multistream::Negotiator;
-use libp2p_core::muxing::{StreamMuxer, IReadWrite, IStreamMuxer};
+use libp2p_core::muxing::{IReadWrite, IStreamMuxer, StreamMuxer};
 use libp2p_core::secure_io::SecureInfo;
 use libp2p_core::transport::TransportError;
 use libp2p_core::upgrade::ProtocolName;
@@ -99,8 +99,7 @@ impl fmt::Debug for Connection {
 //impl Unpin for Connection where TMuxer: StreamMuxer {}
 
 #[allow(dead_code)]
-impl Connection
-{
+impl Connection {
     /// Builds a new `Connection` from the given substream multiplexer
     /// and a tx channel which will used to send events to Swarm.
     pub(crate) fn new(
@@ -430,8 +429,7 @@ async fn open_stream_internal(
     mut stream_muxer: IStreamMuxer,
     pids: Vec<ProtocolId>,
     ctrl: mpsc::Sender<SwarmControlCmd>,
-) -> Result<Substream, TransportError>
-{
+) -> Result<Substream, TransportError> {
     let raw_stream = stream_muxer.open_stream().await?;
     let la = stream_muxer.local_multiaddr();
     let ra = stream_muxer.remote_multiaddr();

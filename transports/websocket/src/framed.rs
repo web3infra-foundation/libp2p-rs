@@ -266,11 +266,7 @@ impl WsConfig {
             }
         };
 
-        let raw_stream = self
-            .transport
-            .dial(inner_addr)
-            .map_err(WsError::Transport)
-            .await?;
+        let raw_stream = self.transport.dial(inner_addr).map_err(WsError::Transport).await?;
         let inner_raw_stream = raw_stream.clone();
         trace!("connected to {}", address);
         let local_addr = raw_stream.local_multiaddr();

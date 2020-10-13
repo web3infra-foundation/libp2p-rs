@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::identity::Keypair;
-use crate::muxing::{StreamMuxer, IStreamMuxer, IReadWrite};
+use crate::muxing::{IReadWrite, IStreamMuxer, StreamMuxer};
 use crate::secure_io::SecureInfo;
 use crate::transport::{ConnectionInfo, TransportError};
 use crate::upgrade::{UpgradeInfo, Upgrader};
@@ -118,10 +118,8 @@ impl<T: Send + WriteEx> WriteEx for DummyStream<T> {
     }
 }
 
-
 #[async_trait]
 impl<T: ConnectionInfo> StreamMuxer for DummyStream<T> {
-
     async fn open_stream(&mut self) -> Result<IReadWrite, TransportError> {
         Err(TransportError::Internal)
     }

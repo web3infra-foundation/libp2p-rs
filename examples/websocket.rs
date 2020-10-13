@@ -52,11 +52,8 @@ fn run_server() {
     }
 
     #[async_trait]
-    impl<C> ProtocolHandler<C> for MyProtocolHandler
-    where
-        C: StreamInfo + ReadEx + WriteEx + Unpin + Send + std::fmt::Debug + 'static,
-    {
-        async fn handle(&mut self, stream: Substream<C>, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+    impl ProtocolHandler for MyProtocolHandler {
+        async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
             let mut stream = stream;
             log::trace!("MyProtocolHandler handling inbound {:?}", stream);
             let mut msg = vec![0; 4096];
@@ -67,7 +64,7 @@ fn run_server() {
             }
         }
 
-        fn box_clone(&self) -> IProtocolHandler<C> {
+        fn box_clone(&self) -> IProtocolHandler {
             Box::new(self.clone())
         }
     }

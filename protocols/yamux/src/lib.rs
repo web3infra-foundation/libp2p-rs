@@ -37,7 +37,7 @@ pub use crate::frame::{
 };
 use futures::future::BoxFuture;
 use libp2p_core::identity::Keypair;
-use libp2p_core::muxing::{StreamInfo, StreamMuxer, IStreamMuxer, ReadWrite, IReadWrite, StreamMuxerEx};
+use libp2p_core::muxing::{IReadWrite, IStreamMuxer, ReadWrite, StreamInfo, StreamMuxer, StreamMuxerEx};
 use libp2p_core::secure_io::SecureInfo;
 use libp2p_core::transport::{ConnectionInfo, TransportError};
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
@@ -294,9 +294,26 @@ impl StreamInfo for Stream {
     }
 }
 
+#[async_trait]
 impl ReadWrite for Stream {
     fn box_clone(&self) -> IReadWrite {
         Box::new(self.clone())
+    }
+
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, futures::io::Error> {
+        self.read2(buf).await
+    }
+
+    async fn write(&mut self, buf: &[u8]) -> Result<usize, futures::io::Error> {
+        self.write2(buf).await
+    }
+
+    async fn flush(&mut self) -> Result<(), futures::io::Error> {
+        self.flush2().await
+    }
+
+    async fn close(&mut self) -> Result<(), futures::io::Error> {
+        self.close2().await
     }
 }
 
@@ -304,7 +321,6 @@ impl<C: ReadEx + WriteEx + Unpin + Send + 'static> StreamMuxerEx for Yamux<C> {}
 
 #[async_trait]
 impl<C: ReadEx + WriteEx + Unpin + Send + 'static> StreamMuxer for Yamux<C> {
-
     async fn open_stream(&mut self) -> Result<IReadWrite, TransportError> {
         let s = self.control.open_stream().await?;
         trace!("a new outbound substream {:?} opened for yamux... ", s);

@@ -64,8 +64,7 @@ impl Clone for Control {
     }
 }
 
-impl Control
-{
+impl Control {
     pub(crate) fn new(sender: mpsc::Sender<SwarmControlCmd>) -> Self {
         Control { sender }
     }

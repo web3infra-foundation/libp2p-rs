@@ -80,8 +80,8 @@ use crate::ping::{PingConfig, PingHandler};
 use crate::protocol_handler::IProtocolHandler;
 use crate::registry::Addresses;
 use crate::substream::{StreamId, Substream};
+use libp2p_core::muxing::{IReadWrite, IStreamMuxer};
 use libp2p_core::transport::upgrade::ITransportEx;
-use libp2p_core::muxing::{IStreamMuxer, IReadWrite};
 
 type Result<T> = std::result::Result<T, SwarmError>;
 
@@ -209,8 +209,7 @@ pub enum SwarmEvent {
 type ProtocolId = &'static [u8];
 
 /// Contains the state of the network, plus the way it should behave.
-pub struct Swarm
-{
+pub struct Swarm {
     /// TODO: to improve peerstore... we don't want to leak PeerStore
     pub peers: PeerStore,
 
@@ -274,8 +273,7 @@ pub struct Swarm
 // {
 // }
 #[allow(dead_code)]
-impl Swarm
-{
+impl Swarm {
     /// Builds a new `Swarm`.
     pub fn new(
         local_peer_id: PeerId,
@@ -516,12 +514,7 @@ impl Swarm
         Ok(())
     }
 
-    fn on_new_stream(
-        &mut self,
-        peer_id: PeerId,
-        pids: Vec<ProtocolId>,
-        reply: oneshot::Sender<Result<Substream>>,
-    ) -> Result<()> {
+    fn on_new_stream(&mut self, peer_id: PeerId, pids: Vec<ProtocolId>, reply: oneshot::Sender<Result<Substream>>) -> Result<()> {
         if let Some(connection) = self.get_best_conn(&peer_id) {
             // well, we have a connection, start a task to open the stream
             connection.open_stream(pids, |r| {
@@ -606,14 +599,12 @@ impl Swarm
     pub fn listen_on(&mut self, addrs: Vec<Multiaddr>) -> Result<()> {
         let mut succeeded: u32 = 0;
         let mut errs = Vec::new();
-        for (i,n) in addrs.clone().into_iter().enumerate(){
+        for (i, n) in addrs.clone().into_iter().enumerate() {
             let r = self.add_listen_addr(n);
             match r {
-                Ok(_) => {
-                    succeeded += 1
-                }
+                Ok(_) => succeeded += 1,
                 Err(e) => {
-                   errs.insert(i, e);
+                    errs.insert(i, e);
                 }
             };
         }
@@ -622,7 +613,7 @@ impl Swarm
             log::warn!("listen on {} failed: {}", addrs[i], n)
         }
 
-        if succeeded == 0 && !addrs.is_empty(){
+        if succeeded == 0 && !addrs.is_empty() {
             log::error!("failed to listen on any addresses:{:?}", addrs);
             return Err(SwarmError::CanNotListenOnAny);
         }

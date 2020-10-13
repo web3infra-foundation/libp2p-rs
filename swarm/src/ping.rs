@@ -206,8 +206,7 @@ impl UpgradeInfo for PingHandler {
 }
 
 #[async_trait]
-impl ProtocolHandler for PingHandler
-{
+impl ProtocolHandler for PingHandler {
     /// The Ping handler's inbound protocol.
     /// Simply wait for any thing that coming in then send back
     async fn handle(&mut self, mut stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {

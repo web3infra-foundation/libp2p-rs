@@ -2,7 +2,7 @@
 //!
 // TODO: add example
 
-use crate::muxing::{StreamMuxer, IStreamMuxer, StreamMuxerEx};
+use crate::muxing::{IStreamMuxer, StreamMuxer, StreamMuxerEx};
 use crate::secure_io::SecureInfo;
 use crate::transport::{ConnectionInfo, IListener, ITransport, TransportListener};
 use crate::upgrade::multistream::Multistream;

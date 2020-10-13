@@ -35,17 +35,21 @@ use crate::secure_io::SecureInfo;
 use crate::transport::{ConnectionInfo, TransportError};
 use async_trait::async_trait;
 use futures::future::BoxFuture;
-use libp2p_traits::{ReadEx, WriteEx};
 use futures::io::Error;
-
+use futures::prelude::*;
+use libp2p_traits::{ReadEx, WriteEx};
 /// Information about a stream.
 pub trait StreamInfo: Send {
     /// Returns the identity of the stream.
     fn id(&self) -> usize;
 }
-
+#[async_trait]
 pub trait ReadWrite: ReadEx + WriteEx + StreamInfo + Unpin + std::fmt::Debug {
     fn box_clone(&self) -> IReadWrite;
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error>;
+    async fn write(&mut self, buf: &[u8]) -> Result<usize, Error>;
+    async fn flush(&mut self) -> Result<(), Error>;
+    async fn close(&mut self) -> Result<(), Error>;
 }
 
 pub type IReadWrite = Box<dyn ReadWrite>;
@@ -59,28 +63,27 @@ impl Clone for IReadWrite {
 #[async_trait]
 impl ReadEx for IReadWrite {
     async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
-        ReadEx::read2(self as &mut (dyn ReadEx + Send), buf).await
+        self.read(buf).await
     }
 }
+
 #[async_trait]
 impl WriteEx for IReadWrite {
     async fn write2(&mut self, buf: &[u8]) -> Result<usize, Error> {
-        (self as &mut (dyn WriteEx + Send)).write2(buf).await
+        self.write(buf).await
     }
 
     async fn flush2(&mut self) -> Result<(), Error> {
-        (self as &mut (dyn WriteEx + Send)).flush2().await
+        self.flush().await
     }
 
     async fn close2(&mut self) -> Result<(), Error> {
-        (self as &mut (dyn WriteEx + Send)).close2().await
+        self.close().await
     }
 }
 
-
 #[async_trait]
 pub trait StreamMuxer {
-
     /// Opens a new outgoing substream, and produces the equivalent to a future that will be
     /// resolved when it becomes available.
     ///
