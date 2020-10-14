@@ -3,22 +3,26 @@ use async_trait::async_trait;
 use futures::prelude::*;
 use futures::{ready, stream::BoxStream};
 use libp2p_core::transport::ConnectionInfo;
-use libp2p_core::{either::AsyncEitherOutput, multiaddr::Multiaddr};
+use libp2p_core::{multiaddr::Multiaddr};
 use libp2p_tcp::TcpTransStream;
 use libp2p_traits::{ReadEx, WriteEx};
 use log::trace;
 use soketto::connection;
 use std::{convert::TryInto, fmt, io, mem, pin::Pin, task::Context, task::Poll};
 
-//type SokettoReceiver<T>=soketto::Receiver<EitherOutput<EitherOutput<client::TlsStream<T>, server::TlsStream<T>>, T>>;
-//type SokettoSender<T>=soketto::Sender<EitherOutput<EitherOutput<client::TlsStream<T>, server::TlsStream<T>>, T>>;
-pub(crate) type TlsOrPlain<T> = AsyncEitherOutput<AsyncEitherOutput<client::TlsStream<T>, server::TlsStream<T>>, T>;
+pub trait TlsOrPlain<T>: AsyncRead + AsyncWrite + Send + Unpin + std::fmt::Debug {}
+
+pub type ITlsOrPlain<T> = Box<dyn TlsOrPlain<T>>;
+
+impl<T: AsyncRead + AsyncWrite + Send + Unpin + std::fmt::Debug> TlsOrPlain<T> for server::TlsStream<T> {}
+
+impl<T: AsyncRead + AsyncWrite + Send + Unpin + std::fmt::Debug> TlsOrPlain<T> for client::TlsStream<T> {}
+
+impl<T: AsyncRead + AsyncWrite + Send + Unpin + std::fmt::Debug> TlsOrPlain<T> for TcpTransStream {}
 
 /// The websocket connection.
 pub struct Connection<T> {
-    //reader:SokettoReceiver<T>,
-    //writer:SokettoSender<T>,
-    inner: TcpTransStream,
+    inner: T,
     receiver: BoxStream<'static, Result<IncomingData, connection::Error>>,
     sender: Pin<Box<dyn Sink<OutgoingData, Error = connection::Error> + Send>>,
     _marker: std::marker::PhantomData<T>,
@@ -120,7 +124,7 @@ impl<T> Connection<T>
 where
     T: AsyncRead + AsyncWrite + Send + Unpin + 'static,
 {
-    pub(crate) fn new(inner: TcpTransStream, builder: connection::Builder<TlsOrPlain<T>>, la: Multiaddr, ra: Multiaddr) -> Self {
+    pub(crate) fn new(inner: T, builder: connection::Builder<ITlsOrPlain<T>>, la: Multiaddr, ra: Multiaddr) -> Self {
         let (sender, receiver) = builder.finish();
         let sink = quicksink::make_sink(sender, |mut sender, action| async move {
             match action {

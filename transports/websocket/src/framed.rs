@@ -1,4 +1,4 @@
-use crate::connection::{Connection, TlsOrPlain};
+use crate::connection::{Connection, ITlsOrPlain};
 use crate::{error::WsError, tls};
 use async_trait::async_trait;
 use either::Either;
@@ -6,7 +6,6 @@ use futures::prelude::*;
 use libp2p_core::transport::ConnectionInfo;
 use libp2p_core::transport::{IListener, ITransport};
 use libp2p_core::{
-    either::AsyncEitherOutput,
     multiaddr::{protocol, protocol::Protocol, Multiaddr},
     transport::{TransportError, TransportListener},
     Transport,
@@ -121,7 +120,7 @@ impl TransportListener for WsTransListener {
         let remote2 = remote_addr.clone(); // used for logging
         let tls_config = self.inner_config.tls_config.clone();
         trace!("incoming connection from {}", remote1);
-        let stream = if self.use_tls {
+        let stream: ITlsOrPlain<TcpTransStream> = if self.use_tls {
             // begin TLS session
             let server = tls_config.server.expect("for use_tls we checked server is not none");
             trace!("awaiting TLS handshake with {}", remote1);
@@ -132,12 +131,10 @@ impl TransportListener for WsTransListener {
                     WsError::Tls(tls::Error::from(e))
                 })
                 .await?;
-
-            let stream: TlsOrPlain<_> = AsyncEitherOutput::A(AsyncEitherOutput::B(stream));
-            stream
+            Box::new(stream)
         } else {
             // continue with plain stream
-            AsyncEitherOutput::B(raw_stream)
+            Box::new(raw_stream)
         };
 
         trace!("receiving websocket handshake request from {}", remote2);
@@ -266,16 +263,12 @@ impl WsConfig {
             }
         };
 
-        let raw_stream = self
-            .transport
-            .dial(inner_addr)
-            .map_err(WsError::Transport)
-            .await?;
+        let raw_stream = self.transport.dial(inner_addr).map_err(WsError::Transport).await?;
         let inner_raw_stream = raw_stream.clone();
         trace!("connected to {}", address);
         let local_addr = raw_stream.local_multiaddr();
         let remote_addr = raw_stream.remote_multiaddr();
-        let stream = if use_tls {
+        let stream: ITlsOrPlain<TcpTransStream> = if use_tls {
             // begin TLS session
             let dns_name = dns_name.expect("for use_tls we have checked that dns_name is some");
             trace!("starting TLS handshake with {}", address);
@@ -290,11 +283,11 @@ impl WsConfig {
                 })
                 .await?;
 
-            let stream: TlsOrPlain<_> = AsyncEitherOutput::A(AsyncEitherOutput::A(stream));
-            stream
+            //let stream: TlsOrPlain<_> = AsyncEitherOutput::A(AsyncEitherOutput::A(stream));
+            Box::new(stream)
         } else {
             // continue with plain stream
-            AsyncEitherOutput::B(raw_stream)
+            Box::new(raw_stream)
         };
 
         trace!("sending websocket handshake request to {}", address);

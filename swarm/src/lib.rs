@@ -609,14 +609,12 @@ where
     pub fn listen_on(&mut self, addrs: Vec<Multiaddr>) -> Result<()> {
         let mut succeeded: u32 = 0;
         let mut errs = Vec::new();
-        for (i,n) in addrs.clone().into_iter().enumerate(){
+        for (i, n) in addrs.clone().into_iter().enumerate() {
             let r = self.add_listen_addr(n);
             match r {
-                Ok(_) => {
-                    succeeded += 1
-                }
+                Ok(_) => succeeded += 1,
                 Err(e) => {
-                   errs.insert(i, e);
+                    errs.insert(i, e);
                 }
             };
         }
@@ -625,7 +623,7 @@ where
             log::warn!("listen on {} failed: {}", addrs[i], n)
         }
 
-        if succeeded == 0 && !addrs.is_empty(){
+        if succeeded == 0 && !addrs.is_empty() {
             log::error!("failed to listen on any addresses:{:?}", addrs);
             return Err(SwarmError::CanNotListenOnAny);
         }
