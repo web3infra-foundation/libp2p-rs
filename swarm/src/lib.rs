@@ -339,7 +339,7 @@ where
         }
 
         for p in protocols.iter() {
-            log::info!("insert protocol={}", p);
+            log::trace!("add protocol={}", p);
             self.transports.insert(*p, transport.clone());
         }
         self
