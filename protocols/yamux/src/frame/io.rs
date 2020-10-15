@@ -16,16 +16,17 @@ use super::{
 };
 use crate::connection::Id;
 use crate::frame::header::HEADER_SIZE;
-
-use libp2p_traits::{ReadEx, WriteEx};
+use std::pin::Pin;
+use futures::stream::FusedStream;
+use libp2p_traits::{ReadEx, WriteEx, ext::WriteHalf, ReadExt2};
 
 /// A [`Stream`] and writer of [`Frame`] values.
 // #[derive(Debug)]
 pub(crate) struct Io<T> {
     id: Id,
-    io: T,
-    max_body_len: usize,
-    // pub(crate) stream: Pin<Box<dyn FusedStream<Item = Result<Frame<()>, FrameDecodeError>> + Send>>,
+    io: WriteHalf<T>,
+    // max_body_len: usize,
+    pub(crate) stream: Pin<Box<dyn FusedStream<Item = Result<Frame<()>, FrameDecodeError>> + Send>>,
 }
 
 impl<T> fmt::Debug for Io<T> {
@@ -34,15 +35,22 @@ impl<T> fmt::Debug for Io<T> {
     }
 }
 
-impl<T: ReadEx + WriteEx + Unpin + Send> Io<T> {
+impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Io<T> {
     pub(crate) fn new(id: Id, io: T, max_frame_body_len: usize) -> Self {
+        let (r, w) = io.split2();
+        let fr = FrameReader::new(id, r, max_frame_body_len);
+        let s = futures::stream::unfold(fr, |mut fr| async {
+            Some((fr.recv_frame().await, fr))
+        });
         Io {
             id,
-            io,
-            max_body_len: max_frame_body_len,
+            io: w,
+            // max_body_len: max_frame_body_len,
+            stream: Box::pin(s),
         }
     }
 
+    /*
     pub(crate) async fn recv_frame(&mut self) -> Result<Frame<()>, FrameDecodeError> {
         let mut header_data = [0; HEADER_SIZE];
 
@@ -65,6 +73,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send> Io<T> {
 
         Ok(Frame { header, body })
     }
+     */
 
     pub(crate) async fn send_frame<A>(&mut self, frame: &Frame<A>) -> io::Result<()> {
         log::trace!("{}: write stream, header: {}", self.id, frame.header);
@@ -78,7 +87,11 @@ impl<T: ReadEx + WriteEx + Unpin + Send> Io<T> {
         let mut buf = BytesMut::with_capacity(frame.body.len() + 12);
         buf.put(header.to_vec().as_ref());
         buf.put(&frame.body[..]);
-        self.io.write_all2(&buf).await
+        let ret = self.io.write_all2(&buf).await;
+
+        log::trace!("{}: wrote stream, header: {}", self.id, frame.header);
+
+        ret
 
         // self.io.write_all2(header.to_vec().as_ref()).await?;
         // self.io.write_all2(&frame.body).await
@@ -100,7 +113,7 @@ struct FrameReader<T> {
 }
 
 #[allow(dead_code)]
-impl<T: ReadEx + WriteEx + Unpin + Send> FrameReader<T> {
+impl<T: ReadEx + Unpin + Send> FrameReader<T> {
     pub(crate) fn new(id: Id, io: T, max_frame_body_len: usize) -> Self {
         FrameReader {
             id,
@@ -128,6 +141,8 @@ impl<T: ReadEx + WriteEx + Unpin + Send> FrameReader<T> {
 
         let mut body = vec![0; body_len];
         self.io.read_exact2(&mut body).await?;
+
+        log::trace!("{}: read stream body: {}", self.id, body_len);
 
         Ok(Frame { header, body })
     }
