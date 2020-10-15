@@ -43,7 +43,7 @@ pub struct LengthDelimited<R> {
     write_buffer: BytesMut,
 }
 
-impl<R: ReadEx + WriteEx + Send> LengthDelimited<R> {
+impl<R: ReadEx + WriteEx> LengthDelimited<R> {
     /// Creates a new I/O resource for reading and writing unsigned-varint
     /// length delimited frames.
     pub fn new(inner: R) -> LengthDelimited<R> {

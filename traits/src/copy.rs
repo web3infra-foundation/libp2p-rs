@@ -9,7 +9,7 @@ use crate::{ReadEx, WriteEx};
 pub async fn copy<R, W>(mut reader: R, mut writer: W) -> std::io::Result<usize>
 where
     R: ReadEx + Unpin,
-    W: WriteEx + Unpin + Send,
+    W: WriteEx + Unpin,
 {
     let mut copyed = 0_usize;
 

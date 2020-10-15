@@ -253,7 +253,7 @@ pub struct MessageIO<R> {
 
 impl<R> MessageIO<R>
 where
-    R: ReadEx + WriteEx + Send,
+    R: ReadEx + WriteEx,
 {
     /// Constructs a new `MessageIO` resource wrapping the given I/O stream.
     pub fn new(inner: R) -> MessageIO<R> {

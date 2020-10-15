@@ -12,7 +12,7 @@ use libp2p_dns::DnsConfig;
 use libp2p_tcp::{TcpConfig, TcpTransStream};
 
 /// A Websocket transport.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct WsConfig {
     inner: framed::WsConfig,
 }

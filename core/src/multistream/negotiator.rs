@@ -49,7 +49,7 @@ impl<TProto: AsRef<[u8]> + Clone> Negotiator<TProto> {
 
     pub async fn negotiate<TSocket>(&self, socket: TSocket) -> Result<(TProto, TSocket), NegotiationError>
     where
-        TSocket: ReadEx + WriteEx + Send + Unpin,
+        TSocket: ReadEx + WriteEx + Unpin,
     {
         let mut io = MessageIO::new(socket);
         let msg = io.recv_message().await?;
@@ -99,7 +99,7 @@ impl<TProto: AsRef<[u8]> + Clone> Negotiator<TProto> {
 
     pub async fn select_one<TSocket>(&self, socket: TSocket) -> Result<(TProto, TSocket), NegotiationError>
     where
-        TSocket: ReadEx + WriteEx + Send + Unpin,
+        TSocket: ReadEx + WriteEx + Unpin,
     {
         let mut io = MessageIO::new(socket);
 

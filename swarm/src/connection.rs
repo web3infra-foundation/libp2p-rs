@@ -11,12 +11,10 @@ use std::{error::Error, fmt};
 
 use libp2p_core::identity::Keypair;
 use libp2p_core::multistream::Negotiator;
-use libp2p_core::muxing::{IReadWrite, IStreamMuxer, StreamMuxer};
-use libp2p_core::secure_io::SecureInfo;
+use libp2p_core::muxing::{IStreamMuxer, WrapIReadWrite};
 use libp2p_core::transport::TransportError;
 use libp2p_core::upgrade::ProtocolName;
 use libp2p_core::PublicKey;
-use libp2p_traits::{ReadEx, WriteEx};
 
 use crate::control::SwarmControlCmd;
 use crate::identify::{IdentifyInfo, IDENTIFY_PROTOCOL, IDENTIFY_PUSH_PROTOCOL};
@@ -436,12 +434,13 @@ async fn open_stream_internal(
 
     // now it's time to do protocol multiplexing for sub stream
     let negotiator = Negotiator::new_with_protocols(pids);
-    let result = negotiator.select_one(raw_stream).await;
+    let wrap_stream = WrapIReadWrite::from(raw_stream);
+    let result = negotiator.select_one(wrap_stream).await;
 
     match result {
-        Ok((proto, raw_stream)) => {
+        Ok((proto, wrap_stream)) => {
             log::debug!("selected outbound {:?} {:?}", cid, proto.protocol_name_str());
-            let stream = Substream::new(raw_stream, Direction::Outbound, proto, cid, la, ra, ctrl);
+            let stream = Substream::new(wrap_stream.into(), Direction::Outbound, proto, cid, la, ra, ctrl);
             Ok(stream)
         }
         Err(err) => {

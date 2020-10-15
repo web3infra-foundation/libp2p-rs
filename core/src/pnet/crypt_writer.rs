@@ -16,7 +16,7 @@ pub struct CryptWriter<W> {
 
 impl<W> CryptWriter<W>
 where
-    W: ReadEx + WriteEx + Send + 'static,
+    W: ReadEx + WriteEx + 'static,
 {
     /// Creates a new `CryptWriter` with the specified buffer capacity.
     pub fn with_capacity(capacity: usize, inner: W, cipher: XSalsa20) -> CryptWriter<W> {
@@ -31,7 +31,7 @@ where
 #[async_trait]
 impl<W> WriteEx for CryptWriter<W>
 where
-    W: ReadEx + WriteEx + Send + 'static,
+    W: ReadEx + WriteEx + 'static,
 {
     async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.buf.append(&mut buf.to_vec());
@@ -63,7 +63,7 @@ impl<W: WriteEx + fmt::Debug> fmt::Debug for CryptWriter<W> {
 #[async_trait]
 impl<W> ReadEx for CryptWriter<W>
 where
-    W: ReadEx + WriteEx + Send,
+    W: ReadEx + WriteEx,
 {
     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.inner.read2(buf).await

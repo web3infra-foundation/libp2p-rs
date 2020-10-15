@@ -25,7 +25,7 @@ where
 
 impl<T> IO<T>
 where
-    T: ReadEx + Unpin + Send,
+    T: ReadEx + Unpin,
 {
     pub(crate) async fn recv_frame(&mut self) -> Result<Frame, FrameDecodeError> {
         // get header
@@ -52,7 +52,7 @@ where
 
 impl<T> IO<T>
 where
-    T: WriteEx + Unpin + Send,
+    T: WriteEx + Unpin,
 {
     pub(crate) async fn send_frame(&mut self, frame: &Frame) -> io::Result<()> {
         log::trace!("{}: write stream, header: {}, len {}", self.id, frame.header, frame.body.len());

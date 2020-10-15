@@ -34,7 +34,6 @@ use libp2p_traits::{ReadEx, WriteEx};
 use crate::protocol_handler::{IProtocolHandler, ProtocolHandler};
 use crate::substream::Substream;
 use crate::SwarmError;
-use libp2p_core::muxing::StreamInfo;
 
 /// The configuration for outbound pings.
 #[derive(Clone, Debug)]
@@ -231,7 +230,6 @@ mod tests {
     use crate::ping::ping;
     use crate::protocol_handler::ProtocolHandler;
     use crate::substream::Substream;
-    use libp2p_core::transport::TransportListener;
     use libp2p_core::upgrade::UpgradeInfo;
     use libp2p_core::{
         multiaddr::multiaddr,

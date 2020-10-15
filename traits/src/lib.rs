@@ -13,7 +13,7 @@ pub use ext::ReadExt2;
 /// Read Trait for async/wait
 ///
 #[async_trait]
-pub trait ReadEx {
+pub trait ReadEx: Send {
     /// Reads some bytes from the byte stream.
     ///
     /// On success, returns the total number of bytes read.
@@ -155,7 +155,7 @@ pub trait ReadEx {
 /// Write Trait for async/wait
 ///
 #[async_trait]
-pub trait WriteEx {
+pub trait WriteEx: Send {
     /// Attempt to write bytes from `buf` into the object.
     ///
     /// On success, returns `Ok(num_bytes_written)`.
@@ -369,7 +369,7 @@ mod tests {
         async_std::task::block_on(async {
             let mut writer = Test(Cursor::new(vec![0u8; 4]));
             let mut output = vec![1, 2, 3, 4, 5];
-            let bytes = writer.write_all2(&mut output[..]).await.unwrap();
+            let _bytes = writer.write_all2(&mut output[..]).await.unwrap();
 
             assert_eq!(writer.0.get_mut(), &[1, 2, 3, 4, 5]);
         });

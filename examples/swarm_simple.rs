@@ -5,7 +5,6 @@ use std::time::Duration;
 extern crate lazy_static;
 
 use libp2p_core::identity::Keypair;
-use libp2p_core::muxing::StreamInfo;
 use libp2p_core::transport::memory::MemoryTransport;
 use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::upgrade::Selector;
@@ -83,7 +82,7 @@ fn run_server() {
         .with_transport(Box::new(tu2))
         .with_protocol(Box::new(DummyProtocolHandler::new()))
         .with_protocol(Box::new(MyProtocolHandler))
-        .with_ping(PingConfig::new().with_unsolicited(false).with_interval(Duration::from_secs(1)))
+        .with_ping(PingConfig::new().with_unsolicited(true).with_interval(Duration::from_secs(1)))
         .with_identify(IdentifyConfig::new(false));
 
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());

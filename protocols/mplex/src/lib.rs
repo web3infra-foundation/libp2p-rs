@@ -8,7 +8,7 @@ use futures::FutureExt;
 use log::{info, trace};
 use std::fmt;
 
-use libp2p_core::muxing::{IReadWrite, IStreamMuxer, ReadWrite, StreamInfo, StreamMuxer, StreamMuxerEx};
+use libp2p_core::muxing::{IReadWrite, IStreamMuxer, ReadWriteEx, StreamInfo, StreamMuxer, StreamMuxerEx};
 use libp2p_core::transport::{ConnectionInfo, TransportError};
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
 use libp2p_traits::{ReadEx, WriteEx};
@@ -17,7 +17,6 @@ use crate::connection::Connection;
 use connection::{control::Control, stream::Stream, Id};
 use error::ConnectionError;
 use futures::future::BoxFuture;
-use futures::io::Error;
 use libp2p_core::identity::Keypair;
 use libp2p_core::secure_io::SecureInfo;
 use libp2p_core::{Multiaddr, PeerId, PublicKey};
@@ -91,7 +90,7 @@ impl<C> fmt::Debug for Mplex<C> {
     }
 }
 
-impl<C: ConnectionInfo + SecureInfo + ReadEx + WriteEx + Unpin + Send + 'static> Mplex<C> {
+impl<C: ConnectionInfo + SecureInfo + ReadEx + WriteEx + Unpin + 'static> Mplex<C> {
     pub fn new(io: C) -> Self {
         // `io` will be moved into Connection soon, make a copy of the connection & secure info
         let la = io.local_multiaddr();
@@ -153,32 +152,16 @@ impl StreamInfo for Stream {
 }
 
 #[async_trait]
-impl ReadWrite for Stream {
+impl ReadWriteEx for Stream {
     fn box_clone(&self) -> IReadWrite {
         Box::new(self.clone())
     }
-
-    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
-        self.read2(buf).await
-    }
-
-    async fn write(&mut self, buf: &[u8]) -> Result<usize, Error> {
-        self.write2(buf).await
-    }
-
-    async fn flush(&mut self) -> Result<(), Error> {
-        self.flush2().await
-    }
-
-    async fn close(&mut self) -> Result<(), Error> {
-        self.close2().await
-    }
 }
 
-impl<C: ReadEx + WriteEx + Unpin + Send + 'static> StreamMuxerEx for Mplex<C> {}
+impl<C: ReadEx + WriteEx + Unpin + 'static> StreamMuxerEx for Mplex<C> {}
 
 #[async_trait]
-impl<C: ReadEx + WriteEx + Unpin + Send + 'static> StreamMuxer for Mplex<C> {
+impl<C: ReadEx + WriteEx + Unpin + 'static> StreamMuxer for Mplex<C> {
     async fn open_stream(&mut self) -> Result<IReadWrite, TransportError> {
         trace!("opening a new outbound substream for mplex...");
         let s = self.ctrl.open_stream().await?;
@@ -225,7 +208,7 @@ impl UpgradeInfo for Config {
 #[async_trait]
 impl<T> Upgrader<T> for Config
 where
-    T: ConnectionInfo + SecureInfo + ReadEx + WriteEx + Send + Unpin + 'static,
+    T: ConnectionInfo + SecureInfo + ReadEx + WriteEx + Unpin + 'static,
 {
     type Output = Mplex<T>;
 

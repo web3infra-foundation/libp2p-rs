@@ -34,7 +34,7 @@ impl<T> fmt::Debug for Io<T> {
     }
 }
 
-impl<T: ReadEx + WriteEx + Unpin + Send> Io<T> {
+impl<T: ReadEx + WriteEx + Unpin> Io<T> {
     pub(crate) fn new(id: Id, io: T, max_frame_body_len: usize) -> Self {
         Io {
             id,
@@ -100,7 +100,7 @@ struct FrameReader<T> {
 }
 
 #[allow(dead_code)]
-impl<T: ReadEx + WriteEx + Unpin + Send> FrameReader<T> {
+impl<T: ReadEx + WriteEx + Unpin> FrameReader<T> {
     pub(crate) fn new(id: Id, io: T, max_frame_body_len: usize) -> Self {
         FrameReader {
             id,
