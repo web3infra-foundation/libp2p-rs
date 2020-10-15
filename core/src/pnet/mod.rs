@@ -220,7 +220,7 @@ impl fmt::Display for PnetError {
 #[async_trait]
 impl<TSocket> Pnet<TSocket> for PnetConfig
 where
-    TSocket: ConnectionInfo + ReadEx + WriteEx + Send + Unpin + 'static,
+    TSocket: ConnectionInfo + ReadEx + WriteEx + Unpin + 'static,
 {
     type Output = PnetOutput<TSocket>;
     /// upgrade a connection to use pre shared key encryption.
@@ -248,7 +248,7 @@ pub struct PnetOutput<S> {
     read_cipher: XSalsa20,
 }
 
-impl<S: ReadEx + WriteEx + Send + 'static> PnetOutput<S> {
+impl<S: ReadEx + WriteEx + 'static> PnetOutput<S> {
     fn new(inner: S, write_cipher: XSalsa20, read_cipher: XSalsa20) -> Self {
         Self {
             inner: CryptWriter::with_capacity(WRITE_BUFFER_SIZE, inner, write_cipher),
@@ -260,7 +260,7 @@ impl<S: ReadEx + WriteEx + Send + 'static> PnetOutput<S> {
 #[async_trait]
 impl<S> ReadEx for PnetOutput<S>
 where
-    S: ReadEx + WriteEx + Send + 'static,
+    S: ReadEx + WriteEx + 'static,
 {
     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let result = self.inner.read2(buf).await;
@@ -276,7 +276,7 @@ where
 #[async_trait]
 impl<S> WriteEx for PnetOutput<S>
 where
-    S: ReadEx + WriteEx + Send + 'static,
+    S: ReadEx + WriteEx + 'static,
 {
     async fn write_all2(&mut self, buf: &[u8]) -> io::Result<()> {
         self.inner.write_all2(buf).await

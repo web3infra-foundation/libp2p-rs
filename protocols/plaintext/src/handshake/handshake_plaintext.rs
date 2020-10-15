@@ -26,7 +26,7 @@ pub struct Remote {
 
 pub(crate) async fn handshake<T>(socket: T, config: PlainTextConfig) -> Result<(SecureStream<T>, Remote), PlaintextError>
 where
-    T: ReadEx + WriteEx + Send + 'static,
+    T: ReadEx + WriteEx + 'static,
 {
     let mut socket = LengthPrefixSocket::new(socket, config.clone().max_frame_length);
     let local_context = HandshakeContext::new(config.clone())?;

@@ -24,7 +24,6 @@ use prost::Message;
 use std::convert::TryFrom;
 use std::io;
 
-use libp2p_core::muxing::{StreamInfo, StreamMuxer};
 use libp2p_core::transport::TransportError;
 use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_core::{Multiaddr, PublicKey};
@@ -256,7 +255,6 @@ mod tests {
     use futures::channel::mpsc;
     use futures::StreamExt;
     use libp2p_core::identity::Keypair;
-    use libp2p_core::transport::TransportListener;
     use libp2p_core::upgrade::UpgradeInfo;
     use libp2p_core::{
         multiaddr::multiaddr,
@@ -273,11 +271,11 @@ mod tests {
         let pubkey = Keypair::generate_ed25519_fixed().public();
         let key_cloned = pubkey.clone();
 
-        let (tx, mut rx) = mpsc::channel::<SwarmControlCmd<()>>(0);
+        let (tx, mut rx) = mpsc::channel::<SwarmControlCmd>(0);
 
         async_std::task::spawn(async move {
             let socket = listener.accept().await.unwrap();
-            let socket = Substream::new_with_default(socket);
+            let socket = Substream::new_with_default(Box::new(socket));
 
             let mut handler = IdentifyHandler::new(tx);
             let _ = handler.handle(socket, handler.protocol_info().first().unwrap()).await;
@@ -303,7 +301,7 @@ mod tests {
 
         async_std::task::block_on(async move {
             let socket = MemoryTransport.dial(listener_addr).await.unwrap();
-            let socket = Substream::new_with_default(socket);
+            let socket = Substream::new_with_default(Box::new(socket));
 
             let (ri, _addr) = identify::consume_message(socket).await.unwrap();
             assert_eq!(ri.public_key, pubkey);
@@ -319,11 +317,11 @@ mod tests {
         let pubkey = Keypair::generate_ed25519_fixed().public();
         let key_cloned = pubkey.clone();
 
-        let (tx, mut rx) = mpsc::unbounded::<SwarmEvent<()>>();
+        let (tx, mut rx) = mpsc::unbounded::<SwarmEvent>();
 
         async_std::task::spawn(async move {
             let socket = MemoryTransport.dial(listener_addr).await.unwrap();
-            let socket = Substream::new_with_default(socket);
+            let socket = Substream::new_with_default(Box::new(socket));
 
             let info = IdentifyInfo {
                 public_key: key_cloned,
@@ -338,7 +336,7 @@ mod tests {
 
         async_std::task::block_on(async move {
             let socket = listener.accept().await.unwrap();
-            let socket = Substream::new_with_default(socket);
+            let socket = Substream::new_with_default(Box::new(socket));
 
             let mut handler = IdentifyPushHandler::new(tx);
             let _ = handler.handle(socket, handler.protocol_info().first().unwrap()).await;

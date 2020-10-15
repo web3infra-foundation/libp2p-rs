@@ -9,11 +9,9 @@ use std::io::Write;
 use std::str::FromStr;
 
 use libp2p_core::identity::Keypair;
-use libp2p_core::muxing::StreamInfo;
 use libp2p_core::transport::upgrade::TransportUpgrade;
 use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_core::{Multiaddr, PeerId};
-use libp2p_swarm::identify::IdentifyConfig;
 use libp2p_swarm::protocol_handler::{IProtocolHandler, ProtocolHandler};
 use libp2p_swarm::substream::Substream;
 use libp2p_swarm::{Swarm, SwarmError};
@@ -39,7 +37,7 @@ lazy_static! {
 
 async fn write_data<C>(mut stream: C)
 where
-    C: ReadEx + WriteEx + Send,
+    C: ReadEx + WriteEx,
 {
     loop {
         print!("> ");
@@ -53,7 +51,7 @@ where
 
 async fn read_data<C>(mut stream: C)
 where
-    C: ReadEx + WriteEx + Send,
+    C: ReadEx + WriteEx,
 {
     loop {
         let mut buf = [0; 4096];

@@ -120,6 +120,12 @@ where
     }
 }
 
+/// Trait object for TransportListener which is actually ListenerUpgrade
+pub type IListenerEx = IListener<IStreamMuxer>;
+/// Trait object for Transport which is actually TransportUpgrade
+pub type ITransportEx = ITransport<IStreamMuxer>;
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,5 +173,3 @@ mod tests {
     }
 }
 
-pub type IListenerEx = Box<dyn TransportListener<Output = IStreamMuxer> + Send>;
-pub type ITransportEx = Box<dyn Transport<Output = IStreamMuxer> + Send>;

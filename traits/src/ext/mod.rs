@@ -37,7 +37,7 @@ pub trait ReadExt2: ReadEx {
     /// ```
     fn split2(self) -> (ReadHalf<Self>, WriteHalf<Self>)
     where
-        Self: Sized + WriteEx + Send + Unpin,
+        Self: Sized + WriteEx + Unpin,
     {
         split::split(self)
     }

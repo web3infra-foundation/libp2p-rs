@@ -22,7 +22,7 @@ pub struct SecureStream<T> {
 
 impl<T> SecureStream<T>
 where
-    T: ReadEx + WriteEx + Send + 'static,
+    T: ReadEx + WriteEx + 'static,
 {
     /// New a secure stream
     pub(crate) fn new(socket: LengthPrefixSocket<T>) -> Self {
@@ -55,7 +55,7 @@ where
 #[async_trait]
 impl<T> ReadEx for SecureStream<T>
 where
-    T: ReadEx + WriteEx + Send + 'static,
+    T: ReadEx + WriteEx + 'static,
 {
     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         // when there is somthing in recv_buffer
@@ -86,7 +86,7 @@ where
 #[async_trait]
 impl<T> WriteEx for SecureStream<T>
 where
-    T: ReadEx + WriteEx + Send + 'static,
+    T: ReadEx + WriteEx + 'static,
 {
     async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
         debug!("start sending plain data: {:?}", buf);

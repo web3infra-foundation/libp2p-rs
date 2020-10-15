@@ -60,16 +60,13 @@ use std::{error, fmt};
 
 use libp2p_core::identity::Keypair;
 use libp2p_core::peerstore::PeerStore;
-use libp2p_core::secure_io::SecureInfo;
-use libp2p_core::transport::ITransport;
 use libp2p_core::upgrade::ProtocolName;
 use libp2p_core::{
     multiaddr::{protocol, Multiaddr},
-    muxing::StreamMuxer,
-    transport::TransportError,
+    transport::{TransportError, upgrade::ITransportEx},
+    muxing::IStreamMuxer,
     PeerId,
 };
-use libp2p_traits::{ReadEx, WriteEx};
 
 use crate::connection::{Connection, ConnectionId, ConnectionLimit, Direction};
 use crate::control::SwarmControlCmd;
@@ -80,8 +77,6 @@ use crate::ping::{PingConfig, PingHandler};
 use crate::protocol_handler::IProtocolHandler;
 use crate::registry::Addresses;
 use crate::substream::{StreamId, Substream};
-use libp2p_core::muxing::{IReadWrite, IStreamMuxer};
-use libp2p_core::transport::upgrade::ITransportEx;
 
 type Result<T> = std::result::Result<T, SwarmError>;
 
@@ -319,8 +314,7 @@ impl Swarm {
     pub fn with_transport(mut self, transport: ITransportEx) -> Self {
         let protocols = transport.protocols();
         if protocols.is_empty() {
-            log::error!("useless transport handles no protocols: {:?}", transport);
-            //todo: return err?
+            panic!("Shouldn't happen: no protocols found in Transport");
         }
         let mut registered: Vec<protocol::Protocol> = vec![];
         for p in protocols.iter() {

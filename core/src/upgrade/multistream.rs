@@ -26,7 +26,7 @@ impl<U> Multistream<U> {
 impl<U> Multistream<U> {
     pub(crate) async fn select_inbound<C>(self, socket: C) -> Result<U::Output, TransportError>
     where
-        C: ReadEx + WriteEx + Send + Unpin,
+        C: ReadEx + WriteEx + Unpin,
         U: Upgrader<C> + Send,
     {
         trace!("starting multistream select for inbound...");
@@ -41,7 +41,7 @@ impl<U> Multistream<U> {
 
     pub(crate) async fn select_outbound<C: Send + Unpin>(self, socket: C) -> Result<U::Output, TransportError>
     where
-        C: ReadEx + WriteEx + Send + Unpin,
+        C: ReadEx + WriteEx + Unpin,
         U: Upgrader<C> + Send,
     {
         trace!("starting multistream select for outbound...");

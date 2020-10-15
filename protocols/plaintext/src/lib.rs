@@ -38,7 +38,7 @@ impl PlainTextConfig {
 
     pub async fn handshake<T>(self, socket: T) -> Result<(SecureStream<T>, Remote), PlaintextError>
     where
-        T: ReadEx + WriteEx + Send + 'static,
+        T: ReadEx + WriteEx + 'static,
     {
         handshake::handshake_plaintext::handshake(socket, self).await
     }
@@ -55,7 +55,7 @@ impl UpgradeInfo for PlainTextConfig {
 #[async_trait]
 impl<T> Upgrader<T> for PlainTextConfig
 where
-    T: ConnectionInfo + ReadEx + WriteEx + Send + Unpin + 'static,
+    T: ConnectionInfo + ReadEx + WriteEx + Unpin + 'static,
 {
     type Output = PlainTextOutput<T>;
 
@@ -70,7 +70,7 @@ where
 
 async fn make_secure_output<T>(config: PlainTextConfig, socket: T) -> Result<PlainTextOutput<T>, TransportError>
 where
-    T: ConnectionInfo + ReadEx + WriteEx + Send + Unpin + 'static,
+    T: ConnectionInfo + ReadEx + WriteEx + Unpin + 'static,
 {
     let pri_key = config.key.clone();
     let la = socket.local_multiaddr();

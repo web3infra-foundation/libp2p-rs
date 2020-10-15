@@ -103,8 +103,8 @@ pub enum EitherOutput<A, B> {
 #[async_trait]
 impl<A, B> ReadEx for EitherOutput<A, B>
 where
-    A: ReadEx + Send,
-    B: ReadEx + Send,
+    A: ReadEx,
+    B: ReadEx,
 {
     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
@@ -117,8 +117,8 @@ where
 #[async_trait]
 impl<A, B> WriteEx for EitherOutput<A, B>
 where
-    A: WriteEx + Send,
-    B: WriteEx + Send,
+    A: WriteEx,
+    B: WriteEx,
 {
     async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self {
