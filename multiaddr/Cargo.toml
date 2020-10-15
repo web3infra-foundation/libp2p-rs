@@ -1,12 +1,13 @@
 [package]
 name = "parity-multiaddr"
-edition = "2018"
-authors = ["dignifiedquire <dignifiedquire@gmail.com>", "Parity Technologies <admin@parity.io>"]
-description = "Implementation of the multiaddr format"
-homepage = "https://github.com/libp2p/rust-libp2p"
-keywords = ["multiaddr", "ipfs"]
+version = "0.1.0"
 license = "MIT"
-version = "0.9.1"
+description = "Implementation of the multiaddr format"
+authors = ["Netwarps Technologies admin@paradeum.com"]
+repository = "https://github.com/netwarps/libp2p-rs"
+keywords = ["peer-to-peer", "libp2p", "networking"]
+categories = ["network-programming", "asynchronous"]
+edition = "2018"
 
 [dependencies]
 arrayref = "0.3"

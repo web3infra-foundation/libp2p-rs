@@ -1,13 +1,13 @@
 [package]
 name = "libp2p-dns"
-edition = "2018"
-description = "DNS transport implementation for libp2p"
-version = "0.0.1"
-authors = ["Parity Technologies <admin@parity.io>"]
+version = "0.1.0"
 license = "MIT"
-repository = "https://github.com/libp2p/rust-libp2p"
+description = "DNS transport implementation for libp2p"
+authors = ["Netwarps Technologies admin@paradeum.com"]
+repository = "https://github.com/netwarps/libp2p-rs"
 keywords = ["peer-to-peer", "libp2p", "networking"]
 categories = ["network-programming", "asynchronous"]
+edition = "2018"
 
 [dependencies]
 libp2p-core = { version = "0.1.0", path = "../../core" }
@@ -18,5 +18,5 @@ async-trait = "0.1"
 
 [dev-dependencies]
 libp2p-traits = { path = "../../traits", version = "0.1.0", package = "libp2p-traits" }
-libp2p-tcp = { path = "../tcp", version = "0.0.1", package = "libp2p-tcp" }
-multiaddr = { path = "../../multiaddr", package = "parity-multiaddr", version = "0.9.1" }
+libp2p-tcp = { path = "../tcp", version = "0.1.0", package = "libp2p-tcp" }
+multiaddr = { path = "../../multiaddr", package = "parity-multiaddr", version = "0.1.0" }

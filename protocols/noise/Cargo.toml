@@ -1,8 +1,12 @@
 [package]
 name = "libp2p-noise"
-description = "Cryptographic handshake protocol using the noise framework."
 version = "0.1.0"
 license = "MIT"
+description = "Cryptographic handshake protocol using the noise framework."
+authors = ["Netwarps Technologies admin@paradeum.com"]
+repository = "https://github.com/netwarps/libp2p-rs"
+keywords = ["peer-to-peer", "libp2p", "networking"]
+categories = ["network-programming", "asynchronous"]
 edition = "2018"
 
 [dependencies]

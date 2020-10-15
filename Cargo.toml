@@ -2,12 +2,10 @@
 name = "libp2p-rs"
 version = "0.1.0"
 license = "MIT"
-description = "Minimal implementation for a multiplexed p2p network framework."
-authors = ["kingwel-xie <kingwel.xie@139.com>"]
-repository = "https://github.com/pld/libp2p-rs"
-include = ["Cargo.toml", "src/*", "README.md", "LICENSE"]
-readme = "README.md"
-keywords = ["network", "peer-to-peer"]
+description = "Minimal implementation for a multiplexed p2p network framework"
+authors = ["Netwarps Technologies admin@paradeum.com"]
+repository = "https://github.com/netwarps/libp2p-rs"
+keywords = ["peer-to-peer", "libp2p", "networking"]
 categories = ["network-programming", "asynchronous"]
 edition = "2018"
 
@@ -17,17 +15,18 @@ no-default-features = true
 
 [dependencies]
 libp2p-traits = { path = "traits", version = "0.1.0", package = "libp2p-traits" }
+multiaddr = { path = "multiaddr", version = "0.1.0", package = "parity-multiaddr"}
+libp2p-core = { path = "core", version = "0.1.0", package = "libp2p-core" }
 yamux = { path = "protocols/yamux", version = "0.1.0", package = "yamux" }
 mplex = { path = "protocols/mplex", version = "0.1.0", package = "mplex" }
 secio = { path = "protocols/secio", version = "0.1.0", package = "secio" }
 plaintext = { path = "protocols/plaintext", version = "0.1.0", package = "plaintext" }
-multiaddr = { path = "multiaddr", package = "parity-multiaddr", version = "0.9.1" }
-libp2p-core = { path = "core", version = "0.1.0", package = "libp2p-core" }
-libp2p-tcp = { path = "transports/tcp", version = "0.0.1", package = "libp2p-tcp" }
-libp2p-dns = { path = "transports/dns", version = "0.0.1", package = "libp2p-dns" }
-libp2p-websocket = { path = "transports/websocket", version = "0.0.1", package = "libp2p-websocket" }
-libp2p-swarm = { path = "swarm", version = "0.1.0", package = "libp2p-swarm" }
 libp2p-noise = { path = "protocols/noise", version = "0.1.0", package = "libp2p-noise" }
+libp2p-tcp = { path = "transports/tcp", version = "0.1.0", package = "libp2p-tcp" }
+libp2p-dns = { path = "transports/dns", version = "0.1.0", package = "libp2p-dns" }
+libp2p-websocket = { path = "transports/websocket", version = "0.1.0", package = "libp2p-websocket" }
+libp2p-swarm = { path = "swarm", version = "0.1.0", package = "libp2p-swarm" }
+
 
 async-std = { version = "1.6", features = ["attributes", "unstable"] }
 async-trait = "0.1"
@@ -35,8 +34,6 @@ futures = { version = "0.3.5" }
 pin-project-lite = "0.1"
 log = "0.4"
 bytes = "0.5.0"
-
-# upnp
 igd = "0.9"
 
 [target.'cfg(unix)'.dependencies.libc]
@@ -84,6 +81,3 @@ members = [
 [[example]]
 name = "secio_simple"
 path = "protocols/secio/examples/secio_simple.rs"
-[[example]]
-name = "simple"
-path = "examples/simple.rs"
