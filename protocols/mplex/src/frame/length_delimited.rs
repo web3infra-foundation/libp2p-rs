@@ -41,7 +41,7 @@ where
 
 impl<T> LengthDelimited<T>
 where
-    T: ReadEx + Send,
+    T: ReadEx,
 {
     pub async fn read_byte(&mut self, buf: &mut [u8]) -> io::Result<()> {
         let n = self.inner.read2(buf).await?;
@@ -76,7 +76,7 @@ where
 
 impl<T> LengthDelimited<T>
 where
-    T: WriteEx + Send,
+    T: WriteEx,
 {
     pub async fn write_header(&mut self, hdr: u32) -> io::Result<()> {
         let mut uvi_buf = unsigned_varint::encode::u32_buffer();

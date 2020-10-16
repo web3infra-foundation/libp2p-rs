@@ -30,7 +30,7 @@ pub struct ReadHalf<T> {
 }
 
 #[async_trait]
-impl<T: ReadEx + Send + Unpin> ReadEx for ReadHalf<T> {
+impl<T: ReadEx + Unpin> ReadEx for ReadHalf<T> {
     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         futures::future::poll_fn(|cx| {
             let mut lock = futures::ready!(self.handle.poll_lock(cx));
@@ -62,7 +62,7 @@ impl<T> ReadHalf2<T> {
 }
 
 #[async_trait]
-impl<T: ReadEx + Send + Unpin> ReadEx for ReadHalf2<T> {
+impl<T: ReadEx + Unpin> ReadEx for ReadHalf2<T> {
     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         futures::future::poll_fn(|cx| {
             let mut lock = futures::ready!(self.handle.poll_lock(cx));
@@ -87,7 +87,7 @@ impl<T: ReadEx + Send + Unpin> ReadEx for ReadHalf2<T> {
 
 pub(super) fn split2<T>(t: T) -> (ReadHalf2<T>, WriteHalf<T>)
     where
-        T: ReadEx + WriteEx + Send + Unpin
+        T: ReadEx + WriteEx + Unpin
 {
     let (a, b) = BiLock::new(t);
     let x = ReadHalf2::new(a);
@@ -126,7 +126,7 @@ async fn lock_and_then<'a, T, U, E, F, Fut>(
 
 pub(super) fn split<T>(t: T) -> (ReadHalf<T>, WriteHalf<T>)
 where
-    T: ReadEx + WriteEx + Send + Unpin,
+    T: ReadEx + WriteEx + Unpin,
 {
     let (a, b) = BiLock::new(t);
     (ReadHalf { handle: a }, WriteHalf { handle: b })
@@ -153,7 +153,7 @@ impl<T: Unpin> WriteHalf<T> {
 }
 
 #[async_trait]
-impl<W: WriteEx + Send + Unpin> WriteEx for WriteHalf<W> {
+impl<W: WriteEx + Unpin> WriteEx for WriteHalf<W> {
     async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
         // self.handle.lock().await.write2(buf).await
         futures::future::poll_fn(|cx| {

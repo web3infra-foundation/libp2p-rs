@@ -155,7 +155,7 @@ pub struct Connection<T> {
     pending_streams: VecDeque<stream::Stream>,
 }
 
-impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
+impl<T: ReadEx + WriteEx + Unpin + 'static> Connection<T> {
     pub fn new(socket: T) -> Self {
         let id = Id::random();
         log::debug!("new connection: {}", id);

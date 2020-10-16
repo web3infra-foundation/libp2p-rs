@@ -35,6 +35,7 @@ use libp2p_tcp::TcpTransStream;
 use log::{debug, error, trace};
 use soketto::{connection, extension::deflate::Deflate, handshake};
 use url::Url;
+use std::fmt;
 
 /// Max. number of payload bytes of a single frame.
 const MAX_DATA_SIZE: usize = 256 * 1024 * 1024;
@@ -43,10 +44,18 @@ const MAX_DATA_SIZE: usize = 256 * 1024 * 1024;
 /// frame payloads which does not implement [`AsyncRead`] or
 /// [`AsyncWrite`]. See [`crate::WsConfig`] if you require the latter.
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct WsConfig {
     transport: ITransport<TcpTransStream>,
     pub(crate) inner_config: InnerConfig,
+}
+
+impl fmt::Debug for WsConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WsConfig")
+            .field("Config", &self.inner_config)
+            .finish()
+    }
 }
 
 impl WsConfig {
@@ -112,11 +121,20 @@ impl InnerConfig {
         self
     }
 }
-#[derive(Debug)]
+
 pub struct WsTransListener {
     inner: IListener<TcpTransStream>,
     inner_config: InnerConfig,
     use_tls: bool,
+}
+
+impl fmt::Debug for WsTransListener {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WsTransListener")
+            .field("Config", &self.inner_config)
+            .field("tls", &self.use_tls)
+            .finish()
+    }
 }
 
 impl WsTransListener {
@@ -286,11 +304,7 @@ impl WsConfig {
             }
         };
 
-        let raw_stream = self
-            .transport
-            .dial(inner_addr)
-            .map_err(WsError::Transport)
-            .await?;
+        let raw_stream = self.transport.dial(inner_addr).map_err(WsError::Transport).await?;
         let inner_raw_stream = raw_stream.clone();
         trace!("connected to {}", address);
         let local_addr = raw_stream.local_multiaddr();

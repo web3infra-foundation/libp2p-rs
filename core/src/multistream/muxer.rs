@@ -82,7 +82,7 @@ where
         socket: TSocket,
     ) -> Result<(&mut IProtocolHandler<T>, TProto, TSocket), NegotiationError>
     where
-        TSocket: ReadEx + WriteEx + Send + Unpin,
+        TSocket: ReadEx + WriteEx + Unpin,
     {
         let (proto, io) = self.negotiator.negotiate(socket).await?;
         let h = self.handlers.get_mut(&proto).expect("get handler");
@@ -94,7 +94,7 @@ where
         socket: TSocket,
     ) -> Result<(&mut IProtocolHandler<T>, TProto, TSocket), NegotiationError>
     where
-        TSocket: ReadEx + WriteEx + Send + Unpin,
+        TSocket: ReadEx + WriteEx + Unpin,
     {
         let (proto, io) = self.negotiator.select_one(socket).await?;
         let h = self.handlers.get_mut(&proto).expect("get handler");

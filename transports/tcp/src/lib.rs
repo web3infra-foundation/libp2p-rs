@@ -119,41 +119,6 @@ impl Transport for TcpConfig {
         let ma = ip_to_multiaddr(local_addr.ip(), port);
         debug!("Listening on {:?}", ma);
 
-        // kingwel, don't care about the unspecified address, so far
-        // TBD
-        /*
-                // Determine all our listen addresses which is either a single local IP address
-                // or (if a wildcard IP address was used) the addresses of all our interfaces,
-                // as reported by `get_if_addrs`.
-                let addrs =
-                    if socket_addr.ip().is_unspecified() {
-                        let addrs = host_addresses(port)?;
-                        debug!("Listening on {:?}", addrs.iter().map(|(_, _, ma)| ma).collect::<Vec<_>>());
-                        Addresses::Many(addrs)
-                    } else {
-                        let ma = ip_to_multiaddr(local_addr.ip(), port);
-                        debug!("Listening on {:?}", ma);
-                        Addresses::One(ma)
-                    };
-
-                // Generate `NewAddress` events for each new `Multiaddr`.
-                let pending = match addrs {
-                    Addresses::One(ref ma) => {
-                        let event = ListenerEvent::NewAddress(ma.clone());
-                        let mut list = VecDeque::new();
-                        list.push_back(Ok(event));
-                        list
-                    }
-                    Addresses::Many(ref aa) => {
-                        aa.iter()
-                            .map(|(_, _, ma)| ma)
-                            .cloned()
-                            .map(ListenerEvent::NewAddress)
-                            .map(Result::Ok)
-                            .collect::<VecDeque<_>>()
-                    }
-                };
-        */
         let listener = TcpTransListener {
             inner: listener,
             pause: None,

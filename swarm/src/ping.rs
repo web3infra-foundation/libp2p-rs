@@ -54,7 +54,6 @@ use libp2p_traits::{ReadEx, WriteEx};
 use crate::protocol_handler::{IProtocolHandler, ProtocolHandler};
 use crate::substream::Substream;
 use crate::SwarmError;
-use libp2p_core::muxing::StreamInfo;
 
 /// The configuration for outbound pings.
 #[derive(Clone, Debug)]
@@ -226,13 +225,10 @@ impl UpgradeInfo for PingHandler {
 }
 
 #[async_trait]
-impl<C> ProtocolHandler<C> for PingHandler
-where
-    C: StreamInfo + ReadEx + WriteEx + Unpin + Send + std::fmt::Debug + 'static,
-{
+impl ProtocolHandler for PingHandler {
     /// The Ping handler's inbound protocol.
     /// Simply wait for any thing that coming in then send back
-    async fn handle(&mut self, mut stream: Substream<C>, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+    async fn handle(&mut self, mut stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
         log::trace!("Ping Protocol handling on {:?}", stream);
 
         let mut payload = [0u8; PING_SIZE];
@@ -243,7 +239,7 @@ where
 
         Ok(())
     }
-    fn box_clone(&self) -> IProtocolHandler<C> {
+    fn box_clone(&self) -> IProtocolHandler {
         Box::new(self.clone())
     }
 }
@@ -254,7 +250,6 @@ mod tests {
     use crate::ping::ping;
     use crate::protocol_handler::ProtocolHandler;
     use crate::substream::Substream;
-    use libp2p_core::transport::TransportListener;
     use libp2p_core::upgrade::UpgradeInfo;
     use libp2p_core::{
         multiaddr::multiaddr,
@@ -271,7 +266,7 @@ mod tests {
 
         async_std::task::spawn(async move {
             let socket = listener.accept().await.unwrap();
-            let socket = Substream::new_with_default(socket);
+            let socket = Substream::new_with_default(Box::new(socket));
 
             let mut handler = PingHandler;
             let _ = handler.handle(socket, handler.protocol_info().first().unwrap()).await;

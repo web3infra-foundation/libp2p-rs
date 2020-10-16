@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::identity::Keypair;
-use crate::muxing::{StreamInfo, StreamMuxer};
+use crate::muxing::{IReadWrite, IStreamMuxer, StreamMuxer};
 use crate::secure_io::SecureInfo;
 use crate::transport::{ConnectionInfo, TransportError};
 use crate::upgrade::{UpgradeInfo, Upgrader};
@@ -118,22 +118,14 @@ impl<T: Send + WriteEx> WriteEx for DummyStream<T> {
     }
 }
 
-impl StreamInfo for () {
-    fn id(&self) -> usize {
-        0
-    }
-}
-
 #[async_trait]
 impl<T: ConnectionInfo> StreamMuxer for DummyStream<T> {
-    type Substream = ();
-
-    async fn open_stream(&mut self) -> Result<Self::Substream, TransportError> {
-        Ok(())
+    async fn open_stream(&mut self) -> Result<IReadWrite, TransportError> {
+        Err(TransportError::Internal)
     }
 
-    async fn accept_stream(&mut self) -> Result<Self::Substream, TransportError> {
-        Ok(())
+    async fn accept_stream(&mut self) -> Result<IReadWrite, TransportError> {
+        Err(TransportError::Internal)
     }
 
     async fn close(&mut self) -> Result<(), TransportError> {
@@ -142,6 +134,10 @@ impl<T: ConnectionInfo> StreamMuxer for DummyStream<T> {
 
     fn task(&mut self) -> Option<BoxFuture<'static, ()>> {
         None
+    }
+
+    fn box_clone(&self) -> IStreamMuxer {
+        unimplemented!()
     }
 }
 

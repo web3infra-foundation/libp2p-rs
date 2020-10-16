@@ -43,7 +43,7 @@ pub struct LengthDelimited<R> {
     write_buffer: BytesMut,
 }
 
-impl<R: ReadEx + WriteEx + Send> LengthDelimited<R> {
+impl<R: ReadEx + WriteEx> LengthDelimited<R> {
     /// Creates a new I/O resource for reading and writing unsigned-varint
     /// length delimited frames.
     pub fn new(inner: R) -> LengthDelimited<R> {
@@ -74,7 +74,7 @@ impl<R: ReadEx + WriteEx + Send> LengthDelimited<R> {
     async fn read_unsigned_varint(&mut self) -> io::Result<u16> {
         let mut b = unsigned_varint::encode::u16_buffer();
         for i in 0..b.len() {
-            self.inner.read_exact2(&mut b[i..i + 1]).await?;
+            self.inner.read_exact2(&mut b[i..=i]).await?;
             if unsigned_varint::decode::is_last(b[i]) {
                 return Ok(unsigned_varint::decode::u16(&b[..=i])
                     .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
