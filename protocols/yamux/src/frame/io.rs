@@ -1,12 +1,22 @@
-// Copyright (c) 2019 Parity Technologies (UK) Ltd.
+// Copyright 2020 Netwarps Ltd.
 //
-// Licensed under the Apache License, Version 2.0 or MIT license, at your option.
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom the
+// Software is furnished to do so, subject to the following conditions:
 //
-// A copy of the Apache License, Version 2.0 is included in the software as
-// LICENSE-APACHE and a copy of the MIT license is included in the software
-// as LICENSE-MIT. You may also obtain a copy of the Apache License, Version 2.0
-// at https://www.apache.org/licenses/LICENSE-2.0 and a copy of the MIT license
-// at https://opensource.org/licenses/MIT.
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
 
 use std::{fmt, io};
 
@@ -16,17 +26,14 @@ use super::{
 };
 use crate::connection::Id;
 use crate::frame::header::HEADER_SIZE;
-use std::pin::Pin;
-use futures::stream::FusedStream;
-use libp2p_traits::{ReadEx, WriteEx, ext::WriteHalf, ReadExt2};
+use libp2p_traits::{ReadEx, WriteEx};
 
 /// A [`Stream`] and writer of [`Frame`] values.
 // #[derive(Debug)]
 pub(crate) struct Io<T> {
     id: Id,
-    io: WriteHalf<T>,
-    // max_body_len: usize,
-    pub(crate) stream: Pin<Box<dyn FusedStream<Item = Result<Frame<()>, FrameDecodeError>> + Send>>,
+    io: T,
+    max_body_len: usize,
 }
 
 impl<T> fmt::Debug for Io<T> {
@@ -35,22 +42,15 @@ impl<T> fmt::Debug for Io<T> {
     }
 }
 
-impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Io<T> {
+impl<T: ReadEx + WriteEx + Unpin> Io<T> {
     pub(crate) fn new(id: Id, io: T, max_frame_body_len: usize) -> Self {
-        let (r, w) = io.split2();
-        let fr = FrameReader::new(id, r, max_frame_body_len);
-        let s = futures::stream::unfold(fr, |mut fr| async {
-            Some((fr.recv_frame().await, fr))
-        });
         Io {
             id,
-            io: w,
-            // max_body_len: max_frame_body_len,
-            stream: Box::pin(s),
+            io,
+             max_body_len: max_frame_body_len,
         }
     }
 
-    /*
     pub(crate) async fn recv_frame(&mut self) -> Result<Frame<()>, FrameDecodeError> {
         let mut header_data = [0; HEADER_SIZE];
 
@@ -73,7 +73,6 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Io<T> {
 
         Ok(Frame { header, body })
     }
-     */
 
     pub(crate) async fn send_frame<A>(&mut self, frame: &Frame<A>) -> io::Result<()> {
         log::trace!("{}: write stream, header: {}", self.id, frame.header);
@@ -113,7 +112,7 @@ struct FrameReader<T> {
 }
 
 #[allow(dead_code)]
-impl<T: ReadEx + Unpin + Send> FrameReader<T> {
+impl<T: ReadEx + WriteEx + Unpin> FrameReader<T> {
     pub(crate) fn new(id: Id, io: T, max_frame_body_len: usize) -> Self {
         FrameReader {
             id,

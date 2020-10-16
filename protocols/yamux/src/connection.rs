@@ -1,12 +1,22 @@
-// Copyright (c) 2018-2019 Parity Technologies (UK) Ltd.
+// Copyright 2020 Netwarps Ltd.
 //
-// Licensed under the Apache License, Version 2.0 or MIT license, at your option.
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom the
+// Software is furnished to do so, subject to the following conditions:
 //
-// A copy of the Apache License, Version 2.0 is included in the software as
-// LICENSE-APACHE and a copy of the MIT license is included in the software
-// as LICENSE-MIT. You may also obtain a copy of the Apache License, Version 2.0
-// at https://www.apache.org/licenses/LICENSE-2.0 and a copy of the MIT license
-// at https://opensource.org/licenses/MIT.
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
 
 // This module contains the `Connection` type and associated helpers.
 // A `Connection` wraps an underlying (async) I/O resource and multiplexes
@@ -388,10 +398,10 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
             // Select all futures: socket, stream receiver and controller
 
             select! {
-                frame = self.socket.stream.next() => {
+                frame = self.socket.recv_frame().fuse() => {
                     // if let Some(stream) = self.on_frame(Ok(frame.ok())).await? {
                     // recover from old code, why not return err when frame is Err
-                    let frame = frame.expect("next frame")?;
+                    let frame = frame?;
                     self.on_frame(frame).await?;
                 },
                 scmd = self.stream_receiver.next() => {
@@ -405,6 +415,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
             self.socket.flush().await.or(Err(ConnectionError::Closed))?
         }
     }
+
 
     /// Process a command from a `Control`.
     ///

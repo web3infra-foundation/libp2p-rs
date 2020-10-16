@@ -51,10 +51,13 @@
 //! The upgrade process will take ownership of the connection, which makes it possible for the
 //! implementation of `StreamMuxer` to control everything that happens on the wire.
 
-use crate::secure_io::SecureInfo;
-use crate::transport::{ConnectionInfo, TransportError};
 use async_trait::async_trait;
 use futures::future::BoxFuture;
+use libp2p_traits::{ReadEx, WriteEx};
+
+use crate::secure_io::SecureInfo;
+use crate::transport::{ConnectionInfo, TransportError};
+use futures::io::Error;
 
 /// Information about a stream.
 pub trait StreamInfo: Send {
@@ -62,21 +65,81 @@ pub trait StreamInfo: Send {
     fn id(&self) -> usize;
 }
 
+/// The trait for IReadWrite. It can be made into a trait object `IReadWrite` used
+/// by Swarm Substream.
+/// `StreamInfo` must be supported.
 #[async_trait]
-pub trait StreamMuxer: ConnectionInfo + SecureInfo + Clone + std::fmt::Debug {
-    /// Type of the object that represents the raw substream where data can be read and written.
-    type Substream: StreamInfo + Clone + std::fmt::Debug;
+pub trait ReadWriteEx: ReadEx + WriteEx + StreamInfo + Unpin + std::fmt::Debug {
+    fn box_clone(&self) -> IReadWrite;
+}
 
-    /// Opens a new outgoing substream, and produces the equivalent to a future that will be
-    /// resolved when it becomes available.
-    ///
-    /// The API of `OutboundSubstream` is totally opaque, and the object can only be interfaced
-    /// through the methods on the `StreamMuxer` trait.
-    async fn open_stream(&mut self) -> Result<Self::Substream, TransportError>;
+pub type IReadWrite = Box<dyn ReadWriteEx>;
 
-    async fn accept_stream(&mut self) -> Result<Self::Substream, TransportError>;
+impl Clone for IReadWrite {
+    fn clone(&self) -> Self {
+        self.box_clone()
+    }
+}
 
+/// Wrapper for IReadWrite supporting ReadEx + WriteEx
+pub struct WrapIReadWrite {
+    inner: IReadWrite
+}
+
+impl From<IReadWrite> for WrapIReadWrite {
+    fn from(inner: IReadWrite) -> Self {
+        Self { inner }
+    }
+}
+impl Into<IReadWrite> for WrapIReadWrite {
+    fn into(self) -> IReadWrite {
+        self.inner
+    }
+}
+
+#[async_trait]
+impl ReadEx for WrapIReadWrite {
+    async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
+        self.inner.read2(buf).await
+    }
+}
+#[async_trait]
+impl WriteEx for WrapIReadWrite {
+    async fn write2(&mut self, buf: &[u8]) -> Result<usize, Error> {
+        self.inner.write2(buf).await
+    }
+
+    async fn flush2(&mut self) -> Result<(), Error> {
+        self.inner.flush2().await
+    }
+
+    async fn close2(&mut self) -> Result<(), Error> {
+        self.inner.close2().await
+    }
+}
+
+#[async_trait]
+pub trait StreamMuxer {
+    /// Opens a new outgoing substream.
+    async fn open_stream(&mut self) -> Result<IReadWrite, TransportError>;
+    /// Accepts a new incoming substream.
+    async fn accept_stream(&mut self) -> Result<IReadWrite, TransportError>;
+    /// Closes the stream muxer, the task of stream muxer will then exit. 
     async fn close(&mut self) -> Result<(), TransportError>;
-
+    /// Returns a Future which represents the main loop of the stream muxer.
     fn task(&mut self) -> Option<BoxFuture<'static, ()>>;
+    /// Returns the cloned Trait object.
+    fn box_clone(&self) -> IStreamMuxer;
+}
+
+/// The trait for IStreamMuxer. It can be made into a trait object `IStreamMuxer`.
+/// Stream muxer in Swarm must support ConnectionInfo + SecureInfo.
+pub trait StreamMuxerEx: StreamMuxer + ConnectionInfo + SecureInfo + std::fmt::Debug {}
+
+pub type IStreamMuxer = Box<dyn StreamMuxerEx>;
+
+impl Clone for IStreamMuxer {
+    fn clone(&self) -> Self {
+        self.box_clone()
+    }
 }

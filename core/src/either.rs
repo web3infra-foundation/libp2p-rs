@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::identity::Keypair;
-use crate::muxing::{StreamInfo, StreamMuxer};
+use crate::muxing::{IReadWrite, IStreamMuxer, StreamInfo, StreamMuxer, StreamMuxerEx};
 use crate::secure_io::SecureInfo;
 use crate::transport::{ConnectionInfo, TransportError};
 use crate::upgrade::ProtocolName;
@@ -103,8 +103,8 @@ pub enum EitherOutput<A, B> {
 #[async_trait]
 impl<A, B> ReadEx for EitherOutput<A, B>
 where
-    A: ReadEx + Send,
-    B: ReadEx + Send,
+    A: ReadEx,
+    B: ReadEx,
 {
     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
@@ -117,8 +117,8 @@ where
 #[async_trait]
 impl<A, B> WriteEx for EitherOutput<A, B>
 where
-    A: WriteEx + Send,
-    B: WriteEx + Send,
+    A: WriteEx,
+    B: WriteEx,
 {
     async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self {
@@ -192,24 +192,20 @@ where
 #[async_trait]
 impl<A, B> StreamMuxer for EitherOutput<A, B>
 where
-    A: StreamMuxer,
-    B: StreamMuxer,
-    A::Substream: StreamInfo,
-    B::Substream: StreamInfo,
+    A: StreamMuxer + Send,
+    B: StreamMuxer + Send,
 {
-    type Substream = EitherOutput<A::Substream, B::Substream>;
-
-    async fn open_stream(&mut self) -> Result<Self::Substream, TransportError> {
+    async fn open_stream(&mut self) -> Result<IReadWrite, TransportError> {
         match self {
-            EitherOutput::A(a) => Ok(EitherOutput::A(a.open_stream().await?)),
-            EitherOutput::B(b) => Ok(EitherOutput::B(b.open_stream().await?)),
+            EitherOutput::A(a) => Ok(a.open_stream().await?),
+            EitherOutput::B(b) => Ok(b.open_stream().await?),
         }
     }
 
-    async fn accept_stream(&mut self) -> Result<Self::Substream, TransportError> {
+    async fn accept_stream(&mut self) -> Result<IReadWrite, TransportError> {
         match self {
-            EitherOutput::A(a) => Ok(EitherOutput::A(a.accept_stream().await?)),
-            EitherOutput::B(b) => Ok(EitherOutput::B(b.accept_stream().await?)),
+            EitherOutput::A(a) => Ok(a.accept_stream().await?),
+            EitherOutput::B(b) => Ok(b.accept_stream().await?),
         }
     }
 
@@ -224,6 +220,13 @@ where
         match self {
             EitherOutput::A(a) => a.task(),
             EitherOutput::B(b) => b.task(),
+        }
+    }
+
+    fn box_clone(&self) -> IStreamMuxer {
+        match self {
+            EitherOutput::A(a) => a.box_clone(),
+            EitherOutput::B(b) => b.box_clone(),
         }
     }
 }
@@ -246,6 +249,13 @@ where
             EitherOutput::B(b) => b.remote_multiaddr(),
         }
     }
+}
+
+impl<A, B> StreamMuxerEx for EitherOutput<A, B>
+where
+    A: StreamMuxer + ConnectionInfo + SecureInfo + std::fmt::Debug,
+    B: StreamMuxer + ConnectionInfo + SecureInfo + std::fmt::Debug,
+{
 }
 
 #[derive(Debug, Clone)]

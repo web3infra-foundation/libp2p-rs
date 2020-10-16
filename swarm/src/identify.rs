@@ -44,7 +44,6 @@ use prost::Message;
 use std::convert::TryFrom;
 use std::io;
 
-use libp2p_core::muxing::{StreamInfo, StreamMuxer};
 use libp2p_core::transport::TransportError;
 use libp2p_core::upgrade::UpgradeInfo;
 use libp2p_core::{Multiaddr, PublicKey};
@@ -130,20 +129,14 @@ fn parse_proto_msg(msg: impl AsRef<[u8]>) -> Result<(IdentifyInfo, Multiaddr), i
     }
 }
 
-pub(crate) async fn consume_message<T>(mut stream: Substream<T>) -> Result<(IdentifyInfo, Multiaddr), TransportError>
-where
-    T: StreamInfo + ReadEx + WriteEx + Unpin + std::fmt::Debug + 'static,
-{
+pub(crate) async fn consume_message(mut stream: Substream) -> Result<(IdentifyInfo, Multiaddr), TransportError> {
     let buf = stream.read_one(4096).await?;
     stream.close2().await?;
 
     parse_proto_msg(&buf).map_err(io::Error::into)
 }
 
-pub(crate) async fn produce_message<T>(mut stream: Substream<T>, info: IdentifyInfo) -> Result<(), TransportError>
-where
-    T: StreamInfo + ReadEx + WriteEx + Unpin + std::fmt::Debug + 'static,
-{
+pub(crate) async fn produce_message(mut stream: Substream, info: IdentifyInfo) -> Result<(), TransportError> {
     let listen_addrs = info.listen_addrs.into_iter().map(|addr| addr.to_vec()).collect();
 
     let pubkey_bytes = info.public_key.into_protobuf_encoding();
@@ -175,24 +168,24 @@ where
 /// - Client receives the data and consume the data.
 ///
 #[derive(Debug)]
-pub(crate) struct IdentifyHandler<TSubstream> {
+pub(crate) struct IdentifyHandler {
     /// The channel is used to retrieve IdentifyInfo from Swarm.
-    ctrl: mpsc::Sender<SwarmControlCmd<TSubstream>>,
+    ctrl: mpsc::Sender<SwarmControlCmd>,
 }
 
-impl<TSubstream> Clone for IdentifyHandler<TSubstream> {
+impl Clone for IdentifyHandler {
     fn clone(&self) -> Self {
         Self { ctrl: self.ctrl.clone() }
     }
 }
 
-impl<TSubstream> IdentifyHandler<TSubstream> {
-    pub(crate) fn new(ctrl: mpsc::Sender<SwarmControlCmd<TSubstream>>) -> Self {
+impl IdentifyHandler {
+    pub(crate) fn new(ctrl: mpsc::Sender<SwarmControlCmd>) -> Self {
         Self { ctrl }
     }
 }
 
-impl<TSubstream: Send> UpgradeInfo for IdentifyHandler<TSubstream> {
+impl UpgradeInfo for IdentifyHandler {
     type Info = &'static [u8];
     fn protocol_info(&self) -> Vec<Self::Info> {
         vec![IDENTIFY_PROTOCOL]
@@ -200,13 +193,10 @@ impl<TSubstream: Send> UpgradeInfo for IdentifyHandler<TSubstream> {
 }
 
 #[async_trait]
-impl<TSocket, TSubstream: Send + 'static> ProtocolHandler<TSocket> for IdentifyHandler<TSubstream>
-where
-    TSocket: StreamInfo + ReadEx + WriteEx + Unpin + std::fmt::Debug + 'static,
-{
+impl ProtocolHandler for IdentifyHandler {
     /// The Ping handler's inbound protocol.
     /// Simply wait for any thing that coming in then send back
-    async fn handle(&mut self, stream: Substream<TSocket>, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+    async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
         log::trace!("Identify Protocol handling on {:?}", stream);
 
         let (tx, rx) = oneshot::channel();
@@ -218,7 +208,7 @@ where
         produce_message(stream, identify_info).await.map_err(|e| e.into())
     }
 
-    fn box_clone(&self) -> IProtocolHandler<TSocket> {
+    fn box_clone(&self) -> IProtocolHandler {
         Box::new(self.clone())
     }
 }
@@ -232,23 +222,23 @@ where
 /// - Client sends/pushes the the identify message to server side.
 ///
 #[derive(Debug)]
-pub(crate) struct IdentifyPushHandler<T: StreamMuxer> {
-    tx: mpsc::UnboundedSender<SwarmEvent<T>>,
+pub(crate) struct IdentifyPushHandler {
+    tx: mpsc::UnboundedSender<SwarmEvent>,
 }
 
-impl<T: StreamMuxer> Clone for IdentifyPushHandler<T> {
+impl Clone for IdentifyPushHandler {
     fn clone(&self) -> Self {
         Self { tx: self.tx.clone() }
     }
 }
 
-impl<T: StreamMuxer> IdentifyPushHandler<T> {
-    pub(crate) fn new(tx: mpsc::UnboundedSender<SwarmEvent<T>>) -> Self {
+impl IdentifyPushHandler {
+    pub(crate) fn new(tx: mpsc::UnboundedSender<SwarmEvent>) -> Self {
         Self { tx }
     }
 }
 
-impl<T: StreamMuxer> UpgradeInfo for IdentifyPushHandler<T> {
+impl UpgradeInfo for IdentifyPushHandler {
     type Info = &'static [u8];
     fn protocol_info(&self) -> Vec<Self::Info> {
         vec![IDENTIFY_PUSH_PROTOCOL]
@@ -256,13 +246,9 @@ impl<T: StreamMuxer> UpgradeInfo for IdentifyPushHandler<T> {
 }
 
 #[async_trait]
-impl<TSocket, T> ProtocolHandler<TSocket> for IdentifyPushHandler<T>
-where
-    TSocket: StreamInfo + ReadEx + WriteEx + Unpin + std::fmt::Debug + 'static,
-    T: StreamMuxer + 'static,
-{
+impl ProtocolHandler for IdentifyPushHandler {
     // receive the message and consume it
-    async fn handle(&mut self, stream: Substream<TSocket>, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+    async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
         let cid = stream.cid();
         log::trace!("Identify Push Protocol handling on {:?}", stream);
 
@@ -273,7 +259,7 @@ where
         Ok(())
     }
 
-    fn box_clone(&self) -> IProtocolHandler<TSocket> {
+    fn box_clone(&self) -> IProtocolHandler {
         Box::new(self.clone())
     }
 }
@@ -289,7 +275,6 @@ mod tests {
     use futures::channel::mpsc;
     use futures::StreamExt;
     use libp2p_core::identity::Keypair;
-    use libp2p_core::transport::TransportListener;
     use libp2p_core::upgrade::UpgradeInfo;
     use libp2p_core::{
         multiaddr::multiaddr,
@@ -306,11 +291,11 @@ mod tests {
         let pubkey = Keypair::generate_ed25519_fixed().public();
         let key_cloned = pubkey.clone();
 
-        let (tx, mut rx) = mpsc::channel::<SwarmControlCmd<()>>(0);
+        let (tx, mut rx) = mpsc::channel::<SwarmControlCmd>(0);
 
         async_std::task::spawn(async move {
             let socket = listener.accept().await.unwrap();
-            let socket = Substream::new_with_default(socket);
+            let socket = Substream::new_with_default(Box::new(socket));
 
             let mut handler = IdentifyHandler::new(tx);
             let _ = handler.handle(socket, handler.protocol_info().first().unwrap()).await;
@@ -336,7 +321,7 @@ mod tests {
 
         async_std::task::block_on(async move {
             let socket = MemoryTransport.dial(listener_addr).await.unwrap();
-            let socket = Substream::new_with_default(socket);
+            let socket = Substream::new_with_default(Box::new(socket));
 
             let (ri, _addr) = identify::consume_message(socket).await.unwrap();
             assert_eq!(ri.public_key, pubkey);
@@ -352,11 +337,11 @@ mod tests {
         let pubkey = Keypair::generate_ed25519_fixed().public();
         let key_cloned = pubkey.clone();
 
-        let (tx, mut rx) = mpsc::unbounded::<SwarmEvent<()>>();
+        let (tx, mut rx) = mpsc::unbounded::<SwarmEvent>();
 
         async_std::task::spawn(async move {
             let socket = MemoryTransport.dial(listener_addr).await.unwrap();
-            let socket = Substream::new_with_default(socket);
+            let socket = Substream::new_with_default(Box::new(socket));
 
             let info = IdentifyInfo {
                 public_key: key_cloned,
@@ -371,7 +356,7 @@ mod tests {
 
         async_std::task::block_on(async move {
             let socket = listener.accept().await.unwrap();
-            let socket = Substream::new_with_default(socket);
+            let socket = Substream::new_with_default(Box::new(socket));
 
             let mut handler = IdentifyPushHandler::new(tx);
             let _ = handler.handle(socket, handler.protocol_info().first().unwrap()).await;

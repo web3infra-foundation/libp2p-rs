@@ -31,12 +31,10 @@ use std::{error::Error, fmt};
 
 use libp2p_core::identity::Keypair;
 use libp2p_core::multistream::Negotiator;
-use libp2p_core::muxing::StreamMuxer;
-use libp2p_core::secure_io::SecureInfo;
+use libp2p_core::muxing::{IStreamMuxer, WrapIReadWrite};
 use libp2p_core::transport::TransportError;
 use libp2p_core::upgrade::ProtocolName;
 use libp2p_core::PublicKey;
-use libp2p_traits::{ReadEx, WriteEx};
 
 use crate::control::SwarmControlCmd;
 use crate::identify::{IdentifyInfo, IDENTIFY_PROTOCOL, IDENTIFY_PUSH_PROTOCOL};
@@ -68,17 +66,17 @@ pub struct ConnectionId(usize);
 
 /// A multiplexed connection to a peer with associated `Substream`s.
 #[allow(dead_code)]
-pub struct Connection<TMuxer: StreamMuxer> {
+pub struct Connection {
     /// The unique ID for a connection
     id: ConnectionId,
     /// Node that handles the stream_muxer.
-    stream_muxer: TMuxer,
+    stream_muxer: IStreamMuxer,
     /// The tx channel, to send Connection events to Swarm
-    tx: mpsc::UnboundedSender<SwarmEvent<TMuxer>>,
+    tx: mpsc::UnboundedSender<SwarmEvent>,
     /// The ctrl tx channel.
-    ctrl: mpsc::Sender<SwarmControlCmd<Substream<TMuxer::Substream>>>,
+    ctrl: mpsc::Sender<SwarmControlCmd>,
     /// Handler that processes substreams.
-    substreams: SmallVec<[Substream<TMuxer::Substream>; 8]>,
+    substreams: SmallVec<[Substream; 8]>,
     //substreams: SmallVec<[StreamId; 8]>,
     /// Direction of this connection
     dir: Direction,
@@ -99,13 +97,13 @@ pub struct Connection<TMuxer: StreamMuxer> {
     identify_push_handle: Option<JoinHandle<()>>,
 }
 
-impl<TMuxer: StreamMuxer> PartialEq for Connection<TMuxer> {
+impl PartialEq for Connection {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
-impl<TMuxer: StreamMuxer> fmt::Debug for Connection<TMuxer> {
+impl fmt::Debug for Connection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Connection")
             .field("id", &self.id)
@@ -116,22 +114,18 @@ impl<TMuxer: StreamMuxer> fmt::Debug for Connection<TMuxer> {
     }
 }
 
-//impl<TMuxer> Unpin for Connection<TMuxer> where TMuxer: StreamMuxer {}
+//impl Unpin for Connection where TMuxer: StreamMuxer {}
 
 #[allow(dead_code)]
-impl<TMuxer> Connection<TMuxer>
-where
-    TMuxer: StreamMuxer + SecureInfo + 'static,
-    TMuxer::Substream: ReadEx + WriteEx + Send + Unpin,
-{
+impl Connection {
     /// Builds a new `Connection` from the given substream multiplexer
     /// and a tx channel which will used to send events to Swarm.
     pub(crate) fn new(
         id: usize,
-        stream_muxer: TMuxer,
+        stream_muxer: IStreamMuxer,
         dir: Direction,
-        tx: mpsc::UnboundedSender<SwarmEvent<TMuxer>>,
-        ctrl: mpsc::Sender<SwarmControlCmd<Substream<TMuxer::Substream>>>,
+        tx: mpsc::UnboundedSender<SwarmEvent>,
+        ctrl: mpsc::Sender<SwarmControlCmd>,
     ) -> Self {
         Connection {
             id: ConnectionId(id),
@@ -156,7 +150,7 @@ where
     }
 
     /// Returns a reference of the stream_muxer.
-    pub(crate) fn stream_muxer(&self) -> &TMuxer {
+    pub(crate) fn stream_muxer(&self) -> &IStreamMuxer {
         &self.stream_muxer
     }
 
@@ -169,7 +163,7 @@ where
     pub(crate) fn open_stream<T: Send + 'static>(
         &mut self,
         pids: Vec<ProtocolId>,
-        f: impl FnOnce(Result<Substream<TMuxer::Substream>, TransportError>) -> T + Send + 'static,
+        f: impl FnOnce(Result<Substream, TransportError>) -> T + Send + 'static,
     ) -> JoinHandle<T> {
         let cid = self.id();
         let stream_muxer = self.stream_muxer().clone();
@@ -246,7 +240,7 @@ where
     }
 
     /// Adds a substream id to the list.
-    pub(crate) fn add_stream(&mut self, sub_stream: Substream<TMuxer::Substream>) {
+    pub(crate) fn add_stream(&mut self, sub_stream: Substream) {
         log::trace!("adding sub {:?} to {:?}", sub_stream, self);
         self.substreams.push(sub_stream);
     }
@@ -448,28 +442,25 @@ where
     }
 }
 
-async fn open_stream_internal<T>(
+async fn open_stream_internal(
     cid: ConnectionId,
-    mut stream_muxer: T,
+    mut stream_muxer: IStreamMuxer,
     pids: Vec<ProtocolId>,
-    ctrl: mpsc::Sender<SwarmControlCmd<Substream<T::Substream>>>,
-) -> Result<Substream<T::Substream>, TransportError>
-where
-    T: StreamMuxer,
-    T::Substream: ReadEx + WriteEx + Send + Unpin,
-{
+    ctrl: mpsc::Sender<SwarmControlCmd>,
+) -> Result<Substream, TransportError> {
     let raw_stream = stream_muxer.open_stream().await?;
     let la = stream_muxer.local_multiaddr();
     let ra = stream_muxer.remote_multiaddr();
 
     // now it's time to do protocol multiplexing for sub stream
     let negotiator = Negotiator::new_with_protocols(pids);
-    let result = negotiator.select_one(raw_stream).await;
+    let wrap_stream = WrapIReadWrite::from(raw_stream);
+    let result = negotiator.select_one(wrap_stream).await;
 
     match result {
-        Ok((proto, raw_stream)) => {
+        Ok((proto, wrap_stream)) => {
             log::debug!("selected outbound {:?} {:?}", cid, proto.protocol_name_str());
-            let stream = Substream::new(raw_stream, Direction::Outbound, proto, cid, la, ra, ctrl);
+            let stream = Substream::new(wrap_stream.into(), Direction::Outbound, proto, cid, la, ra, ctrl);
             Ok(stream)
         }
         Err(err) => {

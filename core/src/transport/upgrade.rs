@@ -22,7 +22,7 @@
 //!
 // TODO: add example
 
-use crate::muxing::StreamMuxer;
+use crate::muxing::{IStreamMuxer, StreamMuxer, StreamMuxerEx};
 use crate::secure_io::SecureInfo;
 use crate::transport::{ConnectionInfo, IListener, ITransport, TransportListener};
 use crate::upgrade::multistream::Multistream;
@@ -69,9 +69,9 @@ where
     TSec: Upgrader<InnerTrans::Output> + 'static,
     TSec::Output: SecureInfo + ReadEx + WriteEx + Unpin,
     TMux: Upgrader<TSec::Output> + 'static,
-    TMux::Output: StreamMuxer,
+    TMux::Output: StreamMuxerEx + 'static,
 {
-    type Output = TMux::Output;
+    type Output = IStreamMuxer;
 
     fn listen_on(&mut self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         let inner_listener = self.inner.listen_on(addr)?;
@@ -85,7 +85,8 @@ where
         let sec = self.sec.clone();
         let sec_socket = sec.select_outbound(socket).await?;
         let mux = self.mux.clone();
-        mux.select_outbound(sec_socket).await
+        let o = mux.select_outbound(sec_socket).await?;
+        Ok(Box::new(o))
     }
 
     fn box_clone(&self) -> ITransport<Self::Output> {
@@ -116,9 +117,9 @@ where
     TSec: Upgrader<TOutput> + Send + Clone,
     TSec::Output: SecureInfo + ReadEx + WriteEx + Unpin,
     TMux: Upgrader<TSec::Output>,
-    TMux::Output: StreamMuxer,
+    TMux::Output: StreamMuxerEx + 'static,
 {
-    type Output = TMux::Output;
+    type Output = IStreamMuxer;
 
     async fn accept(&mut self) -> Result<Self::Output, TransportError> {
         let stream = self.inner.accept().await?;
@@ -130,13 +131,20 @@ where
 
         let mux = self.mux.clone();
 
-        mux.select_inbound(sec_socket).await
+        let o = mux.select_inbound(sec_socket).await?;
+        Ok(Box::new(o))
     }
 
     fn multi_addr(&self) -> Multiaddr {
         self.inner.multi_addr()
     }
 }
+
+/// Trait object for TransportListener which is actually ListenerUpgrade
+pub type IListenerEx = IListener<IStreamMuxer>;
+/// Trait object for Transport which is actually TransportUpgrade
+pub type ITransportEx = ITransport<IStreamMuxer>;
+
 
 #[cfg(test)]
 mod tests {
@@ -184,3 +192,4 @@ mod tests {
         futures::executor::block_on(futures::future::join(listener, dialer));
     }
 }
+

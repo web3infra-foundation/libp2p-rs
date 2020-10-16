@@ -18,7 +18,8 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use crate::muxing::StreamInfo;
+
+use crate::muxing::{StreamInfo, ReadWriteEx, IReadWrite};
 use crate::transport::{ConnectionInfo, IListener, ITransport, TransportListener};
 use crate::{transport::TransportError, Transport};
 use async_trait::async_trait;
@@ -279,6 +280,12 @@ impl ConnectionInfo for Channel {
 impl StreamInfo for Channel {
     fn id(&self) -> usize {
         0
+    }
+}
+
+impl ReadWriteEx for Channel {
+    fn box_clone(&self) -> IReadWrite {
+        unimplemented!()
     }
 }
 

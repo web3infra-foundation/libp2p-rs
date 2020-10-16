@@ -46,20 +46,20 @@ use libp2p_core::upgrade::{ProtocolName, UpgradeInfo};
 /// or both.
 /// Possible upgrade on a connection or substream.
 #[async_trait]
-pub trait ProtocolHandler<TSocket>: UpgradeInfo {
+pub trait ProtocolHandler: UpgradeInfo {
     /// After we have determined that the remote supports one of the protocols we support, this
     /// method is called to start handling the inbound. Swarm will start invoking this method
     /// in a newly spawned task.
     ///
     /// The `info` is the identifier of the protocol, as produced by `protocol_info`.
-    async fn handle(&mut self, stream: Substream<TSocket>, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError>;
+    async fn handle(&mut self, stream: Substream, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError>;
     /// This is to provide a clone method for the trait object.
-    fn box_clone(&self) -> IProtocolHandler<TSocket>;
+    fn box_clone(&self) -> IProtocolHandler;
 }
 
-pub type IProtocolHandler<TSocket> = Box<dyn ProtocolHandler<TSocket, Info = ProtocolId> + Send + Sync>;
+pub type IProtocolHandler = Box<dyn ProtocolHandler<Info = ProtocolId> + Send + Sync>;
 
-impl<TSocket> Clone for IProtocolHandler<TSocket> {
+impl Clone for IProtocolHandler {
     fn clone(&self) -> Self {
         self.box_clone()
     }
@@ -85,12 +85,12 @@ impl UpgradeInfo for DummyProtocolHandler {
 }
 
 #[async_trait]
-impl<TSocket: Send + std::fmt::Debug + 'static> ProtocolHandler<TSocket> for DummyProtocolHandler {
-    async fn handle(&mut self, stream: Substream<TSocket>, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+impl ProtocolHandler for DummyProtocolHandler {
+    async fn handle(&mut self, stream: Substream, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
         log::trace!("Dummy Protocol handling inbound {:?} {:?}", stream, info.protocol_name_str());
         Ok(())
     }
-    fn box_clone(&self) -> IProtocolHandler<TSocket> {
+    fn box_clone(&self) -> IProtocolHandler {
         Box::new(self.clone())
     }
 }

@@ -32,7 +32,7 @@ use prost::Message;
 /// negotiation.
 pub(crate) async fn handshake<T>(socket: T, config: Config) -> Result<(SecureStream<T>, PublicKey, EphemeralPublicKey), SecioError>
 where
-    T: ReadEx + WriteEx + Send + 'static,
+    T: ReadEx + WriteEx + 'static,
 {
     // The handshake messages all start with a 4-bytes message length prefix.
     let mut socket = LengthPrefixSocket::new(socket, config.max_frame_length);

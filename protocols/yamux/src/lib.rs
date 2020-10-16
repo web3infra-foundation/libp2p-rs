@@ -1,3 +1,23 @@
+// Copyright 2020 Netwarps Ltd.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom the
+// Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+
 //! This crate implements the [Yamux specification][1].
 //!
 //! It multiplexes independent I/O streams over reliable, ordered connections,
@@ -37,7 +57,7 @@ pub use crate::frame::{
 };
 use futures::future::BoxFuture;
 use libp2p_core::identity::Keypair;
-use libp2p_core::muxing::{StreamInfo, StreamMuxer};
+use libp2p_core::muxing::{IReadWrite, IStreamMuxer, ReadWriteEx, StreamInfo, StreamMuxer, StreamMuxerEx};
 use libp2p_core::secure_io::SecureInfo;
 use libp2p_core::transport::{ConnectionInfo, TransportError};
 use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
@@ -295,19 +315,26 @@ impl StreamInfo for Stream {
 }
 
 #[async_trait]
-impl<C: ReadEx + WriteEx + Unpin + Send + 'static> StreamMuxer for Yamux<C> {
-    type Substream = Stream;
+impl ReadWriteEx for Stream {
+    fn box_clone(&self) -> IReadWrite {
+        Box::new(self.clone())
+    }
+}
 
-    async fn open_stream(&mut self) -> Result<Self::Substream, TransportError> {
+impl<C: ReadEx + WriteEx + Unpin + 'static> StreamMuxerEx for Yamux<C> {}
+
+#[async_trait]
+impl<C: ReadEx + WriteEx + Unpin + 'static> StreamMuxer for Yamux<C> {
+    async fn open_stream(&mut self) -> Result<IReadWrite, TransportError> {
         let s = self.control.open_stream().await?;
         trace!("a new outbound substream {:?} opened for yamux... ", s);
-        Ok(s)
+        Ok(Box::new(s))
     }
 
-    async fn accept_stream(&mut self) -> Result<Self::Substream, TransportError> {
+    async fn accept_stream(&mut self) -> Result<IReadWrite, TransportError> {
         let s = self.control.accept_stream().await?;
         trace!("a new inbound substream {:?} accepted for yamux...", s);
-        Ok(s)
+        Ok(Box::new(s))
     }
 
     async fn close(&mut self) -> Result<(), TransportError> {
@@ -331,6 +358,10 @@ impl<C: ReadEx + WriteEx + Unpin + Send + 'static> StreamMuxer for Yamux<C> {
             );
         }
         None
+    }
+
+    fn box_clone(&self) -> IStreamMuxer {
+        Box::new(self.clone())
     }
 }
 
