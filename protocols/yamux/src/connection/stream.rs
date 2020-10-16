@@ -18,22 +18,29 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use std::{fmt, io, sync::{atomic::{AtomicUsize, AtomicU32, Ordering}, Arc}, };
 use async_trait::async_trait;
+use std::{
+    fmt, io,
+    sync::{
+        atomic::{AtomicU32, AtomicUsize, Ordering},
+        Arc,
+    },
+};
 
-use futures::prelude::*;
-use futures::{channel::{mpsc}, SinkExt};
 use futures::lock::{Mutex, MutexGuard};
+use futures::prelude::*;
+use futures::{channel::mpsc, SinkExt};
 
 use libp2p_traits::{ReadEx, WriteEx};
 
 use crate::{
     chunks::Chunks,
     connection::{self, StreamCommand},
-    ConnectionError,
-    Config,
-    frame::{Frame, header::{HasAck, HasSyn, Header, StreamId}},
-    WindowUpdateMode,
+    frame::{
+        header::{HasAck, HasSyn, Header, StreamId},
+        Frame,
+    },
+    Config, ConnectionError, WindowUpdateMode,
 };
 
 /// The state of a Yamux stream.
@@ -61,7 +68,7 @@ impl State {
             STATE_SEND_CLOSED => State::SendClosed,
             STATE_RECV_CLOSED => State::RecvClosed,
             STATE_CLOSED => State::Closed,
-            _ => { panic!("Unknown state") }
+            _ => panic!("Unknown state"),
         }
     }
 
@@ -204,20 +211,20 @@ impl Stream {
                 while let Some(chunk) = buffer.front_mut() {
                     if chunk.is_empty() {
                         buffer.pop();
-                        continue
+                        continue;
                     }
                     let k = std::cmp::min(chunk.len(), buf.len() - n);
-                    (&mut buf[n .. n + k]).copy_from_slice(&chunk.as_ref()[.. k]);
+                    (&mut buf[n..n + k]).copy_from_slice(&chunk.as_ref()[..k]);
                     n += k;
                     chunk.advance(k);
                     if n == buf.len() {
-                        break
+                        break;
                     }
                 }
             }
             if n > 0 {
                 log::trace!("{}/{}: read {} bytes", self.conn, self.id, n);
-                return Ok(n)
+                return Ok(n);
             }
 
             // Buffer is empty, let's check if we can expect to read more data.
@@ -227,9 +234,7 @@ impl Stream {
                 return Ok(0);
             }
 
-            if self.config.window_update_mode == WindowUpdateMode::OnRead
-               && shared.window() == 0 {
-
+            if self.config.window_update_mode == WindowUpdateMode::OnRead && shared.window() == 0 {
                 let mut frame = Frame::window_update(self.id, self.config.receive_window);
                 self.add_flag(frame.header_mut());
                 let cmd = StreamCommand::SendFrame(frame.right());
@@ -244,7 +249,6 @@ impl Stream {
     }
 
     async fn write_stream(&mut self, buf: &[u8]) -> io::Result<usize> {
-
         let shared = self.shared();
         if !shared.state().can_write() {
             log::debug!("{}/{}: can no longer write", self.conn, self.id);
@@ -259,7 +263,7 @@ impl Stream {
         let body = {
             let k = std::cmp::min(shared.credit() as usize, buf.len());
             shared.credit.store(shared.credit().saturating_sub(k as u32), Ordering::SeqCst);
-            Vec::from(&buf[.. k])
+            Vec::from(&buf[..k])
         };
 
         let n = body.len();
@@ -395,12 +399,12 @@ impl Shared {
         self.credit.fetch_add(val, Ordering::SeqCst);
     }
 
-    pub(crate) fn notify_send(&self) -> Result<(), ConnectionError>{
+    pub(crate) fn notify_send(&self) -> Result<(), ConnectionError> {
         log::info!("Stream({}) notify stream send", self.stream_id);
         Self::notify(self.send_notify.0.clone())
     }
 
-    pub(crate) fn notify_recv(&self) -> Result<(), ConnectionError>{
+    pub(crate) fn notify_recv(&self) -> Result<(), ConnectionError> {
         log::info!("Stream({}) notify stream recv", self.stream_id);
         Self::notify(self.recv_notify.0.clone())
     }

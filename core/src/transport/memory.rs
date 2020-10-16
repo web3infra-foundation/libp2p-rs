@@ -18,8 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-
-use crate::muxing::{StreamInfo, ReadWriteEx, IReadWrite};
+use crate::muxing::{IReadWrite, ReadWriteEx, StreamInfo};
 use crate::transport::{ConnectionInfo, IListener, ITransport, TransportListener};
 use crate::{transport::TransportError, Transport};
 use async_trait::async_trait;

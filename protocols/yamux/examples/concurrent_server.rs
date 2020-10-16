@@ -18,13 +18,10 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::{
-    net::{TcpListener},
-    task,
-};
+use async_std::{net::TcpListener, task};
 use libp2p_traits::{ReadEx, WriteEx};
-use yamux::{Config, Connection, Mode};
 use std::collections::HashSet;
+use yamux::{Config, Connection, Mode};
 
 /*
 use log::LevelFilter;
@@ -98,7 +95,8 @@ fn main() {
                         }
                     });
                 }
-            }).await;
+            })
+            .await;
             break;
         }
     })

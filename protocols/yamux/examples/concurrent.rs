@@ -18,15 +18,10 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::{
-    net::TcpStream,
-    task,
-};
+use async_std::{net::TcpStream, task};
 use futures::{channel::mpsc, prelude::*};
 use libp2p_traits::{ReadEx, WriteEx};
-use std::{
-    sync::Arc,
-};
+use std::sync::Arc;
 use yamux::{Config, Connection, Mode};
 
 /*

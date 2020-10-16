@@ -239,7 +239,6 @@ pub type IListener<TOutput> = Box<dyn TransportListener<Output = TOutput> + Send
 /// Trait object for `Transport`
 pub type ITransport<TOutput> = Box<dyn Transport<Output = TOutput> + Send>;
 
-
 impl<TOutput: ConnectionInfo> Clone for ITransport<TOutput> {
     fn clone(&self) -> Self {
         self.box_clone()
