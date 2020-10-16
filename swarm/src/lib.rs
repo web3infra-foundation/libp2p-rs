@@ -83,8 +83,8 @@ use libp2p_core::peerstore::PeerStore;
 use libp2p_core::upgrade::ProtocolName;
 use libp2p_core::{
     multiaddr::{protocol, Multiaddr},
-    transport::{TransportError, upgrade::ITransportEx},
     muxing::IStreamMuxer,
+    transport::{upgrade::ITransportEx, TransportError},
     PeerId,
 };
 

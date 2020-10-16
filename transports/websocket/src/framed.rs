@@ -34,8 +34,8 @@ use libp2p_core::{
 use libp2p_tcp::TcpTransStream;
 use log::{debug, error, trace};
 use soketto::{connection, extension::deflate::Deflate, handshake};
-use url::Url;
 use std::fmt;
+use url::Url;
 
 /// Max. number of payload bytes of a single frame.
 const MAX_DATA_SIZE: usize = 256 * 1024 * 1024;
@@ -52,9 +52,7 @@ pub struct WsConfig {
 
 impl fmt::Debug for WsConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("WsConfig")
-            .field("Config", &self.inner_config)
-            .finish()
+        f.debug_struct("WsConfig").field("Config", &self.inner_config).finish()
     }
 }
 

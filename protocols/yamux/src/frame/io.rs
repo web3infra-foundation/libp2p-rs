@@ -47,7 +47,7 @@ impl<T: ReadEx + WriteEx + Unpin> Io<T> {
         Io {
             id,
             io,
-             max_body_len: max_frame_body_len,
+            max_body_len: max_frame_body_len,
         }
     }
 

@@ -145,7 +145,6 @@ pub type IListenerEx = IListener<IStreamMuxer>;
 /// Trait object for Transport which is actually TransportUpgrade
 pub type ITransportEx = ITransport<IStreamMuxer>;
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -192,4 +191,3 @@ mod tests {
         futures::executor::block_on(futures::future::join(listener, dialer));
     }
 }
-

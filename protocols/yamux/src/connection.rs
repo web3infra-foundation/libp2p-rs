@@ -416,7 +416,6 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
         }
     }
 
-
     /// Process a command from a `Control`.
     ///
     /// We only process control commands if we are not in the process of closing
@@ -664,9 +663,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
 
             shared.notify_recv()?;
 
-            if !is_finish
-                && shared.window() == 0
-                && self.config.window_update_mode == WindowUpdateMode::OnReceive {
+            if !is_finish && shared.window() == 0 && self.config.window_update_mode == WindowUpdateMode::OnReceive {
                 let frame = Frame::window_update(stream_id, self.config.receive_window);
                 shared.update_window(self.config.receive_window);
                 return Ok(Action::Update(frame));
