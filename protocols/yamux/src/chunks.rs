@@ -27,6 +27,7 @@ impl Chunks {
     }
 
     /// Does this chunk list contain any bytes?
+    #[allow(dead_code)]
     pub(crate) fn is_empty(&self) -> bool {
         self.seq.iter().all(|x| x.is_empty())
     }

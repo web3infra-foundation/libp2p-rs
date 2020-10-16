@@ -8,28 +8,23 @@
 // at https://www.apache.org/licenses/LICENSE-2.0 and a copy of the MIT license
 // at https://opensource.org/licenses/MIT.
 
-use crate::{
-    chunks::Chunks,
-    connection::{self, StreamCommand},
-    frame::{
-        header::{Data, Header, StreamId, WindowUpdate},
-        Frame,
-    },
-    Config, WindowUpdateMode,
-};
-//use futures::lock::{Mutex, MutexGuard};
-use futures::prelude::*;
-use futures::{channel::mpsc, future::Either, SinkExt};
-use std::{
-    fmt, io,
-    sync::Arc,
-    task::{Poll, Waker},
-};
-
+use std::{fmt, io, sync::{atomic::{AtomicUsize, AtomicU32, Ordering}, Arc}, };
 use async_trait::async_trait;
+
+use futures::prelude::*;
+use futures::{channel::{mpsc}, SinkExt};
 use futures::lock::{Mutex, MutexGuard};
 
 use libp2p_traits::{ReadEx, WriteEx};
+
+use crate::{
+    chunks::Chunks,
+    connection::{self, StreamCommand},
+    ConnectionError,
+    Config,
+    frame::{Frame, header::{HasAck, HasSyn, Header, StreamId}},
+    WindowUpdateMode,
+};
 
 /// The state of a Yamux stream.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -44,7 +39,31 @@ pub enum State {
     Closed,
 }
 
+const STATE_OPEN: usize = 1;
+const STATE_SEND_CLOSED: usize = 2;
+const STATE_RECV_CLOSED: usize = 3;
+const STATE_CLOSED: usize = 4;
+
 impl State {
+    pub(crate) fn from_usize(state: usize) -> Self {
+        match state {
+            STATE_OPEN => State::Open,
+            STATE_SEND_CLOSED => State::SendClosed,
+            STATE_RECV_CLOSED => State::RecvClosed,
+            STATE_CLOSED => State::Closed,
+            _ => { panic!("Unknown state") }
+        }
+    }
+
+    pub(crate) fn to_usize(self) -> usize {
+        match self {
+            State::Open => STATE_OPEN,
+            State::SendClosed => STATE_SEND_CLOSED,
+            State::RecvClosed => STATE_RECV_CLOSED,
+            State::Closed => STATE_CLOSED,
+        }
+    }
+
     /// Can we receive messages over this stream?
     pub fn can_read(self) -> bool {
         if let State::RecvClosed | State::Closed = self {
@@ -89,7 +108,7 @@ pub struct Stream {
     config: Arc<Config>,
     sender: mpsc::UnboundedSender<StreamCommand>,
     flag: Flag,
-    shared: Arc<Mutex<Shared>>,
+    shared: Arc<Shared>,
 }
 
 impl fmt::Debug for Stream {
@@ -122,7 +141,7 @@ impl Stream {
             config,
             sender,
             flag: Flag::None,
-            shared: Arc::new(Mutex::new(Shared::new(window, credit))),
+            shared: Arc::new(Shared::new(id, window, credit)),
         }
     }
 
@@ -137,16 +156,16 @@ impl Stream {
     }
 
     /// Get this stream's state.
-    pub(crate) async fn state(&self) -> State {
-        self.shared().await.state()
+    pub(crate) fn state(&self) -> State {
+        self.shared().state()
     }
 
     pub(crate) fn strong_count(&self) -> usize {
         Arc::strong_count(&self.shared)
     }
 
-    pub(crate) async fn shared(&self) -> MutexGuard<'_, Shared> {
-        self.shared.lock().await
+    pub(crate) fn shared(&self) -> Arc<Shared> {
+        self.shared.clone()
     }
 
     pub(crate) fn clone(&self) -> Self {
@@ -161,128 +180,76 @@ impl Stream {
     }
 
     async fn read_stream(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if !self.config.read_after_close && self.sender.is_closed() {
-            // TBD: return err???
-            return Ok(0);
-        }
+        loop {
+            if !self.config.read_after_close && self.sender.is_closed() {
+                // TBD: return err???
+                return Ok(0);
+            }
 
-        if let Some(n) = future::poll_fn::<Option<usize>, _>(|cx| {
-            let fut = self.shared();
-            futures::pin_mut!(fut);
-            let mut shared = futures::ready!(fut.poll(cx));
-
-            // Since we have no more data at this point, we want to be woken up
-            // by the connection when more becomes available for us.
-            // Note: shared will be dropped when it is out of scope
-            if shared.buffer.len().unwrap() == 0 {
-                if !shared.state().can_read() {
-                    log::info!("2 {}/{}: eof", self.conn, self.id);
-                    // return Err(io::ErrorKind::BrokenPipe.into()); // stream has been reset
-                    return Poll::Ready(Some(0));
+            // Copy data from stream buffer.
+            let shared = self.shared();
+            let mut n = 0;
+            {
+                let mut buffer = shared.buffer.lock().await;
+                while let Some(chunk) = buffer.front_mut() {
+                    if chunk.is_empty() {
+                        buffer.pop();
+                        continue
+                    }
+                    let k = std::cmp::min(chunk.len(), buf.len() - n);
+                    (&mut buf[n .. n + k]).copy_from_slice(&chunk.as_ref()[.. k]);
+                    n += k;
+                    chunk.advance(k);
+                    if n == buf.len() {
+                        break
+                    }
                 }
-                log::trace!("{}/{}: empty buffer, go pending", self.conn, self.id);
-                shared.reader = Some(cx.waker().clone());
-                Poll::Pending
-            } else {
-                Poll::Ready(None)
             }
-        })
-        .await
-        {
-            return Ok(n);
-        }
-
-        let mut shared = self.shared().await;
-
-        // Copy data from stream buffer.
-        let mut n = 0;
-        while let Some(chunk) = shared.buffer.front_mut() {
-            if chunk.is_empty() {
-                shared.buffer.pop();
-                continue;
-            }
-            let k = std::cmp::min(chunk.len(), buf.len() - n);
-            (&mut buf[n..n + k]).copy_from_slice(&chunk.as_ref()[..k]);
-            n += k;
-            chunk.advance(k);
-            if n == buf.len() {
-                break;
-            }
-        }
-
-        if n > 0 {
-            return Ok(n);
-        }
-
-        if !shared.state().can_read() {
-            log::info!("3 {}/{}: eof", self.conn, self.id);
-            // return Err(io::ErrorKind::BrokenPipe.into()); // stream has been reset
-            return Ok(0);
-        }
-
-        log::info!("{}/{}: read {} bytes", self.conn, self.id, n);
-
-        // ok to send update window
-        if self.config.window_update_mode == WindowUpdateMode::OnRead {
-            let max = self.config.receive_window;
-            let blen = shared.buffer.len().unwrap() as u32;
-            let delta = max - blen - shared.window;
-
-            // Determine the flags if any
-            //flags := s.sendFlags()
-
-            // Check if we can omit the update
-            if delta < (max / 2) && self.flag == Flag::None {
-                return Ok(n);
+            if n > 0 {
+                log::trace!("{}/{}: read {} bytes", self.conn, self.id, n);
+                return Ok(n)
             }
 
-            shared.window += delta;
+            // Buffer is empty, let's check if we can expect to read more data.
+            if !shared.state().can_read() {
+                log::info!("3 {}/{}: eof", self.conn, self.id);
+                // return Err(io::ErrorKind::BrokenPipe.into()); // stream has been reset
+                return Ok(0);
+            }
 
-            // release shared as soon as possible
-            drop(shared);
+            if self.config.window_update_mode == WindowUpdateMode::OnRead
+               && shared.window() == 0 {
 
-            // At this point we know we have to send a window update to the remote.
-            let frame = Frame::window_update(self.id, delta);
-            let mut frame = frame.right();
-            self.add_flag(frame.header_mut());
-            let cmd = StreamCommand::SendFrame(frame);
-            self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
+                let mut frame = Frame::window_update(self.id, self.config.receive_window);
+                self.add_flag(frame.header_mut());
+                let cmd = StreamCommand::SendFrame(frame.right());
+                self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
+                self.shared.window.store(self.config.receive_window, Ordering::SeqCst);
+            }
+
+            log::trace!("waiting stream({}) recv", self.id());
+            shared.wait_recv().await;
+            log::trace!("stream({}) recv wakeup", self.id());
         }
-        Ok(n)
     }
 
     async fn write_stream(&mut self, buf: &[u8]) -> io::Result<usize> {
+
+        let shared = self.shared();
+        if !shared.state().can_write() {
+            log::debug!("{}/{}: can no longer write", self.conn, self.id);
+            return Err(self.write_zero_err());
+        }
+
+        while shared.credit() == 0 {
+            log::info!("{}/{}: no more credit left", self.conn, self.id);
+            shared.wait_send().await;
+        }
+
         let body = {
-            let mut shared = self.shared().await;
-            if !shared.state().can_write() {
-                log::debug!("{}/{}: can no longer write", self.conn, self.id);
-                return Err(self.write_zero_err());
-            }
-            drop(shared);
-
-            future::poll_fn::<(), _>(|cx| {
-                let fut = self.shared();
-                futures::pin_mut!(fut);
-                let mut shared = futures::ready!(fut.poll(cx));
-
-                // No credit here, we want to be woken up
-                // by the connection when more becomes available for us.
-                // Note: shared will be dropped when it is out of scope
-                if shared.credit == 0 {
-                    log::debug!("{}/{}: no more credit left", self.conn, self.id);
-                    shared.writer = Some(cx.waker().clone());
-                    Poll::Pending
-                } else {
-                    Poll::Ready(())
-                }
-            })
-            .await;
-
-            // re-gain the shared data
-            shared = self.shared().await;
-            let k = std::cmp::min(shared.credit as usize, buf.len());
-            shared.credit = shared.credit.saturating_sub(k as u32);
-            Vec::from(&buf[..k])
+            let k = std::cmp::min(shared.credit() as usize, buf.len());
+            shared.credit.store(shared.credit().saturating_sub(k as u32), Ordering::SeqCst);
+            Vec::from(&buf[.. k])
         };
 
         let n = body.len();
@@ -291,15 +258,13 @@ impl Stream {
         log::trace!("{}/{}: write {} bytes", self.conn, self.id, n);
         let cmd = StreamCommand::SendFrame(frame);
         self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
-
         Ok(n)
     }
 
     async fn close_stream(&mut self) -> io::Result<()> {
-        if self.state().await == State::Closed {
+        if self.state() == State::Closed {
             return Ok(());
         }
-        log::info!("{}/{}: close", self.conn, self.id);
 
         let ack = if self.flag == Flag::Ack {
             self.flag = Flag::None;
@@ -311,7 +276,9 @@ impl Stream {
         let cmd = StreamCommand::CloseStream { id: self.id, ack };
         self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
 
-        self.shared().await.update_state(self.conn, self.id, State::SendClosed);
+        self.shared().update_state(self.conn, self.id, State::SendClosed);
+
+        log::trace!("{}/{}: close", self.conn, self.id);
         Ok(())
     }
 
@@ -321,7 +288,7 @@ impl Stream {
     }
 
     /// Set ACK or SYN flag if necessary.
-    fn add_flag(&mut self, header: &mut Header<Either<Data, WindowUpdate>>) {
+    fn add_flag<T: HasAck + HasSyn>(&mut self, header: &mut Header<T>) {
         match self.flag {
             Flag::None => (),
             Flag::Syn => {
@@ -334,6 +301,28 @@ impl Stream {
             }
         }
     }
+
+    /*
+    #[allow(dead_code)]
+    pub(crate) async fn gen_window_update(&mut self) -> Option<Frame<WindowUpdate>> {
+        let max = self.config.receive_window;
+        let blen = self.shared.buffer.lock().await.len().expect("buffer len") as u32;
+        let window = self.shared.window();
+
+        let delta = max - blen - window;
+
+        if delta < (max / 2) && self.flag == Flag::None {
+            return None
+        }
+
+        self.shared.window.store(window + delta, Ordering::SeqCst);
+
+        let mut frame = Frame::window_update(self.id, delta);
+        self.add_flag(frame.header_mut());
+
+        Some(frame)
+    }
+     */
 }
 
 impl Drop for Stream {
@@ -346,47 +335,111 @@ impl Drop for Stream {
 
 #[derive(Debug)]
 pub(crate) struct Shared {
-    state: State,
-    pub(crate) window: u32,
-    pub(crate) credit: u32,
-    pub(crate) buffer: Chunks,
-    reader: Option<Waker>,
-    writer: Option<Waker>,
+    stream_id: StreamId,
+    state: AtomicUsize,
+    pub(crate) window: AtomicU32,
+    pub(crate) credit: AtomicU32,
+
+    send_notify: (mpsc::Sender<()>, Mutex<mpsc::Receiver<()>>),
+    recv_notify: (mpsc::Sender<()>, Mutex<mpsc::Receiver<()>>),
+
+    buffer: Mutex<Chunks>,
 }
 
 impl Shared {
-    fn new(window: u32, credit: u32) -> Self {
+    fn new(stream_id: StreamId, window: u32, credit: u32) -> Self {
+        let (send_tx, send_rx) = mpsc::channel(1);
+        let (recv_tx, recv_rx) = mpsc::channel(1);
         Shared {
-            state: State::Open,
-            window,
-            credit,
-            buffer: Chunks::new(),
-            reader: None,
-            writer: None,
+            stream_id,
+            state: AtomicUsize::new(State::Open.to_usize()),
+            window: AtomicU32::new(window),
+            credit: AtomicU32::new(credit),
+            send_notify: (send_tx, Mutex::new(send_rx)),
+            recv_notify: (recv_tx, Mutex::new(recv_rx)),
+            buffer: Mutex::new(Chunks::new()),
         }
     }
 
     pub(crate) fn state(&self) -> State {
-        self.state
+        State::from_usize(self.state.load(Ordering::SeqCst))
+    }
+
+    pub(crate) fn window(&self) -> u32 {
+        self.window.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn sub_window(&self, val: u32) {
+        self.window.store(self.window().saturating_sub(val), Ordering::SeqCst);
+    }
+
+    pub(crate) fn update_window(&self, val: u32) {
+        self.window.store(val, Ordering::SeqCst);
+    }
+
+    pub(crate) fn credit(&self) -> u32 {
+        self.credit.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn add_credit(&self, val: u32) {
+        self.credit.fetch_add(val, Ordering::SeqCst);
+    }
+
+    pub(crate) fn notify_send(&self) -> Result<(), ConnectionError>{
+        log::info!("Stream({}) notify stream send", self.stream_id);
+        Self::notify(self.send_notify.0.clone())
+    }
+
+    pub(crate) fn notify_recv(&self) -> Result<(), ConnectionError>{
+        log::info!("Stream({}) notify stream recv", self.stream_id);
+        Self::notify(self.recv_notify.0.clone())
+    }
+
+    fn notify(mut tx: mpsc::Sender<()>) -> Result<(), ConnectionError> {
+        match tx.try_send(()) {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                let e = e.into_send_error();
+                if e.is_full() {
+                    Ok(())
+                } else {
+                    Err(e.into())
+                }
+            }
+        }
+    }
+
+    async fn wait_send(&self) {
+        self.send_notify.1.lock().await.next().await;
+    }
+
+    async fn wait_recv(&self) {
+        self.recv_notify.1.lock().await.next().await;
     }
 
     /// Update the stream state and return the state before it was updated.
-    pub(crate) fn update_state(&mut self, cid: connection::Id, sid: StreamId, next: State) -> State {
-        use self::State::*;
+    pub(crate) fn update_state(&self, cid: connection::Id, sid: StreamId, next: State) -> State {
+        let current = self.state();
 
-        let current = self.state;
+        log::trace!("update state current({:?}) -> next({:?})", current, next);
 
-        match (current, next) {
-            (Closed, _) => {}
-            (Open, _) => self.state = next,
-            (RecvClosed, Closed) => self.state = Closed,
-            (RecvClosed, Open) => {}
-            (RecvClosed, RecvClosed) => {}
-            (RecvClosed, SendClosed) => self.state = Closed,
-            (SendClosed, Closed) => self.state = Closed,
-            (SendClosed, Open) => {}
-            (SendClosed, RecvClosed) => self.state = Closed,
-            (SendClosed, SendClosed) => {}
+        use State::*;
+
+        let to_store = match (current, next) {
+            (Closed, _) => None,
+            (Open, _) => Some(next),
+            (RecvClosed, Closed) => Some(Closed),
+            (RecvClosed, Open) => None,
+            (RecvClosed, RecvClosed) => None,
+            (RecvClosed, SendClosed) => Some(Closed),
+            (SendClosed, Closed) => Some(Closed),
+            (SendClosed, Open) => None,
+            (SendClosed, RecvClosed) => Some(Closed),
+            (SendClosed, SendClosed) => None,
+        };
+
+        if let Some(next) = to_store {
+            self.state.store(next.to_usize(), Ordering::SeqCst);
         }
 
         log::trace!("{}/{}: update state: ({:?} {:?} {:?})", cid, sid, current, next, self.state);
@@ -394,23 +447,8 @@ impl Shared {
         current // Return the previous stream state for informational purposes.
     }
 
-    pub(crate) fn wake_up_reader(&mut self) {
-        if let Some(w) = self.reader.take() {
-            log::debug!("wake up reader at {:?}", self.state);
-            w.wake()
-        }
-    }
-
-    pub(crate) fn wake_up_writer(&mut self) {
-        if let Some(w) = self.writer.take() {
-            log::debug!("wake up writer at {:?}", self.state);
-            w.wake()
-        }
-    }
-
-    pub(crate) fn wake_up_reader_and_writer(&mut self) {
-        self.wake_up_reader();
-        self.wake_up_writer();
+    pub(crate) async fn buffer(&self) -> MutexGuard<'_, Chunks> {
+        self.buffer.lock().await
     }
 }
 
