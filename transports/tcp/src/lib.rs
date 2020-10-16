@@ -1,3 +1,23 @@
+// Copyright 2020 Netwarps Ltd.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom the
+// Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+
 //! Implementation of the libp2p `Transport` trait for TCP/IP.
 //!
 //! # Usage
@@ -215,95 +235,6 @@ impl TransportListener for TcpTransListener {
         self.ma.clone()
     }
 }
-/*
-/// Stream that listens on an TCP/IP address.
-#[cfg_attr(docsrs, doc(cfg(feature = $feature_name)))]
-pub struct TcpListenStream {
-    /// The incoming connections.
-    stream: TcpListener,
-    /// The current pause if any.
-    pause: Option<Delay>,
-    /// How long to pause after an error.
-    pause_duration: Duration,
-    /// The port which we use as our listen port in listener event addresses.
-    port: u16,
-    /// The set of known addresses.
-    addrs: Addresses,
-    /// Temporary buffer of listener events.
-    pending: Buffer<TcpTransStream>,
-    /// Original configuration.
-    config: TcpConfig
-}
-
-impl TcpListenStream {
-    /// Takes ownership of the listener, and returns the next incoming event and the listener.
-    async fn next(mut self) -> (Result<ListenerEvent<Ready<Result<TcpTransStream, io::Error>>, io::Error>, io::Error>, Self) {
-        loop {
-            if let Some(event) = self.pending.pop_front() {
-                return (event, self);
-            }
-
-            if let Some(pause) = self.pause.take() {
-                let _ = pause.await;
-            }
-
-            // TODO: do we get the peer_addr at the same time?
-            let (sock, _) = match self.stream.accept().await {
-                Ok(s) => s,
-                Err(e) => {
-                    debug!("error accepting incoming connection: {}", e);
-                    self.pause = Some(Delay::new(self.pause_duration));
-                    return (Ok(ListenerEvent::Error(e)), self);
-                }
-            };
-
-            let sock_addr = match sock.peer_addr() {
-                Ok(addr) => addr,
-                Err(err) => {
-                    debug!("Failed to get peer address: {:?}", err);
-                    continue
-                }
-            };
-
-            let local_addr = match sock.local_addr() {
-                Ok(sock_addr) => {
-                    if let Addresses::Many(ref mut addrs) = self.addrs {
-                        if let Err(err) = check_for_interface_changes(&sock_addr, self.port, addrs, &mut self.pending) {
-                            return (Ok(ListenerEvent::Error(err)), self);
-                        }
-                    }
-                    ip_to_multiaddr(sock_addr.ip(), sock_addr.port())
-                }
-                Err(err) => {
-                    debug!("Failed to get local address of incoming socket: {:?}", err);
-                    continue
-                }
-            };
-
-            let remote_addr = ip_to_multiaddr(sock_addr.ip(), sock_addr.port());
-
-            match apply_config(&self.config, &sock) {
-                Ok(()) => {
-                    trace!("Incoming connection from {} at {}", remote_addr, local_addr);
-                    self.pending.push_back(Ok(ListenerEvent::Upgrade {
-                        upgrade: future::ok(TcpTransStream { inner: sock }),
-                        local_addr,
-                        remote_addr
-                    }))
-                }
-                Err(err) => {
-                    debug!("Error upgrading incoming connection from {}: {:?}", remote_addr, err);
-                    self.pending.push_back(Ok(ListenerEvent::Upgrade {
-                        upgrade: future::err(err),
-                        local_addr,
-                        remote_addr
-                    }))
-                }
-            }
-        }
-    }
-}
-*/
 /// Wraps around a `TcpStream` and adds logging for important events.
 #[cfg_attr(docsrs, doc(cfg(feature = $feature_name)))]
 #[derive(Debug, Clone)]
@@ -392,96 +323,6 @@ fn ip_to_multiaddr(ip: IpAddr, port: u16) -> Multiaddr {
     let it = iter::once(proto).chain(iter::once(Protocol::Tcp(port)));
     Multiaddr::from_iter(it)
 }
-/*
-// Collect all local host addresses and use the provided port number as listen port.
-fn host_addresses(port: u16) -> io::Result<Vec<(IpAddr, IpNet, Multiaddr)>> {
-    let mut addrs = Vec::new();
-    for iface in get_if_addrs()? {
-        let ip = iface.ip();
-        let ma = ip_to_multiaddr(ip, port);
-        let ipn = match iface.addr {
-            IfAddr::V4(ip4) => {
-                let prefix_len = (!u32::from_be_bytes(ip4.netmask.octets())).leading_zeros();
-                let ipnet = Ipv4Net::new(ip4.ip, prefix_len as u8)
-                    .expect("prefix_len is the number of bits in a u32, so can not exceed 32");
-                IpNet::V4(ipnet)
-            }
-            IfAddr::V6(ip6) => {
-                let prefix_len = (!u128::from_be_bytes(ip6.netmask.octets())).leading_zeros();
-                let ipnet = Ipv6Net::new(ip6.ip, prefix_len as u8)
-                    .expect("prefix_len is the number of bits in a u128, so can not exceed 128");
-                IpNet::V6(ipnet)
-            }
-        };
-        addrs.push((ip, ipn, ma))
-    }
-    Ok(addrs)
-}
-
-/// Listen address information.
-#[derive(Debug)]
-enum Addresses {
-    /// A specific address is used to listen.
-    One(Multiaddr),
-    /// A set of addresses is used to listen.
-    Many(Vec<(IpAddr, IpNet, Multiaddr)>)
-}
-
-// If we listen on all interfaces, find out to which interface the given
-// socket address belongs. In case we think the address is new, check
-// all host interfaces again and report new and expired listen addresses.
-fn check_for_interface_changes<T>(
-    socket_addr: &SocketAddr,
-    listen_port: u16,
-    listen_addrs: &mut Vec<(IpAddr, IpNet, Multiaddr)>,
-    pending: &mut Buffer<T>
-) -> Result<(), io::Error> {
-    // Check for exact match:
-    if listen_addrs.iter().find(|(ip, ..)| ip == &socket_addr.ip()).is_some() {
-        return Ok(())
-    }
-
-    // No exact match => check netmask
-    if listen_addrs.iter().find(|(_, net, _)| net.contains(&socket_addr.ip())).is_some() {
-        return Ok(())
-    }
-
-    // The local IP address of this socket is new to us.
-    // We check for changes in the set of host addresses and report new
-    // and expired addresses.
-    //
-    // TODO: We do not detect expired addresses unless there is a new address.
-    let old_listen_addrs = std::mem::replace(listen_addrs, host_addresses(listen_port)?);
-
-    // Check for addresses no longer in use.
-    for (ip, _, ma) in old_listen_addrs.iter() {
-        if listen_addrs.iter().find(|(i, ..)| i == ip).is_none() {
-            debug!("Expired listen address: {}", ma);
-            pending.push_back(Ok(ListenerEvent::AddressExpired(ma.clone())));
-        }
-    }
-
-    // Check for new addresses.
-    for (ip, _, ma) in listen_addrs.iter() {
-        if old_listen_addrs.iter().find(|(i, ..)| i == ip).is_none() {
-            debug!("New listen address: {}", ma);
-            pending.push_back(Ok(ListenerEvent::NewAddress(ma.clone())));
-        }
-    }
-
-    // We should now be able to find the local address, if not something
-    // is seriously wrong and we report an error.
-    if listen_addrs.iter()
-        .find(|(ip, net, _)| ip == &socket_addr.ip() || net.contains(&socket_addr.ip()))
-        .is_none()
-    {
-        let msg = format!("{} does not match any listen address", socket_addr.ip());
-        return Err(io::Error::new(io::ErrorKind::Other, msg))
-    }
-
-    Ok(())
-}
-*/
 
 #[cfg(test)]
 mod tests {
@@ -562,26 +403,6 @@ mod tests {
                     assert_eq!(buf, [1, 2, 3]);
                     socket.write_all(&[4, 5, 6]).await.unwrap();
                 }
-
-                /*
-                                let mut listener = tcp.listen_on(addr).await.unwrap();
-
-                                loop {
-                                    match listener.next().await.unwrap().unwrap() {
-                                        ListenerEvent::NewAddress(listen_addr) => {
-                                            ready_tx.take().unwrap().send(listen_addr).unwrap();
-                                        },
-                                        ListenerEvent::Upgrade { upgrade, .. } => {
-                                            let mut upgrade = upgrade.await.unwrap();
-                                            let mut buf = [0u8; 3];
-                                            upgrade.read_exact(&mut buf).await.unwrap();
-                                            assert_eq!(buf, [1, 2, 3]);
-                                            upgrade.write_all(&[4, 5, 6]).await.unwrap();
-                                        },
-                                        _ => unreachable!()
-                                    }
-                                }
-                */
             });
 
             async_std::task::block_on(async move {
@@ -601,54 +422,4 @@ mod tests {
         test("/ip4/127.0.0.1/tcp/1110".parse().unwrap());
         test("/ip6/::1/tcp/1110".parse().unwrap());
     }
-    /*
-        #[test]
-        #[cfg(feature = "async-std")]
-        fn replace_port_0_in_returned_multiaddr_ipv4() {
-            let tcp = TcpConfig::new();
-
-            let addr = "/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap();
-            assert!(addr.to_string().contains("tcp/0"));
-
-            let new_addr = futures::executor::block_on_stream(tcp.listen_on(addr).await.unwrap())
-                .next()
-                .expect("some event")
-                .expect("no error")
-                .into_new_address()
-                .expect("listen address");
-
-            assert!(!new_addr.to_string().contains("tcp/0"));
-        }
-
-        #[test]
-        #[cfg(feature = "async-std")]
-        fn replace_port_0_in_returned_multiaddr_ipv6() {
-            let tcp = TcpConfig::new();
-
-            let addr: Multiaddr = "/ip6/::1/tcp/0".parse().unwrap();
-            assert!(addr.to_string().contains("tcp/0"));
-
-            let new_addr = futures::executor::block_on_stream(tcp.listen_on(addr).unwrap())
-                .next()
-                .expect("some event")
-                .expect("no error")
-                .into_new_address()
-                .expect("listen address");
-
-            assert!(!new_addr.to_string().contains("tcp/0"));
-        }
-        #[test]
-        #[cfg(feature = "async-std")]
-        fn larger_addr_denied() {
-            let tcp = TcpConfig::new();
-
-            let addr = "/ip4/127.0.0.1/tcp/12345/tcp/12345"
-                .parse::<Multiaddr>()
-                .unwrap();
-
-            //let new_addr = futures::executor::block_on_stream(tcp.listen_on(addr).await.unwrap());
-            let ret = async_std::task::block_on(tcp.listen_on(addr)).is_err();
-            assert!(!ret);
-        }
-    */
 }
