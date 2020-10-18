@@ -774,7 +774,7 @@ impl Swarm {
             // TODO: add dial limiter...
 
             let addr = addrs.first().expect("must have one").clone();
-            self.dial_peer_with_addr(peer_id, addr, reply);
+            self.dial_peer_with_addr(peer_id, addr.addr, reply);
 
             Ok(())
         } else {
@@ -1151,12 +1151,15 @@ impl Swarm {
                     //let remote_peer_id = c.remote_peer();
                     log::trace!("ping TTL={:?} for {:?}", ttl, connection);
                     // TODO: update peer store with the TTL
+                    let peer_id = connection.stream_muxer().remote_peer();
+                    self.peers.addrs.update_addr(&peer_id, Duration::from_secs(1), ttl);
 
                     connection.reset_failure();
                 }
                 Err(err) => {
                     log::info!("ping failed {:?} for {:?}", err, connection);
                     let allowed_max_failure = self.ping.as_ref().map_or(0, |config| config.max_failures());
+
                     connection.handle_failure(allowed_max_failure);
                 }
             }
@@ -1170,10 +1173,13 @@ impl Swarm {
         if let Some(connection) = self.connections_by_id.get_mut(&cid) {
             match result {
                 Ok((info, observed_addr)) => {
+                    let peer_id = connection.stream_muxer().remote_peer();
                     //let remote_peer_id = c.remote_peer();
                     log::trace!("identify observed_addr: {} info={:?} for {:?}", observed_addr, info, connection);
 
                     // TODO: update peer store with the
+                    self.peers.addrs.add_addr(&peer_id, observed_addr, Duration::from_secs(1));
+                    self.peers.protos.add_protocol(&peer_id, info.protocols);
                     //
                 }
                 Err(err) => {

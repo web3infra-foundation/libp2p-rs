@@ -398,8 +398,8 @@ where
 // }
 
 impl From<ConnectionError> for TransportError {
-    fn from(_: ConnectionError) -> Self {
+    fn from(e: ConnectionError) -> Self {
         // TODO: make a mux error catalog for secio
-        TransportError::StreamMuxerError
+        TransportError::StreamMuxerError(Box::new(e))
     }
 }
