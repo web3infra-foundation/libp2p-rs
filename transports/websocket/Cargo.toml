@@ -1,5 +1,5 @@
 [package]
-name = "libp2p-websocket"
+name = "libp2prs-websocket"
 version = "0.1.0"
 license = "MIT"
 description = "WebSocket transport for libp2p"
@@ -13,8 +13,8 @@ edition = "2018"
 async-tls = "0.7.0"
 either = "1.5.3"
 futures = "0.3.1"
-libp2p-core = { version = "0.1.0", path = "../../core" }
-libp2p-traits = { path = "../../traits", version = "0.1.0", package = "libp2p-traits" }
+libp2prs-core = { version = "0.1.0", path = "../../core" , package = "libp2prs-core" }
+libp2prs-traits = { path = "../../traits", version = "0.1.0", package = "libp2prs-traits" }
 log = "0.4.8"
 quicksink = "0.1"
 rustls = "0.17.0"
@@ -25,10 +25,10 @@ webpki = "0.21"
 webpki-roots = "0.18"
 async-trait = "0.1"
 async-std = { version = "1.6"}
-libp2p-tcp = { path = "../tcp"}
-libp2p-dns = { path = "../dns"}
+libp2prs-tcp = { path = "../tcp"}
+libp2prs-dns = { path = "../dns"}
 
 [dev-dependencies]
 env_logger = "0.6.0"
-libp2p-tcp = { path = "../tcp"}
-libp2p-dns = { path = "../dns"}
+libp2prs-tcp = { path = "../tcp"}
+libp2prs-dns = { path = "../dns"}

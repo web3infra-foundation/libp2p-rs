@@ -21,10 +21,10 @@
 use crate::protocol_handler::IProtocolHandler;
 use crate::ProtocolId;
 use fnv::FnvHashMap;
-use libp2p_core::multistream::Negotiator;
-use libp2p_core::muxing::{IReadWrite, WrapIReadWrite};
-use libp2p_core::transport::TransportError;
-use libp2p_core::upgrade::ProtocolName;
+use libp2prs_core::multistream::Negotiator;
+use libp2prs_core::muxing::{IReadWrite, WrapIReadWrite};
+use libp2prs_core::transport::TransportError;
+use libp2prs_core::upgrade::ProtocolName;
 
 /// Muxer that uses multistream-select to select and handle protocols.
 ///

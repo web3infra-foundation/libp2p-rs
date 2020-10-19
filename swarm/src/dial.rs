@@ -12,7 +12,7 @@ use std::{error::Error, fmt};
 use crate::Connection;
 use async_trait::async_trait;
 use fnv::FnvHashMap;
-use libp2p_core::{muxing::StreamMuxer, transport::TransportError, Multiaddr, PeerId};
+use libp2prs_core::{muxing::StreamMuxer, transport::TransportError, Multiaddr, PeerId};
 
 type Result<T> = std::result::Result<T, DialError>;
 

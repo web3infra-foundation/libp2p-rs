@@ -19,25 +19,25 @@
 // DEALINGS IN THE SOFTWARE.
 
 use async_std::task;
-use libp2p_core::identity;
-use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
-use libp2p_noise::{Keypair, X25519};
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_core::identity;
+use libp2prs_core::upgrade::{UpgradeInfo, Upgrader};
+use libp2prs_noise::NoiseConfig;
+use libp2prs_noise::{Keypair, X25519};
+use libp2prs_traits::{ReadEx, WriteEx};
 use log::info;
-use noise::{Keypair, NoiseConfig, X25519};
 
 //
 // use futures::{
 //     future::{self, Either},
 //     prelude::*,
 // };
-// use libp2p_core::identity;
-// use libp2p_core::transport::{ListenerEvent, Transport};
-// use libp2p_core::upgrade::{self, apply_inbound, apply_outbound, Negotiated};
-// use libp2p_noise::{
+// use libp2prs_core::identity;
+// use libp2prs_core::transport::{ListenerEvent, Transport};
+// use libp2prs_core::upgrade::{self, apply_inbound, apply_outbound, Negotiated};
+// use libp2prs_noise::{
 //     Keypair, NoiseConfig, NoiseError, NoiseOutput, RemoteIdentity, X25519Spec, X25519,
 // };
-// use libp2p_tcp::{TcpConfig, TcpTransStream};
+// use libp2prs_tcp::{TcpConfig, TcpTransStream};
 // use log::info;
 // use quickcheck::QuickCheck;
 // use std::{convert::TryInto, io};

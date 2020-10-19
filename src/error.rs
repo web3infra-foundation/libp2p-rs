@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::{secio::error::SecioError, SessionId};
-use multiaddr::Multiaddr;
+use libp2prs_multiaddr::Multiaddr;
 use std::io::Error as IOError;
 use thiserror::Error;
 

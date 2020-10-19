@@ -24,11 +24,11 @@ use async_std::{
 };
 use log::{error, info};
 
-use libp2p_core::identity::Keypair;
-use secio::Config as SecioConfig;
+use libp2prs_core::identity::Keypair;
+use libp2prs_secio::Config as SecioConfig;
 
-use libp2p_traits::{ReadEx, WriteEx};
-use mplex::connection::Connection;
+use libp2prs_mplex::connection::Connection;
+use libp2prs_traits::{ReadEx, WriteEx};
 
 fn main() {
     env_logger::init();

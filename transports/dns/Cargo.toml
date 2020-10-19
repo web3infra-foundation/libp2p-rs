@@ -1,5 +1,5 @@
 [package]
-name = "libp2p-dns"
+name = "libp2prs-dns"
 version = "0.1.0"
 license = "MIT"
 description = "DNS transport implementation for libp2p"
@@ -10,13 +10,13 @@ categories = ["network-programming", "asynchronous"]
 edition = "2018"
 
 [dependencies]
-libp2p-core = { version = "0.1.0", path = "../../core" }
+libp2prs-core = { version = "0.1.0", path = "../../core", package = "libp2prs-core"}
 log = "0.4"
 futures = "0.3.5"
 async-std = "1.6"
 async-trait = "0.1"
 
 [dev-dependencies]
-libp2p-traits = { path = "../../traits", version = "0.1.0", package = "libp2p-traits" }
-libp2p-tcp = { path = "../tcp", version = "0.1.0", package = "libp2p-tcp" }
-multiaddr = { path = "../../multiaddr", package = "parity-multiaddr", version = "0.1.0" }
+libp2prs-traits = { path = "../../traits", version = "0.1.0", package = "libp2prs-traits" }
+libp2prs-tcp = { path = "../tcp", version = "0.1.0", package = "libp2prs-tcp" }
+libp2prs-multiaddr = { path = "../../multiaddr", version = "0.1.0" , package = "libp2prs-multiaddr"}

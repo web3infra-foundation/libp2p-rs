@@ -23,7 +23,6 @@ use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::fmt;
 use std::time::{Duration, SystemTime};
-use std::alloc::System;
 
 #[derive(Default, Clone)]
 pub struct PeerStore {
@@ -90,30 +89,40 @@ impl AddrBook {
     pub fn add_addr(&mut self, peer_id: &PeerId, addr: Multiaddr, ttl: Duration) {
         if let Some(entry) = self.addr_book.get_mut(peer_id) {
             let mut exist = false;
-            let mut count = 0;
-            for i in entry.iter() {
+            for (count, i) in entry.iter().enumerate() {
                 if i.addr == addr {
                     // In order to get mutable
                     let record: &mut AddrBookRecord = entry.get_mut(count).unwrap();
-                    let enpiry = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().checked_add(ttl).unwrap();
+                    let enpiry = SystemTime::now()
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .unwrap()
+                        .checked_add(ttl)
+                        .unwrap();
                     record.set_expiry(enpiry);
                     exist = true;
                     break;
                 }
-                count += 1;
             }
             if !exist {
                 entry.push(AddrBookRecord {
                     addr,
                     ttl: ttl.as_secs_f64(),
-                    expiry: SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().checked_add(ttl).unwrap(),
+                    expiry: SystemTime::now()
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .unwrap()
+                        .checked_add(ttl)
+                        .unwrap(),
                 })
             }
         } else {
             let vec = vec![AddrBookRecord {
                 addr,
                 ttl: ttl.as_secs_f64(),
-                expiry: SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().checked_add(ttl).unwrap(),
+                expiry: SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .checked_add(ttl)
+                    .unwrap(),
             }];
             self.addr_book.insert(peer_id.clone(), SmallVec::from_vec(vec));
         }
@@ -128,9 +137,13 @@ impl AddrBook {
     }
 
     pub fn update_addr(&mut self, peer_id: &PeerId, old_ttl: Duration, new_ttl: Duration) {
-        if let Some(_) = self.get_addr(peer_id) {
+        if self.get_addr(peer_id).is_some() {
             let record_vec = self.addr_book.get_mut(peer_id).unwrap();
-            let time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().checked_add(new_ttl).unwrap();
+            let time = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .checked_add(new_ttl)
+                .unwrap();
 
             for record in record_vec.into_iter() {
                 if record.ttl == old_ttl.as_secs_f64() {
@@ -205,7 +218,7 @@ impl ProtoBook {
                 }
                 Some(result)
             }
-            None => None
+            None => None,
         }
     }
 
@@ -219,7 +232,7 @@ impl ProtoBook {
                 }
                 None
             }
-            None => None
+            None => None,
         }
     }
 
@@ -234,19 +247,17 @@ impl ProtoBook {
                 }
                 Some(proto_list)
             }
-            None => None
+            None => None,
         }
     }
 }
 
 pub fn remove_expired_addr(s: &mut SmallVec<[AddrBookRecord; 4]>) {
-    let mut count = 0;
     let u = s.clone();
-    for item in u {
+    for (count, item) in u.into_iter().enumerate() {
         if item.expiry < SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap() {
             s.remove(count);
         }
-        count += 1;
     }
 }
 
@@ -254,9 +265,9 @@ pub fn remove_expired_addr(s: &mut SmallVec<[AddrBookRecord; 4]>) {
 mod tests {
     use crate::peerstore::{AddrBook, ProtoBook};
     use crate::PeerId;
-    use std::time::Duration;
-    use log::LevelFilter;
     use log::info;
+    use log::LevelFilter;
+    use std::time::Duration;
 
     #[test]
     fn addr_book_basic() {
@@ -267,7 +278,10 @@ mod tests {
 
         ab.add_addr(&peer_id, "/memory/123456".parse().unwrap(), Duration::from_secs(1));
 
-        assert_eq!(&(ab.get_addr(&peer_id).unwrap().first().unwrap().addr), &"/memory/123456".parse().unwrap());
+        assert_eq!(
+            &(ab.get_addr(&peer_id).unwrap().first().unwrap().addr),
+            &"/memory/123456".parse().unwrap()
+        );
 
         ab.add_addr(&peer_id, "/memory/654321".parse().unwrap(), Duration::from_secs(1));
         let addrs = ab.get_addr(&peer_id).unwrap();
@@ -279,7 +293,10 @@ mod tests {
 
         ab.update_addr(&peer_id, Duration::from_secs(1), Duration::from_secs(3));
         info!("{}", ab.get_addr(&peer_id).unwrap().first().unwrap().ttl);
-        assert_eq!(ab.get_addr(&peer_id).unwrap().first().unwrap().ttl, Duration::from_secs(3).as_secs_f64());
+        assert_eq!(
+            ab.get_addr(&peer_id).unwrap().first().unwrap().ttl,
+            Duration::from_secs(3).as_secs_f64()
+        );
 
         ab.del_peer(&peer_id);
         assert!(ab.get_addr(&peer_id).is_none());
@@ -293,14 +310,24 @@ mod tests {
 
         let proto_list = vec!["/libp2p/secio/1.0.0".to_string(), "/libp2p/yamux/1.0.0".to_string()];
         proto.add_protocol(&peer_id, proto_list);
-        assert_eq!(proto.get_protocol(&peer_id).unwrap(), vec!["/libp2p/secio/1.0.0", "/libp2p/yamux/1.0.0"]);
+        assert_eq!(
+            proto.get_protocol(&peer_id).unwrap(),
+            vec!["/libp2p/secio/1.0.0", "/libp2p/yamux/1.0.0"]
+        );
 
         let optional_list = vec!["/libp2p/noise/1.0.0".to_string(), "/libp2p/yamux/1.0.0".to_string()];
         let protocol = proto.first_supported_protocol(&peer_id, optional_list);
         assert_eq!(protocol.unwrap(), "/libp2p/yamux/1.0.0");
 
-        let option_support_list = vec!["/libp2p/secio/1.0.0".to_string(), "/libp2p/noise/1.0.0".to_string(), "/libp2p/yamux/1.0.0".to_string()];
+        let option_support_list = vec![
+            "/libp2p/secio/1.0.0".to_string(),
+            "/libp2p/noise/1.0.0".to_string(),
+            "/libp2p/yamux/1.0.0".to_string(),
+        ];
         let support_protocol = proto.support_protocol(&peer_id, option_support_list);
-        assert_eq!(support_protocol.unwrap(), vec!["/libp2p/secio/1.0.0".to_string(), "/libp2p/yamux/1.0.0".to_string()]);
+        assert_eq!(
+            support_protocol.unwrap(),
+            vec!["/libp2p/secio/1.0.0".to_string(), "/libp2p/yamux/1.0.0".to_string()]
+        );
     }
 }

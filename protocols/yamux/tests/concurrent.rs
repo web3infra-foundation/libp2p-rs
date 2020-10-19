@@ -23,12 +23,13 @@ use async_std::{
     task,
 };
 use futures::{channel::mpsc, prelude::*};
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_yamux as yamux;
+use libp2prs_yamux::{Config, Connection, Mode};
 use std::{
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     sync::Arc,
 };
-use yamux::{Config, Connection, Mode};
 
 #[allow(dead_code)]
 async fn roundtrip(address: SocketAddr, nstreams: usize, data: Arc<Vec<u8>>) {

@@ -28,7 +28,7 @@
 //use crate::ConnectedPoint;
 use async_trait::async_trait;
 use futures::prelude::*;
-use multiaddr::Multiaddr;
+use libp2prs_multiaddr::Multiaddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;

@@ -84,7 +84,7 @@ pub use self::{dummy::DummyUpgrader, select::Selector};
 /// # Example
 ///
 /// ```
-/// use libp2p_core::upgrade::ProtocolName;
+/// use libp2prs_core::upgrade::ProtocolName;
 ///
 /// enum MyProtocolName {
 ///     Version1,

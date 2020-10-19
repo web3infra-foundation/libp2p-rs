@@ -1,23 +1,3 @@
-// Copyright 2020 Netwarps Ltd.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the "Software"),
-// to deal in the Software without restriction, including without limitation
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,
-// and/or sell copies of the Software, and to permit persons to whom the
-// Software is furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-
 ///! Implementation of [multiaddr](https://github.com/jbenet/multiaddr) in Rust.
 pub use multihash;
 
@@ -30,6 +10,7 @@ pub use self::errors::{Error, Result};
 pub use self::from_url::{from_url, from_url_lossy, FromUrlErr};
 pub use self::onion_addr::Onion3Addr;
 use self::protocol::Protocol;
+
 use serde::{
     de::{self, Error as DeserializerError},
     Deserialize, Deserializer, Serialize, Serializer,
@@ -91,7 +72,7 @@ impl Multiaddr {
     /// # Examples
     ///
     /// ```
-    /// use parity_multiaddr::{Multiaddr, Protocol};
+    /// use libp2prs_multiaddr::{Multiaddr, protocol::Protocol};
     ///
     /// let mut address: Multiaddr = "/ip4/127.0.0.1".parse().unwrap();
     /// address.push(Protocol::Tcp(10000));
@@ -106,7 +87,7 @@ impl Multiaddr {
 
     /// Pops the last `Protocol` of this multiaddr, or `None` if the multiaddr is empty.
     /// ```
-    /// use parity_multiaddr::{Multiaddr, Protocol};
+    /// use libp2prs_multiaddr::{Multiaddr, protocol::Protocol};
     ///
     /// let mut address: Multiaddr = "/ip4/127.0.0.1/udt/sctp/5678".parse().unwrap();
     ///
@@ -145,7 +126,7 @@ impl Multiaddr {
     ///
     /// ```rust
     /// use std::net::Ipv4Addr;
-    /// use parity_multiaddr::{Multiaddr, Protocol};
+    /// use libp2prs_multiaddr::{Multiaddr, protocol::Protocol};
     ///
     /// let address: Multiaddr = "/ip4/127.0.0.1/udt/sctp/5678".parse().unwrap();
     ///
@@ -208,7 +189,7 @@ impl fmt::Display for Multiaddr {
     /// # Example
     ///
     /// ```
-    /// use parity_multiaddr::Multiaddr;
+    /// use libp2prs_multiaddr::Multiaddr;
     ///
     /// let address: Multiaddr = "/ip4/127.0.0.1/udt".parse().unwrap();
     /// assert_eq!(address.to_string(), "/ip4/127.0.0.1/udt");
@@ -421,7 +402,7 @@ impl<'de> Deserialize<'de> for Multiaddr {
 /// Example:
 ///
 /// ```rust
-/// # use parity_multiaddr::multiaddr;
+/// # use libp2prs_multiaddr::multiaddr;
 /// let addr = multiaddr!(Ip4([127, 0, 0, 1]), Tcp(10500u16));
 /// ```
 ///
@@ -434,10 +415,10 @@ macro_rules! multiaddr {
     ($($comp:ident $(($param:expr))*),+) => {
         {
             use std::iter;
-            let elem = iter::empty::<$crate::Protocol>();
+            let elem = iter::empty::<$crate::protocol::Protocol>();
             $(
                 let elem = {
-                    let cmp = $crate::Protocol::$comp $(( $param.into() ))*;
+                    let cmp = $crate::protocol::Protocol::$comp $(( $param.into() ))*;
                     elem.chain(iter::once(cmp))
                 };
             )+

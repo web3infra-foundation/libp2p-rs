@@ -23,8 +23,8 @@ use async_std::{
     task,
 };
 use futures::channel;
-use libp2p_traits::{ReadEx, WriteEx};
-use mplex::connection::Connection;
+use libp2prs_mplex::connection::Connection;
+use libp2prs_traits::{ReadEx, WriteEx};
 
 #[test]
 fn multi_stream() {

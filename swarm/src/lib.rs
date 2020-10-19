@@ -78,10 +78,10 @@ use std::collections::HashSet;
 use std::time::Duration;
 use std::{error, fmt};
 
-use libp2p_core::identity::Keypair;
-use libp2p_core::peerstore::PeerStore;
-use libp2p_core::upgrade::ProtocolName;
-use libp2p_core::{
+use libp2prs_core::identity::Keypair;
+use libp2prs_core::peerstore::PeerStore;
+use libp2prs_core::upgrade::ProtocolName;
+use libp2prs_core::{
     multiaddr::{protocol, Multiaddr},
     muxing::IStreamMuxer,
     transport::{upgrade::ITransportEx, TransportError},

@@ -26,10 +26,10 @@ use std::{fmt, io};
 use crate::connection::{ConnectionId, Direction};
 use crate::control::SwarmControlCmd;
 use crate::ProtocolId;
-use libp2p_core::muxing::IReadWrite;
-use libp2p_core::upgrade::ProtocolName;
-use libp2p_core::Multiaddr;
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_core::muxing::IReadWrite;
+use libp2prs_core::upgrade::ProtocolName;
+use libp2prs_core::Multiaddr;
+use libp2prs_traits::{ReadEx, WriteEx};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 

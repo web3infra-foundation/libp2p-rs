@@ -56,13 +56,13 @@ pub use crate::frame::{
     FrameDecodeError,
 };
 use futures::future::BoxFuture;
-use libp2p_core::identity::Keypair;
-use libp2p_core::muxing::{IReadWrite, IStreamMuxer, ReadWriteEx, StreamInfo, StreamMuxer, StreamMuxerEx};
-use libp2p_core::secure_io::SecureInfo;
-use libp2p_core::transport::{ConnectionInfo, TransportError};
-use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
-use libp2p_core::{Multiaddr, PeerId, PublicKey};
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_core::identity::Keypair;
+use libp2prs_core::muxing::{IReadWrite, IStreamMuxer, ReadWriteEx, StreamInfo, StreamMuxer, StreamMuxerEx};
+use libp2prs_core::secure_io::SecureInfo;
+use libp2prs_core::transport::{ConnectionInfo, TransportError};
+use libp2prs_core::upgrade::{UpgradeInfo, Upgrader};
+use libp2prs_core::{Multiaddr, PeerId, PublicKey};
+use libp2prs_traits::{ReadEx, WriteEx};
 
 const DEFAULT_CREDIT: u32 = 256 * 1024; // as per yamux specification
 

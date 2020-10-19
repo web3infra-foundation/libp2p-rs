@@ -21,14 +21,15 @@
 use async_std::task;
 use criterion::{criterion_group, criterion_main, Criterion};
 use futures::{channel::mpsc, future, prelude::*, ready};
-use libp2p_traits::{ReadEx, ReadExt2, WriteEx};
+use libp2prs_traits::{ReadEx, ReadExt2, WriteEx};
+use libp2prs_yamux as yamux;
+use libp2prs_yamux::{Config, Connection, Mode};
 use std::{
     fmt, io,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
 };
-use yamux::{Config, Connection, Mode};
 
 criterion_group!(benches, concurrent);
 criterion_main!(benches);
@@ -116,7 +117,7 @@ async fn roundtrip(nstreams: usize, nmessages: usize, data: Bytes, send_all: boo
                 log::debug!("S: accepted new stream");
                 task::spawn(async move {
                     let (r, w) = stream.clone().split2();
-                    libp2p_traits::copy(r, w).await.unwrap();
+                    libp2prs_traits::copy(r, w).await.unwrap();
                     stream.close2().await.unwrap();
                 });
             }

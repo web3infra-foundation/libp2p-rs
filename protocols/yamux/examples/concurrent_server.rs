@@ -19,9 +19,9 @@
 // DEALINGS IN THE SOFTWARE.
 
 use async_std::{net::TcpListener, task};
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_yamux::{Config, Connection, Mode};
 use std::collections::HashSet;
-use yamux::{Config, Connection, Mode};
 
 /*
 use log::LevelFilter;

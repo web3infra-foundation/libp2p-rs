@@ -24,8 +24,8 @@ use async_std::{
 };
 use log::info;
 
-use libp2p_traits::{ReadEx, WriteEx};
-use yamux::{Config, Connection, Mode};
+use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_yamux::{Config, Connection, Mode};
 
 fn main() {
     env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();

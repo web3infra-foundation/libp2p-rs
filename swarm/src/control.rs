@@ -22,7 +22,7 @@ use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
 };
-use libp2p_core::PeerId;
+use libp2prs_core::PeerId;
 
 use crate::connection::ConnectionId;
 use crate::identify::IdentifyInfo;
