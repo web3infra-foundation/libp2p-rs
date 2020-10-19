@@ -24,8 +24,8 @@
 use crate::io::NoiseOutput;
 use crate::{NoiseError, Protocol, PublicKey};
 use bytes::{Bytes, BytesMut};
-use libp2p_core::identity;
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_core::identity;
+use libp2prs_traits::{ReadEx, WriteEx};
 use log::{debug, trace};
 use std::{fmt, io};
 

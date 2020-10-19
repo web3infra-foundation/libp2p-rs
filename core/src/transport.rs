@@ -28,7 +28,7 @@
 //use crate::ConnectedPoint;
 use async_trait::async_trait;
 use futures::prelude::*;
-use multiaddr::Multiaddr;
+use libp2prs_multiaddr::Multiaddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -461,7 +461,7 @@ pub enum TransportError {
     SecurityError,
 
     /// StreamMuxer layer error
-    StreamMuxerError,
+    StreamMuxerError(Box<dyn Error + Send + Sync>),
 
     /// websocket error
     WsError(Box<dyn std::error::Error + Send + Sync>),
@@ -498,7 +498,7 @@ impl fmt::Display for TransportError {
             TransportError::NegotiationError(err) => write!(f, "Negotiation error {:?}", err),
             TransportError::ProtectorError(err) => write!(f, "Protector error {:?}", err),
             TransportError::SecurityError => write!(f, "SecurityError layer error"),
-            TransportError::StreamMuxerError => write!(f, "StreamMuxerError layer error"),
+            TransportError::StreamMuxerError(err) => write!(f, "StreamMuxerError layer error {:?}", err),
             TransportError::WsError(err) => write!(f, "Websocket transport  error: {}", err),
         }
     }
@@ -516,7 +516,7 @@ impl Error for TransportError {
             TransportError::NegotiationError(err) => Some(err),
             TransportError::ProtectorError(err) => Some(err),
             TransportError::SecurityError => None,
-            TransportError::StreamMuxerError => None,
+            TransportError::StreamMuxerError(err) => Some(&**err),
             TransportError::WsError(err) => Some(&**err),
         }
     }

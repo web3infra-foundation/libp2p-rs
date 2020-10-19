@@ -31,10 +31,10 @@ pub use protocol::{AuthenticKeypair, Keypair, KeypairIdentity, PublicKey, Secret
 pub use protocol::{Protocol, ProtocolParams, IK, IX, XX};
 
 use async_trait::async_trait;
-use libp2p_core::identity;
-use libp2p_core::transport::{ConnectionInfo, TransportError};
-use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_core::identity;
+use libp2prs_core::transport::{ConnectionInfo, TransportError};
+use libp2prs_core::upgrade::{UpgradeInfo, Upgrader};
+use libp2prs_traits::{ReadEx, WriteEx};
 use zeroize::Zeroize;
 
 /// The protocol upgrade configuration.

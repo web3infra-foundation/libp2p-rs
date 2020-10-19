@@ -23,11 +23,11 @@ use async_std::{
     task,
 };
 use futures::channel::oneshot;
-use libp2p_traits::{ReadEx, ReadExt2, WriteEx};
-use mplex::{
+use libp2prs_mplex::{
     connection::{control::Control, Connection},
     error::ConnectionError,
 };
+use libp2prs_traits::{ReadEx, ReadExt2, WriteEx};
 use quickcheck::{Arbitrary, Gen, QuickCheck, TestResult};
 use rand::Rng;
 use std::time::Duration;
@@ -533,7 +533,7 @@ async fn repeat_echo(c: Connection<TcpStream>) -> Result<(), ConnectionError> {
             task::spawn(async move {
                 loop {
                     let (r, w) = stream.clone().split2();
-                    if let Err(_e) = libp2p_traits::copy(r, w).await {
+                    if let Err(_e) = libp2prs_traits::copy(r, w).await {
                         break;
                     }
                 }

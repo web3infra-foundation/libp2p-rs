@@ -23,13 +23,13 @@
 //! [libp2p-noise-spec]: https://github.com/libp2p/specs/tree/master/noise
 
 use crate::{protocol, NoiseConfig, NoiseError, Protocol, ProtocolParams};
-use libp2p_core::identity;
+use libp2prs_core::identity;
 use rand::Rng;
 use x25519_dalek::{x25519, X25519_BASEPOINT_BYTES};
 use zeroize::Zeroize;
 
 use super::{x25519::X25519, *};
-use libp2p_core::upgrade::UpgradeInfo;
+use libp2prs_core::upgrade::UpgradeInfo;
 
 /// Prefix of static key signatures for domain separation.
 const STATIC_KEY_DOMAIN: &str = "noise-libp2p-static-key:";

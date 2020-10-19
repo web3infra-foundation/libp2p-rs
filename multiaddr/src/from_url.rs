@@ -1,23 +1,3 @@
-// Copyright 2020 Netwarps Ltd.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the "Software"),
-// to deal in the Software without restriction, including without limitation
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,
-// and/or sell copies of the Software, and to permit persons to whom the
-// Software is furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-
 use crate::{protocol::Protocol, Multiaddr};
 use std::{error, fmt, iter, net::IpAddr};
 
@@ -38,7 +18,7 @@ use std::{error, fmt, iter, net::IpAddr};
 /// # Example
 ///
 /// ```
-/// let addr = parity_multiaddr::from_url("ws://127.0.0.1:8080/").unwrap();
+/// let addr = libp2prs_multiaddr::from_url("ws://127.0.0.1:8080/").unwrap();
 /// assert_eq!(addr, "/ip4/127.0.0.1/tcp/8080/ws".parse().unwrap());
 /// ```
 ///
@@ -55,8 +35,8 @@ pub fn from_url(url: &str) -> std::result::Result<Multiaddr, FromUrlErr> {
 ///
 /// ```
 /// let addr = "ws://user:pass@127.0.0.1:8080/";
-/// assert!(parity_multiaddr::from_url(addr).is_err());
-/// assert!(parity_multiaddr::from_url_lossy(addr).is_ok());
+/// assert!(libp2prs_multiaddr::from_url(addr).is_err());
+/// assert!(libp2prs_multiaddr::from_url_lossy(addr).is_ok());
 /// ```
 ///
 pub fn from_url_lossy(url: &str) -> std::result::Result<Multiaddr, FromUrlErr> {

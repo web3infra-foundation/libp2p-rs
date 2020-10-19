@@ -23,7 +23,7 @@ use async_std::{
     net::{TcpListener, TcpStream},
     task,
 };
-use libp2p_traits::{ReadEx, ReadExt2, WriteEx};
+use libp2prs_traits::{ReadEx, ReadExt2, WriteEx};
 use quickcheck::{Arbitrary, Gen, QuickCheck, TestResult};
 use rand::Rng;
 use std::{
@@ -155,12 +155,12 @@ fn prop_send_recv_half_closed() {
                 let mut stream = control.open_stream().await.expect("C: open_stream");
                 stream.write_all2(&msg.0).await.expect("C: send");
                 stream.close2().await.expect("C: close");
-                assert_eq!(State::SendClosed, stream.state().await);
+                assert_eq!(State::SendClosed, stream.state());
                 let mut buf = vec![0; msg_len];
                 stream.read_exact2(&mut buf).await.expect("C: read_exact");
                 assert_eq!(buf, msg.0);
                 assert_eq!(Some(0), stream.read2(&mut buf).await.ok());
-                assert_eq!(State::Closed, stream.state().await);
+                assert_eq!(State::Closed, stream.state());
             };
 
             futures::join!(server, client);
@@ -202,7 +202,7 @@ async fn repeat_echo(c: Connection<TcpStream>) -> Result<(), ConnectionError> {
         while let Ok(mut stream) = ctrl.accept_stream().await {
             task::spawn(async move {
                 let (r, w) = stream.clone().split2();
-                libp2p_traits::copy(r, w).await.unwrap();
+                libp2prs_traits::copy(r, w).await.unwrap();
                 stream.close2().await.unwrap();
             });
         }

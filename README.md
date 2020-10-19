@@ -1,70 +1,19 @@
-# libp2p-rs
+# Alternative repository for work on libp2p
+
+<a href="http://libp2p.io/"><img src="https://img.shields.io/badge/project-libp2p-yellow.svg?style=flat-square" /></a>
 
 [![Build Status](https://travis-ci.com/netwarps/libp2p-rs.svg?token=tEt4wqXiQg5sktaf43jn&branch=master)](https://travis-ci.com/netwarps/libp2p-rs)
 
-## Overview
 
-This is an alternitive of libp2p implementation with rust. It is not intented to replace `rust-libp2p` but to provide a different approach, simply because we believe that `rust-libp2p` is somewhat complicated for developers to understand. In this implementation we tend to write code in a more modern way of using `await` as much as possible, to simplify the code by removing the the annoying `poll` and its state machine handling. 
+This repository is an alternative implementationof in `Rust` of the [libp2p](https://libp2p.io) spec. Not like `rust-libp2p`, `libp2p-rs` is written with async/await syntax, and driven by async-std. Even though, many codes are borrowed from `rust-libp2p` and some from `go-libp2p`. We are trying to keep compatible with the two implementations, but it is unfortunately not guaranteed.
 
-## Architecture
+## Documentation
 
-1. Data stream transmission
+How to use the library?
 
-```rust
-+----+      +----------------+      +-----------+      +-------------+      +----------+      +------+
-|user| <--> | custom streams | <--> |Yamux frame| <--> |Secure stream| <--> |TCP stream| <--> |remote|
-+----+      +----------------+      +-----------+      +-------------+      +----------+      +------+
-```
-
-2. Code implementation
-
-All data is passed through the futures channel, `yamux` splits the actual tcp stream into multiple substreams,
-and the service layer wraps the yamux substream into a protocol stream.
-
-At the same time, support for other protocol(such as websocket) is also planned, but will delay a lot.
-
-> Note: we try to keep the compatibility with `rust-libp2p`.
-
-## Status
-
-The API of this project is basically usable. However we still need more tests. PR is welcome.
-
-## Usage
-
-### From cargo
-
-```toml
-[dependencies]
-libp2p-rs = { version = "0.1", features = ["default"] }
-```
-
-### Example
-
-1. Clone
-
-```bash
-$ git clone https://github.com/pldteam/libp2p-rs.git
-```
-
-2. On one terminal:
-
-Listen on 127.0.0.1:1337
-```bash
-$ RUST_LOG=debug cargo run --example secio_simple -- server
-```
-
-3. On another terminal:
-
-```bash
-$ RUST_LOG=debug cargo run --example secio_simple
-```
-
-4. Now you can see some data interaction information on the terminal.
+- API Documentation can be found: https://docs.rs/libp2p-rs
+- Design documentation can be found in `docs`
+- More details about how to write your code can be found in `examples`
 
 
 
-## Why?
-
-Because when I use `rust-libp2p`, I have encountered some difficult problems,
-and it is difficult to locate whether it is my problem or the library itself,
-it is better to implement one myself.

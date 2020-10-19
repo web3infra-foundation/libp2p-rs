@@ -27,7 +27,7 @@ use bytes::{Buf, BufMut};
 use futures::channel::oneshot;
 use futures::lock::Mutex;
 use futures::{channel::mpsc, SinkExt, StreamExt};
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
 use std::sync::Arc;
 use std::{fmt, io};
 

@@ -32,7 +32,7 @@ pub mod keys_proto {
 }
 
 // re-export multiaddr
-pub use multiaddr;
+pub use libp2prs_multiaddr as multiaddr;
 
 pub mod identity;
 mod peer_id;
@@ -43,7 +43,7 @@ pub use identity::PublicKey;
 pub use peer_id::PeerId;
 
 pub mod transport;
-pub use multiaddr::Multiaddr;
+pub use libp2prs_multiaddr::Multiaddr;
 pub use transport::Transport;
 
 pub mod muxing;

@@ -31,7 +31,7 @@ use futures::lock::{Mutex, MutexGuard};
 use futures::prelude::*;
 use futures::{channel::mpsc, SinkExt};
 
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
 
 use crate::{
     chunks::Chunks,

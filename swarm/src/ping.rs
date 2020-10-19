@@ -38,7 +38,7 @@
 //! > it only adds an additional condition for terminating the connection, namely
 //! > a certain number of failed ping requests.
 //!
-//! [`Swarm`]: libp2p_swarm::Swarm
+//! [`Swarm`]: libp2prs_swarm::Swarm
 //! [`Transport`]: libp2p_core::Transport
 
 use async_trait::async_trait;
@@ -47,9 +47,9 @@ use std::io;
 use std::num::NonZeroU32;
 use std::time::{Duration, Instant};
 
-use libp2p_core::transport::TransportError;
-use libp2p_core::upgrade::UpgradeInfo;
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_core::transport::TransportError;
+use libp2prs_core::upgrade::UpgradeInfo;
+use libp2prs_traits::{ReadEx, WriteEx};
 
 use crate::protocol_handler::{IProtocolHandler, ProtocolHandler};
 use crate::substream::Substream;
@@ -250,8 +250,8 @@ mod tests {
     use crate::ping::ping;
     use crate::protocol_handler::ProtocolHandler;
     use crate::substream::Substream;
-    use libp2p_core::upgrade::UpgradeInfo;
-    use libp2p_core::{
+    use libp2prs_core::upgrade::UpgradeInfo;
+    use libp2prs_core::{
         multiaddr::multiaddr,
         transport::{memory::MemoryTransport, Transport},
     };

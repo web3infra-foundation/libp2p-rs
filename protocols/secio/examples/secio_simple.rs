@@ -20,11 +20,11 @@
 
 use async_std::task;
 use env_logger;
-use libp2p_core::identity::Keypair;
+use libp2prs_core::identity::Keypair;
+use libp2prs_secio::Config;
 use log::info;
-use secio::Config;
 
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
 
 fn main() {
     env_logger::init();

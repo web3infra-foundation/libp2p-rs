@@ -26,7 +26,7 @@ use crate::upgrade::{UpgradeInfo, Upgrader};
 use crate::{Multiaddr, PeerId, PublicKey};
 use async_trait::async_trait;
 use futures::future::BoxFuture;
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
 use log::trace;
 use std::{fmt, io};
 

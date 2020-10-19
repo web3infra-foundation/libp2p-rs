@@ -20,9 +20,10 @@
 
 use async_std::{net::TcpStream, task};
 use futures::{channel::mpsc, prelude::*};
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_yamux as yamux;
+use libp2prs_yamux::{Config, Connection, Mode};
 use std::sync::Arc;
-use yamux::{Config, Connection, Mode};
 
 /*
 use log::LevelFilter;

@@ -21,19 +21,17 @@
 use async_std::task;
 use log::{error, info};
 
-use libp2p_core::transport::upgrade::TransportUpgrade;
-use libp2p_core::transport::TransportListener;
-use libp2p_core::{Multiaddr, Transport};
-use libp2p_dns::DnsConfig;
-use libp2p_tcp::TcpConfig;
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_core::transport::upgrade::TransportUpgrade;
+use libp2prs_core::{Multiaddr, Transport};
+use libp2prs_dns::DnsConfig;
+use libp2prs_tcp::TcpConfig;
 
-use libp2p_core::identity::Keypair;
-use libp2p_core::muxing::StreamMuxer;
-use libp2p_core::upgrade::Selector;
-use mplex;
-use secio;
-use yamux;
+use libp2prs_core::identity::Keypair;
+
+use libp2prs_core::upgrade::Selector;
+use libp2prs_mplex as mplex;
+use libp2prs_secio as secio;
+use libp2prs_yamux as yamux;
 
 fn main() {
     env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -115,7 +113,7 @@ fn run_client() {
         }
 
         let mut handles = Vec::new();
-        for _ in 0..2 {
+        for _ in 0..2_u32 {
             let mut stream = stream_muxer.open_stream().await.unwrap();
             let handle = task::spawn(async move {
                 info!("C: opened new stream {:?}", stream);

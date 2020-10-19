@@ -27,11 +27,11 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use framed::{NoiseFramed, MAX_FRAME_LEN};
 use futures::io::Error;
-use libp2p_core::identity::Keypair;
-use libp2p_core::secure_io::SecureInfo;
-use libp2p_core::transport::ConnectionInfo;
-use libp2p_core::{Multiaddr, PeerId, PublicKey};
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_core::identity::Keypair;
+use libp2prs_core::secure_io::SecureInfo;
+use libp2prs_core::transport::ConnectionInfo;
+use libp2prs_core::{Multiaddr, PeerId, PublicKey};
+use libp2prs_traits::{ReadEx, WriteEx};
 use log::trace;
 use std::{cmp::min, fmt, io};
 

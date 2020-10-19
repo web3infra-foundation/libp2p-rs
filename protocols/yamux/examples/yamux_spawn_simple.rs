@@ -22,10 +22,10 @@ use async_std::{
     net::{TcpListener, TcpStream},
     task,
 };
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_yamux::{Config, Connection, Mode};
 use log::{error, info};
 use std::collections::vec_deque::VecDeque;
-use yamux::{Config, Connection, Mode};
 
 fn main() {
     env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();

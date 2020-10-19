@@ -36,7 +36,7 @@ use crate::{
     pause::Pausable,
 };
 use control::Control;
-use libp2p_traits::{ext::split::WriteHalf, ReadEx, ReadExt2, WriteEx};
+use libp2prs_traits::{ext::split::WriteHalf, ReadEx, ReadExt2, WriteEx};
 use nohash_hasher::IntMap;
 use std::collections::VecDeque;
 use std::fmt;

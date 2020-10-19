@@ -1,5 +1,5 @@
 [package]
-name = "libp2p-tcp"
+name = "libp2prs-tcp"
 version = "0.1.0"
 license = "MIT"
 description = "TCP/IP transport protocol for libp2p"
@@ -15,7 +15,7 @@ futures = "0.3.1"
 futures-timer = "3.0"
 get_if_addrs = "0.5.3"
 ipnet = "2.0.0"
-libp2p-core = { version = "0.1.0", path = "../../core" }
+libp2prs-core = { version = "0.1.0", path = "../../core" }
 log = "0.4.1"
 socket2 = "0.3.12"
 async-trait = "0.1"

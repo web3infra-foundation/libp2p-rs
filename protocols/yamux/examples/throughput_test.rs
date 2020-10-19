@@ -30,9 +30,9 @@ use std::{
     time::Duration,
 };
 
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
 
-use yamux::{Config, Connection, Mode};
+use libp2prs_yamux::{Config, Connection, Mode};
 
 fn main() {
     env_logger::init();

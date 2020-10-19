@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use criterion::{criterion_group, criterion_main, Bencher, Criterion};
-use secio::{
+use libp2prs_secio::{
     codec::Hmac,
     crypto::{cipher::CipherType, new_stream, CryptoMode},
 };
@@ -35,7 +35,7 @@ fn decode_encode(data: &[u8], cipher: CipherType) {
         CipherType::ChaCha20Poly1305 | CipherType::Aes128Gcm | CipherType::Aes256Gcm => (None, None),
         #[cfg(unix)]
         _ => {
-            use secio::Digest;
+            use libp2prs_secio::Digest;
             let encode_hmac = Hmac::from_key(Digest::Sha256, &_hmac_key);
             let decode_hmac = encode_hmac.clone();
             (Some(decode_hmac), Some(encode_hmac))

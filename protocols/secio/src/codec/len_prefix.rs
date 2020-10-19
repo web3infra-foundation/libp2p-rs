@@ -1,4 +1,4 @@
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
 use std::{fmt, io};
 
 /// `Stream` & `Sink` that reads and writes a length prefix in front of the actual data.

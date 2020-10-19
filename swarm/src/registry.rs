@@ -18,7 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use libp2p_core::Multiaddr;
+use libp2prs_core::Multiaddr;
 use smallvec::SmallVec;
 use std::{collections::VecDeque, num::NonZeroUsize};
 
@@ -184,7 +184,7 @@ fn isort(xs: &mut [Record]) {
 #[cfg(test)]
 mod tests {
     use super::{isort, Addresses, Record};
-    use libp2p_core::multiaddr::{protocol::Protocol, Multiaddr};
+    use libp2prs_core::multiaddr::{protocol::Protocol, Multiaddr};
     use quickcheck::{Arbitrary, Gen, QuickCheck};
     use rand::Rng;
     use std::num::NonZeroUsize;

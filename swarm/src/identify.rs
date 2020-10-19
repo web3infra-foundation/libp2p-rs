@@ -44,10 +44,10 @@ use prost::Message;
 use std::convert::TryFrom;
 use std::io;
 
-use libp2p_core::transport::TransportError;
-use libp2p_core::upgrade::UpgradeInfo;
-use libp2p_core::{Multiaddr, PublicKey};
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_core::transport::TransportError;
+use libp2prs_core::upgrade::UpgradeInfo;
+use libp2prs_core::{Multiaddr, PublicKey};
+use libp2prs_traits::{ReadEx, WriteEx};
 
 use crate::control::SwarmControlCmd;
 use crate::protocol_handler::{IProtocolHandler, ProtocolHandler};
@@ -274,9 +274,9 @@ mod tests {
     use crate::{identify, SwarmEvent};
     use futures::channel::mpsc;
     use futures::StreamExt;
-    use libp2p_core::identity::Keypair;
-    use libp2p_core::upgrade::UpgradeInfo;
-    use libp2p_core::{
+    use libp2prs_core::identity::Keypair;
+    use libp2prs_core::upgrade::UpgradeInfo;
+    use libp2prs_core::{
         multiaddr::multiaddr,
         transport::{memory::MemoryTransport, Transport},
     };

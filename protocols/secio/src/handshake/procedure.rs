@@ -15,10 +15,10 @@ use crate::{
     Config, Digest, EphemeralPublicKey,
 };
 
-use libp2p_core::identity::*;
-use libp2p_core::PublicKey;
+use libp2prs_core::identity::*;
+use libp2prs_core::PublicKey;
 
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
 use prost::Message;
 
 /// Performs a handshake on the given socket.
@@ -256,8 +256,8 @@ mod tests {
     use bytes::BytesMut;
     use futures::channel;
     //use futures::prelude::*;
-    use libp2p_core::identity::Keypair;
-    use libp2p_traits::{ReadEx, WriteEx};
+    use libp2prs_core::identity::Keypair;
+    use libp2prs_traits::{ReadEx, WriteEx};
 
     fn handshake_with_self_success(config_1: Config, config_2: Config, data: &'static [u8]) {
         let (sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();
