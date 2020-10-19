@@ -14,18 +14,18 @@ all-features = false
 no-default-features = true
 
 [dependencies]
-libp2p-traits = { path = "traits", version = "0.1.0", package = "libp2p-traits" }
-multiaddr = { path = "multiaddr", version = "0.1.0", package = "parity-multiaddr"}
-libp2p-core = { path = "core", version = "0.1.0", package = "libp2p-core" }
-yamux = { path = "protocols/yamux", version = "0.1.0", package = "yamux" }
-mplex = { path = "protocols/mplex", version = "0.1.0", package = "mplex" }
-secio = { path = "protocols/secio", version = "0.1.0", package = "secio" }
-plaintext = { path = "protocols/plaintext", version = "0.1.0", package = "plaintext" }
-libp2p-noise = { path = "protocols/noise", version = "0.1.0", package = "libp2p-noise" }
-libp2p-tcp = { path = "transports/tcp", version = "0.1.0", package = "libp2p-tcp" }
-libp2p-dns = { path = "transports/dns", version = "0.1.0", package = "libp2p-dns" }
-libp2p-websocket = { path = "transports/websocket", version = "0.1.0", package = "libp2p-websocket" }
-libp2p-swarm = { path = "swarm", version = "0.1.0", package = "libp2p-swarm" }
+libp2prs-traits = { path = "traits", version = "0.1.0", package = "libp2prs-traits" }
+libp2prs-multiaddr = { path = "multiaddr", version = "0.1.0", package = "libp2prs-multiaddr"}
+libp2prs-core = { path = "core", version = "0.1.0", package = "libp2prs-core" }
+libp2prs-yamux = { path = "protocols/yamux", version = "0.1.0", package = "libp2prs-yamux" }
+libp2prs-mplex = { path = "protocols/mplex", version = "0.1.0", package = "libp2prs-mplex" }
+libp2prs-secio = { path = "protocols/secio", version = "0.1.0", package = "libp2prs-secio" }
+libp2prs-plaintext = { path = "protocols/plaintext", version = "0.1.0", package = "libp2prs-plaintext" }
+libp2prs-noise = { path = "protocols/noise", version = "0.1.0", package = "libp2prs-noise" }
+libp2prs-tcp = { path = "transports/tcp", version = "0.1.0", package = "libp2prs-tcp" }
+libp2prs-dns = { path = "transports/dns", version = "0.1.0", package = "libp2prs-dns" }
+libp2prs-websocket = { path = "transports/websocket", version = "0.1.0", package = "libp2prs-websocket" }
+libp2prs-swarm = { path = "swarm", version = "0.1.0", package = "libp2prs-swarm" }
 
 
 async-std = { version = "1.6", features = ["attributes", "unstable"] }

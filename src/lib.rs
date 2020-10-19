@@ -40,16 +40,16 @@
 
 /// Re-pub bytes crate
 pub use bytes;
-/// Traits
-pub use libp2p_traits;
 /// Re-pub mplex crate
-pub use mplex;
+pub use libp2prs_mplex;
 /// Re-pub multiaddr crate
-pub use multiaddr;
+pub use libp2prs_multiaddr;
 /// Re-pub secio crate
-pub use secio;
+pub use libp2prs_secio;
+/// Traits
+pub use libp2prs_traits;
 /// Re-pub yamux crate
-pub use yamux;
+pub use libp2prs_yamux;
 
 /*
 /// Some gadgets that help create a service

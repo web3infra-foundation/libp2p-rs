@@ -53,7 +53,7 @@
 
 use async_trait::async_trait;
 use futures::future::BoxFuture;
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
 
 use crate::secure_io::SecureInfo;
 use crate::transport::{ConnectionInfo, TransportError};

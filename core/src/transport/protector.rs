@@ -25,7 +25,7 @@ use crate::{
     Multiaddr, Transport,
 };
 use async_trait::async_trait;
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
 
 #[derive(Debug, Clone)]
 pub struct ProtectorTransport<InnerTrans> {

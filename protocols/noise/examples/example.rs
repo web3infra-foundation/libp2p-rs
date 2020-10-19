@@ -19,10 +19,10 @@
 // DEALINGS IN THE SOFTWARE.
 
 use async_std::task;
-use libp2p_core::identity;
-use libp2p_core::secure_io::SecureInfo;
-use libp2p_noise::{Keypair, NoiseConfig, X25519};
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_core::identity;
+use libp2prs_core::secure_io::SecureInfo;
+use libp2prs_noise::{Keypair, NoiseConfig, X25519};
+use libp2prs_traits::{ReadEx, WriteEx};
 use log::info;
 use log::LevelFilter;
 use std::string::ToString;

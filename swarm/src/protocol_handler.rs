@@ -40,7 +40,7 @@
 use crate::substream::Substream;
 use crate::{ProtocolId, SwarmError};
 use async_trait::async_trait;
-use libp2p_core::upgrade::{ProtocolName, UpgradeInfo};
+use libp2prs_core::upgrade::{ProtocolName, UpgradeInfo};
 
 /// Common trait for upgrades that can be applied on inbound substreams, outbound substreams,
 /// or both.

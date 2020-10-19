@@ -26,19 +26,18 @@ extern crate lazy_static;
 
 use async_std::io;
 use std::io::Write;
-use std::str::FromStr;
 
-use libp2p_core::identity::Keypair;
-use libp2p_core::transport::upgrade::TransportUpgrade;
-use libp2p_core::upgrade::UpgradeInfo;
-use libp2p_core::{Multiaddr, PeerId};
-use libp2p_swarm::protocol_handler::{IProtocolHandler, ProtocolHandler};
-use libp2p_swarm::substream::Substream;
-use libp2p_swarm::{Swarm, SwarmError};
-use libp2p_tcp::TcpConfig;
-use libp2p_traits::{ReadEx, WriteEx};
-use secio;
-use yamux;
+use libp2prs_core::identity::Keypair;
+use libp2prs_core::transport::upgrade::TransportUpgrade;
+use libp2prs_core::upgrade::UpgradeInfo;
+use libp2prs_core::{Multiaddr, PeerId};
+use libp2prs_secio as secio;
+use libp2prs_swarm::protocol_handler::{IProtocolHandler, ProtocolHandler};
+use libp2prs_swarm::substream::Substream;
+use libp2prs_swarm::{Swarm, SwarmError};
+use libp2prs_tcp::TcpConfig;
+use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_yamux as yamux;
 
 fn main() {
     env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();

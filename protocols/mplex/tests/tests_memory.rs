@@ -22,8 +22,8 @@ use async_std::task;
 use futures::channel::oneshot;
 use futures::stream::FusedStream;
 use futures::{channel::mpsc, prelude::*, ready};
-use libp2p_traits::{ReadEx, ReadExt2, WriteEx};
-use mplex::connection::{stream::Stream as mplex_stream, Connection};
+use libp2prs_mplex::connection::{stream::Stream as mplex_stream, Connection};
+use libp2prs_traits::{ReadEx, ReadExt2, WriteEx};
 use quickcheck::{QuickCheck, TestResult};
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -210,7 +210,7 @@ fn prop_write_after_close() {
 fn prop_p2p() {
     async fn echo(mut s: mplex_stream) {
         let (r, w) = s.clone().split2();
-        libp2p_traits::copy(r, w).await.expect("copy");
+        libp2prs_traits::copy(r, w).await.expect("copy");
         s.close2().await.expect("close stream");
     }
     async fn send_recv(mut s: mplex_stream) {
@@ -317,7 +317,7 @@ fn prop_echo() {
             task::spawn(async move {
                 let mut sb = mpb_ctrl1.accept_stream().await.expect("B accept stream");
                 let (r, w) = sb.clone().split2();
-                libp2p_traits::copy(r, w).await.expect("B copy");
+                libp2prs_traits::copy(r, w).await.expect("B copy");
                 sb.close2().await.expect("B close stream");
             });
 

@@ -18,7 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
 use std::io::{self, ErrorKind};
 
 const U32_LEN: usize = 5;

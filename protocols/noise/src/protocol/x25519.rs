@@ -26,14 +26,14 @@
 use crate::{protocol, NoiseConfig, NoiseError, Protocol, ProtocolParams};
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use lazy_static::lazy_static;
-use libp2p_core::{identity, identity::ed25519};
+use libp2prs_core::{identity, identity::ed25519};
 use rand::Rng;
 use sha2::{Digest, Sha512};
 use x25519_dalek::{x25519, X25519_BASEPOINT_BYTES};
 use zeroize::Zeroize;
 
 use super::*;
-use libp2p_core::upgrade::UpgradeInfo;
+use libp2prs_core::upgrade::UpgradeInfo;
 
 lazy_static! {
     static ref PARAMS_IK: ProtocolParams = "Noise_IK_25519_ChaChaPoly_SHA256"
@@ -277,7 +277,7 @@ impl snow::types::Dh for Keypair<X25519> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use libp2p_core::identity::ed25519;
+    use libp2prs_core::identity::ed25519;
     use quickcheck::*;
     use sodiumoxide::crypto::sign;
     use std::os::raw::c_int;

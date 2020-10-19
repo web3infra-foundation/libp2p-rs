@@ -34,8 +34,8 @@
 
 use async_std::net::ToSocketAddrs;
 use async_trait::async_trait;
-use libp2p_core::transport::{IListener, ITransport};
-use libp2p_core::{
+use libp2prs_core::transport::{IListener, ITransport};
+use libp2prs_core::{
     multiaddr::{protocol, protocol::Protocol, Multiaddr},
     transport::TransportError,
     Transport,
@@ -186,19 +186,18 @@ impl error::Error for DnsErr {
 mod tests {
     use super::DnsConfig;
     use async_std::task;
-    use libp2p_core::transport::TransportListener;
-    use libp2p_core::Transport;
-    use libp2p_tcp::TcpConfig;
-    use libp2p_traits::{ReadEx, WriteEx};
-    use multiaddr::Multiaddr;
+    use libp2prs_core::Transport;
+    use libp2prs_multiaddr::Multiaddr;
+    use libp2prs_tcp::TcpConfig;
+    use libp2prs_traits::{ReadEx, WriteEx};
 
     #[test]
     fn basic_resolve_v4() {
         task::block_on(async move {
             let listen_addr: Multiaddr = "/ip4/127.0.0.1/tcp/8384".parse().unwrap();
             let addr: Multiaddr = "/dns4/localhost/tcp/8384".parse().unwrap();
-            let transport = DnsConfig::new(TcpConfig::default());
-            let client = transport.clone();
+            let mut transport = DnsConfig::new(TcpConfig::default());
+            let mut client = transport.clone();
 
             let msg = b"Hello World";
 
@@ -227,8 +226,8 @@ mod tests {
         task::block_on(async move {
             let listen_addr: Multiaddr = "/ip6/::1/tcp/8384".parse().unwrap();
             let addr: Multiaddr = "/dns6/localhost/tcp/8384".parse().unwrap();
-            let transport = DnsConfig::new(TcpConfig::default());
-            let client = transport.clone();
+            let mut transport = DnsConfig::new(TcpConfig::default());
+            let mut client = transport.clone();
 
             let msg = b"Hello World";
 

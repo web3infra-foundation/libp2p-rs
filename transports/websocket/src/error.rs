@@ -19,8 +19,8 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::tls;
-use libp2p_core::transport::TransportError;
-use libp2p_core::Multiaddr;
+use libp2prs_core::transport::TransportError;
+use libp2prs_core::Multiaddr;
 use std::{error, fmt};
 
 /// Error in WebSockets.

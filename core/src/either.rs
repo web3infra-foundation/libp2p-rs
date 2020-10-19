@@ -30,7 +30,7 @@ use futures::{
     io::{IoSlice, IoSliceMut},
     prelude::*,
 };
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
 use pin_project::pin_project;
 use std::{io, io::Error as IoError, pin::Pin, task::Context, task::Poll};
 

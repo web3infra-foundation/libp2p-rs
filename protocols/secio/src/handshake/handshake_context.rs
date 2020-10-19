@@ -5,7 +5,7 @@ use crate::{
     crypto::cipher::CipherType, error::SecioError, exchange::KeyAgreement, handshake_proto::Propose, support, Config, Digest,
 };
 
-use libp2p_core::PublicKey;
+use libp2prs_core::PublicKey;
 
 use prost::Message;
 

@@ -21,17 +21,15 @@
 use async_std::task;
 use log;
 
-use libp2p_core::identity::Keypair;
-use libp2p_core::muxing::StreamMuxer;
-use libp2p_core::transport::memory::MemoryTransport;
-use libp2p_core::transport::upgrade::TransportUpgrade;
-use libp2p_core::transport::{TransportError, TransportListener};
-use libp2p_core::upgrade::Selector;
-use libp2p_core::{Multiaddr, Transport};
-use libp2p_traits::{copy, ReadEx, ReadExt2, WriteEx};
-use secio;
+use libp2prs_core::identity::Keypair;
+use libp2prs_core::transport::memory::MemoryTransport;
+use libp2prs_core::transport::upgrade::TransportUpgrade;
+use libp2prs_core::transport::TransportError;
+use libp2prs_core::upgrade::Selector;
+use libp2prs_core::{Multiaddr, Transport};
+use libp2prs_secio as secio;
+use libp2prs_yamux as yamux;
 use std::time::Duration;
-use yamux;
 
 fn main() {
     //env_logger::init();
@@ -68,9 +66,13 @@ fn main() {
                 loop {
                     if let Ok(stream) = stream_muxer.accept_stream().await {
                         log::info!("server accepted a new substream {:?}", stream);
-                        task::spawn(async {
-                            let (rx, tx) = stream.split2();
-                            copy(rx, tx).await?;
+                        //let stream_cc=stream.box_clone();
+                        let mut stream_r = stream.clone();
+                        let mut stream_w = stream.clone();
+                        task::spawn(async move {
+                            let mut buf = [0; 4096];
+                            let n = stream_r.read2(&mut buf).await.unwrap();
+                            let _ = stream_w.write_all2(&buf[0..n]).await;
                             Ok::<(), std::io::Error>(())
                         });
                     } else {

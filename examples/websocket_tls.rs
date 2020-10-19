@@ -24,18 +24,18 @@ use std::time::Duration;
 #[macro_use]
 extern crate lazy_static;
 
-use libp2p_core::identity::Keypair;
-use libp2p_core::muxing::StreamInfo;
-use libp2p_core::transport::upgrade::TransportUpgrade;
-use libp2p_core::upgrade::UpgradeInfo;
-use libp2p_core::{Multiaddr, PeerId};
-use libp2p_swarm::identify::IdentifyConfig;
-use libp2p_swarm::protocol_handler::{IProtocolHandler, ProtocolHandler};
-use libp2p_swarm::substream::Substream;
-use libp2p_swarm::{Swarm, SwarmError};
-use libp2p_traits::{ReadEx, WriteEx};
-use libp2p_websocket::{tls, WsConfig};
-use plaintext;
+use libp2prs_core::identity::Keypair;
+use libp2prs_core::transport::upgrade::TransportUpgrade;
+use libp2prs_core::upgrade::UpgradeInfo;
+use libp2prs_core::{Multiaddr, PeerId};
+use libp2prs_mplex as mplex;
+use libp2prs_plaintext as plaintext;
+use libp2prs_swarm::identify::IdentifyConfig;
+use libp2prs_swarm::protocol_handler::{IProtocolHandler, ProtocolHandler};
+use libp2prs_swarm::substream::Substream;
+use libp2prs_swarm::{Swarm, SwarmError};
+use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_websocket::{tls, WsConfig};
 
 use async_std::io;
 use rustls::internal::pemfile::{certs, rsa_private_keys};

@@ -1,5 +1,5 @@
 [package]
-name = "yamux"
+name = "libp2prs-yamux"
 version = "0.1.0"
 license = "MIT"
 description = "Yamux multiplexing protocol for libp2p"
@@ -14,8 +14,8 @@ name = "concurrent"
 harness = false
 
 [dependencies]
-libp2p-core = { path = "../../core", version = "0.1.0", package = "libp2p-core" }
-libp2p-traits = { path = "../../traits", version = "0.1.0", package = "libp2p-traits" }
+libp2prs-core = { path = "../../core", version = "0.1.0", package = "libp2prs-core" }
+libp2prs-traits = { path = "../../traits", version = "0.1.0", package = "libp2prs-traits" }
 async-trait = "0.1"
 log = "0.4.8"
 async-std = "1.6"
@@ -53,13 +53,13 @@ version = "0.6"
 [dev-dependencies.quickcheck]
 version = "0.9"
 
-[dev-dependencies.secio]
+[dev-dependencies.libp2prs-secio]
 path = "../secio"
 
-[dev-dependencies.libp2p-core]
+[dev-dependencies.libp2prs-core]
 path = "../../core"
 version = "0.1.0"
-package = "libp2p-core"
+package = "libp2prs-core"
 
 [dev-dependencies.bytesize]
 version = "1.0.1"

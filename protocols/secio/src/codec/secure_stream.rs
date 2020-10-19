@@ -5,7 +5,7 @@ use std::{cmp::min, io};
 use crate::{codec::len_prefix::LengthPrefixSocket, codec::Hmac, crypto::BoxStreamCipher, error::SecioError};
 
 use async_trait::async_trait;
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
 
 /// Encrypted stream
 pub struct SecureStream<T> {
@@ -193,7 +193,7 @@ mod tests {
     use async_std::task;
     use bytes::BytesMut;
     use futures::channel;
-    use libp2p_traits::{ReadEx, WriteEx};
+    use libp2prs_traits::{ReadEx, WriteEx};
 
     fn test_decode_encode(cipher: CipherType) {
         let cipher_key = (0..cipher.key_size()).map(|_| rand::random::<u8>()).collect::<Vec<_>>();

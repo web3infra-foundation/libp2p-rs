@@ -22,9 +22,9 @@ use async_std::{
     net::{TcpListener, TcpStream},
     task,
 };
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_mplex::connection::Connection;
+use libp2prs_traits::{ReadEx, WriteEx};
 use log::{error, info};
-use mplex::connection::Connection;
 use std::collections::vec_deque::VecDeque;
 use std::time::Duration;
 

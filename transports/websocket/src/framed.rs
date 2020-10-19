@@ -23,15 +23,15 @@ use crate::{error::WsError, tls};
 use async_trait::async_trait;
 use either::Either;
 use futures::prelude::*;
-use libp2p_core::transport::ConnectionInfo;
-use libp2p_core::transport::{IListener, ITransport};
-use libp2p_core::{
+use libp2prs_core::transport::ConnectionInfo;
+use libp2prs_core::transport::{IListener, ITransport};
+use libp2prs_core::{
     either::AsyncEitherOutput,
     multiaddr::{protocol, protocol::Protocol, Multiaddr},
     transport::{TransportError, TransportListener},
     Transport,
 };
-use libp2p_tcp::TcpTransStream;
+use libp2prs_tcp::TcpTransStream;
 use log::{debug, error, trace};
 use soketto::{connection, extension::deflate::Deflate, handshake};
 use std::fmt;

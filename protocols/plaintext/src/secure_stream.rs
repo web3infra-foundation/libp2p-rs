@@ -25,7 +25,7 @@ use std::io;
 use crate::codec::len_prefix::LengthPrefixSocket;
 
 use async_trait::async_trait;
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
 
 /// Encrypted stream
 pub struct SecureStream<T> {

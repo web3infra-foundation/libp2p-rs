@@ -23,8 +23,8 @@ use crate::error::PlaintextError;
 use crate::secure_stream::SecureStream;
 use crate::structs_proto::Exchange;
 use crate::PlainTextConfig;
-use libp2p_core::{PeerId, PublicKey};
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_core::{PeerId, PublicKey};
+use libp2prs_traits::{ReadEx, WriteEx};
 use log::error;
 use prost::Message;
 use std::io;
@@ -133,8 +133,8 @@ mod tests {
     use bytes::BytesMut;
     use futures::channel;
     //use futures::prelude::*;
-    use libp2p_core::identity::Keypair;
-    use libp2p_traits::{ReadEx, WriteEx};
+    use libp2prs_core::identity::Keypair;
+    use libp2prs_traits::{ReadEx, WriteEx};
 
     fn handshake_with_self_success(config_1: PlainTextConfig, config_2: PlainTextConfig, data: &'static [u8]) {
         let (sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();
