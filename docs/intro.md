@@ -14,22 +14,14 @@ Actually, we've been expierenced `go-libp2p` for a while and we were kind of imp
 
 ## Objective
 
-This repository is not intented to replace `rust-libp2p` but to provide a different approach to `libp2p`. In the first release, `libp2p-rs` will only have the....
+This repository is not intented to replace `rust-libp2p` but to provide a different approach to `libp2p`. As for the first step, `libp2p-rs` will only have the basic functionality, that is to say, `routing` protocols will not be there. 
 
 
-## 
-
-## 
+## Design Priciples
 
 - No unsafe code
 - No manual Future or Stream
 - Use Trait Object, dynamic dispatching
 - Use futures::mpsc::channel, avoid Mutex<>
-- Async Trait
-
-
-
-
-
-
-
+- Async Trait, to introduce async fn in Trait
+- dependency on async-std for async runtime
