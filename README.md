@@ -13,7 +13,7 @@ How to use the library?
 
 - API Documentation can be found: https://docs.rs/libp2p-rs
 - Design documentation can be found in `docs`
-- More details can be found in `examples`
+- More details about how to write your code can be found in `examples`
 
 
 

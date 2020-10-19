@@ -18,29 +18,27 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+use crate::control::SwarmControlCmd;
+use crate::identify::{IdentifyInfo, IDENTIFY_PROTOCOL, IDENTIFY_PUSH_PROTOCOL};
+use crate::ping::PING_PROTOCOL;
+use crate::substream::{StreamId, Substream};
+use crate::{identify, ping, Multiaddr, PeerId, ProtocolId, SwarmError, SwarmEvent};
 use async_std::task;
 use async_std::task::JoinHandle;
 use futures::channel::mpsc;
 use futures::prelude::*;
+use libp2prs_core::identity::Keypair;
+use libp2prs_core::multistream::Negotiator;
+use libp2prs_core::muxing::IStreamMuxer;
+use libp2prs_core::transport::TransportError;
+use libp2prs_core::upgrade::ProtocolName;
+use libp2prs_core::PublicKey;
 use smallvec::SmallVec;
 use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use std::{error::Error, fmt};
-
-use libp2prs_core::identity::Keypair;
-use libp2prs_core::multistream::Negotiator;
-use libp2prs_core::muxing::{IStreamMuxer, WrapIReadWrite};
-use libp2prs_core::transport::TransportError;
-use libp2prs_core::upgrade::ProtocolName;
-use libp2prs_core::PublicKey;
-
-use crate::control::SwarmControlCmd;
-use crate::identify::{IdentifyInfo, IDENTIFY_PROTOCOL, IDENTIFY_PUSH_PROTOCOL};
-use crate::ping::PING_PROTOCOL;
-use crate::substream::{StreamId, Substream};
-use crate::{identify, ping, Multiaddr, PeerId, ProtocolId, SwarmError, SwarmEvent};
 
 /// The direction of a peer-to-peer communication channel.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -454,13 +452,12 @@ async fn open_stream_internal(
 
     // now it's time to do protocol multiplexing for sub stream
     let negotiator = Negotiator::new_with_protocols(pids);
-    let wrap_stream = WrapIReadWrite::from(raw_stream);
-    let result = negotiator.select_one(wrap_stream).await;
+    let result = negotiator.select_one(raw_stream).await;
 
     match result {
-        Ok((proto, wrap_stream)) => {
+        Ok((proto, raw_stream)) => {
             log::debug!("selected outbound {:?} {:?}", cid, proto.protocol_name_str());
-            let stream = Substream::new(wrap_stream.into(), Direction::Outbound, proto, cid, la, ra, ctrl);
+            let stream = Substream::new(raw_stream, Direction::Outbound, proto, cid, la, ra, ctrl);
             Ok(stream)
         }
         Err(err) => {
