@@ -37,8 +37,8 @@ matrix:
       name: unit test and bench test
       os: linux
       script:
-        - cargo test --all --exclude yamux
-        - cargo bench --all --exclude yamux
+        - cargo test --all
+        - cargo bench --all
     - stage: Test
       name: Secio simple that rust client connect  go server
       #rust: nightly

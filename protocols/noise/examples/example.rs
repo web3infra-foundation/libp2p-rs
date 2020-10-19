@@ -20,7 +20,6 @@
 
 use async_std::task;
 use libp2prs_core::identity;
-use libp2prs_core::secure_io::SecureInfo;
 use libp2prs_noise::{Keypair, NoiseConfig, X25519};
 use libp2prs_traits::{ReadEx, WriteEx};
 use log::info;
@@ -51,7 +50,7 @@ fn run_server() {
 
                 let config = NoiseConfig::xx(server_dh, server_id);
 
-                let (a, mut b) = config.handshake(socket, false).await.unwrap();
+                let (_a, mut b) = config.handshake(socket, false).await.unwrap();
 
                 info!("handshake finished");
 
@@ -59,7 +58,7 @@ fn run_server() {
 
                 loop {
                     info!("outside loop");
-                    if let Ok(n) = b.read2(&mut buf).await {
+                    if let Ok(_n) = b.read2(&mut buf).await {
                         // info!("public key is {:?}", b.remote_pub_key());
                         info!("data is {:?}", buf.to_vec());
                         // let mut buffer = Vec::from(buf[..11]);
@@ -94,10 +93,10 @@ fn run_client() {
         info!("Handshake finished");
 
         let data = b"hello world";
-        b.write2(data).await;
+        let _ = b.write2(data).await;
         info!("write finished");
         let mut buf = vec![0u8; 100];
-        b.read2(buf.as_mut()).await;
+        let _ = b.read2(buf.as_mut()).await;
         info!("read finished, {:?}", String::from_utf8(buf).unwrap());
     })
 }

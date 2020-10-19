@@ -266,12 +266,11 @@ mod tests {
     use crate::peerstore::{AddrBook, ProtoBook};
     use crate::PeerId;
     use log::info;
-    use log::LevelFilter;
     use std::time::Duration;
 
     #[test]
     fn addr_book_basic() {
-        env_logger::builder().filter_level(LevelFilter::Trace).init();
+        //env_logger::from_env(env_logger::Env::default().default_filter_or("trace")).init();
         let mut ab = AddrBook::default();
 
         let peer_id = PeerId::random();
@@ -304,7 +303,7 @@ mod tests {
 
     #[test]
     fn proto_book_basic() {
-        env_logger::init();
+        //env_logger::from_env(env_logger::Env::default().default_filter_or("trace")).init();
         let mut proto = ProtoBook::default();
         let peer_id = PeerId::random();
 
