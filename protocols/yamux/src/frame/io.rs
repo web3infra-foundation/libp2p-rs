@@ -28,7 +28,7 @@ use super::{
 };
 use crate::connection::Id;
 use crate::frame::header::HEADER_SIZE;
-use libp2prs_traits::{ReadEx, WriteEx, ext::{ReadExt2, WriteHalf};
+use libp2prs_traits::{ReadEx, WriteEx, ext::{ReadExt2, WriteHalf}};
 
 /// A [`Stream`] and writer of [`Frame`] values.
 // #[derive(Debug)]
