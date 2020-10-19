@@ -21,6 +21,11 @@ This repository is not intented to replace `rust-libp2p` but to provide a differ
 
 ## 
 
+- No unsafe code
+- No manual Future or Stream
+- Use Trait Object, dynamic dispatching
+- Use futures::mpsc::channel, avoid Mutex<>
+- Async Trait
 
 
 
