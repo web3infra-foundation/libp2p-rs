@@ -18,7 +18,9 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use std::{fmt, io};
+use std::{fmt, io, pin::Pin};
+
+use futures::stream::FusedStream;
 
 use super::{
     header::{self, HeaderDecodeError},
@@ -26,14 +28,16 @@ use super::{
 };
 use crate::connection::Id;
 use crate::frame::header::HEADER_SIZE;
-use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx, ext::{ReadExt2, WriteHalf};
 
 /// A [`Stream`] and writer of [`Frame`] values.
 // #[derive(Debug)]
 pub(crate) struct Io<T> {
     id: Id,
-    io: T,
-    max_body_len: usize,
+    // io: T,
+    io: WriteHalf<T>,
+    // max_body_len: usize,
+    pub(crate) stream: Pin<Box<dyn FusedStream<Item = Result<Frame<()>, FrameDecodeError>> + Send>>
 }
 
 impl<T> fmt::Debug for Io<T> {
@@ -42,15 +46,22 @@ impl<T> fmt::Debug for Io<T> {
     }
 }
 
-impl<T: ReadEx + WriteEx + Unpin> Io<T> {
+impl<T: ReadEx + WriteEx + Unpin + 'static> Io<T> {
     pub(crate) fn new(id: Id, io: T, max_frame_body_len: usize) -> Self {
+        let (r, w) = io.split2();
+        let fr = FrameReader::new(id, r, max_frame_body_len);
+        let s = futures::stream::unfold(fr, |mut fr| async {
+            Some((fr.recv_frame().await, fr))
+        });
         Io {
             id,
-            io,
-            max_body_len: max_frame_body_len,
+            io: w,
+            // max_body_len: max_frame_body_len,
+            stream: Box::pin(s),
         }
     }
 
+    /*
     pub(crate) async fn recv_frame(&mut self) -> Result<Frame<()>, FrameDecodeError> {
         let mut header_data = [0; HEADER_SIZE];
 
@@ -73,6 +84,7 @@ impl<T: ReadEx + WriteEx + Unpin> Io<T> {
 
         Ok(Frame { header, body })
     }
+     */
 
     pub(crate) async fn send_frame<A>(&mut self, frame: &Frame<A>) -> io::Result<()> {
         log::trace!("{}: write stream, header: {}", self.id, frame.header);
@@ -112,7 +124,7 @@ struct FrameReader<T> {
 }
 
 #[allow(dead_code)]
-impl<T: ReadEx + WriteEx + Unpin> FrameReader<T> {
+impl<T: ReadEx + Unpin> FrameReader<T> {
     pub(crate) fn new(id: Id, io: T, max_frame_body_len: usize) -> Self {
         FrameReader {
             id,

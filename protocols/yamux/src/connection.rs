@@ -398,11 +398,15 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
             // Select all futures: socket, stream receiver and controller
 
             select! {
-                frame = self.socket.recv_frame().fuse() => {
+                frame = self.socket.stream.next() => {
                     // if let Some(stream) = self.on_frame(Ok(frame.ok())).await? {
                     // recover from old code, why not return err when frame is Err
-                    let frame = frame?;
-                    self.on_frame(frame).await?;
+                    if let Some(frame) = frame {
+                        let frame = frame?;
+                        self.on_frame(frame).await?;
+                    } else {
+                        return Err(ConnectionError::Closed)
+                    }
                 },
                 scmd = self.stream_receiver.next() => {
                     self.on_stream_command(scmd).await?
