@@ -81,40 +81,24 @@ impl Clone for IReadWrite {
     }
 }
 
-/// Wrapper for IReadWrite supporting ReadEx + WriteEx
-pub struct WrapIReadWrite {
-    inner: IReadWrite,
-}
-
-impl From<IReadWrite> for WrapIReadWrite {
-    fn from(inner: IReadWrite) -> Self {
-        Self { inner }
-    }
-}
-impl Into<IReadWrite> for WrapIReadWrite {
-    fn into(self) -> IReadWrite {
-        self.inner
-    }
-}
-
 #[async_trait]
-impl ReadEx for WrapIReadWrite {
+impl ReadEx for IReadWrite {
     async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
-        self.inner.read2(buf).await
+        ReadEx::read2(&mut **self, buf).await
     }
 }
 #[async_trait]
-impl WriteEx for WrapIReadWrite {
+impl WriteEx for IReadWrite {
     async fn write2(&mut self, buf: &[u8]) -> Result<usize, Error> {
-        self.inner.write2(buf).await
+        WriteEx::write2(&mut **self, buf).await
     }
 
     async fn flush2(&mut self) -> Result<(), Error> {
-        self.inner.flush2().await
+        WriteEx::flush2(&mut **self).await
     }
 
     async fn close2(&mut self) -> Result<(), Error> {
-        self.inner.close2().await
+        WriteEx::close2(&mut **self).await
     }
 }
 
