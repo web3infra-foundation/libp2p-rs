@@ -41,7 +41,7 @@ use std::{
 use crate::transport::ConnectionInfo;
 use crate::Multiaddr;
 use async_trait::async_trait;
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
 
 const KEY_SIZE: usize = 32;
 const NONCE_SIZE: usize = 24;

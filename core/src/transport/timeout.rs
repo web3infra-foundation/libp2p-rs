@@ -174,7 +174,6 @@ impl<TOutput: Send> TransportListener for TimeoutListener<TOutput> {
 #[cfg(test)]
 mod tests {
     use crate::transport::memory::MemoryTransport;
-    use crate::transport::TransportListener;
     use crate::{Multiaddr, Transport};
     use std::time::Duration;
 
@@ -189,7 +188,7 @@ mod tests {
 
         fn test2(addr: Multiaddr) {
             futures::executor::block_on(async move {
-                let tcp = MemoryTransport::default().timeout(Duration::from_secs(1));
+                let mut tcp = MemoryTransport::default().timeout(Duration::from_secs(1));
                 assert!(tcp.dial(addr.clone()).await.is_err());
             });
         }

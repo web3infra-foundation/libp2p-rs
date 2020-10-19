@@ -24,7 +24,7 @@ use crate::connection::Id;
 use crate::frame::header;
 use crate::frame::length_delimited::LengthDelimited;
 use crate::frame::Frame;
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
 
 const MAX_MESSAGE_SIZE: u32 = 1 << 20;
 

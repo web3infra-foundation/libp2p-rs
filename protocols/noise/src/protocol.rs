@@ -24,7 +24,7 @@ pub mod x25519;
 pub mod x25519_spec;
 
 use crate::NoiseError;
-use libp2p_core::identity;
+use libp2prs_core::identity;
 use rand::SeedableRng;
 use zeroize::Zeroize;
 

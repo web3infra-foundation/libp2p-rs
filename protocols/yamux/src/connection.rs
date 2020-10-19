@@ -121,7 +121,7 @@ use std::{fmt, sync::Arc};
 pub use control::Control;
 pub use stream::{State, Stream};
 
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
 use std::collections::VecDeque;
 
 /// Arbitrary limit of our internal command channels.

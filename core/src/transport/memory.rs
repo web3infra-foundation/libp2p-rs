@@ -27,8 +27,8 @@ use futures::io::Error;
 use futures::{channel::mpsc, prelude::*, task::Context, task::Poll, AsyncReadExt, AsyncWriteExt};
 use futures::{SinkExt, StreamExt};
 use lazy_static::lazy_static;
-use libp2p_traits::{ReadEx, WriteEx};
-use multiaddr::{protocol, protocol::Protocol, Multiaddr};
+use libp2prs_multiaddr::{protocol, protocol::Protocol, Multiaddr};
+use libp2prs_traits::{ReadEx, WriteEx};
 use parking_lot::Mutex;
 use rw_stream_sink::RwStreamSink;
 use std::{collections::hash_map::Entry, fmt, io, num::NonZeroU64, pin::Pin};
@@ -335,7 +335,7 @@ mod tests {
         let t1_addr: Multiaddr = format!("/memory/{}", rand_port).parse().unwrap();
         let cloned_t1_addr = t1_addr.clone();
 
-        let t1 = MemoryTransport::default();
+        let mut t1 = MemoryTransport::default();
 
         let listener = async move {
             let mut listener = t1.listen_on(t1_addr.clone()).unwrap();

@@ -1,21 +1,12 @@
-## 0.0.2
+## 0.1.0 Initial release
 
 ### Features
 
-- Support mplex 、pnet、 swarm 、transport
+- Transport: Tcp, Dns, Websocket
+- Security IO: secio, plaintext, noise
+- Stream Muxing: yamux, mplex
+- Transport Upgrade: Multistream select, timeout, protector 
+- Swarm, with Ping & Identify
 
-### Refactor
-- change  project directory structure
 
-## 0.0.1
-
-### Features
-
-- repository init, Support secio and yamux
-- Support travis ci
-
-### Refactor
-- 
-### Bug Fix
--
 

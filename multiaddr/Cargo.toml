@@ -1,5 +1,5 @@
 [package]
-name = "parity-multiaddr"
+name = "libp2prs-multiaddr"
 version = "0.1.0"
 license = "MIT"
 description = "Implementation of the multiaddr format"

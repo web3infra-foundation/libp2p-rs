@@ -18,8 +18,8 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use libp2p_core::identity;
-use libp2p_core::transport::TransportError;
+use libp2prs_core::identity;
+use libp2prs_core::transport::TransportError;
 use snow::error::Error as SnowError;
 use std::{error::Error, fmt, io};
 

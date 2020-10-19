@@ -28,18 +28,18 @@ use futures::FutureExt;
 use log::{info, trace};
 use std::fmt;
 
-use libp2p_core::muxing::{IReadWrite, IStreamMuxer, ReadWriteEx, StreamInfo, StreamMuxer, StreamMuxerEx};
-use libp2p_core::transport::{ConnectionInfo, TransportError};
-use libp2p_core::upgrade::{UpgradeInfo, Upgrader};
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_core::muxing::{IReadWrite, IStreamMuxer, ReadWriteEx, StreamInfo, StreamMuxer, StreamMuxerEx};
+use libp2prs_core::transport::{ConnectionInfo, TransportError};
+use libp2prs_core::upgrade::{UpgradeInfo, Upgrader};
+use libp2prs_traits::{ReadEx, WriteEx};
 
 use crate::connection::Connection;
 use connection::{control::Control, stream::Stream, Id};
 use error::ConnectionError;
 use futures::future::BoxFuture;
-use libp2p_core::identity::Keypair;
-use libp2p_core::secure_io::SecureInfo;
-use libp2p_core::{Multiaddr, PeerId, PublicKey};
+use libp2prs_core::identity::Keypair;
+use libp2prs_core::secure_io::SecureInfo;
+use libp2prs_core::{Multiaddr, PeerId, PublicKey};
 
 #[derive(Clone)]
 pub struct Config {}
@@ -244,9 +244,9 @@ where
 }
 
 impl From<ConnectionError> for TransportError {
-    fn from(_: ConnectionError) -> Self {
+    fn from(e: ConnectionError) -> Self {
         // TODO: make a mux error catalog for secio
-        TransportError::StreamMuxerError
+        TransportError::StreamMuxerError(Box::new(e))
     }
 }
 

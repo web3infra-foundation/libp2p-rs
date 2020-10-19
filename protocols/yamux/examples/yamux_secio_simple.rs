@@ -24,11 +24,11 @@ use async_std::{
 };
 use log::info;
 
-use libp2p_traits::{ReadEx, WriteEx};
-use yamux::{Config, Connection, Mode};
+use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_yamux::{Config, Connection, Mode};
 
-use libp2p_core::identity::Keypair;
-use secio::Config as SecioConfig;
+use libp2prs_core::identity::Keypair;
+use libp2prs_secio::Config as SecioConfig;
 
 fn main() {
     env_logger::builder().filter_level(log::LevelFilter::Trace).init();
