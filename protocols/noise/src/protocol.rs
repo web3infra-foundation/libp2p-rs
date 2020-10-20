@@ -40,14 +40,6 @@ impl ProtocolParams {
     }
 }
 
-/// Type tag for the IK handshake pattern.
-#[derive(Debug, Clone)]
-pub enum IK {}
-
-/// Type tag for the IX handshake pattern.
-#[derive(Debug, Clone)]
-pub enum IX {}
-
 /// Type tag for the XX handshake pattern.
 #[derive(Debug, Clone)]
 pub enum XX {}
@@ -55,10 +47,6 @@ pub enum XX {}
 /// A Noise protocol over DH keys of type `C`. The choice of `C` determines the
 /// protocol parameters for each handshake pattern.
 pub trait Protocol<C> {
-    /// The protocol parameters for the IK handshake pattern.
-    fn params_ik() -> ProtocolParams;
-    /// The protocol parameters for the IX handshake pattern.
-    fn params_ix() -> ProtocolParams;
     /// The protocol parameters for the XX handshake pattern.
     fn params_xx() -> ProtocolParams;
 

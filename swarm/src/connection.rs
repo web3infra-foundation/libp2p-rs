@@ -324,6 +324,7 @@ impl Connection {
         self.ping_handle = Some(handle);
     }
 
+    /// Stops the Ping service on this connection
     pub(crate) async fn stop_ping(&mut self) {
         if let Some(h) = self.ping_handle.take() {
             log::debug!("stopping Ping service...");
@@ -376,14 +377,14 @@ impl Connection {
     }
 
     /// Starts the Identify service on this connection.
-    pub(crate) fn start_identify_push(&mut self) {
+    pub(crate) fn start_identify_push(&mut self, k: PublicKey) {
         let cid = self.id();
         let stream_muxer = self.stream_muxer.clone();
         let pids = vec![IDENTIFY_PUSH_PROTOCOL];
         let ctrl = self.ctrl.clone();
 
         let info = IdentifyInfo {
-            public_key: Keypair::generate_ed25519_fixed().public(),
+            public_key: k,
             protocol_version: "".to_string(),
             agent_version: "".to_string(),
             listen_addrs: vec![],

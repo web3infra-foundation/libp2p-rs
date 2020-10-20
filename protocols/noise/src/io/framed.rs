@@ -317,15 +317,11 @@ where
     }
 
     pub(crate) async fn flush2(&mut self) -> io::Result<()> {
-        // ready!(self.as_mut().poll_ready(cx))?;
         self.ready2().await?;
         self.io.flush2().await
-        // Pin::new(&mut self.io).poll_flush(cx)
     }
 
     pub(crate) async fn close2(&mut self) -> io::Result<()> {
-        // ready!(self.as_mut().poll_flush(cx))?;
-        // Pin::new(&mut self.io).poll_close(cx)
         self.ready2().await?;
         self.io.close2().await
     }

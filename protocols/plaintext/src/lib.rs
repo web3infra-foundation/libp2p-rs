@@ -173,7 +173,7 @@ impl<S: ReadEx + WriteEx + Unpin + Send + 'static> WriteEx for PlainTextOutput<S
 }
 
 impl From<PlaintextError> for TransportError {
-    fn from(_: PlaintextError) -> Self {
-        TransportError::SecurityError
+    fn from(e: PlaintextError) -> Self {
+        TransportError::SecurityError(Box::new(e))
     }
 }

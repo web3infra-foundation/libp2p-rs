@@ -102,15 +102,11 @@ impl HandshakeContext<()> {
                 .unwrap_or_else(|| support::DEFAULT_DIGESTS_PROPOSITION.into()),
         };
 
-        // let proposition_bytes = local_proposition.encode().to_vec();
-
         let proposition_bytes = {
             let mut buf = Vec::with_capacity(local_proposition.encoded_len());
             local_proposition.encode(&mut buf).expect("Vec<u8> provides capacity as needed");
             buf
         };
-
-        // trace!("public_key: {:?}", &public_key.inner_ref());
 
         HandshakeContext {
             config: self.config,

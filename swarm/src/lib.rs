@@ -78,7 +78,6 @@ use std::collections::HashSet;
 use std::time::Duration;
 use std::{error, fmt};
 
-use libp2prs_core::identity::Keypair;
 use libp2prs_core::peerstore::PeerStore;
 use libp2prs_core::upgrade::ProtocolName;
 use libp2prs_core::{
@@ -478,17 +477,17 @@ impl Swarm {
                 let _ = self.on_new_stream(peer_id, pids, reply);
             }
             SwarmControlCmd::CloseStream(cid, sid) => {
-                // got the peer_id, try opening a new sub stream
+                // got the connection_id, try closing a new sub stream
                 let _ = self.on_close_stream(cid, sid).await;
             }
             SwarmControlCmd::NetworkInfo(reply) => {
-                // got the peer_id, try opening a new sub stream
+                // Received from channel, try retrieving network info
                 let _ = self.on_retrieve_network_info(|r| {
                     let _ = reply.send(r);
                 });
             }
             SwarmControlCmd::IdentifyInfo(reply) => {
-                // got the peer_id, try opening a new sub stream
+                // Received from channel, try retrieving identify info
                 let _ = self.on_retrieve_identify_info(|r| {
                     let _ = reply.send(r);
                 });
@@ -497,7 +496,7 @@ impl Swarm {
                 log::info!("closing the swarm...");
                 let _ = self.event_sender.close_channel();
             } // TODO:
-              //_ => {}
+            //_ => {}
         }
 
         Ok(())
@@ -516,7 +515,7 @@ impl Swarm {
 
     fn on_close_connection(&mut self, peer_id: PeerId, reply: oneshot::Sender<Result<()>>) -> Result<()> {
         if let Some(ids) = self.connections_by_peer.get(&peer_id) {
-            // close all connections realted to the peer_id
+            // close all connections related to the peer_id
             for id in ids {
                 if let Some(c) = self.connections_by_id.get(&id) {
                     c.close()
@@ -597,9 +596,11 @@ impl Swarm {
             .into_iter()
             .map(|p| p.protocol_name_str().to_string())
             .collect();
+
+        let public_key = self.peers.keys.get_key(self.local_peer_id()).unwrap().clone();
+
         IdentifyInfo {
-            // TODO: fix the pubkey
-            public_key: Keypair::generate_ed25519_fixed().public(),
+            public_key,
             protocol_version: "".to_string(),
             agent_version: "abc".to_string(),
             listen_addrs: self.listened_addrs.to_vec(),
@@ -660,7 +661,7 @@ impl Swarm {
                 let r = listener.accept().await;
                 match r {
                     Ok(muxer) => {
-                        // dont have to verify if remote peer id matches its public key
+                        // don't have to verify if remote peer id matches its public key
                         // always accept any incoming connection
                         // send muxer back to Swarm main task
                         let _ = tx
@@ -963,6 +964,11 @@ impl Swarm {
     fn handle_connection_opened(&mut self, stream_muxer: IStreamMuxer, dir: Direction) -> Result<()> {
         log::trace!("handle_connection_opened: {:?} {:?}", stream_muxer, dir);
 
+        let pid = self.local_peer_id.clone();
+        let pubkey = stream_muxer.clone().local_priv_key().public();
+
+        self.peers.keys.add_key(&pid, pubkey);
+
         // clone the stream_muxer, and then wrap into Connection, task_handle will be assigned later
         let mut connection = Connection::new(
             self.assign_cid(),
@@ -1064,17 +1070,18 @@ impl Swarm {
             }
         };
 
-        // start Ping service if there is
+        // start Identify service if there is
         if let Some(_config) = self.identify.as_ref() {
             log::trace!("starting Identify service for {:?}", connection);
             connection.start_identify();
         };
 
-        // start Ping service if there is
+        // start Identify push service if there is
         if let Some(config) = self.identify.as_ref() {
             if config.push {
                 log::trace!("starting Identify Push service for {:?}", connection);
-                connection.start_identify_push();
+                let pubkey = self.peers.keys.get_key(&connection.local_peer()).unwrap().clone();
+                connection.start_identify_push(pubkey);
             }
         };
 
@@ -1088,6 +1095,9 @@ impl Swarm {
         Ok(())
     }
 
+    /// Handles opening stream
+    ///
+    /// Use channel to received message that sent by another task
     fn handle_stream_opened(&mut self, sub_stream: Substream) -> Result<()> {
         log::trace!("handle_stream_opened: {:?}", sub_stream);
         let cid = sub_stream.cid();
@@ -1098,6 +1108,7 @@ impl Swarm {
         Ok(())
     }
 
+    /// Handles closing stream
     fn handle_stream_closed(&mut self, cid: ConnectionId, sid: StreamId) -> Result<()> {
         log::trace!("handle_stream_closed: {:?}/{:?}", cid, sid);
         // delete sub-stream from the connection substream list
@@ -1142,6 +1153,7 @@ impl Swarm {
         Ok(())
     }
 
+    /// Received ping result, and then updates addrbook in peerstore
     fn handle_ping_result(&mut self, cid: ConnectionId, result: Result<Duration>) -> Result<()> {
         log::trace!("handle_ping_result: {:?} {:?}", cid, result);
 
@@ -1167,6 +1179,9 @@ impl Swarm {
 
         Ok(())
     }
+
+    /// Received result which contains IdentityInfo and multiaddr,
+    /// and then updates keybook and protobook in peerstore.
     fn handle_identify_result(&mut self, cid: ConnectionId, result: Result<(IdentifyInfo, Multiaddr)>) -> Result<()> {
         log::trace!("handle_identify_result: {:?}", cid);
 

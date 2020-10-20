@@ -17,7 +17,7 @@ impl<T> LengthPrefixSocket<T>
 where
     T: ReadEx + WriteEx + 'static,
 {
-    /// create a new LengthPrefixSocket
+    /// Create a new LengthPrefixSocket
     pub fn new(socket: T, max_len: usize) -> Self {
         Self {
             inner: socket,
@@ -46,17 +46,12 @@ where
     /// sending a length delimited frame
     pub async fn send_frame(&mut self, frame: &[u8]) -> io::Result<()> {
         // write flush can reduce the probability of secuio read failed Because split bug
-        // especially for test case of secuio + muxer
+        // especially for test case of secio + muxer
         use bytes::{BufMut, BytesMut};
         let mut buf = BytesMut::with_capacity(frame.len() + 4);
         buf.put_u32(frame.len() as u32);
         buf.put(frame);
         self.inner.write_all2(&buf).await
-
-        // self.inner
-        //     .write_all2(&(frame.len() as u32).to_be_bytes())
-        //     .await?;
-        // self.inner.write_all2(&frame).await
     }
 
     pub(crate) async fn flush(&mut self) -> io::Result<()> {

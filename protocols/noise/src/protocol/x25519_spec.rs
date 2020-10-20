@@ -80,44 +80,15 @@ impl UpgradeInfo for NoiseConfig<XX, X25519Spec> {
     // type InfoIter = std::iter::Once<Self::Info>;
 
     fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![b"/noise"]
+        vec![b"/noise/x25519spec/1.0.0"]
     }
 }
-
-/// **Note**: This is not currentlyy a standardised upgrade.
-impl UpgradeInfo for NoiseConfig<IX, X25519Spec> {
-    type Info = &'static [u8];
-    // type InfoIter = std::iter::Once<Self::Info>;
-
-    fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![b"/noise/ix/25519/chachapoly/sha256/0.1.0"]
-    }
-}
-
-// /// **Note**: This is not currently a standardised upgrade.
-// impl<R> UpgradeInfo for NoiseConfig<IK, X25519Spec, R> {
-//     type Info = &'static [u8];
-//     // type InfoIter = std::iter::Once<Self::Info>;
-//
-//     fn protocol_info(&self) -> Vec<Self::Info> {
-//         // std::iter::once()
-//         vec![b"/noise/ik/25519/chachapoly/sha256/0.1.0"]
-//     }
-// }
 
 /// Noise protocols for X25519 with libp2p-spec compliant signatures.
 ///
 /// **Note**: Only the XX handshake pattern is currently guaranteed to be
 /// interoperable with other libp2p implementations.
 impl Protocol<X25519Spec> for X25519Spec {
-    fn params_ik() -> ProtocolParams {
-        X25519::params_ik()
-    }
-
-    fn params_ix() -> ProtocolParams {
-        X25519::params_ix()
-    }
-
     fn params_xx() -> ProtocolParams {
         X25519::params_xx()
     }

@@ -135,7 +135,7 @@ where
     T: ReadEx + WriteEx + 'static,
 {
     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        // when there is somthing in recv_buffer
+        // when there is something in recv_buffer
         let copied = self.drain(buf);
         if copied > 0 {
             debug!("drain recv buffer data size: {:?}", copied);

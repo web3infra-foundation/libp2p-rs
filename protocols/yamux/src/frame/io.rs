@@ -28,7 +28,10 @@ use super::{
 };
 use crate::connection::Id;
 use crate::frame::header::HEADER_SIZE;
-use libp2prs_traits::{ReadEx, WriteEx, ext::{ReadExt2, WriteHalf}};
+use libp2prs_traits::{
+    ext::{ReadExt2, WriteHalf},
+    ReadEx, WriteEx,
+};
 
 /// A [`Stream`] and writer of [`Frame`] values.
 // #[derive(Debug)]
@@ -37,7 +40,7 @@ pub(crate) struct Io<T> {
     // io: T,
     io: WriteHalf<T>,
     // max_body_len: usize,
-    pub(crate) stream: Pin<Box<dyn FusedStream<Item = Result<Frame<()>, FrameDecodeError>> + Send>>
+    pub(crate) stream: Pin<Box<dyn FusedStream<Item = Result<Frame<()>, FrameDecodeError>> + Send>>,
 }
 
 impl<T> fmt::Debug for Io<T> {
@@ -50,9 +53,7 @@ impl<T: ReadEx + WriteEx + Unpin + 'static> Io<T> {
     pub(crate) fn new(id: Id, io: T, max_frame_body_len: usize) -> Self {
         let (r, w) = io.split2();
         let fr = FrameReader::new(id, r, max_frame_body_len);
-        let s = futures::stream::unfold(fr, |mut fr| async {
-            Some((fr.recv_frame().await, fr))
-        });
+        let s = futures::stream::unfold(fr, |mut fr| async { Some((fr.recv_frame().await, fr)) });
         Io {
             id,
             io: w,
