@@ -81,3 +81,15 @@ members = [
 [[example]]
 name = "secio_simple"
 path = "protocols/secio/examples/secio_simple.rs"
+
+[[example]]
+name = "chat"
+path = "examples/chat/chat.rs"
+
+[[example]]
+name = "websocket"
+path = "examples/websocket/websocket.rs"
+
+[[example]]
+name = "websocket_tls"
+path = "examples/websocket/websocket_tls.rs"
