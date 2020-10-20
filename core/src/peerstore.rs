@@ -18,7 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use crate::{Multiaddr, PeerId};
+use crate::{Multiaddr, PeerId, PublicKey};
 use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::fmt;
@@ -28,6 +28,7 @@ use std::time::{Duration, SystemTime};
 pub struct PeerStore {
     pub addrs: AddrBook,
     pub protos: ProtoBook,
+    pub keys: KeyBook,
 }
 
 impl fmt::Debug for PeerStore {
@@ -42,11 +43,13 @@ impl fmt::Display for PeerStore {
     }
 }
 
+/// Store address
 #[derive(Default, Clone)]
 pub struct AddrBook {
-    pub addr_book: HashMap<PeerId, SmallVec<[AddrBookRecord; 4]>>,
+    addr_book: HashMap<PeerId, SmallVec<[AddrBookRecord; 4]>>,
 }
 
+/// Store address, time-to-server, and expired time
 #[derive(Clone, Debug)]
 pub struct AddrBookRecord {
     pub addr: Multiaddr,
@@ -146,7 +149,7 @@ impl AddrBook {
                 .unwrap();
 
             for record in record_vec.into_iter() {
-                if record.ttl == old_ttl.as_secs_f64() {
+                if (record.ttl - old_ttl.as_secs_f64()) == 0.0 {
                     record.set_ttl(new_ttl);
                     record.set_expiry(time);
                 }
@@ -154,6 +157,7 @@ impl AddrBook {
         }
     }
 
+    /// Get smallvec by peer_id and remove timeout address
     pub fn remove_timeout_addr(&mut self, peer_id: &PeerId) {
         let addr = self.addr_book.get_mut(peer_id).unwrap();
         let time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
@@ -164,16 +168,41 @@ impl AddrBook {
                 count += 1;
                 continue;
             } else {
-                count += 1;
                 addr.remove(count);
+                count += 1;
             }
         }
     }
 }
 
+/// Retrieve public_key by peer_id.
+///
+/// As we all known, we can use public_key to obtain peer_id, but can't do it inversely.
+#[derive(Default, Clone)]
+pub struct KeyBook {
+    key_book: HashMap<PeerId, PublicKey>,
+}
+
+impl KeyBook {
+    pub fn add_key(&mut self, peer_id: &PeerId, key: PublicKey) {
+        if self.key_book.get(peer_id).is_none() {
+            self.key_book.insert(peer_id.clone(), key);
+        }
+    }
+
+    pub fn del_key(&mut self, peer_id: &PeerId) {
+        self.key_book.remove(peer_id);
+    }
+
+    pub fn get_key(&self, peer_id: &PeerId) -> Option<&PublicKey> {
+        self.key_book.get(peer_id)
+    }
+}
+
+/// Store all protocols that the peer supports.
 #[derive(Default, Clone)]
 pub struct ProtoBook {
-    pub proto_book: HashMap<PeerId, HashMap<String, i32>>,
+    proto_book: HashMap<PeerId, HashMap<String, i32>>,
 }
 
 impl fmt::Debug for ProtoBook {
@@ -222,6 +251,7 @@ impl ProtoBook {
         }
     }
 
+    // Get the first protocol which matched by given protocols
     pub fn first_supported_protocol(&self, peer_id: &PeerId, proto: Vec<String>) -> Option<String> {
         match self.proto_book.get(peer_id) {
             Some(hmap) => {
@@ -236,6 +266,7 @@ impl ProtoBook {
         }
     }
 
+    // Search all protocols and return an option that matches by given proto param
     pub fn support_protocol(&self, peer_id: &PeerId, proto: Vec<String>) -> Option<Vec<String>> {
         match self.proto_book.get(peer_id) {
             Some(hmap) => {
@@ -248,15 +279,6 @@ impl ProtoBook {
                 Some(proto_list)
             }
             None => None,
-        }
-    }
-}
-
-pub fn remove_expired_addr(s: &mut SmallVec<[AddrBookRecord; 4]>) {
-    let u = s.clone();
-    for (count, item) in u.into_iter().enumerate() {
-        if item.expiry < SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap() {
-            s.remove(count);
         }
     }
 }

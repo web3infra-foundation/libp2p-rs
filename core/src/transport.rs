@@ -458,7 +458,7 @@ pub enum TransportError {
     ProtectorError(PnetError),
 
     /// Security layer error.
-    SecurityError,
+    SecurityError(Box<dyn Error + Send + Sync>),
 
     /// StreamMuxer layer error
     StreamMuxerError(Box<dyn Error + Send + Sync>),
@@ -497,7 +497,7 @@ impl fmt::Display for TransportError {
             TransportError::ResolveFail(name) => write!(f, "resolve dns {} failed", name),
             TransportError::NegotiationError(err) => write!(f, "Negotiation error {:?}", err),
             TransportError::ProtectorError(err) => write!(f, "Protector error {:?}", err),
-            TransportError::SecurityError => write!(f, "SecurityError layer error"),
+            TransportError::SecurityError(err) => write!(f, "SecurityError layer error {:?}", err),
             TransportError::StreamMuxerError(err) => write!(f, "StreamMuxerError layer error {:?}", err),
             TransportError::WsError(err) => write!(f, "Websocket transport  error: {}", err),
         }
@@ -515,7 +515,7 @@ impl Error for TransportError {
             TransportError::ResolveFail(_) => None,
             TransportError::NegotiationError(err) => Some(err),
             TransportError::ProtectorError(err) => Some(err),
-            TransportError::SecurityError => None,
+            TransportError::SecurityError(err) => Some(&**err),
             TransportError::StreamMuxerError(err) => Some(&**err),
             TransportError::WsError(err) => Some(&**err),
         }

@@ -21,13 +21,13 @@
 use async_std::task;
 use env_logger;
 use libp2prs_core::identity::Keypair;
-use log::info;
+use log::{info, LevelFilter};
 
 use libp2prs_plaintext::PlainTextConfig;
 use libp2prs_traits::{ReadEx, WriteEx};
 
 fn main() {
-    env_logger::init();
+    env_logger::builder().filter_level(LevelFilter::Trace).init();
 
     if std::env::args().nth(1) == Some("server".to_string()) {
         info!("Starting server ......");
@@ -52,11 +52,12 @@ fn server() {
 
                 info!("session started!");
 
-                let mut buf = [0; 100];
+                let mut buf = [0u8; 100];
 
                 loop {
                     if let Ok(n) = handle.read2(&mut buf).await {
-                        if handle.write_all2(&buf[..n]).await.is_err() {
+                        buf[11] = b"!"[0];
+                        if handle.write_all2(&buf[..n + 1]).await.is_err() {
                             break;
                         }
                     } else {

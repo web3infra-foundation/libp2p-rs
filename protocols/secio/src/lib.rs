@@ -241,8 +241,8 @@ impl<S: ReadEx + WriteEx + Unpin + Send + 'static> WriteEx for SecioOutput<S> {
 }
 
 impl From<SecioError> for TransportError {
-    fn from(_: SecioError) -> Self {
+    fn from(e: SecioError) -> Self {
         // TODO: make a security error catalog for secio
-        TransportError::SecurityError
+        TransportError::SecurityError(Box::new(e))
     }
 }

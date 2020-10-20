@@ -1,4 +1,4 @@
-/// Most of the code for this module comes from `rust-libp2p`.
+/// Most of the code for this module comes from `rust-libp2p` and `go-libp2p`.
 ///
 /// Some panic logic has been removed, some error handling has been removed, and an error has been added.
 ///
@@ -27,7 +27,7 @@ use prost::Message;
 /// will expect that we are identified with `local_key`.Any mismatch somewhere will produce a
 /// `SecioError`.
 ///
-/// On success, returns an object that implements the `AsyncWrite` and `AsyncRead` trait,
+/// On success, returns an object that implements the `WriteEx` and `ReadEx` trait,
 /// plus the public key of the remote, plus the ephemeral public key used during
 /// negotiation.
 pub(crate) async fn handshake<T>(socket: T, config: Config) -> Result<(SecureStream<T>, PublicKey, EphemeralPublicKey), SecioError>
@@ -60,14 +60,11 @@ where
     // Send the ephemeral pub key to the remote in an `Exchange` struct. The `Exchange` also
     // contains a signature of the two propositions encoded with our static public key.
     let ephemeral_context = remote_context.with_ephemeral(tmp_priv_key, tmp_pub_key.clone());
-
     let exchanges = {
         let mut data_to_sign = ephemeral_context.state.remote.local.proposition_bytes.clone();
 
         data_to_sign.extend_from_slice(&ephemeral_context.state.remote.proposition_bytes);
         data_to_sign.extend_from_slice(&tmp_pub_key);
-
-        // let data_to_sign = ring::digest::digest(&ring::digest::SHA256, &data_to_sign);
 
         let kpair: Keypair = ephemeral_context.config.key.clone();
         let signature = match kpair.sign(data_to_sign.as_ref()) {
@@ -108,7 +105,6 @@ where
     // Check the validity of the remote's `Exchange`. This verifies that the remote was really
     // the sender of its proposition, and that it is the owner of both its global and ephemeral
     // keys.
-
     let mut data_to_verify = ephemeral_context.state.remote.proposition_bytes.clone();
     data_to_verify.extend_from_slice(&ephemeral_context.state.remote.local.proposition_bytes);
     data_to_verify.extend_from_slice(&remote_exchanges.epubkey);
@@ -124,7 +120,6 @@ where
 
     // Generate a key from the local ephemeral private key and the remote ephemeral public key,
     // derive from it a cipher key, an iv, and a hmac key, and build the encoder/decoder.
-
     let (pub_ephemeral_context, local_priv_key) = ephemeral_context.take_private_key();
     let key_material = exchange::agree(
         pub_ephemeral_context.state.remote.chosen_exchange,
@@ -134,7 +129,6 @@ where
 
     // Generate a key from the local ephemeral private key and the remote ephemeral public key,
     // derive from it a cipher key, an iv, and a hmac key, and build the encoder/decoder.
-
     let chosen_cipher = pub_ephemeral_context.state.remote.chosen_cipher;
     let cipher_key_size = chosen_cipher.key_size();
     let iv_size = chosen_cipher.iv_size();

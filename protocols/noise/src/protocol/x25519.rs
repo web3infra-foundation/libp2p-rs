@@ -23,7 +23,7 @@
 //! **Note**: This set of protocols is not interoperable with other
 //! libp2p implementations.
 
-use crate::{protocol, NoiseConfig, NoiseError, Protocol, ProtocolParams};
+use crate::{protocol, NoiseError, Protocol, ProtocolParams, NoiseConfig};
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use lazy_static::lazy_static;
 use libp2prs_core::{identity, identity::ed25519};
@@ -36,14 +36,6 @@ use super::*;
 use libp2prs_core::upgrade::UpgradeInfo;
 
 lazy_static! {
-    static ref PARAMS_IK: ProtocolParams = "Noise_IK_25519_ChaChaPoly_SHA256"
-        .parse()
-        .map(ProtocolParams)
-        .expect("Invalid protocol name");
-    static ref PARAMS_IX: ProtocolParams = "Noise_IX_25519_ChaChaPoly_SHA256"
-        .parse()
-        .map(ProtocolParams)
-        .expect("Invalid protocol name");
     static ref PARAMS_XX: ProtocolParams = "Noise_XX_25519_ChaChaPoly_SHA256"
         .parse()
         .map(ProtocolParams)
@@ -66,47 +58,12 @@ impl Zeroize for X25519 {
     }
 }
 
-impl UpgradeInfo for NoiseConfig<IX, X25519> {
-    type Info = &'static [u8];
-    // type InfoIter = std::iter::Once<Self::Info>;
-
-    fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![b"/noise/ix/25519/chachapoly/sha256/0.1.0"]
-    }
-}
-
-impl UpgradeInfo for NoiseConfig<XX, X25519> {
-    type Info = &'static [u8];
-    // type InfoIter = std::iter::Once<Self::Info>;
-
-    fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![b"/noise/xx/25519/chachapoly/sha256/0.1.0"]
-    }
-}
-
-// impl<R> UpgradeInfo for NoiseConfig<IK, X25519, R> {
-//     type Info = &'static [u8];
-//     // type InfoIter = std::iter::Once<Self::Info>;
-//
-//     fn protocol_info(&self) -> Vec<Self::Info> {
-//         vec![b"/noise/ik/25519/chachapoly/sha256/0.1.0"]
-//     }
-// }
-
 /// Legacy Noise protocol for X25519.
 ///
 /// **Note**: This `Protocol` provides no configuration that
 /// is interoperable  with other libp2p implementations.
 /// See [`crate::X25519Spec`] instead.
 impl Protocol<X25519> for X25519 {
-    fn params_ik() -> ProtocolParams {
-        PARAMS_IK.clone()
-    }
-
-    fn params_ix() -> ProtocolParams {
-        PARAMS_IX.clone()
-    }
-
     fn params_xx() -> ProtocolParams {
         PARAMS_XX.clone()
     }
@@ -189,6 +146,15 @@ impl From<SecretKey<X25519>> for Keypair<X25519> {
     fn from(secret: SecretKey<X25519>) -> Keypair<X25519> {
         let public = PublicKey(X25519(x25519((secret.0).0, X25519_BASEPOINT_BYTES)));
         Keypair { secret, public }
+    }
+}
+
+impl UpgradeInfo for NoiseConfig<XX, X25519> {
+    type Info = &'static [u8];
+    // type InfoIter = std::iter::Once<Self::Info>;
+
+    fn protocol_info(&self) -> Vec<Self::Info> {
+        vec![b"/noise/x25519/1.0.0"]
     }
 }
 

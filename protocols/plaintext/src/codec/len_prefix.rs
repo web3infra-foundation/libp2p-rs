@@ -70,9 +70,6 @@ where
 
         buf.put_u32(frame.len() as u32);
         buf.put(frame);
-        // self.inner
-        //     .write_all2(&(frame.len() as u32).to_be_bytes())
-        //     .await?;
         self.inner.write_all2(&buf).await
     }
 

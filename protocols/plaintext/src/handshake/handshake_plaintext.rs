@@ -43,7 +43,13 @@ pub struct Remote {
     pub peer_id: PeerId,
     pub public_key: PublicKey,
 }
-
+/// Perform a handshake on the given socket.
+///
+/// This function expects that the remote is identified with `remote_state`, and we are identified
+/// with `local_id`. Any mismatch somewhere will produce a `PlaintextError`
+///
+/// If remote peer_id is the same as local, it means connected to self, throws error.
+/// Otherwise, returns an object that implements the `WriteEx` and `ReadEx` trait.
 pub(crate) async fn handshake<T>(socket: T, config: PlainTextConfig) -> Result<(SecureStream<T>, Remote), PlaintextError>
 where
     T: ReadEx + WriteEx + 'static,
@@ -88,6 +94,7 @@ impl HandshakeContext<Local> {
         })
     }
 
+    // Process remote proposition.
     pub fn with_remote(self, exchange_bytes: Vec<u8>) -> Result<HandshakeContext<Remote>, PlaintextError> {
         let prop = match Exchange::decode(&exchange_bytes[..]) {
             Ok(prop) => prop,
