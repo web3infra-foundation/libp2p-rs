@@ -30,7 +30,7 @@ use std::io::ErrorKind;
 pub use copy::copy;
 pub use ext::ReadExt2;
 
-/// Read Trait for async/wait
+/// Read Trait for async/await
 ///
 #[async_trait]
 pub trait ReadEx: Send {
@@ -48,20 +48,6 @@ pub trait ReadEx: Send {
     ///    longer be able to produce bytes.
     /// 2. The buffer specified was 0 bytes in length.
     ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use blocking::Unblock;
-    /// use futures_lite::*;
-    /// use std::fs::File;
-    ///
-    /// # future::block_on(async {
-    /// let mut file = Unblock::new(File::open("a.txt")?);
-    ///
-    /// let mut buf = vec![0; 1024];
-    /// let n = file.read(&mut buf).await?;
-    /// # std::io::Result::Ok(()) });
-    /// ```
     /// Attempt to read bytes from underlying stream object.
     ///
     /// On success, returns `Ok(Vec<u8>)`.
@@ -70,21 +56,8 @@ pub trait ReadEx: Send {
 
     /// Reads the exact number of bytes requested.
     ///
-    /// On success, returns the total number of bytes read.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use futures_lite::*;
-    ///
-    /// # future::block_on(async {
-    /// let mut reader = io::Cursor::new(&b"hello");
-    /// let mut contents = vec![0; 3];
-    ///
-    /// reader.read_exact(&mut contents).await?;
-    /// assert_eq!(contents, b"hel");
-    /// # std::io::Result::Ok(()) });
-    /// ```
+    /// On success, returns Ok(()).
+    /// Otherwise, returns io:Error.
     async fn read_exact2<'a>(&'a mut self, buf: &'a mut [u8]) -> Result<(), io::Error> {
         let mut buf_piece = buf;
         while !buf_piece.is_empty() {
@@ -101,6 +74,7 @@ pub trait ReadEx: Send {
 
     /// Reads a fixed-length integer from the underlying IO.
     ///
+    /// On success, return Ok(n).
     async fn read_fixed_u32(&mut self) -> Result<usize, io::Error> {
         let mut len = [0; 4];
         self.read_exact2(&mut len).await?;
@@ -172,7 +146,7 @@ pub trait ReadEx: Send {
     }
 }
 
-/// Write Trait for async/wait
+/// Write Trait for async/await
 ///
 #[async_trait]
 pub trait WriteEx: Send {
@@ -304,6 +278,7 @@ mod tests {
         }
     }
 
+    /// Read Vec<u8>
     #[test]
     fn test_read() {
         async_std::task::block_on(async {
@@ -316,6 +291,7 @@ mod tests {
         });
     }
 
+    // Read string
     #[test]
     fn test_read_string() {
         async_std::task::block_on(async {
@@ -346,7 +322,6 @@ mod tests {
             let size = reader.read_fixed_u32().await.unwrap();
 
             assert_eq!(size, 1751477356);
-            // assert_eq!(output, [1, 2, 3, 4, 0]);
         });
     }
 
@@ -401,7 +376,7 @@ mod tests {
             let mut writer = Test(Cursor::new(b"hello world".to_vec()));
             let _result = writer.write_fixed_u32(1751477356).await.unwrap();
 
-            // Binary of `hell` is 17751477356, if write successfully, current
+            // Binary value of `hell` is 17751477356, if write successfully, current
             // pointer ought to stay on 4
             assert_eq!(writer.0.position(), 4);
         });
@@ -414,7 +389,6 @@ mod tests {
             let _result = writer.write_varint(1).await.unwrap();
 
             assert_eq!(writer.0.position(), 1);
-            // assert_eq!(output, [1, 2, 3, 4, 0]);
         });
     }
 
