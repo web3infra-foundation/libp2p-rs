@@ -5,6 +5,7 @@
 [libp2p](https://libp2p.io) is a collection of peer-to-peer networking protocols. This repository provides a Rust implementation of libp2p basic functionality. 
 
 
+
 # Components
 
 
@@ -12,71 +13,79 @@
 
 Multiaddr is a standard way to represent addresses that:
 
-Support any standard network protocols.
-Self-describe (include protocols).
-Have a binary packed format.
-Have a nice string representation.
-Encapsulate well.
+- Support any standard network protocols.
+- Self-describe (include protocols).
+- Have a binary packed format.
+- Have a nice string representation.
  
 The Multiaddr crate is copied from ParityTech's Multiaddr crate, with slight modifications.
 
 
 ## Transport
 
-Transport represents the network transport layer. It provides connection-oriented communication between two peers through ordered streams of data (i.e. connections).
+Transport represents the network transport layer. It provides connection-oriented communication between two peers through ordered streams of data (i.e. connections). In addtion to the concrete implementations of transport, wrapper transports could be layered on top of an inner transport to provide more functionality, e.g. DNS resolve, timeout, etc.
+
+Two concrete transports:
+- TCP
+- Websocket
+
+Wrpper transports:
+- DNS
+- timeout
+- Protector: transport with the private network support
+
+### Transport Trait
+
+The trait defines the behaviour of a transport:
+
+- Incomming connection: IListener, the trait object created by transport, can be used to make incomming connections.
+- Outgoing connection: Transport::dial can be used to make outgoing connections. 
+
+Note: Transport trait is an async trait.
+
 
 ## Stream Muxing
 
-Yamux (Yet another Multiplexer) is a multiplexing library for Golang. It relies on an underlying connection to provide reliability and ordering, such as TCP or Unix domain sockets, and provides stream-oriented multiplexing. It is inspired by SPDY but is not interoperable with it.
+Stream muxing is very important for libp2p to multiplex the underlying connection (TCP or as such), from a single connection-oriented stream to multiple logigcal sub-streams. 
 
-Yamux features include:
+Two stream muxing implementations are provided so far:
 
-Bi-directional streams
-Streams can be opened by either client or server
-Useful for NAT traversal
-Server-side push support
-Flow control
-Avoid starvation
-Back-pressure to prevent overwhelming a receiver
-Keep Alives
-Enables persistent connections over a load balancer
-Efficient
-Enables thousands of logical streams with low overhead
+- Yamux (Yet another Multiplexer) : relies on an underlying connection to provide reliability and ordering, such as TCP or Unix domain sockets, and provides stream-oriented multiplexing. 
+- Mplex: 
 
 
 ## Security Stream
 
-Connections wrapped by secio use secure sessions provided by this package to encrypt all traffic. A TLS-like handshake is used to setup the communication channel.
+Security stream provides the secure session over the underlying I/O connection. A handshake is used to setup the communication. Typicaly, a TCP connection created by TCP transport could be upgraded to a secure stream, and after that, the new secure connection will be established using the encryption parameters negotiated by the handshake procedure.
+
+Three security stream implementations are provided:
+
+- Secio: A simple TLS-like security stream implementation.
+- Plaintext: mainly for test purpose, no actuall encryption will be done with PlainText, but the PubKey will be exchanged by communication peers as required by the protocol.
+- Noise:
+
+## Private Network
+
+Private network offers to setup a PSK based private network using `libp2p-rs`. The node configured with Private network enabled can only communicate with the other node with the same PSK. Basically Private network is implemented as a wrapper transport by adding an encryption/decryption layer on top of the inner tranport. Currently XSalsa20 is used by the private network to provide encryption/decryption capability.
+
 
 ## Multistream Select
 
-Friendly protocol negotiation. It enables a multicodec to be negotiated between two entities.  [here](https://github.com/multiformats/multistream-select).
+Multistream Select is a friendly protocol negotiation. It enables a multicodec to be negotiated between two entities. Details please check [here](https://github.com/multiformats/multistream-select).
 
-                
-                                                      
+## Transport Upgrade
+
+A special transport can be used to upgrade a regular transport to a upgraded one, which is using a upgraded connection with Security Stream and Stream muxing. As a result, Transport Upgrade will estanblish incoming/outgoing connections as secured and multiplxiable stream muxers，on which the logical sub-streams can be build.
+
+It is the essential compoenent of libp2p network layer, and used by Swarm directly. In our implemetation, TransportUpgrade will generate IStreamMuxer as the output, which is the trait object of StreamMuxer. Also TransportUpgrade can be made into trait object as well, so that in Swarm, we can use transport trait object to construct tranports. By using trait object, we remove the generic type, which makes the code quite concise and straitforward. 
+
+                                                                      
 ## Swarm
 
-Swarm provides the interface to p2p network, implements protocols or provides services. It handles requests like a Server, and issues requests like a Client. Not like `go-libp2p`, in which Swarm is only the low-level access to p2p network, Swarm in libp2p-rs is somewhat equivalent to basic-host, which not only manages the connections and sub-streams, but also upgrades the raw sub-stream to a protocol binding sub-stream. It means Swarm APIs is right place to start your own applications. As a comparison, Swarm is kind of invisible to most applications.
+Swarm provides the interface to p2p network, implements protocols or provides services. It handles requests like a Server, and issues requests like a Client. Not like `go-libp2p`, in which Swarm is only the low-level access to p2p network, kind of invisible to most applications, Swarm in libp2p-rs is somewhat equivalent to basic-host in `go-libp2p`, which not only manages the connections and sub-streams, but also upgrades the raw sub-stream to a protocol binding sub-stream. Therefore, Swarm APIs is right place to start your own applications with `libp2p-rs`.
 
-
-## Getting started
-
-In general, to use libp2p-rs, you would always create a Swarm object to access the low-level network:
-
-Creating a swarm:
-
-
-
-It takes five items to fully construct a swarm, the first is a go context.Context. This controls the lifetime of the swarm, and all swarm processes have their lifespan derived from the given context. You can just use context.Background() if you're not concerned with that.
-
-The next argument is an array of multiaddrs that the swarm will open up listeners for. Once started, the swarm will start accepting and handling incoming connections on every given address. This argument is optional, you can pass nil and the swarm will not listen for any incoming connections (but will still be able to dial out to other peers).
-
-After that, you'll need to give the swarm an identity in the form of a peer.ID. If you're not wanting to enable secio (libp2p's transport layer encryption), then you can pick any string for this value. For example peer.ID("FooBar123") would work. Note that passing a random string ID will result in your node not being able to communicate with other peers that have correctly generated IDs. To see how to generate a proper ID, see the below section on "Identity Generation".
-
-The fourth argument is a peerstore. This is essentially a database that the swarm will use to store peer IDs, addresses, public keys, protocol preferences and more. You can construct one by importing github.com/libp2p/go-libp2p-peerstore and calling peerstore.NewPeerstore().
-
-The final argument is a bandwidth metrics collector, This is used to track incoming and outgoing bandwidth on connections managed by this swarm. It is optional, and passing nil will simply result in no metrics for connections being available.
-
+More detailes about Swarm please check `docs/swarm.md`.
 
 
  
+
