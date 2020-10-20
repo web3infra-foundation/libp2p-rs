@@ -85,7 +85,7 @@ func writeData(rw *bufio.ReadWriter) {
 			panic(err)
 		}
 
-		rw.WriteString(fmt.Sprintf("%s\n", sendData))
+		rw.WriteString(fmt.Sprintf("%s", sendData))
 		rw.Flush()
 	}
 

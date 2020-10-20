@@ -26,6 +26,7 @@ extern crate lazy_static;
 
 use async_std::io;
 use std::io::Write;
+//use std::str::FromStr;
 
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::transport::upgrade::TransportUpgrade;
@@ -38,6 +39,7 @@ use libp2prs_swarm::{Swarm, SwarmError};
 use libp2prs_tcp::TcpConfig;
 use libp2prs_traits::{ReadEx, WriteEx};
 use libp2prs_yamux as yamux;
+//use libp2prs_mplex as mplex;
 
 fn main() {
     env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -155,7 +157,7 @@ fn run_client() {
 
     let remote_peer_id = PeerId::from_public_key(SERVER_KEY.public());
 
-    //let remote_peer_id = PeerId::from_str("QmQEBrDwz5MU8gpnrJz77vmAebRUtrqfoxsQxPsWSBeQUU").unwrap();
+    //let remote_peer_id = PeerId::from_str("QmWZnaWzCpe9xSXjDY1ADK3UGq5YZvwa1Vfrmkk1LHoN73").unwrap();
 
     log::info!("about to connect to {:?}", remote_peer_id);
 
