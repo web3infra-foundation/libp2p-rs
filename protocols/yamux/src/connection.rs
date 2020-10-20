@@ -514,7 +514,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
                 self.socket.send_frame(&frame).await.or(Err(ConnectionError::Closed))?
             }
             Some(StreamCommand::CloseStream { id, ack }) => {
-                log::info!("{}: closing stream {} of {}", self.id, id, self);
+                log::trace!("{}: closing stream {} of {}", self.id, id, self);
                 let mut header = Header::data(id, 0);
                 header.fin();
                 if ack {
@@ -796,7 +796,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
             if stream.strong_count() > 1 {
                 continue;
             }
-            log::info!("{}: removing dropped {}", conn_id, stream);
+            log::trace!("{}: removing dropped {}", conn_id, stream);
             let stream_id = stream.id();
             let frame = {
                 let shared = stream.shared();
@@ -863,7 +863,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
 impl<T> Connection<T> {
     /// Close and drop all `Stream`s and wake any pending `Waker`s.
     async fn drop_all_streams(&mut self) {
-        log::info!("Drop all Streams and wake any pending Wakers, count={}", self.streams.len());
+        log::trace!("Drop all Streams and wake any pending Wakers, count={}", self.streams.len());
         for (id, s) in self.streams.drain() {
             let shared = s.shared();
             shared.update_state(self.id, id, State::Closed);

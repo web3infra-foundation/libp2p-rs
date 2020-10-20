@@ -229,7 +229,7 @@ impl Stream {
 
             // Buffer is empty, let's check if we can expect to read more data.
             if !shared.state().can_read() {
-                log::info!("3 {}/{}: eof", self.conn, self.id);
+                log::trace!("3 {}/{}: eof", self.conn, self.id);
                 // return Err(io::ErrorKind::BrokenPipe.into()); // stream has been reset
                 return Ok(0);
             }
@@ -341,7 +341,7 @@ impl Stream {
 
 impl Drop for Stream {
     fn drop(&mut self) {
-        log::info!("drop stream {}", self.id);
+        log::trace!("drop stream {}", self.id);
         // uncomment it when we have async destructor support
         //self.close().await;
     }
@@ -400,12 +400,12 @@ impl Shared {
     }
 
     pub(crate) fn notify_send(&self) -> Result<(), ConnectionError> {
-        log::info!("Stream({}) notify stream send", self.stream_id);
+        log::trace!("Stream({}) notify stream send", self.stream_id);
         Self::notify(self.send_notify.0.clone())
     }
 
     pub(crate) fn notify_recv(&self) -> Result<(), ConnectionError> {
-        log::info!("Stream({}) notify stream recv", self.stream_id);
+        log::trace!("Stream({}) notify stream recv", self.stream_id);
         Self::notify(self.recv_notify.0.clone())
     }
 

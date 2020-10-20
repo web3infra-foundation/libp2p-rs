@@ -239,7 +239,7 @@ impl<T: ReadEx + WriteEx + Unpin + 'static> Connection<T> {
             self.stream_receiver.close();
             while self.stream_receiver.next().await.is_some() {
                 // drop it
-                log::info!("drop stream receiver frame");
+                log::trace!("drop stream receiver frame");
             }
         }
 
@@ -268,7 +268,7 @@ impl<T: ReadEx + WriteEx + Unpin + 'static> Connection<T> {
     }
 
     async fn on_frame(&mut self, frame: Frame) -> Result<()> {
-        log::info!("{}: received: {}", self.id, frame.header());
+        log::trace!("{}: received: {}", self.id, frame.header());
         match frame.header().tag() {
             Tag::NewStream => {
                 let stream_id = frame.header().stream_id();
@@ -346,7 +346,7 @@ impl<T: ReadEx + WriteEx + Unpin + 'static> Connection<T> {
             }
             Tag::Reset => {
                 let stream_id = frame.header().stream_id();
-                log::info!("{}: remote reset stream {} of {}", self.id, stream_id, self);
+                log::trace!("{}: remote reset stream {} of {}", self.id, stream_id, self);
                 self.streams_stat.remove(&stream_id);
                 self.streams.remove(&stream_id);
             }
@@ -362,12 +362,12 @@ impl<T: ReadEx + WriteEx + Unpin + 'static> Connection<T> {
                 let stream_id = frame.stream_id();
                 if let Some(stat) = self.streams_stat.get(&stream_id) {
                     if stat.can_write() {
-                        log::info!("{}: sending: {}", self.id, frame.header());
+                        log::trace!("{}: sending: {}", self.id, frame.header());
                         self.writer.send_frame(&frame).await.or(Err(ConnectionError::Closed))?;
 
                         let _ = reply.send(());
                     } else {
-                        log::info!("{}: stream {} have been removed", self.id, stream_id);
+                        log::trace!("{}: stream {} have been removed", self.id, stream_id);
                         drop(reply);
                     }
                 }
@@ -523,7 +523,7 @@ impl<T> Connection<T> {
         log::info!("Drop all Streams count={}", self.streams.len());
         for (id, _sender) in self.streams.drain().take(1) {
             // drop it
-            log::info!("drop stream {:?}", id);
+            log::trace!("drop stream {:?}", id);
         }
     }
 }
