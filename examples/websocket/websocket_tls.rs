@@ -63,11 +63,11 @@ struct ServerTlsConfig {
     port: u16,
 
     /// cert file
-    #[structopt(short = "c", long = "cert", parse(from_os_str), default_value = "examples/cert/end.cert")]
+    #[structopt(short = "c", long = "cert", parse(from_os_str), default_value = "examples/websocket/cert/end.cert")]
     cert: PathBuf,
 
     /// key file
-    #[structopt(short = "k", long = "key", parse(from_os_str), default_value = "examples/cert/end.rsa")]
+    #[structopt(short = "k", long = "key", parse(from_os_str), default_value = "examples/websocket/cert/end.rsa")]
     key: PathBuf,
 }
 
@@ -90,7 +90,7 @@ struct ClientTlsConfig {
 
     /// A file with a certificate authority chain, allows to connect
     /// to certificate authories not included in the default set
-    #[structopt(short = "c", long = "cafile", parse(from_os_str), default_value = "examples/cert/ca.cert")]
+    #[structopt(short = "c", long = "cafile", parse(from_os_str), default_value = "examples/websocket/cert/ca.cert")]
     cafile: PathBuf,
 }
 
