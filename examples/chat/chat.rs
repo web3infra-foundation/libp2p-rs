@@ -26,7 +26,6 @@ extern crate lazy_static;
 
 use async_std::io;
 use std::io::Write;
-//use std::str::FromStr;
 
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::transport::upgrade::TransportUpgrade;
@@ -156,8 +155,6 @@ fn run_client() {
     let mut control = swarm.control();
 
     let remote_peer_id = PeerId::from_public_key(SERVER_KEY.public());
-
-    //let remote_peer_id = PeerId::from_str("QmWZnaWzCpe9xSXjDY1ADK3UGq5YZvwa1Vfrmkk1LHoN73").unwrap();
 
     log::info!("about to connect to {:?}", remote_peer_id);
 

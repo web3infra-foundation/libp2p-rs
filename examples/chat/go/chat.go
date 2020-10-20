@@ -30,13 +30,11 @@ package main
 import (
 	"bufio"
 	"context"
-	"crypto/rand"
 	"flag"
 	"fmt"
-	"io"
 	"log"
-	mrand "math/rand"
 	"os"
+	"strings"
 
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p-core/crypto"
@@ -95,7 +93,6 @@ func main() {
 	sourcePort := flag.Int("sp", 0, "Source port number")
 	dest := flag.String("d", "", "Destination multiaddr string")
 	help := flag.Bool("help", false, "Display help")
-	debug := flag.Bool("debug", false, "Debug generates the same node ID on every execution")
 
 	flag.Parse()
 
@@ -107,20 +104,10 @@ func main() {
 		os.Exit(0)
 	}
 
-	// If debug is enabled, use a constant random source to generate the peer ID. Only useful for debugging,
-	// off by default. Otherwise, it uses rand.Reader.
-	var r io.Reader
-	if *debug {
-		// Use the port number as the randomness source.
-		// This will always generate the same host ID on multiple executions, if the same port number is used.
-		// Never do this in production code.
-		r = mrand.New(mrand.NewSource(int64(*sourcePort)))
-	} else {
-		r = rand.Reader
-	}
+	// Creates a  fixed ED25519 key pair for this host.
+	ed25519Fixed:=[32]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 
-	// Creates a new RSA key pair for this host.
-	prvKey, _, err := crypto.GenerateKeyPairWithReader(crypto.RSA, 2048, r)
+	prvKey, _, err := crypto.GenerateKeyPairWithReader(crypto.Ed25519, 32, strings.NewReader(string(ed25519Fixed[:])))
 	if err != nil {
 		panic(err)
 	}
