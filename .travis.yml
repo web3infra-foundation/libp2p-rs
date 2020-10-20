@@ -1,0 +1,59 @@
+language: rust
+env:
+  - RUSTFLAGS='-F warnings'
+rust:
+  - stable
+#  - nightly
+#  - beta
+os:
+  - linux
+#  - osx
+  - windows
+services:
+  - docker
+before_script:
+  - rustup component add rustfmt
+  - rustup component add clippy
+script:
+  - cargo build --verbose  --all
+stages:
+  - Check
+  - Test
+cache: cargo
+matrix:
+  allow_failures:
+    - rust: nightly
+  fast_finish: true
+  include:
+    - stage: Check
+      name: Format
+      script:
+        - cargo fmt --all -- --check
+    - stage: Check
+      name: Clippy
+      script:
+        -  RUSTFLAGS='-F warnings' cargo clippy --all
+    - stage: Test
+      name: unit test and bench test
+      os: linux
+      script:
+        - cargo test --all
+        - cargo bench --all
+    - stage: Test
+      name: Secio simple that rust client connect  go server
+      #rust: nightly
+      os: linux
+      script:
+        - cd protocols/secio/examples/go && docker build -t libp2p-rs/go-secio-server:latest  .
+        - cd ../../../../
+        - docker run -d  -p 1337:1337 libp2p-rs/go-secio-server:latest
+        - docker ps -a
+        - pwd
+        - RUST_LOG=debug cargo run --example secio_simple
+
+branches:
+  only: master
+
+notifications:
+  webhooks: 
+    secure: "jl1eUB947zHMyjPIsQlVlmM4aoCIx0dj/pk9wAIl+0v9CEqleUt7mQPcYlm7xLq+mJrXtjsAGqtn518dM3zQUR4tcJnxrrJTtZzcKBsjIUwsTmufmkjqmYSHGlkj37yaDaB5Hnm1HeqLlgkstg3/c7i8TCEtuRJFzLB4ehpnQ9SzHxdKQrxBricrHXveCgAYI7vAWaOBhO3AceM0rkmTB+2yBWQLKAr1KYtpvcA9GB4KFbR8SlTFuWY7bLnIbBecsCOZE2oUR3wPfN+0FlkJeSp9wg41MKPGqJGkDcea2l5g/CPnCp2RgSN7U11QNdK3pP03L10S8ZoQYkPOdKrlX5hFKAyUVHZLY3jlyzLkZkwavM0lah9wC4ljLqvsCzUJqePZMsov4O4SlyxFVoR/J4qskeVAnCKj+k3a6SyvF7dJOVv0BoKY/ULE4U7zAosItInlKNxmMchUBrF8fgPlx7J7J/5HjhVhoCctmKDT5JHgVjAnPtpxo14b8JfXhJSAU7FPP298DuXA9u3L/ajAIlP0gP+RwsRpmnhWttXw9ziF9DP/B/gFoh7ZGECMBYvgHAedVn+iCzQH09hnPruGwVhGOneD1Ui5iXXubjgl/2qS5LRiuO6tcjbk1kz12vdobb/StoTM6AjVHVfYTFLw5Ltk041hRA9GlEk7eiVxznM="
