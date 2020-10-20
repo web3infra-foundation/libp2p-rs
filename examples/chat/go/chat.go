@@ -35,6 +35,8 @@ import (
 	"log"
 	"os"
 	"strings"
+	"crypto/rand"
+	"io"
 
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p-core/crypto"
@@ -103,11 +105,16 @@ func main() {
 
 		os.Exit(0)
 	}
+	var r io.Reader
+	if *dest == "" {
+		// Creates a  fixed ED25519 key pair for this host.
+		ed25519Fixed := [32]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+		r = strings.NewReader(string(ed25519Fixed[:]))
+	} else {
+		r = rand.Reader
+	}
 
-	// Creates a  fixed ED25519 key pair for this host.
-	ed25519Fixed:=[32]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-
-	prvKey, _, err := crypto.GenerateKeyPairWithReader(crypto.Ed25519, 32, strings.NewReader(string(ed25519Fixed[:])))
+	prvKey, _, err := crypto.GenerateKeyPairWithReader(crypto.Ed25519, 32, r)
 	if err != nil {
 		panic(err)
 	}
