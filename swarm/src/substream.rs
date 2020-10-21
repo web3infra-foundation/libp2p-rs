@@ -18,6 +18,12 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+//! Logical Substream for peer-to-peer communication.
+//!
+//! [`Substream`] is opened via [`Connection`]'s stream muxer and then upgraded with the
+//! specified protocols.
+//!
+
 use async_trait::async_trait;
 use futures::channel::mpsc;
 use futures::SinkExt;
@@ -72,6 +78,9 @@ struct SubstreamMeta {
     ra: Multiaddr,
 }
 
+/// Substream is the logical channel for the p2p connection.
+/// SubstreamMeta contains the meta information of the substream and IReadWrite
+/// provides the I/O operation to Substream.
 #[derive(Clone)]
 pub struct Substream {
     /// The inner sub stream, created by the StreamMuxer
