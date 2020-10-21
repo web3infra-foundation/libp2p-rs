@@ -1,23 +1,3 @@
-// Copyright 2020 Netwarps Ltd.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the "Software"),
-// to deal in the Software without restriction, including without limitation
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,
-// and/or sell copies of the Software, and to permit persons to whom the
-// Software is furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-
 use async_std::{
     net::{TcpListener, TcpStream},
     task,
@@ -25,7 +5,7 @@ use async_std::{
 use log::info;
 
 use libp2prs_traits::{ReadEx, WriteEx};
-use libp2prs_yamux::{Config, Connection, Mode};
+use libp2prs_yamux::{connection::Connection, connection::Mode, Config};
 
 fn main() {
     env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -101,6 +81,8 @@ fn run_client() {
         info!("C: {}: read {} bytes", stream.id(), frame.len());
 
         assert_eq!(&data[..], &frame[..]);
+
+        stream.close2().await;
 
         ctrl.close().await.expect("close connection");
 
