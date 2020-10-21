@@ -62,7 +62,6 @@ impl<T> Header<T> {
         self.length
     }
 
-    #[cfg(test)]
     pub fn set_len(&mut self, len: u32) {
         self.length = Len(len)
     }
@@ -77,16 +76,6 @@ impl<T> Header<T> {
             length: self.length,
             _marker: std::marker::PhantomData,
         }
-    }
-
-    /// Introduce this header to the right of a binary header type.
-    pub(crate) fn right<U>(self) -> Header<Either<U, T>> {
-        self.cast()
-    }
-
-    /// Introduce this header to the left of a binary header type.
-    pub(crate) fn left<U>(self) -> Header<Either<T, U>> {
-        self.cast()
     }
 }
 
@@ -163,8 +152,8 @@ impl Header<WindowUpdate> {
     }
 
     /// The credit this window update grants to the remote.
-    pub fn credit(&self) -> u32 {
-        self.length.0
+    pub fn credit(&self) -> usize {
+        self.length.0 as usize
     }
 }
 

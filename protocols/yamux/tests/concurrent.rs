@@ -24,8 +24,13 @@ use async_std::{
 };
 use futures::{channel::mpsc, prelude::*};
 use libp2prs_traits::{ReadEx, WriteEx};
-use libp2prs_yamux as yamux;
-use libp2prs_yamux::{Config, Connection, Mode};
+use libp2prs_yamux::{
+    connection::Connection,
+    connection::Mode,
+    Config,
+    error::ConnectionError,
+};
+use std::collections::VecDeque;
 use std::{
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     sync::Arc,
@@ -38,59 +43,55 @@ async fn roundtrip(address: SocketAddr, nstreams: usize, data: Arc<Vec<u8>>) {
 
     let server = async move {
         let socket = listener.accept().await.expect("accept").0;
-        task::spawn(async move {
-            let conn = Connection::new(socket, Config::default(), Mode::Server);
-            let mut ctrl = conn.control();
+        let conn = Connection::new(socket, Config::default(), Mode::Server);
+        let mut ctrl = conn.control();
 
-            task::spawn(async {
-                let mut muxer_conn = conn;
-                while muxer_conn.next_stream().await.is_ok() {}
-                log::info!("connection is closed");
-            });
-
-            while let Ok(mut stream) = ctrl.accept_stream().await {
-                log::debug!("S: accepted new stream");
-                task::spawn(async move {
-                    let mut len = [0; 4];
-                    if let Err(e) = stream.read_exact2(&mut len).await {
-                        log::error!("{} read failed: {:?}", stream.id(), e);
-                        return;
-                    }
-                    let mut buf = vec![0; u32::from_be_bytes(len) as usize];
-                    if let Err(e) = stream.read_exact2(&mut buf).await {
-                        log::error!("{} read failed: {:?}", stream.id(), e);
-                        return;
-                    }
-                    if let Err(e) = stream.write_all2(&buf).await {
-                        log::error!("{} write failed: {:?}", stream.id(), e);
-                        return;
-                    }
-                    if let Err(e) = stream.close2().await {
-                        log::error!("{} close failed: {:?}", stream.id(), e);
-                        return;
-                    }
-                });
-            }
+        let mut handles = VecDeque::new();
+        let loop_handle = task::spawn(async {
+            let mut muxer_conn = conn;
+            while muxer_conn.next_stream().await.is_ok() {}
+            log::info!("S connection is closed");
         });
+
+        while let Ok(mut stream) = ctrl.accept_stream().await {
+            log::debug!("S: accepted new stream");
+            let handle = task::spawn(async move {
+                let mut len = [0; 4];
+                stream.read_exact2(&mut len).await?;
+                let mut buf = vec![0; u32::from_be_bytes(len) as usize];
+                stream.read_exact2(&mut buf).await;
+                stream.write_all2(&buf).await?;
+                stream.close2().await?;
+                Ok::<(), ConnectionError>(())
+            });
+            handles.push_back(handle);
+        }
+
+        while let Some(handle) = handles.pop_front() {
+            handle.await.expect("stream task");
+        }
+        loop_handle.await;
     };
 
-    task::spawn(server);
+    let server_handle = task::spawn(server);
 
     let socket = TcpStream::connect(&address).await.expect("connect");
     let (tx, rx) = mpsc::unbounded();
     let conn = Connection::new(socket, Config::default(), Mode::Client);
     let mut ctrl = conn.control();
-    task::spawn(async {
+
+    let mut handles = VecDeque::new();
+    let loop_handle = task::spawn(async {
         let mut muxer_conn = conn;
         while muxer_conn.next_stream().await.is_ok() {}
-        log::info!("connection is closed");
+        log::info!("C connection is closed");
     });
 
     for _ in 0..nstreams {
         let data = data.clone();
         let tx = tx.clone();
         let mut ctrl = ctrl.clone();
-        task::spawn(async move {
+        let handle = task::spawn(async move {
             let mut stream = ctrl.open_stream().await?;
             log::debug!("C: opened new stream {}", stream.id());
             stream.write_all2(&(data.len() as u32).to_be_bytes()[..]).await?;
@@ -102,19 +103,26 @@ async fn roundtrip(address: SocketAddr, nstreams: usize, data: Arc<Vec<u8>>) {
             log::debug!("C: {}: read {} bytes", stream.id(), frame.len());
             assert_eq!(&data[..], &frame[..]);
             tx.unbounded_send(1).expect("unbounded_send");
-            Ok::<(), yamux::ConnectionError>(())
+            Ok::<(), ConnectionError>(())
         });
+        handles.push_back(handle);
     }
     let n = rx.take(nstreams).fold(0, |acc, n| future::ready(acc + n)).await;
     ctrl.close().await.expect("close connection");
-    assert_eq!(nstreams, n)
+    assert_eq!(nstreams, n);
+
+    while let Some(handle) = handles.pop_front() {
+        handle.await;
+    }
+    loop_handle.await;
+
+    server_handle.await;
 }
 
 #[test]
 fn concurrent_streams() {
-    env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();
+    // env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();
     let data = Arc::new(vec![0x42; 100 * 1024]);
     let addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 0));
-    // TODO 读的地方有问题，超过默认的十个线程会挂住
-    task::block_on(roundtrip(addr, 1, data))
+    task::block_on(roundtrip(addr, 1000, data))
 }

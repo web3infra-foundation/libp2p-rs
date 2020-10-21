@@ -24,14 +24,45 @@ use async_std::{
 };
 use log::info;
 
+use async_std::io;
+use futures::AsyncWriteExt;
 use libp2prs_traits::{ReadEx, WriteEx};
-use libp2prs_yamux::{Config, Connection, Mode};
+use libp2prs_yamux::{connection::Connection, connection::Mode, Config};
 
-use libp2prs_core::identity::Keypair;
-use libp2prs_secio::Config as SecioConfig;
+async fn write_data<C>(mut stream: C)
+where
+    C: ReadEx + WriteEx + Send,
+{
+    loop {
+        print!("> ");
+        let _ = io::stdout().flush().await;
+        let mut input = String::new();
+        let n = io::stdin().read_line(&mut input).await.unwrap();
+        let _ = stream.write_all2(&input.as_bytes()[0..n]).await;
+        let _ = stream.flush2().await;
+    }
+}
+
+async fn read_data<C>(mut stream: C)
+where
+    C: ReadEx + WriteEx + Send,
+{
+    loop {
+        let mut buf = [0; 4096];
+        let n = stream.read2(&mut buf).await.unwrap();
+        let str = String::from_utf8_lossy(&buf[0..n]);
+        if str == "" {
+            return;
+        }
+        if str != "\n" {
+            print!("\x1b[32m{}\x1b[0m> ", str);
+            let _ = io::stdout().flush().await;
+        }
+    }
+}
 
 fn main() {
-    env_logger::builder().filter_level(log::LevelFilter::Trace).init();
+    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
     if std::env::args().nth(1) == Some("server".to_string()) {
         info!("Starting server ......");
         run_server();
@@ -42,17 +73,14 @@ fn main() {
 }
 
 fn run_server() {
-    let key = Keypair::generate_secp256k1();
-    let config = SecioConfig::new(key);
-
     task::block_on(async {
         let listener = TcpListener::bind("127.0.0.1:12345").await.unwrap();
 
         while let Ok((socket, _)) = listener.accept().await {
-            let config = config.clone();
+            info!("accepted a socket: {:?}", socket.peer_addr());
+
             task::spawn(async move {
-                let (handle, _, _) = config.handshake(socket).await.expect("handshake");
-                let conn = Connection::new(handle, Config::default(), Mode::Server);
+                let conn = Connection::new(socket, Config::default(), Mode::Server);
                 let mut ctrl = conn.control();
 
                 task::spawn(async {
@@ -62,18 +90,21 @@ fn run_server() {
                 });
 
                 while let Ok(mut stream) = ctrl.accept_stream().await {
-                    task::spawn(async move {
-                        info!("S: accepted new stream");
-                        let mut buf = [0; 4096];
-                        loop {
-                            let n = stream.read2(&mut buf).await.expect("read stream");
-                            if n == 0 {
-                                info!("stream({}) closed", stream.id());
-                                break;
-                            }
-                            stream.write_all2(buf[..n].as_ref()).await.expect("write stream");
-                        }
+                    info!("accepted new stream: {}", stream.id());
+
+                    let reader = stream.clone();
+                    let read_handle = task::spawn(async move {
+                        read_data(reader).await;
                     });
+
+                    let writer = stream.clone();
+                    let write_handle = task::spawn(async move {
+                        write_data(writer).await;
+                    });
+
+                    futures::future::join(read_handle, write_handle).await;
+
+                    stream.close2().await;
                 }
             });
         }
@@ -81,15 +112,11 @@ fn run_server() {
 }
 
 fn run_client() {
-    let key = Keypair::generate_secp256k1();
-    let config = SecioConfig::new(key);
-
     task::block_on(async move {
-        let socket = TcpStream::connect("127.0.0.1:12345").await.expect("connect");
+        let socket = TcpStream::connect("127.0.0.1:12345").await.unwrap();
         info!("[client] connected to server: {:?}", socket.peer_addr());
-        let (handle, _, _) = config.handshake(socket).await.expect("handshake");
 
-        let conn = Connection::new(handle, Config::default(), Mode::Client);
+        let conn = Connection::new(socket, Config::default(), Mode::Client);
         let mut ctrl = conn.control();
 
         task::spawn(async {
@@ -101,17 +128,19 @@ fn run_client() {
         let mut stream = ctrl.open_stream().await.unwrap();
         info!("C: opened new stream {}", stream.id());
 
-        let data = b"hello world";
+        let reader = stream.clone();
+        let read_handle = task::spawn(async move {
+            read_data(reader).await;
+        });
 
-        stream.write_all2(data).await.unwrap();
-        info!("C: {}: wrote {} bytes", stream.id(), data.len());
+        let writer = stream.clone();
+        let write_handle = task::spawn(async move {
+            write_data(writer).await;
+        });
 
-        let mut frame = vec![0; data.len()];
-        stream.read_exact2(&mut frame).await.unwrap();
+        futures::future::join(read_handle, write_handle).await;
 
-        info!("C: {}: read {} bytes", stream.id(), frame.len());
-
-        assert_eq!(&data[..], &frame[..]);
+        stream.close2().await;
 
         ctrl.close().await.expect("close connection");
 

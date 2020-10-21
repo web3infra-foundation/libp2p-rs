@@ -18,43 +18,19 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-//! This crate implements the [Yamux specification][1].
-//!
-//! It multiplexes independent I/O streams over reliable, ordered connections,
-//! such as TCP/IP.
-//!
-//! The three primary objects, clients of this crate interact with, are:
-//!
-//! - [`Connection`], which wraps the underlying I/O resource, e.g. a socket,
-//! - [`Stream`], which implements [`futures::io::AsyncRead`] and
-//!   [`futures::io::AsyncWrite`], and
-//! - [`Control`], to asynchronously control the [`Connection`].
-//!
-//! [1]: https://github.com/hashicorp/yamux/blob/master/spec.md
-
-#![forbid(unsafe_code)]
-
-mod chunks;
-mod error;
+pub mod connection;
+pub mod error;
 mod frame;
 mod pause;
 
-#[cfg(test)]
-mod tests;
-
-pub(crate) mod connection;
-
 use async_trait::async_trait;
-use futures::prelude::*;
+use futures::FutureExt;
 use log::{info, trace};
 use std::fmt;
 
-pub use crate::connection::{Connection, Control, Id, Mode, Stream};
-pub use crate::error::ConnectionError;
-pub use crate::frame::{
-    header::{HeaderDecodeError, StreamId},
-    FrameDecodeError,
-};
+use crate::connection::Connection;
+use connection::{control::Control, stream::Stream, Id, Mode};
+use error::ConnectionError;
 use futures::future::BoxFuture;
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::muxing::{IReadWrite, IStreamMuxer, ReadWriteEx, StreamInfo, StreamMuxer, StreamMuxerEx};
@@ -65,6 +41,7 @@ use libp2prs_core::{Multiaddr, PeerId, PublicKey};
 use libp2prs_traits::{ReadEx, WriteEx};
 
 const DEFAULT_CREDIT: u32 = 256 * 1024; // as per yamux specification
+const MAX_MSG_SIZE: usize = 64 * 1024; // max message size
 
 /// Specifies when window update frames are sent.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -108,6 +85,7 @@ pub struct Config {
     receive_window: u32,
     max_buffer_size: usize,
     max_num_streams: usize,
+    max_message_size: usize,
     window_update_mode: WindowUpdateMode,
     read_after_close: bool,
     lazy_open: bool,
@@ -119,6 +97,7 @@ impl Default for Config {
             receive_window: DEFAULT_CREDIT,
             max_buffer_size: 1024 * 1024,
             max_num_streams: 8192,
+            max_message_size: MAX_MSG_SIZE,
             window_update_mode: WindowUpdateMode::OnReceive,
             read_after_close: true,
             lazy_open: false,
@@ -155,6 +134,12 @@ impl Config {
         self
     }
 
+    /// Set the max. number of streams.
+    pub fn set_max_message_size(&mut self, n: usize) -> &mut Self {
+        self.max_message_size = n;
+        self
+    }
+
     /// Set the window update mode to use.
     pub fn set_window_update_mode(&mut self, m: WindowUpdateMode) -> &mut Self {
         self.window_update_mode = m;
@@ -184,16 +169,6 @@ impl Config {
         self.lazy_open = b;
         self
     }
-}
-
-// Check that we can safely cast a `usize` to a `u64`.
-static_assertions::const_assert! {
-    std::mem::size_of::<usize>() <= std::mem::size_of::<u64>()
-}
-
-// Check that we can safely cast a `u32` to a `usize`.
-static_assertions::const_assert! {
-    std::mem::size_of::<u32>() <= std::mem::size_of::<usize>()
 }
 
 /// A Yamux connection.
@@ -310,7 +285,7 @@ impl<C: Send> ConnectionInfo for Yamux<C> {
 /// StreamInfo for Yamux::Stream
 impl StreamInfo for Stream {
     fn id(&self) -> usize {
-        self.id().val() as usize
+        self.id() as usize
     }
 }
 
@@ -390,12 +365,6 @@ where
         Ok(Yamux::new(socket, self, Mode::Client))
     }
 }
-
-// impl Into<TransportError> for ConnectionError {
-//     fn into(self: ConnectionError) -> TransportError {
-//         TransportError::Internal
-//     }
-// }
 
 impl From<ConnectionError> for TransportError {
     fn from(e: ConnectionError) -> Self {
