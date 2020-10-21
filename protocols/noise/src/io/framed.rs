@@ -18,9 +18,10 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-//! This module provides a `Sink` and `Stream` for length-delimited
+//! This module uses `Sink` and `Stream` for length-delimited
 //! Noise protocol messages in form of [`NoiseFramed`].
 
+use crate::error::NoiseError::{Noise, Io};
 use crate::io::NoiseOutput;
 use crate::{NoiseError, Protocol, PublicKey};
 use bytes::{Bytes, BytesMut};
@@ -40,7 +41,7 @@ static_assertions::const_assert! {
     MAX_FRAME_LEN + EXTRA_ENCRYPT_SPACE <= MAX_NOISE_MSG_LEN
 }
 
-/// A `NoiseFramed` is a `Sink` and `Stream` for length-delimited
+/// A `NoiseFramed` is a `ReadEx` and `WriteEx` for length-delimited
 /// Noise protocol messages.
 ///
 /// `T` is the type of the underlying I/O resource and `S` the
@@ -87,8 +88,8 @@ impl<T> NoiseFramed<T, snow::HandshakeState> {
     /// an error is returned. Similarly if the remote's static DH key, if
     /// present, cannot be parsed.
     pub fn into_transport<C>(self, keypair: identity::Keypair) -> Result<(Option<PublicKey<C>>, NoiseOutput<T>), NoiseError>
-    where
-        C: Protocol<C> + AsRef<[u8]>,
+        where
+            C: Protocol<C> + AsRef<[u8]>,
     {
         let dh_remote_pubkey = match self.session.get_remote_static() {
             None => None,
@@ -147,22 +148,13 @@ enum WriteState {
     EncErr,
 }
 
-// impl WriteState {
-//     fn is_ready(&self) -> bool {
-//         if let WriteState::Ready = self {
-//             return true;
-//         }
-//         false
-//     }
-// }
-
 impl<T, S> NoiseFramed<T, S>
-where
-    T: WriteEx + ReadEx + Unpin + Send,
-    S: SessionState + Unpin,
+    where
+        T: WriteEx + ReadEx + Unpin + Send,
+        S: SessionState + Unpin,
 {
     /// Read data
-    pub(crate) async fn next(&mut self) -> Option<io::Result<Bytes>> {
+    pub(crate) async fn next(&mut self) -> Option<Result<Bytes, NoiseError>> {
         loop {
             match self.read_state {
                 ReadState::Ready => self.read_state = ReadState::ReadLen { buf: [0, 0], off: 0 },
@@ -175,7 +167,7 @@ where
                             return None;
                         }
                         Err(e) => {
-                            return Some(Err(e));
+                            return Some(Err(NoiseError::Io(e)));
                         }
                     };
                     trace!("read: frame len = {}", n);
@@ -194,33 +186,36 @@ where
                     let n = {
                         match self.io.read2(&mut self.read_buffer[*off..len]).await {
                             Ok(n) => n,
-                            Err(e) => return Some(Err(e)),
+                            Err(e) => return Some(Err(NoiseError::Io(e))),
                         }
                     };
                     trace!("read: {}/{} bytes", *off + n, len);
                     if n == 0 {
                         trace!("read: eof");
                         self.read_state = ReadState::Eof(Err(()));
-                        return Some(Err(io::ErrorKind::UnexpectedEof.into()));
+                        return Some(Err(Io(io::ErrorKind::UnexpectedEof.into())));
                     }
                     *off += n;
                     if len == *off {
                         trace!("read: decrypting {} bytes", len);
                         self.decrypt_buffer.resize(len, 0);
-                        if let Ok(n) = self.session.read_message(&self.read_buffer, &mut self.decrypt_buffer) {
-                            self.decrypt_buffer.truncate(n);
-                            trace!("read: payload len = {} bytes", n);
-                            self.read_state = ReadState::Ready;
-                            // Return an immutable view into the current buffer.
-                            // If the view is dropped before the next frame is
-                            // read, the `BytesMut` will reuse the same buffer
-                            // for the next frame.
-                            let view = self.decrypt_buffer.split().freeze();
-                            return Some(Ok(view));
-                        } else {
-                            debug!("read: decryption error");
-                            self.read_state = ReadState::DecErr;
-                            return Some(Err(io::ErrorKind::InvalidData.into()));
+                        match self.session.read_message(&self.read_buffer, &mut self.decrypt_buffer) {
+                            Ok(n) => {
+                                self.decrypt_buffer.truncate(n);
+                                trace!("read: payload len = {} bytes", n);
+                                self.read_state = ReadState::Ready;
+                                // Return an immutable view into the current buffer.
+                                // If the view is dropped before the next frame is
+                                // read, the `BytesMut` will reuse the same buffer
+                                // for the next frame.
+                                let view = self.decrypt_buffer.split().freeze();
+                                return Some(Ok(view));
+                            }
+                            Err(e) => {
+                                debug!("read: decryption error");
+                                self.read_state = ReadState::DecErr;
+                                return Some(Err(Noise(e)));
+                            }
                         }
                     }
                 }
@@ -230,17 +225,17 @@ where
                 }
                 ReadState::Eof(Err(())) => {
                     trace!("read: eof (unexpected)");
-                    return Some(Err(io::ErrorKind::UnexpectedEof.into()));
+                    return Some(Err(Io(io::ErrorKind::UnexpectedEof.into())));
                 }
                 ReadState::DecErr => {
-                    return Some(Err(io::ErrorKind::InvalidData.into()));
+                    return Some(Err(Io(io::ErrorKind::InvalidData.into())));
                 }
             }
         }
     }
 
     /// Ready to send data
-    pub(crate) async fn ready2(&mut self) -> io::Result<()> {
+    pub(crate) async fn ready2(&mut self) -> Result<(), NoiseError> {
         loop {
             trace!("write state {:?}", self.write_state);
             match self.write_state {
@@ -254,14 +249,11 @@ where
                         Ok(false) => {
                             trace!("write: eof");
                             self.write_state = WriteState::Eof;
-                            return Err(io::ErrorKind::WriteZero.into());
+                            return Err(Io(io::ErrorKind::WriteZero.into()));
                         }
                         Err(e) => {
-                            return Err(e);
-                        } // Poll::Pending => {
-                          //     self.write_state = WriteState::WriteLen { len, buf, off };
-                          //     return Poll::Pending;
-                          // }
+                            return Err(e.into());
+                        }
                     }
                     self.write_state = WriteState::WriteData { len, off: 0 }
                 }
@@ -270,13 +262,13 @@ where
                         let f = self.io.write2(&self.write_buffer[*off..len]).await;
                         match f {
                             Ok(n) => n,
-                            Err(e) => return Err(e),
+                            Err(e) => return Err(e.into()),
                         }
                     };
                     if n == 0 {
                         trace!("write: eof");
                         self.write_state = WriteState::Eof;
-                        return Err(io::ErrorKind::WriteZero.into());
+                        return Err(Io(io::ErrorKind::WriteZero.into()));
                     }
                     *off += n;
                     trace!("write: {}/{} bytes written", *off, len);
@@ -287,15 +279,15 @@ where
                 }
                 WriteState::Eof => {
                     trace!("write: eof");
-                    return Err(io::ErrorKind::WriteZero.into());
+                    return Err(Io(io::ErrorKind::WriteZero.into()));
                 }
-                WriteState::EncErr => return Err(io::ErrorKind::InvalidData.into()),
+                WriteState::EncErr => return Err(Io(io::ErrorKind::InvalidData.into())),
             }
         }
     }
 
     /// Use noise protocol to cipher data
-    pub(crate) async fn send2(&mut self, frame: &[u8]) -> io::Result<()> {
+    pub(crate) async fn send2(&mut self, frame: &[u8]) -> Result<(), NoiseError> {
         self.write_buffer.resize(frame.len() + EXTRA_ENCRYPT_SPACE, 0u8);
         match self.session.write_message(frame, &mut self.write_buffer[..]) {
             Ok(n) => {
@@ -311,19 +303,31 @@ where
             Err(e) => {
                 log::error!("encryption error: {:?}", e);
                 self.write_state = WriteState::EncErr;
-                Err(io::ErrorKind::InvalidData.into())
+                Err(NoiseError::Noise(e))
             }
         }
     }
 
-    pub(crate) async fn flush2(&mut self) -> io::Result<()> {
-        self.ready2().await?;
-        self.io.flush2().await
+    pub(crate) async fn flush2(&mut self) -> Result<(), NoiseError> {
+        match self.ready2().await {
+            Ok(()) => {
+                self.io.flush2().await.map_err(|e| e.into())
+            }
+            Err(e) => {
+                return Err(e);
+            }
+        }
     }
 
-    pub(crate) async fn close2(&mut self) -> io::Result<()> {
-        self.ready2().await?;
-        self.io.close2().await
+    pub(crate) async fn close2(&mut self) -> Result<(), NoiseError> {
+        match self.ready2().await {
+            Ok(()) => {
+                self.io.close2().await.map_err(|e| e.into())
+            }
+            Err(e) => {
+                return Err(e);
+            }
+        }
     }
 }
 
@@ -356,42 +360,18 @@ impl SessionState for snow::TransportState {
 /// Read 2 bytes as frame length from the given source into the given buffer.
 ///
 /// Panics if `off >= 2`.
-///
-/// When [`Poll::Pending`] is returned, the given buffer and offset
-/// may have been updated (i.e. a byte may have been read) and must be preserved
-/// for the next invocation.
-///
-/// Returns `None` if EOF has been encountered.
+/// buf is [u8; 2], so `read_exact2` will read 2 bytes
 async fn read_frame_len<R: ReadEx + Unpin + Send>(io: &mut R, buf: &mut [u8; 2], off: &mut usize) -> io::Result<Option<u16>> {
     // match ready!(Pin::new(&mut io).poll_read(cx, &mut buf[*off ..])) {
     match io.read_exact2(&mut buf[*off..]).await {
         Ok(()) => Ok(Some(u16::from_be_bytes(*buf))),
         Err(e) => Err(e),
     }
-    // match io.read2(&mut buf[*off..]).await {
-    //     Ok(n) => {
-    //         if n == 0 {
-    //             return Ok(None);
-    //         }
-    //         *off += n;
-    //         if *off == 2 {
-    //             return Ok(Some(u16::from_be_bytes(*buf)));
-    //         }
-    //     }
-    //     Err(e) => {
-    //         return Err(e);
-    //     }
-    // }
 }
 
-/// Write 2 bytes as frame length from the given buffer into the given sink.
+/// Write 2 bytes as frame length from the given buffer into the io.
 ///
 /// Panics if `off >= 2`.
-///
-/// When [`Poll::Pending`] is returned, the given offset
-/// may have been updated (i.e. a byte may have been written) and must
-/// be preserved for the next invocation.
-///
 /// Returns `false` if EOF has been encountered.
 async fn write_frame_len<W: WriteEx + Unpin>(io: &mut W, buf: &[u8; 2], off: &mut usize) -> io::Result<bool> {
     loop {

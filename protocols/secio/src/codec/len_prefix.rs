@@ -1,7 +1,7 @@
 use libp2prs_traits::{ReadEx, WriteEx};
 use std::{fmt, io};
 
-/// `Stream` & `Sink` that reads and writes a length prefix in front of the actual data.
+/// Use `ReadEx` & `WriteEx` to read and write a length prefix in front of the actual data.
 pub struct LengthPrefixSocket<T> {
     inner: T,
     max_frame_len: usize,
