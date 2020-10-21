@@ -18,15 +18,14 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-//! Contains everything related to upgrading a connection or a substream to use a protocol.
+//! Contains everything related to upgrading a connection to use a protocol.
 //!
-//! After a connection with a remote has been successfully established or a substream successfully
-//! opened, the next step is to *upgrade* this connection or substream to use a protocol.
+//! After a connection with a remote has been successfully established. The next step
+//! is to *upgrade* this connection to use a protocol.
 //!
 //! This is where the `Upgrader` traits come into play.
-//! The trait is implemented on types that represent a
-//! collection of one or more possible protocols for respectively an ingoing or outgoing
-//! connection or substream.
+//! The trait is implemented on types that represent a collection of one or more possible
+//! protocols for respectively an ingoing or outgoing connection.
 //!
 //! > **Note**: Multiple versions of the same protocol are treated as different protocols.
 //! >           For example, `/foo/1.0.0` and `/foo/1.1.0` are totally unrelated as far as
@@ -52,21 +51,14 @@
 //! behaviour of the protocol.
 //!
 
-// mod apply;
-// mod denied;
-// mod either;
-// mod error;
-// mod from_fn;
-// mod map;
-// mod optional;
-pub(crate) mod select;
-// mod transfer;
-pub(crate) mod dummy;
-pub(crate) mod multistream;
+use std::borrow::Cow;
+use async_trait::async_trait;
 
 use crate::transport::TransportError;
-use async_trait::async_trait;
-use std::borrow::Cow;
+
+pub(crate) mod select;
+pub(crate) mod dummy;
+pub(crate) mod multistream;
 
 pub use self::{dummy::DummyUpgrader, select::Selector};
 
@@ -109,6 +101,7 @@ pub trait ProtocolName {
     /// **Note:** Valid protocol names must start with `/` and
     /// not exceed 140 bytes in length.
     fn protocol_name(&self) -> &[u8];
+    /// The protocol name as a String, convenience for debugging output.
     fn protocol_name_str(&self) -> Cow<str> {
         String::from_utf8_lossy(self.protocol_name())
     }
@@ -128,9 +121,7 @@ pub trait UpgradeInfo: Send {
     fn protocol_info(&self) -> Vec<Self::Info>;
 }
 
-/// Common trait for upgrades that can be applied on inbound substreams, outbound substreams,
-/// or both.
-/// Possible upgrade on a connection or substream.
+/// Common trait for upgrades that can be applied on a connection.
 #[async_trait]
 pub trait Upgrader<C>: UpgradeInfo + Clone {
     /// Output after the upgrade has been successfully negotiated and the handshake performed.

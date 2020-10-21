@@ -81,6 +81,7 @@ where
 {
     type Output = InnerTrans::Output;
 
+    /// Creates a IListener with timeout parameter, which will be used for Ilistener to accept new connections.
     fn listen_on(&mut self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         let listener = self.inner.listen_on(addr)?;
 
@@ -92,6 +93,7 @@ where
         Ok(Box::new(listener))
     }
 
+    /// Creates a new outgoing connection, with the specified timeout parameter.
     async fn dial(&mut self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
         let output = select(self.inner.dial(addr), Delay::new(self.outgoing_timeout)).await;
         match output {

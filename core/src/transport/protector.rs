@@ -18,6 +18,12 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+//! The `pnet` protocol implements *Pre-shared Key Based Private Networks in libp2p*,
+//! as specified in [the spec](https://github.com/libp2p/specs/blob/master/pnet/Private-Networks-PSK-V1.md)
+//!
+//! Libp2p nodes configured with a pre-shared key can only communicate with other nodes with
+//! the same key.
+
 use crate::pnet::{Pnet, PnetConfig, PnetOutput};
 use crate::transport::{ConnectionInfo, IListener, ITransport};
 use crate::{
@@ -27,6 +33,7 @@ use crate::{
 use async_trait::async_trait;
 use libp2prs_traits::{ReadEx, WriteEx};
 
+/// ProtecotrTransport wraps an inner transport, adds the `pnet` support onto of it.
 #[derive(Debug, Clone)]
 pub struct ProtectorTransport<InnerTrans> {
     inner: InnerTrans,

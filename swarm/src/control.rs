@@ -32,6 +32,10 @@ use crate::{ProtocolId, SwarmError};
 
 type Result<T> = std::result::Result<T, SwarmError>;
 
+/// The control commands for [`Swarm`].
+///
+/// The `Swarm` controller manipulates the [`Swarm`] via these commands.
+///
 #[derive(Debug)]
 #[allow(dead_code)]
 pub enum SwarmControlCmd {
@@ -57,9 +61,6 @@ pub enum SwarmControlCmd {
 /// this controller can be used to concurrently direct the connection,
 /// e.g. to open a new stream to the remote or to close the connection.
 ///
-/// The possible operations are implemented as async methods and redundantly
-/// as poll-based variants which may be useful inside of other poll based
-/// environments such as certain trait implementations.
 //#[derive(Debug)]
 pub struct Control {
     /// Command channel to `Connection`.
