@@ -52,8 +52,6 @@ use std::{
 
 /// Represents the configuration for a TCP/IP transport capability for libp2p.
 ///
-/// The TCP sockets created by libp2p will need to be progressed by running the futures and streams
-/// obtained by libp2p through the reactor.
 #[cfg_attr(docsrs, doc(cfg(feature = $feature_name)))]
 #[derive(Debug, Clone, Default)]
 pub struct TcpConfig {
