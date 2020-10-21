@@ -20,9 +20,8 @@
 
 use std::fmt;
 
-/// The ID of a stream.
-///
-/// The value 0 denotes no particular stream but the whole session.
+/// The ID of a stream. It is identified via id and initiator.
+/// initiator is true when open stream, Otherwise, false when accept stream
 #[derive(Copy, Clone, Debug, Eq, PartialOrd, Ord)]
 pub struct StreamID {
     id: u32,

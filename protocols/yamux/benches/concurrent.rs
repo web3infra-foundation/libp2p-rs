@@ -25,7 +25,7 @@ use async_std::{
 use criterion::{criterion_group, criterion_main, Criterion};
 use futures::stream::FusedStream;
 use futures::{channel::mpsc, prelude::*, ready};
-use libp2p_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
 use std::collections::VecDeque;
 use std::{
     fmt, io,
@@ -34,7 +34,7 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
-use yamux2::{connection::Connection, connection::Mode, Config};
+use libp2prs_yamux::{connection::Connection, connection::Mode, Config};
 
 criterion_group!(benches, concurrent);
 criterion_main!(benches);

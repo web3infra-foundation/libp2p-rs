@@ -33,16 +33,8 @@
 // streams or to trigger a connection close.
 //
 // The `Connection` updates the `Stream` state based on incoming frames, e.g.
-// it pushes incoming data to the `Stream`'s buffer or increases the sending
+// it pushes incoming data to the `Stream` via channel or increases the sending
 // credit if the remote has sent us a corresponding `Frame::<WindowUpdate>`.
-// Updating a `Stream`'s state acquires a `Mutex`, which every `Stream` has
-// around its `Shared` state. While blocking, we make sure the lock is only
-// held for brief moments and *never* while doing I/O. The only contention is
-// between the `Connection` and a single `Stream`, which should resolve
-// quickly. Ideally, we could use `futures::lock::Mutex` but it does not offer
-// a poll-based API as of futures-preview 0.3.0-alpha.19, which makes it
-// difficult to use in a `Stream`'s `AsyncRead` and `AsyncWrite` trait
-// implementations.
 //
 // Closing a `Connection`
 // ----------------------
@@ -76,26 +68,24 @@
 // While all of this may look complicated, it ensures that `Control`s are
 // only informed about a closed connection when it really is closed.
 //
+// specific
+// ----------------------
+// - All stream's state is managed by connecttion, stream state get from channel
+//   Shared lock is not efficient.
+// - Connecttion pushes incoming data to the `Stream` via channel, not buffer
+// - Stream must be closed explictly Since garbage collect is not implemented.
+//   Drop it directly do nothing
+//
 // Potential improvements
 // ----------------------
 //
 // There is always more work that can be done to make this a better crate,
 // for example:
-//
-// - Instead of `futures::mpsc` a more efficient channel implementation
-//   could be used, e.g. `tokio-sync`. Unfortunately `tokio-sync` is about
-//   to be merged into `tokio` and depending on this large crate is not
-//   attractive, especially given the dire situation around cargo's flag
-//   resolution.
-// - Flushing could be optimised. This would also require adding a
-//   `StreamCommand::Flush` so that `Stream`s can trigger a flush, which
-//   they would have to when they run out of credit, or else a series of
-//   send operations might never finish.
-// - If Rust gets async destructors, the `garbage_collect()` method can be
-//   removed. Instead a `Stream` would send a `StreamCommand::Dropped(..)`
-//   or something similar and the removal logic could happen within regular
-//   command processing instead of having to scan the whole collection of
-//   `Stream`s on each loop iteration, which is not great.
+// - Loop in handle_coming() is performance bottleneck.  More seriously, it will be block
+//   when two peers echo with mass of data with lot of stream Since they block
+//   on write data and none of them can read data.
+//   One solution is spwan task for reader and writer But depend on async-std/tokio
+//   is not attractive. See detail from concurrent in tests
 
 pub mod control;
 pub mod stream;
@@ -129,7 +119,7 @@ use stream::{State, Stream, StreamStat};
 pub enum ControlCommand {
     /// Open a new stream to the remote end.
     OpenStream(oneshot::Sender<Result<Stream>>),
-    /// Open a new stream to the remote end.
+    /// Accept a new stream from the remote end.
     AcceptStream(oneshot::Sender<Result<Stream>>),
     /// Close the whole connection.
     CloseConnection(oneshot::Sender<()>),
@@ -142,7 +132,7 @@ pub(crate) enum StreamCommand {
     SendFrame(Frame<Data>, oneshot::Sender<usize>),
     /// Close a stream.
     CloseStream(StreamId, oneshot::Sender<()>),
-    /// Close a stream.
+    /// Reset a stream.
     ResetStream(StreamId),
 }
 
@@ -258,6 +248,7 @@ pub struct Connection<T> {
 }
 
 impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
+    /// Create a new `Connection` from the given I/O resource.
     pub fn new(socket: T, cfg: Config, mode: Mode) -> Self {
         let id = Id::random(mode);
         log::debug!("new connection: {}", id);
@@ -299,11 +290,17 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
         self.id
     }
 
-    // The param of control must be
+    /// Get a controller for this connection.
     pub fn control(&self) -> Control {
         Control::new(self.control_sender.clone())
     }
 
+    /// Get the next incoming stream, opened by the remote.
+    ///
+    /// This must be called repeatedly in order to make progress.
+    /// Once `Ok(()))` or `Err(_)` is returned the connection is
+    /// considered closed and no further invocation of this method
+    /// must be attempted.
     pub async fn next_stream(&mut self) -> Result<()> {
         if self.is_closed {
             log::debug!("{}: connection is closed", self.id);
@@ -363,7 +360,10 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
         result
     }
 
-    pub async fn handle_coming(&mut self) -> Result<()> {
+    /// This is called from `Connection::next_stream` instead of being a
+    /// public method itself in order to guarantee proper closing in
+    /// case of an error or at EOF.
+    async fn handle_coming(&mut self) -> Result<()> {
         loop {
             select! {
                 // handle incoming
@@ -387,10 +387,9 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
 
     /// Process the result of reading from the socket.
     ///
-    /// Unless `frame` is `Ok(Some(_))` we will assume the connection got closed
+    /// Unless `frame` is `Ok(()))` we will assume the connection got closed
     /// and return a corresponding error, which terminates the connection.
-    /// Otherwise we process the frame and potentially return a new `Stream`
-    /// if one was opened by the remote.
+    /// Otherwise we process the frame
     async fn on_frame(&mut self, frame: Frame<()>) -> Result<()> {
         log::debug!("{}: received: {}", self.id, frame.header());
         let action = match frame.header().tag() {
@@ -438,6 +437,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
         Ok(())
     }
 
+    /// Process new inbound stream when recv Data frame
     async fn new_stream_data(&mut self, stream_id: StreamId, is_finish: bool, frame_body: Vec<u8>) -> Action {
         let frame_len = frame_body.len();
         if !self.is_valid_remote_id(stream_id, Tag::Data) {
@@ -494,6 +494,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
         Action::New(stream, window_update)
     }
 
+    /// Process received Data frame
     async fn on_data(&mut self, frame: Frame<Data>) -> Action {
         let stream_id = frame.header().stream_id();
         let flags = frame.header().flags();
@@ -546,6 +547,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
         Action::None
     }
 
+    /// Process new inbound stream when recv window update frame
     fn new_stream_window_update(&mut self, stream_id: StreamId, is_finish: bool) -> Action {
         if !self.is_valid_remote_id(stream_id, Tag::WindowUpdate) {
             // log::error!("{}: invalid stream id {}", self.id, stream_id);
@@ -582,6 +584,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
         Action::New(stream, None)
     }
 
+    /// Process received window update frame
     async fn on_window_update(&mut self, frame: &Frame<WindowUpdate>) -> Action {
         let mut updated = false;
         let stream_id = frame.header().stream_id();
@@ -622,6 +625,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
         Action::None
     }
 
+    /// Process received Ping frame
     fn on_ping(&mut self, frame: &Frame<Ping>) -> Action {
         let stream_id = frame.header().stream_id();
         if frame.header().flags().contains(header::ACK) {
@@ -637,6 +641,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
         Action::Reset(stream_id)
     }
 
+    /// reset stream
     async fn send_reset_stream(&mut self, stream_id: StreamId) -> Result<()> {
         // step1: send close frame
         let mut header = Header::data(stream_id, 0);
@@ -651,6 +656,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
         Ok(())
     }
 
+    /// send frame
     async fn send_frame(&mut self, mut frame: Frame<Data>, reply: oneshot::Sender<usize>) -> Result<()> {
         let stream_id = frame.header().stream_id();
         if let Some(stat) = self.streams_stat.get_mut(&stream_id) {

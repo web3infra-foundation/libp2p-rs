@@ -113,7 +113,7 @@ impl Stream {
         self.id.id()
     }
 
-    // TODO: handle the case: buf capacity is not enough
+    /// read data from receiver. If data is not drain, store in inner buffer
     pub(crate) async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.read_buffer.has_remaining() {
             let len = std::cmp::min(self.read_buffer.remaining(), buf.len());
@@ -138,7 +138,12 @@ impl Stream {
         Err(io::ErrorKind::UnexpectedEof.into())
     }
 
+    /// Write stream. If stream has closed, return err
     pub(crate) async fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if self.sender.is_closed() {
+            return Err(self.closed_err());
+        }
+
         let (tx, rx) = oneshot::channel();
         let frame = Frame::message_frame(self.id, buf);
         let n = buf.len();
@@ -152,7 +157,13 @@ impl Stream {
         Ok(n)
     }
 
+    /// close stream, sender will be closed and state will turn to SendClosed
+    /// If stream has closed, return ()
     async fn close(&mut self) -> io::Result<()> {
+        if self.sender.is_closed() {
+            return Ok(());
+        }
+
         // In order to support [`Clone`]
         // When reference count is 1, we can close stream entirely
         // Otherwise, just close sender channel
@@ -169,7 +180,13 @@ impl Stream {
         Ok(())
     }
 
+    /// reset stream, sender will be closed and state will turn to Closed
+    /// If stream has reset, return ()
     pub async fn reset(&mut self) -> io::Result<()> {
+        if self.sender.is_closed() {
+            return Ok(());
+        }
+
         // In order to support [`Clone`]
         // When reference count is 1, we can close stream entirely
         // Otherwise, just close sender channel

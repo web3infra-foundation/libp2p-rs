@@ -189,6 +189,7 @@ impl Stream {
         self.id.val()
     }
 
+    /// read data from receiver. If data is not drain, store in inner buffer
     pub(crate) async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if !self.config.read_after_close && self.sender.is_closed() {
             return Err(io::ErrorKind::UnexpectedEof.into());

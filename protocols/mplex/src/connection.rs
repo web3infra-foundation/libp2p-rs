@@ -18,6 +18,75 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+// This module contains the `Connection` type and associated helpers.
+// A `Connection` wraps an underlying (async) I/O resource and multiplexes
+// `Stream`s over it.
+//
+// The overall idea is as follows: The `Connection` makes progress via calls
+// to its `next_stream` method which polls several futures, one that decodes
+// `Frame`s from the I/O resource, one that consumes `ControlCommand`s
+// from an MPSC channel and another one that consumes `StreamCommand`s from
+// yet another MPSC channel. The latter channel is shared with every `Stream`
+// created and whenever a `Stream` wishes to send a `Frame` to the remote end,
+// it enqueues it into this channel (waiting if the channel is full). The
+// former is shared with every `Control` clone and used to open new outbound
+// streams or to trigger a connection close.
+//
+// The `Connection` updates the `Stream` state based on incoming frames, e.g.
+// it pushes incoming data to the `Stream` via channel or increases the sending
+// credit if the remote has sent us a corresponding `Frame::<WindowUpdate>`.
+//
+// Closing a `Connection`
+// ----------------------
+//
+// Every `Control` may send a `ControlCommand::Close` at any time and then
+// waits on a `oneshot::Receiver` for confirmation that the connection is
+// closed. The closing proceeds as follows:
+//
+// 1. As soon as we receive the close command we close the MPSC receiver
+//    of `StreamCommand`s. We want to process any stream commands which are
+//    already enqueued at this point but no more.
+// 2. We change the internal shutdown state to `Shutdown::InProgress` which
+//    contains the `oneshot::Sender` of the `Control` which triggered the
+//    closure and which we need to notify eventually.
+// 3. Crucially -- while closing -- we no longer process further control
+//    commands, because opening new streams should no longer be allowed
+//    and further close commands would mean we need to save those
+//    `oneshot::Sender`s for later. On the other hand we also do not simply
+//    close the control channel as this would signal to `Control`s that
+//    try to send close commands, that the connection is already closed,
+//    which it is not. So we just pause processing control commands which
+//    means such `Control`s will wait.
+// 4. We keep processing I/O and stream commands until the remaining stream
+//    commands have all been consumed, at which point we transition the
+//    shutdown state to `Shutdown::Complete`, which entails sending the
+//    final termination frame to the remote, informing the `Control` and
+//    now also closing the control channel.
+// 5. Now that we are closed we go through all pending control commands
+//    and tell the `Control`s that we are closed and we are finally done.
+//
+// While all of this may look complicated, it ensures that `Control`s are
+// only informed about a closed connection when it really is closed.
+//
+// specific
+// ----------------------
+// - All stream's state is managed by connecttion, stream state get from channel
+//   Shared lock is not efficient.
+// - Connecttion pushes incoming data to the `Stream` via channel, not buffer
+// - Stream must be closed explictly Since garbage collect is not implemented.
+//   Drop it directly do nothing
+//
+// Potential improvements
+// ----------------------
+//
+// There is always more work that can be done to make this a better crate,
+// for example:
+// - Loop in handle_coming() is performance bottleneck.  More seriously, it will be block
+//   when two peers echo with mass of data with lot of stream Since they block
+//   on write data and none of them can read data.
+//   One solution is spwan task for reader and writer But depend on async-std/tokio
+//   is not attractive. See detail from concurrent in tests
+
 pub mod control;
 pub mod stream;
 
@@ -49,7 +118,7 @@ use stream::{State, Stream};
 pub enum ControlCommand {
     /// Open a new stream to the remote end.
     OpenStream(oneshot::Sender<Result<Stream>>),
-    /// Open a new stream to the remote end.
+    /// Accept a new stream from the remote end.
     AcceptStream(oneshot::Sender<Result<Stream>>),
     /// Close the whole connection.
     CloseConnection(oneshot::Sender<()>),
@@ -60,7 +129,7 @@ pub enum ControlCommand {
 pub(crate) enum StreamCommand {
     /// A new frame should be sent to the remote.
     SendFrame(Frame, oneshot::Sender<()>),
-    /// Close a stream.
+    /// Reset a stream.
     ResetStream(Frame),
     /// Close a stream.
     CloseStream(Frame),
@@ -156,6 +225,7 @@ pub struct Connection<T> {
 }
 
 impl<T: ReadEx + WriteEx + Unpin + 'static> Connection<T> {
+    /// Create a new `Connection` from the given I/O resource.
     pub fn new(socket: T) -> Self {
         let id = Id::random();
         log::debug!("new connection: {}", id);
@@ -191,11 +261,17 @@ impl<T: ReadEx + WriteEx + Unpin + 'static> Connection<T> {
         self.id
     }
 
-    // The param of control must be
+    /// Get a controller for this connection.
     pub fn control(&self) -> Control {
         Control::new(self.control_sender.clone())
     }
 
+    /// Get the next incoming stream, opened by the remote.
+    ///
+    /// This must be called repeatedly in order to make progress.
+    /// Once `Ok(()))` or `Err(_)` is returned the connection is
+    /// considered closed and no further invocation of this method
+    /// must be attempted.
     pub async fn next_stream(&mut self) -> Result<()> {
         if self.is_closed {
             log::debug!("{}: connection is closed", self.id);
@@ -246,6 +322,9 @@ impl<T: ReadEx + WriteEx + Unpin + 'static> Connection<T> {
         result
     }
 
+    /// This is called from `Connection::next_stream` instead of being a
+    /// public method itself in order to guarantee proper closing in
+    /// case of an error or at EOF.
     pub async fn handle_coming(&mut self) -> Result<()> {
         loop {
             select! {
@@ -267,6 +346,11 @@ impl<T: ReadEx + WriteEx + Unpin + 'static> Connection<T> {
         }
     }
 
+    /// Process the result of reading from the socket.
+    ///
+    /// Unless `frame` is `Ok(()))` we will assume the connection got closed
+    /// and return a corresponding error, which terminates the connection.
+    /// Otherwise we process the frame
     async fn on_frame(&mut self, frame: Frame) -> Result<()> {
         log::trace!("{}: received: {}", self.id, frame.header());
         match frame.header().tag() {
