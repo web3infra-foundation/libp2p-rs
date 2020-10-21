@@ -8,6 +8,12 @@ This program demonstrates a simple p2p chat application. It can work between two
 
 Assume if 'A' and 'B' are on different networks host 'A' may or may not have a public IP address but host 'B' has one.
 
+Node A Viedo
+[![asciicast](https://asciinema.org/a/1BjgEmtHal6Ctm9kpkjMtUw7I.svg)](https://asciinema.org/a/1BjgEmtHal6Ctm9kpkjMtUw7I)
+
+Node B Viedo
+[![asciicast](https://asciinema.org/a/yU5ZoWP2uxKRhEFlzNMGQFhhe.svg)](https://asciinema.org/a/yU5ZoWP2uxKRhEFlzNMGQFhhe)
+
 ## Clone code
 ```
 git clone https://github.com/netwarps/libp2p-rs.git
