@@ -21,6 +21,9 @@
 use crate::identity::Keypair;
 use crate::{PeerId, PublicKey};
 
+/// SecureInfo provides the underlying secure information of a secure connection.
+///
+/// The connection upgraded by secure stream, e.g. SecIo, must implement this trait.
 pub trait SecureInfo {
     fn local_peer(&self) -> PeerId;
 
