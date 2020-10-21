@@ -10,8 +10,33 @@ Swarm is desinged and implemented to run a main loop for handling commands recei
 ### Swarm Controller
 Swarm Controller is the API interface of Swarm. To manipulate Swarm, we have to send a control command to Swarm main loop via a futures::mpsc::channel. The controller is actualy the sender part of the channel.
 
+### Swarm Transport
+Swarm listens on multiple transports for incomming connections and chooses the best transport according to the dialing multiaddr to setup outgoing connections.    
 
-### Protocol handler
+### Connection and Substream
+
+Swarm contains all established connections to remotes and manages the state of all the substreams that have been opened. The Swarm connection is multiplexed connection, which can be used to open or accept new substreams. Furthermore, a raw substream opened by connection has to be upgraded to the Swarm Substream via multistream select procedure.
+
+Swarm manages all connection in two hash maps:
+
+- id map: by unique connection Id
+- PeerId map: by PeerId, a Peer might have multiple connections established
+
+And each connection manages all its substreams in a Vec<>. 
+
+### Swarm PeerStore
+PeerStore is the database in Swarm, which holds：
+- Address Book: mapping from PeerId to Multiaddr. Note one single PeerId might point to multiple Multiaddr.
+- Key Book: mapping from PeerId to its public key.
+- ...
+
+ 
+
+### Protocol handler trait
+
+Protocol Handler trait defines how each active connection to a remote peer should behave: how to handle incoming substreams. The substream opened in Swarm has to be specified with some protocol. In order to add protocol support, Swarm must be initialized with the protocol handlers which have to implement the trait.
+
+
 
 ### Ping & Identify
 
@@ -42,26 +67,49 @@ There are some statistics implemented, but not sufficient as we know.
 
 
 
-
 ## Getting started
 
 In general, to use libp2p-rs, you would always create a Swarm object to access the low-level network:
 
-Creating a swarm:
+Creating and initializing a swarm:
 
+```no_run
+    let mut swarm = Swarm::new(PeerId::from_public_key(keys.public()))
+        .with_transport(Box::new(t1))
+        .with_transport(Box::new(t2))
+        .with_protocol(Box::new(DummyProtocolHandler::new()))
+        .with_protocol(Box::new(MyProtocolHandler))
+        .with_ping(PingConfig::new().with_unsolicited(true).with_interval(Duration::from_secs(1)))
+        .with_identify(IdentifyConfig::new(false));
+```
 
+The code above creates a swarm and initialize it with two transports and a few protocol handlers. Note Ping and Identify are built-in protocols that Swarm supports internally.
 
-It takes five items to fully construct a swarm, the first is a go context.Context. This controls the lifetime of the swarm, and all swarm processes have their lifespan derived from the given context. You can just use context.Background() if you're not concerned with that.
+Starting the swarm:
 
-The next argument is an array of multiaddrs that the swarm will open up listeners for. Once started, the swarm will start accepting and handling incoming connections on every given address. This argument is optional, you can pass nil and the swarm will not listen for any incoming connections (but will still be able to dial out to other peers).
+```no_run
+    let mut control = swarm.control();
+    swarm
+        .peers
+        .addrs
+        .add_addr(&remote_peer_id, "/ip4/127.0.0.1/tcp/8086".parse().unwrap(), Duration::default());
 
-After that, you'll need to give the swarm an identity in the form of a peer.ID. If you're not wanting to enable secio (libp2p's transport layer encryption), then you can pick any string for this value. For example peer.ID("FooBar123") would work. Note that passing a random string ID will result in your node not being able to communicate with other peers that have correctly generated IDs. To see how to generate a proper ID, see the below section on "Identity Generation".
+    swarm.start();
+```
 
-The fourth argument is a peerstore. This is essentially a database that the swarm will use to store peer IDs, addresses, public keys, protocol preferences and more. You can construct one by importing github.com/libp2p/go-libp2p-peerstore and calling peerstore.NewPeerstore().
+The code grabs a swarm controller and then starts the swarm main task loop.
 
-The final argument is a bandwidth metrics collector, This is used to track incoming and outgoing bandwidth on connections managed by this swarm. It is optional, and passing nil will simply result in no metrics for connections being available.
+```no_run
+    task::block_on(async move {
+        control.new_connection(remote_peer_id.clone()).await.unwrap();
+        let mut stream = control.new_stream(remote_peer_id, vec![b"/my/1.0.0"]).await.unwrap();
 
+        log::info!("stream {:?} opened, writing something...", stream);
+        let _ = stream.write_all2(b"hello").await;
+        stream.close2().await;
 
+        log::info!("shutdown is completed");
+    });
+```
 
- 
-
+The code is using async-std to spawn a task to handle connection and substream. Note the substream is specified with protocol id "/my/1.0.0", which means the remote peer has to support this protocol so that a substream can be opened by both peers.
