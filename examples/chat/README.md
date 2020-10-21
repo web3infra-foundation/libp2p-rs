@@ -9,10 +9,10 @@ This program demonstrates a simple p2p chat application. It can work between two
 Assume if 'A' and 'B' are on different networks host 'A' may or may not have a public IP address but host 'B' has one.
 
 Node A Viedo
-[![asciicast](https://asciinema.org/a/1BjgEmtHal6Ctm9kpkjMtUw7I.svg)](https://asciinema.org/a/1BjgEmtHal6Ctm9kpkjMtUw7I)
+[![asciicast](https://asciinema.org/a/0j1M9VBmuHJ94KdleU2r3Tb1g.svg)](https://asciinema.org/a/0j1M9VBmuHJ94KdleU2r3Tb1g)
 
 Node B Viedo
-[![asciicast](https://asciinema.org/a/yU5ZoWP2uxKRhEFlzNMGQFhhe.svg)](https://asciinema.org/a/yU5ZoWP2uxKRhEFlzNMGQFhhe)
+[![asciicast](https://asciinema.org/a/cY5VFxZGgmOq6Z021UGAomUrp.svg)](https://asciinema.org/a/cY5VFxZGgmOq6Z021UGAomUrp)
 
 ## Clone code
 ```
