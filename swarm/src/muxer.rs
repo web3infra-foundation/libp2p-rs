@@ -18,14 +18,20 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use crate::protocol_handler::IProtocolHandler;
-use crate::ProtocolId;
 use fnv::FnvHashMap;
 use libp2prs_core::multistream::Negotiator;
 use libp2prs_core::muxing::IReadWrite;
 use libp2prs_core::transport::TransportError;
 use libp2prs_core::upgrade::ProtocolName;
-/// Muxer that uses multistream-select to select and handle protocols.
+
+use crate::protocol_handler::IProtocolHandler;
+use crate::ProtocolId;
+
+/// [`Muxer`] is used by [`Swarm`] to select and handle protocols upgrading for inbound substream.
+///
+/// Multistream select protocol is used to proceed the protocol negotiation and selection.
+///
+/// IProtocolHandler is the tait object of ProtocolHandler.
 ///
 pub(crate) struct Muxer {
     protocol_handlers: FnvHashMap<ProtocolId, IProtocolHandler>,

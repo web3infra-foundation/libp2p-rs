@@ -28,14 +28,14 @@
 //!
 //! # Usage
 //!
-//! The [`Identify`] struct implements a `NetworkBehaviour` that negotiates
+//! The [`Identify`] struct implements a `ProtocolHandler` that negotiates
 //! and executes the protocol on every established connection, emitting
-//! [`IdentifyEvent`]s.
+//! [`IdentifyResult`]s.
 //!
 //! [Identify]: https://github.com/libp2p/specs/tree/master/identify
 //! [`Identify`]: self::Identify
-//! [`IdentifyEvent`]: self::IdentifyEvent
-//! [`IdentifyInfo`]: self::IdentifyEvent
+//! [`IdentifyResult`]: crate::SwarmEvent::IdentifyResult
+//! [`IdentifyInfo`]: self::IdentifyInfo
 
 use async_trait::async_trait;
 use futures::channel::{mpsc, oneshot};
@@ -194,7 +194,7 @@ impl UpgradeInfo for IdentifyHandler {
 
 #[async_trait]
 impl ProtocolHandler for IdentifyHandler {
-    /// The Ping handler's inbound protocol.
+    /// The IdentifyHandler's inbound protocol.
     /// Simply wait for any thing that coming in then send back
     async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
         log::trace!("Identify Protocol handling on {:?}", stream);
