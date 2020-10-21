@@ -31,6 +31,7 @@ use libp2prs_core::identity::Keypair;
 use libp2prs_core::transport::upgrade::TransportUpgrade;
 use libp2prs_core::upgrade::UpgradeInfo;
 use libp2prs_core::{Multiaddr, PeerId};
+use libp2prs_core::{multiaddr::protocol::Protocol};
 use libp2prs_secio as secio;
 use libp2prs_swarm::protocol_handler::{IProtocolHandler, ProtocolHandler};
 use libp2prs_swarm::substream::Substream;
@@ -39,15 +40,34 @@ use libp2prs_tcp::TcpConfig;
 use libp2prs_traits::{ReadEx, WriteEx};
 use libp2prs_yamux as yamux;
 //use libp2prs_mplex as mplex;
+use structopt::StructOpt;
+use std::str::FromStr;
+#[derive(StructOpt)]
+struct Config {
+    client_or_server: String,
+
+    /// Destination multiaddr string
+    #[structopt(short = "d")]
+    dest_multiaddr: Option<String>,
+
+    /// The port to connect to
+    #[structopt(short = "s")]
+    source_port:  Option<u16>,
+}
 
 fn main() {
     env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    if std::env::args().nth(1) == Some("server".to_string()) {
+    let options = Config::from_args();
+    if  options.client_or_server=="server" && options.source_port.is_some() {
         log::info!("Starting server ......");
         run_server();
-    } else {
+    }  
+    else if  options.client_or_server=="client" && options.dest_multiaddr.is_some(){
         log::info!("Starting client ......");
         run_client();
+    }  
+    else {
+        panic!("param error")
     }
 }
 
@@ -123,7 +143,8 @@ impl ProtocolHandler for ChatHandler {
 
 fn run_server() {
     let keys = SERVER_KEY.clone();
-    let listen_addr: Multiaddr = "/ip4/127.0.0.1/tcp/8086".parse().unwrap();
+    let options = Config::from_args();
+    let listen_addr = format!("/ip4/127.0.0.1/tcp/{}", &(options.source_port.unwrap())).parse().unwrap();
     let sec = secio::Config::new(keys.clone());
     let mux = yamux::Config::new();
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
@@ -144,8 +165,14 @@ fn run_server() {
 
 fn run_client() {
     let keys = Keypair::generate_secp256k1();
-
-    let _addr: Multiaddr = "/ip4/127.0.0.1/tcp/8086".parse().unwrap();
+    let options = Config::from_args();
+    let mut dial_addr = Multiaddr::from_str(&(options.dest_multiaddr.unwrap())).unwrap();
+    let last_protocol=dial_addr.pop().unwrap();
+    let remote_peer_id=match last_protocol {
+        Protocol::P2p(data)=>{PeerId::from_multihash(data).unwrap()}
+        _=>{panic!("expect p2p protocol")}
+    };
+    //let _addr: Multiaddr = "/ip4/127.0.0.1/tcp/8086".parse().unwrap();
     let sec = secio::Config::new(keys.clone());
     let mux = yamux::Config::new();
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
@@ -154,14 +181,14 @@ fn run_client() {
 
     let mut control = swarm.control();
 
-    let remote_peer_id = PeerId::from_public_key(SERVER_KEY.public());
-
+    //let remote_peer_id = PeerId::from_public_key(SERVER_KEY.public());
+    
     log::info!("about to connect to {:?}", remote_peer_id);
 
     swarm
         .peers
         .addrs
-        .add_addr(&remote_peer_id, "/ip4/127.0.0.1/tcp/8086".parse().unwrap(), Duration::default());
+        .add_addr(&remote_peer_id, dial_addr, Duration::default());
 
     swarm.start();
 

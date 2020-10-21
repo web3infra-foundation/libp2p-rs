@@ -12,7 +12,7 @@ Assume if 'A' and 'B' are on different networks host 'A' may or may not have a p
 ```
 git clone https://github.com/netwarps/libp2p-rs.git
 ```
-## Rust server with Rust client
+## Rust server VS Rust client
 
 ```
 > cd libp2p-rs
@@ -20,12 +20,12 @@ git clone https://github.com/netwarps/libp2p-rs.git
 
 On node 'B'.
 ```
-> RUST_LOG=info cargo run --example chat server
+> RUST_LOG=info cargo run --example chat server -s 8086
 ```
 
 On node 'A'. Replace 127.0.0.1 with <PUBLIC_IP> if node 'B' has one.
 ```
-> RUST_LOG=info cargo run --example chat 
+> RUST_LOG=info cargo run --example chat client -d /ip4/127.0.0.1/tcp/8086/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN 
 ```
 
 
@@ -58,7 +58,7 @@ On node 'A'.
 On node 'B'.
 ```
 > cd libp2p-rs/
-> RUST_LOG=info cargo run --example chat server
+> RUST_LOG=info cargo run --example chat server -s 8086
 ```
 
 On node 'A'.
@@ -81,5 +81,5 @@ On node 'B'.
 On node 'A'.
 ```
 > cd libp2p-rs/
-> RUST_LOG=info cargo run --example chat
+> RUST_LOG=info cargo run --example chat client -d /ip4/127.0.0.1/tcp/8086/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN 
 ```
