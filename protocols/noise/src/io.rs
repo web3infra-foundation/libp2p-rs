@@ -26,7 +26,6 @@ pub mod handshake;
 use async_trait::async_trait;
 use bytes::Bytes;
 use framed::{NoiseFramed, MAX_FRAME_LEN};
-use futures::io::Error;
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::secure_io::SecureInfo;
 use libp2prs_core::transport::ConnectionInfo;
@@ -133,7 +132,7 @@ impl<T: ReadEx + WriteEx + Send + Unpin> ReadEx for NoiseOutput<T> {
                     self.recv_offset = 0;
                 }
                 None => return Ok(0),
-                Some(Err(e)) => return Err(e),
+                Some(Err(e)) => return Err(e.into()),
             }
         }
     }
@@ -141,16 +140,18 @@ impl<T: ReadEx + WriteEx + Send + Unpin> ReadEx for NoiseOutput<T> {
 
 #[async_trait]
 impl<T: WriteEx + ReadEx + Send + Unpin> WriteEx for NoiseOutput<T> {
-    async fn write2(&mut self, buf: &[u8]) -> Result<usize, Error> {
-        // let mut io = Pin::new(&mut self.io);
+    async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
         let frame_buf = &mut self.send_buffer;
 
         // The MAX_FRAME_LEN is the maximum buffer size before a frame must be sent.
         if self.send_offset == MAX_FRAME_LEN {
             trace!("write: sending {} bytes", MAX_FRAME_LEN);
-            // ready!(io.as_mut().poll_ready(cx))?;
-            // self.io.ready2().await;
-            self.io.send2(&frame_buf).await?;
+
+            // self.io.send2(&frame_buf).map_err(|e| e.into()).await;
+            match self.io.send2(&frame_buf).await {
+                Ok(()) => {}
+                Err(e) => return Err(e.into())
+            }
             self.send_offset = 0;
         }
 
@@ -162,30 +163,35 @@ impl<T: WriteEx + ReadEx + Send + Unpin> WriteEx for NoiseOutput<T> {
         self.send_offset += n;
         trace!("write: buffered {} bytes", self.send_offset);
 
-        self.flush2().await?;
+        match self.flush2().await {
+            Ok(()) => {}
+            Err(e) => return Err(e)
+        }
 
         Ok(n)
     }
 
-    async fn flush2(&mut self) -> Result<(), Error> {
+    async fn flush2(&mut self) -> io::Result<()> {
         let frame_buf = &mut self.send_buffer;
 
         // Check if there is still one more frame to send.
         if self.send_offset > 0 {
-            self.io.ready2().await?;
-            // ready!(io.as_mut().poll_ready(cx))?;
+            match self.io.ready2().await {
+                Ok(()) => {}
+                Err(e) => return Err(e.into())
+            }
             trace!("flush: sending {} bytes", self.send_offset);
-            self.io.send2(&frame_buf).await?;
+            match self.io.send2(&frame_buf).await {
+                Ok(()) => {}
+                Err(e) => return Err(e.into())
+            }
             self.send_offset = 0;
         }
 
-        self.io.flush2().await
+        self.io.flush2().await.map_err(|e| e.into())
     }
 
-    async fn close2(&mut self) -> Result<(), Error> {
-        // ready!(self.as_mut().poll_flush(cx))?;
-        // Pin::new(&mut self.io).poll_close(cx)
-        self.flush2().await?;
-        self.io.close2().await
+    async fn close2(&mut self) -> io::Result<()> {
+        self.io.close2().await.map_err(|e| e.into())
     }
 }

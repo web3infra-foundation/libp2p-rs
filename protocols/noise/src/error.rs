@@ -77,6 +77,15 @@ impl From<io::Error> for NoiseError {
     }
 }
 
+impl Into<io::Error> for NoiseError {
+    fn into(self) -> io::Error {
+        match self {
+            NoiseError::Io(e) => e,
+            e => io::Error::new(io::ErrorKind::BrokenPipe, e.to_string()),
+        }
+    }
+}
+
 impl From<SnowError> for NoiseError {
     fn from(e: SnowError) -> Self {
         NoiseError::Noise(e)

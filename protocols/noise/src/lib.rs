@@ -34,10 +34,10 @@ pub struct NoiseConfig<P, C: Zeroize> {
 
 #[async_trait]
 impl<T, C> Upgrader<T> for NoiseConfig<XX, C>
-    where
-        NoiseConfig<XX, C>: UpgradeInfo,
-        T: ConnectionInfo + ReadEx + WriteEx + Send + Unpin + 'static,
-        C: Protocol<C> + Zeroize + AsRef<[u8]> + Clone + Send,
+where
+    NoiseConfig<XX, C>: UpgradeInfo,
+    T: ConnectionInfo + ReadEx + WriteEx + Send + Unpin + 'static,
+    C: Protocol<C> + Zeroize + AsRef<[u8]> + Clone + Send,
 {
     type Output = NoiseOutput<T>;
 
@@ -57,8 +57,8 @@ async fn make_secure_output<T, C: Protocol<C> + Zeroize + AsRef<[u8]>>(
     socket: T,
     initiator: bool,
 ) -> Result<NoiseOutput<T>, TransportError>
-    where
-        T: ConnectionInfo + ReadEx + WriteEx + Send + Unpin + 'static,
+where
+    T: ConnectionInfo + ReadEx + WriteEx + Send + Unpin + 'static,
 {
     let la = socket.local_multiaddr();
     let ra = socket.remote_multiaddr();
@@ -68,8 +68,8 @@ async fn make_secure_output<T, C: Protocol<C> + Zeroize + AsRef<[u8]>>(
 }
 
 impl<C> NoiseConfig<XX, C>
-    where
-        C: Protocol<C> + Zeroize + AsRef<[u8]>,
+where
+    C: Protocol<C> + Zeroize + AsRef<[u8]>,
 {
     /// Create a new `NoiseConfig` for the `XX` handshake pattern.
     pub fn xx(dh_keys: AuthenticKeypair<C>, local_priv_key: identity::Keypair) -> Self {
@@ -88,8 +88,8 @@ impl<C> NoiseConfig<XX, C>
     ///
     /// On success, returns an object that implements the `WriteEx` and `ReadEx` trait.
     pub async fn handshake<T>(self, socket: T, initiator: bool) -> Result<(RemoteIdentity<C>, NoiseOutput<T>), NoiseError>
-        where
-            T: ReadEx + WriteEx + Unpin + Send + 'static,
+    where
+        T: ReadEx + WriteEx + Unpin + Send + 'static,
     {
         if initiator {
             let session = self
@@ -107,7 +107,7 @@ impl<C> NoiseConfig<XX, C>
                 IdentityExchange::Mutual,
                 self.local_priv_key,
             )
-                .await
+            .await
         } else {
             let session = self
                 .params
@@ -123,7 +123,7 @@ impl<C> NoiseConfig<XX, C>
                 IdentityExchange::Mutual,
                 self.local_priv_key,
             )
-                .await
+            .await
         }
     }
 }

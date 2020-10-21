@@ -236,9 +236,9 @@ impl<T> State<T> {
 }
 
 //////////////////////////////////////////////////////////////////////////////
-// Handshake Message Futures
+// Handshake Message
 
-/// A future for receiving a Noise handshake message.
+/// Using async/await to receive a Noise handshake message.
 async fn recv<T>(state: &mut State<T>) -> Result<Bytes, NoiseError>
 where
     T: ReadEx + WriteEx + Unpin + Send,
@@ -250,7 +250,7 @@ where
     }
 }
 
-/// A future for receiving a Noise handshake message with an empty payload.
+/// Using async/await to receive a Noise handshake message with an empty payload.
 async fn recv_empty<T>(state: &mut State<T>) -> Result<(), NoiseError>
 where
     T: ReadEx + WriteEx + Unpin + Send,
@@ -262,7 +262,7 @@ where
     Ok(())
 }
 
-/// A future for sending a Noise handshake message with an empty payload.
+/// Using async/await to send a Noise handshake message with an empty payload.
 async fn send_empty<T>(state: &mut State<T>) -> Result<(), NoiseError>
 where
     T: WriteEx + ReadEx + Unpin + Send,
@@ -274,7 +274,7 @@ where
     Ok(())
 }
 
-/// A future for receiving a Noise handshake message with a payload
+/// Using async/await to receive a Noise handshake message with a payload
 /// identifying the remote.
 async fn recv_identity<T>(state: &mut State<T>) -> Result<(), NoiseError>
 where
