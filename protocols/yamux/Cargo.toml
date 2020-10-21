@@ -9,49 +9,27 @@ keywords = ["peer-to-peer", "libp2p", "networking"]
 categories = ["network-programming", "asynchronous"]
 edition = "2018"
 
-[[bench]]
-name = "concurrent"
-harness = false
-
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-libp2prs-core = { path = "../../core", version = "0.1.0", package = "libp2prs-core" }
 libp2prs-traits = { path = "../../traits", version = "0.1.0", package = "libp2prs-traits" }
+libp2prs-core = { path = "../../core", version = "0.1.0", package = "libp2prs-core" }
+nohash-hasher = "0.2"
+unsigned-varint = "0.4"
 async-trait = "0.1"
-log = "0.4.8"
-async-std = "1.6"
 bytes = "0.5.6"
+log = "0.4.8"
+rand = "0.7.2"
+futures-timer = "3"
 
 [dependencies.futures]
 version = "0.3.4"
 features = ["std"]
 default-features = false
 
-[dependencies.nohash-hasher]
-version = "0.2"
-
-[dependencies.rand]
-version = "0.7.2"
-
-[dependencies.static_assertions]
-version = "1"
-
-[dev-dependencies.anyhow]
-version = "1"
-
-[dev-dependencies.async-std]
-version = "1.6.2"
-
-[dev-dependencies.criterion]
-version = "0.3"
-
-[dev-dependencies.futures]
-version = "0.3.5"
-
-[dev-dependencies.env_logger]
-version = "0.6"
-
-[dev-dependencies.quickcheck]
-version = "0.9"
+[dev-dependencies]
+env_logger = "0.6"
+criterion = "0.3"
+async-std = "1.6"
 
 [dev-dependencies.libp2prs-secio]
 path = "../secio"
@@ -61,5 +39,9 @@ path = "../../core"
 version = "0.1.0"
 package = "libp2prs-core"
 
-[dev-dependencies.bytesize]
-version = "1.0.1"
+[dev-dependencies.quickcheck]
+version = "0.9"
+
+[[bench]]
+name = "concurrent"
+harness = false

@@ -25,7 +25,7 @@ use async_std::{
 use log::info;
 
 use libp2prs_traits::{ReadEx, WriteEx};
-use libp2prs_yamux::{Config, Connection, Mode};
+use libp2prs_yamux::{connection::Connection, connection::Mode, Config};
 
 fn main() {
     env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -101,6 +101,8 @@ fn run_client() {
         info!("C: {}: read {} bytes", stream.id(), frame.len());
 
         assert_eq!(&data[..], &frame[..]);
+
+        stream.close2().await;
 
         ctrl.close().await.expect("close connection");
 

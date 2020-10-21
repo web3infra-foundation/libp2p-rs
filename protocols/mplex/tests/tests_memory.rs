@@ -67,15 +67,15 @@ fn prop_slow_reader() {
             }
 
             // wait
-            task::sleep(Duration::from_secs(5)).await;
+            task::sleep(Duration::from_secs(6)).await;
 
             let mut buf = vec![0; 64];
-            let mut i = 0;
-            while i < 40 {
+            let mut err = false;
+            for _ in 0..40 {
                 if sb.read2(&mut buf).await.is_err() {
+                    err = true;
                     break;
                 }
-                i += 1;
             }
 
             mpa_ctrl.close().await.expect("A close connection");
@@ -84,10 +84,11 @@ fn prop_slow_reader() {
             handle_a.await;
             handle_b.await;
 
-            if i == 40 {
-                return TestResult::failed();
+            if err {
+                TestResult::passed()
+            } else {
+                TestResult::failed()
             }
-            TestResult::passed()
         })
     }
     QuickCheck::new().tests(5).quickcheck(prop as fn() -> _)

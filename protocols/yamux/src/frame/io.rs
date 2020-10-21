@@ -18,9 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use std::{fmt, io, pin::Pin};
-
-use futures::stream::FusedStream;
+use std::{fmt, io};
 
 use super::{
     header::{self, HeaderDecodeError},
@@ -28,19 +26,16 @@ use super::{
 };
 use crate::connection::Id;
 use crate::frame::header::HEADER_SIZE;
-use libp2prs_traits::{
-    ext::{ReadExt2, WriteHalf},
-    ReadEx, WriteEx,
-};
+
+use libp2prs_traits::{ReadEx, WriteEx};
 
 /// A [`Stream`] and writer of [`Frame`] values.
 // #[derive(Debug)]
 pub(crate) struct Io<T> {
     id: Id,
-    // io: T,
-    io: WriteHalf<T>,
-    // max_body_len: usize,
-    pub(crate) stream: Pin<Box<dyn FusedStream<Item = Result<Frame<()>, FrameDecodeError>> + Send>>,
+    io: T,
+    max_body_len: usize,
+    // pub(crate) stream: Pin<Box<dyn FusedStream<Item = Result<Frame<()>, FrameDecodeError>> + Send>>,
 }
 
 impl<T> fmt::Debug for Io<T> {
@@ -49,20 +44,17 @@ impl<T> fmt::Debug for Io<T> {
     }
 }
 
-impl<T: ReadEx + WriteEx + Unpin + 'static> Io<T> {
+impl<T: Unpin + Send> Io<T> {
     pub(crate) fn new(id: Id, io: T, max_frame_body_len: usize) -> Self {
-        let (r, w) = io.split2();
-        let fr = FrameReader::new(id, r, max_frame_body_len);
-        let s = futures::stream::unfold(fr, |mut fr| async { Some((fr.recv_frame().await, fr)) });
         Io {
             id,
-            io: w,
-            // max_body_len: max_frame_body_len,
-            stream: Box::pin(s),
+            io,
+            max_body_len: max_frame_body_len,
         }
     }
+}
 
-    /*
+impl<T: ReadEx + Unpin + Send> Io<T> {
     pub(crate) async fn recv_frame(&mut self) -> Result<Frame<()>, FrameDecodeError> {
         let mut header_data = [0; HEADER_SIZE];
 
@@ -85,8 +77,9 @@ impl<T: ReadEx + WriteEx + Unpin + 'static> Io<T> {
 
         Ok(Frame { header, body })
     }
-     */
+}
 
+impl<T: WriteEx + Unpin + Send> Io<T> {
     pub(crate) async fn send_frame<A>(&mut self, frame: &Frame<A>) -> io::Result<()> {
         log::trace!("{}: write stream, header: {}", self.id, frame.header);
 
@@ -99,14 +92,7 @@ impl<T: ReadEx + WriteEx + Unpin + 'static> Io<T> {
         let mut buf = BytesMut::with_capacity(frame.body.len() + 12);
         buf.put(header.to_vec().as_ref());
         buf.put(&frame.body[..]);
-        let ret = self.io.write_all2(&buf).await;
-
-        log::trace!("{}: wrote stream, header: {}", self.id, frame.header);
-
-        ret
-
-        // self.io.write_all2(header.to_vec().as_ref()).await?;
-        // self.io.write_all2(&frame.body).await
+        self.io.write_all2(&buf).await
     }
 
     pub(crate) async fn flush(&mut self) -> io::Result<()> {
@@ -125,7 +111,7 @@ struct FrameReader<T> {
 }
 
 #[allow(dead_code)]
-impl<T: ReadEx + Unpin> FrameReader<T> {
+impl<T: ReadEx + WriteEx + Unpin + Send> FrameReader<T> {
     pub(crate) fn new(id: Id, io: T, max_frame_body_len: usize) -> Self {
         FrameReader {
             id,
@@ -153,8 +139,6 @@ impl<T: ReadEx + Unpin> FrameReader<T> {
 
         let mut body = vec![0; body_len];
         self.io.read_exact2(&mut body).await?;
-
-        log::trace!("{}: read stream body: {}", self.id, body_len);
 
         Ok(Frame { header, body })
     }
@@ -225,27 +209,27 @@ mod tests {
         }
     }
 
-    //#[test]
-    // fn encode_decode_identity() {
-    //     fn property(f: Frame<()>) -> bool {
-    //         async_std::task::block_on(async move {
-    //             let id = crate::connection::Id::random(crate::connection::Mode::Server);
-    //             let mut io = Io::new(id, futures::io::Cursor::new(Vec::new()), f.body.len());
-    //             if io.send_frame(&f).await.is_err() {
-    //                 return false;
-    //             }
-    //             if io.flush().await.is_err() {
-    //                 return false;
-    //             }
-    //             io.io.set_position(0);
-    //             if let Ok(x) = io.recv_frame().await {
-    //                 x == f
-    //             } else {
-    //                 false
-    //             }
-    //         })
-    //     }
+    #[test]
+    fn encode_decode_identity() {
+        fn property(f: Frame<()>) -> bool {
+            async_std::task::block_on(async move {
+                let id = crate::connection::Id::random(crate::connection::Mode::Server);
+                let mut io = Io::new(id, futures::io::Cursor::new(Vec::new()), f.body.len());
+                if io.send_frame(&f).await.is_err() {
+                    return false;
+                }
+                if io.flush().await.is_err() {
+                    return false;
+                }
+                io.io.set_position(0);
+                if let Ok(x) = io.recv_frame().await {
+                    x == f
+                } else {
+                    false
+                }
+            })
+        }
 
-    //     QuickCheck::new().tests(10_000).quickcheck(property as fn(Frame<()>) -> bool)
-    // }
+        QuickCheck::new().tests(10_000).quickcheck(property as fn(Frame<()>) -> bool)
+    }
 }

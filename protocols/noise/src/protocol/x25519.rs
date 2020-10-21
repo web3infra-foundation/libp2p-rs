@@ -23,7 +23,7 @@
 //! **Note**: This set of protocols is not interoperable with other
 //! libp2p implementations.
 
-use crate::{protocol, NoiseError, Protocol, ProtocolParams, NoiseConfig};
+use crate::{protocol, NoiseConfig, NoiseError, Protocol, ProtocolParams};
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use lazy_static::lazy_static;
 use libp2prs_core::{identity, identity::ed25519};

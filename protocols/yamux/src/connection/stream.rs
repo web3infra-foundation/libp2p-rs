@@ -18,30 +18,19 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_trait::async_trait;
-use std::{
-    fmt, io,
-    sync::{
-        atomic::{AtomicU32, AtomicUsize, Ordering},
-        Arc,
-    },
-};
-
-use futures::lock::{Mutex, MutexGuard};
-use futures::prelude::*;
-use futures::{channel::mpsc, SinkExt};
-
-use libp2prs_traits::{ReadEx, WriteEx};
-
 use crate::{
-    chunks::Chunks,
-    connection::{self, StreamCommand},
-    frame::{
-        header::{HasAck, HasSyn, Header, StreamId},
-        Frame,
-    },
-    Config, ConnectionError, WindowUpdateMode,
+    connection::{Id, StreamCommand},
+    frame::{header::StreamId, Frame},
+    Config,
 };
+use async_trait::async_trait;
+use bytes::{Buf, BufMut};
+use futures::channel::oneshot;
+use futures::lock::Mutex;
+use futures::{channel::mpsc, SinkExt, StreamExt};
+use libp2prs_traits::{ReadEx, WriteEx};
+use std::sync::Arc;
+use std::{fmt, io};
 
 /// The state of a Yamux stream.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -56,31 +45,7 @@ pub enum State {
     Closed,
 }
 
-const STATE_OPEN: usize = 1;
-const STATE_SEND_CLOSED: usize = 2;
-const STATE_RECV_CLOSED: usize = 3;
-const STATE_CLOSED: usize = 4;
-
 impl State {
-    pub(crate) fn from_usize(state: usize) -> Self {
-        match state {
-            STATE_OPEN => State::Open,
-            STATE_SEND_CLOSED => State::SendClosed,
-            STATE_RECV_CLOSED => State::RecvClosed,
-            STATE_CLOSED => State::Closed,
-            _ => panic!("Unknown state"),
-        }
-    }
-
-    pub(crate) fn to_usize(self) -> usize {
-        match self {
-            State::Open => STATE_OPEN,
-            State::SendClosed => STATE_SEND_CLOSED,
-            State::RecvClosed => STATE_RECV_CLOSED,
-            State::Closed => STATE_CLOSED,
-        }
-    }
-
     /// Can we receive messages over this stream?
     pub fn can_read(self) -> bool {
         if let State::RecvClosed | State::Closed = self {
@@ -100,6 +65,61 @@ impl State {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct StreamStat {
+    state: State,
+    flag: Flag,
+    pub(crate) window: u32,
+    pub(crate) credit: usize,
+}
+
+impl StreamStat {
+    pub(crate) fn new(window: u32, credit: usize) -> Self {
+        StreamStat {
+            state: State::Open,
+            flag: Flag::None,
+            window,
+            credit,
+        }
+    }
+
+    pub(crate) fn state(&self) -> State {
+        self.state
+    }
+
+    /// Update the stream state and return the state before it was updated.
+    pub(crate) fn update_state(&mut self, cid: Id, sid: StreamId, next: State) -> State {
+        use self::State::*;
+
+        let current = self.state;
+
+        match (current, next) {
+            (Closed, _) => {}
+            (Open, _) => self.state = next,
+            (RecvClosed, Closed) => self.state = Closed,
+            (RecvClosed, Open) => {}
+            (RecvClosed, RecvClosed) => {}
+            (RecvClosed, SendClosed) => self.state = Closed,
+            (SendClosed, Closed) => self.state = Closed,
+            (SendClosed, Open) => {}
+            (SendClosed, RecvClosed) => self.state = Closed,
+            (SendClosed, SendClosed) => {}
+        }
+
+        log::trace!("{}/{}: update state: ({:?} {:?} {:?})", cid, sid, current, next, self.state);
+
+        current // Return the previous stream state for informational purposes.
+    }
+
+    pub fn get_flag(&self) -> Flag {
+        self.flag
+    }
+
+    pub fn set_flag(&mut self, flag: Flag) {
+        self.flag = flag
+    }
+}
+
 /// Indicate if a flag still needs to be set on an outbound header.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Flag {
@@ -111,372 +131,186 @@ pub(crate) enum Flag {
     Ack,
 }
 
-/// A multiplexed Yamux stream.
-///
-/// Streams are created either outbound via [`crate::Control::open_stream`]
-/// or inbound via [`crate::Connection::next_stream`].
-///
-/// `Stream` implements [`AsyncRead`] and [`AsyncWrite`] and also
-/// [`futures::stream::Stream`].
-#[derive(Clone)]
 pub struct Stream {
     id: StreamId,
-    conn: connection::Id,
+    conn_id: Id,
     config: Arc<Config>,
+    read_buffer: bytes::BytesMut,
     sender: mpsc::UnboundedSender<StreamCommand>,
-    flag: Flag,
-    shared: Arc<Shared>,
+    receiver: Arc<Mutex<mpsc::UnboundedReceiver<Vec<u8>>>>,
 }
 
 impl fmt::Debug for Stream {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Stream")
-            .field("id", &self.id.val())
-            .field("connection", &self.conn)
-            .finish()
+        write!(f, "(Stream {}/{})", self.conn_id, self.id)
     }
 }
 
 impl fmt::Display for Stream {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "(Stream {}/{})", self.conn, self.id.val())
+        write!(f, "(Stream {}/{})", self.conn_id, self.id)
+    }
+}
+
+impl Clone for Stream {
+    /// impl [`Clone`] trait
+    fn clone(&self) -> Self {
+        Stream {
+            id: self.id,
+            conn_id: self.conn_id,
+            config: self.config.clone(),
+            read_buffer: Default::default(),
+            sender: self.sender.clone(),
+            receiver: self.receiver.clone(),
+        }
     }
 }
 
 impl Stream {
     pub(crate) fn new(
         id: StreamId,
-        conn: connection::Id,
+        conn_id: Id,
         config: Arc<Config>,
-        window: u32,
-        credit: u32,
         sender: mpsc::UnboundedSender<StreamCommand>,
+        receiver: mpsc::UnboundedReceiver<Vec<u8>>,
     ) -> Self {
         Stream {
             id,
-            conn,
+            conn_id,
             config,
+            read_buffer: Default::default(),
             sender,
-            flag: Flag::None,
-            shared: Arc::new(Shared::new(id, window, credit)),
+            receiver: Arc::new(Mutex::new(receiver)),
         }
     }
 
     /// Get this stream's identifier.
-    pub fn id(&self) -> StreamId {
-        self.id
+    pub fn id(&self) -> u32 {
+        self.id.val()
     }
 
-    /// Set the flag that should be set on the next outbound frame header.
-    pub(crate) fn set_flag(&mut self, flag: Flag) {
-        self.flag = flag
-    }
-
-    /// Get this stream's state.
-    pub(crate) fn state(&self) -> State {
-        self.shared().state()
-    }
-
-    pub(crate) fn strong_count(&self) -> usize {
-        Arc::strong_count(&self.shared)
-    }
-
-    pub(crate) fn shared(&self) -> Arc<Shared> {
-        self.shared.clone()
-    }
-
-    pub(crate) fn clone(&self) -> Self {
-        Stream {
-            id: self.id,
-            conn: self.conn,
-            config: self.config.clone(),
-            sender: self.sender.clone(),
-            flag: self.flag,
-            shared: self.shared.clone(),
-        }
-    }
-
-    async fn read_stream(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        loop {
-            if !self.config.read_after_close && self.sender.is_closed() {
-                // TBD: return err???
-                return Ok(0);
-            }
-
-            // Copy data from stream buffer.
-            let shared = self.shared();
-            let mut n = 0;
-            {
-                let mut buffer = shared.buffer.lock().await;
-                while let Some(chunk) = buffer.front_mut() {
-                    if chunk.is_empty() {
-                        buffer.pop();
-                        continue;
-                    }
-                    let k = std::cmp::min(chunk.len(), buf.len() - n);
-                    (&mut buf[n..n + k]).copy_from_slice(&chunk.as_ref()[..k]);
-                    n += k;
-                    chunk.advance(k);
-                    if n == buf.len() {
-                        break;
-                    }
-                }
-            }
-            if n > 0 {
-                log::trace!("{}/{}: read {} bytes", self.conn, self.id, n);
-                return Ok(n);
-            }
-
-            // Buffer is empty, let's check if we can expect to read more data.
-            if !shared.state().can_read() {
-                log::trace!("3 {}/{}: eof", self.conn, self.id);
-                // return Err(io::ErrorKind::BrokenPipe.into()); // stream has been reset
-                return Ok(0);
-            }
-
-            if self.config.window_update_mode == WindowUpdateMode::OnRead && shared.window() == 0 {
-                let mut frame = Frame::window_update(self.id, self.config.receive_window);
-                self.add_flag(frame.header_mut());
-                let cmd = StreamCommand::SendFrame(frame.right());
-                self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
-                self.shared.window.store(self.config.receive_window, Ordering::SeqCst);
-            }
-
-            log::trace!("waiting stream({}) recv", self.id());
-            shared.wait_recv().await;
-            log::trace!("stream({}) recv wakeup", self.id());
-        }
-    }
-
-    async fn write_stream(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let shared = self.shared();
-        if !shared.state().can_write() {
-            log::debug!("{}/{}: can no longer write", self.conn, self.id);
-            return Err(self.write_zero_err());
+    /// read data from receiver. If data is not drain, store in inner buffer
+    pub(crate) async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if !self.config.read_after_close && self.sender.is_closed() {
+            return Err(io::ErrorKind::UnexpectedEof.into());
         }
 
-        while shared.credit() == 0 {
-            log::info!("{}/{}: no more credit left", self.conn, self.id);
-            shared.wait_send().await;
+        if self.read_buffer.has_remaining() {
+            let len = std::cmp::min(self.read_buffer.remaining(), buf.len());
+            buf[..len].copy_from_slice(&self.read_buffer[..len]);
+            self.read_buffer.advance(len);
+            return Ok(len);
         }
 
-        let body = {
-            let k = std::cmp::min(shared.credit() as usize, buf.len());
-            shared.credit.store(shared.credit().saturating_sub(k as u32), Ordering::SeqCst);
-            Vec::from(&buf[..k])
-        };
+        let mut receiver = self.receiver.lock().await;
+        if let Some(data) = receiver.next().await {
+            let dlen = data.len();
+            let len = std::cmp::min(data.len(), buf.len());
+            buf[..len].copy_from_slice(&data[..len]);
 
-        let n = body.len();
-        let mut frame = Frame::data(self.id, body).expect("body <= u32::MAX").left();
-        self.add_flag(frame.header_mut());
-        log::trace!("{}/{}: write {} bytes", self.conn, self.id, n);
-        let cmd = StreamCommand::SendFrame(frame);
+            if len < dlen {
+                self.read_buffer.reserve(dlen - len);
+                self.read_buffer.put(&data[len..dlen]);
+            }
+            return Ok(len);
+        }
+
+        Err(io::ErrorKind::UnexpectedEof.into())
+    }
+
+    /// write stream, the max size is config.max_message_size
+    /// If stream has closed, return err
+    pub(crate) async fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if self.sender.is_closed() {
+            return Err(self.closed_err());
+        }
+
+        let len = buf.len();
+        if len == 0 {
+            return Err(io::ErrorKind::WriteZero.into());
+        }
+
+        let (tx, rx) = oneshot::channel();
+        let n = std::cmp::min(self.config.max_message_size, len);
+
+        let frame = Frame::data(self.id, buf[..n].to_vec()).expect("body <= u32::MAX");
+        let cmd = StreamCommand::SendFrame(frame, tx);
         self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
+
+        let n = rx.await.map_err(|_| self.closed_err())?;
+        log::debug!("{}/{}: write {} bytes", self.conn_id, self.id, n);
+
         Ok(n)
     }
 
-    async fn close_stream(&mut self) -> io::Result<()> {
-        if self.state() == State::Closed {
+    /// close stream, sender will be closed and state will turn to SendClosed
+    /// If stream has closed, return ()
+    async fn close(&mut self) -> io::Result<()> {
+        if self.sender.is_closed() {
             return Ok(());
         }
+        // In order to support [`Clone`]
+        // When reference count is 1, we can close stream entirely
+        // Otherwise, just close sender channel
+        let count = Arc::strong_count(&self.receiver);
+        if count == 1 {
+            let (tx, rx) = oneshot::channel();
+            let cmd = StreamCommand::CloseStream(self.id, tx);
+            self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
+            rx.await.map_err(|_| self.closed_err())?;
+        }
 
-        let ack = if self.flag == Flag::Ack {
-            self.flag = Flag::None;
-            true
-        } else {
-            false
-        };
+        // step3: close channel
+        self.sender.close().await.expect("send err");
 
-        let cmd = StreamCommand::CloseStream { id: self.id, ack };
-        self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
-
-        self.shared().update_state(self.conn, self.id, State::SendClosed);
-
-        log::trace!("{}/{}: close", self.conn, self.id);
         Ok(())
     }
 
+    /// reset stream, sender will be closed and state will turn to Closed
+    /// If stream has reset, return ()
+    pub async fn reset(&mut self) -> io::Result<()> {
+        if self.sender.is_closed() {
+            return Ok(());
+        }
+
+        // In order to support [`Clone`]
+        // When reference count is 1, we can close stream entirely
+        // Otherwise, just close sender channel
+        let count = Arc::strong_count(&self.receiver);
+        if count == 1 {
+            let cmd = StreamCommand::ResetStream(self.id);
+            self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
+
+            self.sender.close().await.map_err(|_| self.write_zero_err())?;
+        }
+
+        Ok(())
+    }
+
+    /// connection is closed
     fn write_zero_err(&self) -> io::Error {
-        let msg = format!("{}/{}: connection is closed", self.conn, self.id);
+        let msg = format!("{}/{}: connection is closed", self.conn_id, self.id);
         io::Error::new(io::ErrorKind::WriteZero, msg)
     }
 
-    /// Set ACK or SYN flag if necessary.
-    fn add_flag<T: HasAck + HasSyn>(&mut self, header: &mut Header<T>) {
-        match self.flag {
-            Flag::None => (),
-            Flag::Syn => {
-                header.syn();
-                self.flag = Flag::None
-            }
-            Flag::Ack => {
-                header.ack();
-                self.flag = Flag::None
-            }
-        }
-    }
-
-    /*
-    #[allow(dead_code)]
-    pub(crate) async fn gen_window_update(&mut self) -> Option<Frame<WindowUpdate>> {
-        let max = self.config.receive_window;
-        let blen = self.shared.buffer.lock().await.len().expect("buffer len") as u32;
-        let window = self.shared.window();
-
-        let delta = max - blen - window;
-
-        if delta < (max / 2) && self.flag == Flag::None {
-            return None
-        }
-
-        self.shared.window.store(window + delta, Ordering::SeqCst);
-
-        let mut frame = Frame::window_update(self.id, delta);
-        self.add_flag(frame.header_mut());
-
-        Some(frame)
-    }
-     */
-}
-
-impl Drop for Stream {
-    fn drop(&mut self) {
-        log::trace!("drop stream {}", self.id);
-        // uncomment it when we have async destructor support
-        //self.close().await;
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct Shared {
-    stream_id: StreamId,
-    state: AtomicUsize,
-    pub(crate) window: AtomicU32,
-    pub(crate) credit: AtomicU32,
-
-    send_notify: (mpsc::Sender<()>, Mutex<mpsc::Receiver<()>>),
-    recv_notify: (mpsc::Sender<()>, Mutex<mpsc::Receiver<()>>),
-
-    buffer: Mutex<Chunks>,
-}
-
-impl Shared {
-    fn new(stream_id: StreamId, window: u32, credit: u32) -> Self {
-        let (send_tx, send_rx) = mpsc::channel(1);
-        let (recv_tx, recv_rx) = mpsc::channel(1);
-        Shared {
-            stream_id,
-            state: AtomicUsize::new(State::Open.to_usize()),
-            window: AtomicU32::new(window),
-            credit: AtomicU32::new(credit),
-            send_notify: (send_tx, Mutex::new(send_rx)),
-            recv_notify: (recv_tx, Mutex::new(recv_rx)),
-            buffer: Mutex::new(Chunks::new()),
-        }
-    }
-
-    pub(crate) fn state(&self) -> State {
-        State::from_usize(self.state.load(Ordering::SeqCst))
-    }
-
-    pub(crate) fn window(&self) -> u32 {
-        self.window.load(Ordering::SeqCst)
-    }
-
-    pub(crate) fn sub_window(&self, val: u32) {
-        self.window.store(self.window().saturating_sub(val), Ordering::SeqCst);
-    }
-
-    pub(crate) fn update_window(&self, val: u32) {
-        self.window.store(val, Ordering::SeqCst);
-    }
-
-    pub(crate) fn credit(&self) -> u32 {
-        self.credit.load(Ordering::SeqCst)
-    }
-
-    pub(crate) fn add_credit(&self, val: u32) {
-        self.credit.fetch_add(val, Ordering::SeqCst);
-    }
-
-    pub(crate) fn notify_send(&self) -> Result<(), ConnectionError> {
-        log::trace!("Stream({}) notify stream send", self.stream_id);
-        Self::notify(self.send_notify.0.clone())
-    }
-
-    pub(crate) fn notify_recv(&self) -> Result<(), ConnectionError> {
-        log::trace!("Stream({}) notify stream recv", self.stream_id);
-        Self::notify(self.recv_notify.0.clone())
-    }
-
-    fn notify(mut tx: mpsc::Sender<()>) -> Result<(), ConnectionError> {
-        match tx.try_send(()) {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                let e = e.into_send_error();
-                if e.is_full() {
-                    Ok(())
-                } else {
-                    Err(e.into())
-                }
-            }
-        }
-    }
-
-    async fn wait_send(&self) {
-        self.send_notify.1.lock().await.next().await;
-    }
-
-    async fn wait_recv(&self) {
-        self.recv_notify.1.lock().await.next().await;
-    }
-
-    /// Update the stream state and return the state before it was updated.
-    pub(crate) fn update_state(&self, cid: connection::Id, sid: StreamId, next: State) -> State {
-        let current = self.state();
-
-        log::trace!("update state current({:?}) -> next({:?})", current, next);
-
-        use State::*;
-
-        let to_store = match (current, next) {
-            (Closed, _) => None,
-            (Open, _) => Some(next),
-            (RecvClosed, Closed) => Some(Closed),
-            (RecvClosed, Open) => None,
-            (RecvClosed, RecvClosed) => None,
-            (RecvClosed, SendClosed) => Some(Closed),
-            (SendClosed, Closed) => Some(Closed),
-            (SendClosed, Open) => None,
-            (SendClosed, RecvClosed) => Some(Closed),
-            (SendClosed, SendClosed) => None,
-        };
-
-        if let Some(next) = to_store {
-            self.state.store(next.to_usize(), Ordering::SeqCst);
-        }
-
-        log::trace!("{}/{}: update state: ({:?} {:?} {:?})", cid, sid, current, next, self.state);
-
-        current // Return the previous stream state for informational purposes.
-    }
-
-    pub(crate) async fn buffer(&self) -> MutexGuard<'_, Chunks> {
-        self.buffer.lock().await
+    /// stream is closed or reset
+    fn closed_err(&self) -> io::Error {
+        let msg = format!("{}/{}: stream is closed / reset", self.conn_id, self.id);
+        io::Error::new(io::ErrorKind::WriteZero, msg)
     }
 }
 
 #[async_trait]
 impl ReadEx for Stream {
     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.read_stream(buf).await
+        self.read(buf).await
     }
 }
 
 #[async_trait]
 impl WriteEx for Stream {
     async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.write_stream(buf).await
+        self.write(buf).await
     }
 
     async fn flush2(&mut self) -> io::Result<()> {
@@ -484,6 +318,6 @@ impl WriteEx for Stream {
     }
 
     async fn close2(&mut self) -> io::Result<()> {
-        self.close_stream().await
+        self.close().await
     }
 }

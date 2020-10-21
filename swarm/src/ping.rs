@@ -31,8 +31,8 @@
 //! ping requests on every established connection. If a configurable number of pings fail,
 //! the connection will be closed.
 //!
-//! The `Ping` network behaviour produces [`PingEvent`]s, which may be consumed from the `Swarm`
-//! by an application, e.g. to collect statistics.
+//! The [`PingHandler`] produces [`PingResult`]s, which will be consumed by the [`Swarm`]
+//! , e.g. to close the [`Connection`].
 //!
 //! > **Note**: The ping protocol does not keep otherwise idle connections alive,
 //! > it only adds an additional condition for terminating the connection, namely
@@ -101,9 +101,9 @@ impl PingConfig {
     ///     connection alive.
     pub fn new() -> Self {
         Self {
-            timeout: Duration::from_secs(3),
-            interval: Duration::from_secs(3),
-            max_failures: NonZeroU32::new(3).expect("1 != 0"),
+            timeout: Duration::from_secs(20),
+            interval: Duration::from_secs(15),
+            max_failures: NonZeroU32::new(1).expect("1 != 0"),
             unsolicited: false,
             keep_alive: false,
         }

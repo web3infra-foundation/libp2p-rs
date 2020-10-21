@@ -18,7 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-//! # libp2p-dns
+//! # libp2prs-dns
 //!
 //! This crate provides the type `DnsConfig` that allows one to resolve the `/dns4/` and `/dns6/`
 //! components of multiaddresses.

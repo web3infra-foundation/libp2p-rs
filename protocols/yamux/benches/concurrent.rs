@@ -18,18 +18,23 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::task;
+use async_std::{
+    net::{TcpListener, TcpStream},
+    task,
+};
 use criterion::{criterion_group, criterion_main, Criterion};
-use futures::{channel::mpsc, future, prelude::*, ready};
-use libp2prs_traits::{ReadEx, ReadExt2, WriteEx};
-use libp2prs_yamux as yamux;
-use libp2prs_yamux::{Config, Connection, Mode};
+use futures::stream::FusedStream;
+use futures::{channel::mpsc, prelude::*, ready};
+use libp2prs_traits::{ReadEx, WriteEx};
+use std::collections::VecDeque;
 use std::{
     fmt, io,
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
 };
+use libp2prs_yamux::{connection::Connection, connection::Mode, Config};
 
 criterion_group!(benches, concurrent);
 criterion_main!(benches);
@@ -56,7 +61,7 @@ impl AsRef<[u8]> for Bytes {
 }
 
 fn concurrent(c: &mut Criterion) {
-    // env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();
+    env_logger::from_env(env_logger::Env::default().default_filter_or("error")).init();
     let params = &[
         Params { streams: 1, messages: 1 },
         Params { streams: 10, messages: 1 },
@@ -96,88 +101,92 @@ fn concurrent(c: &mut Criterion) {
     );
 }
 
+#[allow(dead_code)]
 async fn roundtrip(nstreams: usize, nmessages: usize, data: Bytes, send_all: bool) {
-    let msg_len = data.0.len();
+    let data_len = data.0.len();
     let (server, client) = Endpoint::new();
     let server = server.into_async_read();
     let client = client.into_async_read();
 
-    let server = async move {
-        task::spawn(async move {
-            let conn = Connection::new(server, Config::default(), Mode::Server);
-            let mut ctrl = conn.control();
-
-            task::spawn(async {
-                let mut muxer_conn = conn;
-                while muxer_conn.next_stream().await.is_ok() {}
-                log::info!("connection is closed");
-            });
-
-            while let Ok(mut stream) = ctrl.accept_stream().await {
-                log::debug!("S: accepted new stream");
-                task::spawn(async move {
-                    let (r, w) = stream.clone().split2();
-                    libp2prs_traits::copy(r, w).await.unwrap();
-                    stream.close2().await.unwrap();
-                });
-            }
-        });
-    };
-
-    task::spawn(server);
-
-    let (tx, rx) = mpsc::unbounded();
-    let conn = Connection::new(client, Config::default(), Mode::Client);
-    let mut ctrl = conn.control();
-
-    task::spawn(async {
+    let conn = Connection::new(server, Config::default(), Mode::Server);
+    let mut ctrl_server = conn.control();
+    let loop_handle_server = task::spawn(async {
         let mut muxer_conn = conn;
         while muxer_conn.next_stream().await.is_ok() {}
-        log::info!("connection is closed");
+        log::info!("S connection is closed");
     });
 
+    let mut ctrl = ctrl_server.clone();
+    let stream_handle_server = task::spawn(async move {
+        let mut handles = VecDeque::new();
+        while let Ok(mut stream) = ctrl.accept_stream().await {
+            log::debug!("S: accepted new stream");
+            let handle = task::spawn(async move {
+                let mut buf = vec![0; data_len];
+                for _ in 0..nmessages {
+                    stream.read_exact2(&mut buf).await?;
+                    stream.write_all2(&buf).await?;
+                }
+                stream.close2().await?;
+                Ok::<(), yamux2::error::ConnectionError>(())
+            });
+            handles.push_back(handle);
+        }
+
+        for handle in handles {
+            handle.await.expect("server stream task");
+        }
+    });
+
+    let conn = Connection::new(client, Config::default(), Mode::Client);
+    let mut ctrl_client = conn.control();
+    let loop_handle_client = task::spawn(async {
+        let mut muxer_conn = conn;
+        while muxer_conn.next_stream().await.is_ok() {}
+        log::info!("C connection is closed");
+    });
+
+    let (tx, rx) = mpsc::unbounded();
     for _ in 0..nstreams {
-        let data = data.clone();
+        let data = data.0.clone();
         let tx = tx.clone();
-        let mut ctrl = ctrl.clone();
+        let mut ctrl = ctrl_client.clone();
         task::spawn(async move {
             let mut stream = ctrl.open_stream().await?;
-            log::debug!("C: opened new stream {}", stream.id());
             if send_all {
-                // Send `nmessages` messages and receive `nmessages` messages.
                 for _ in 0..nmessages {
-                    stream.write_all2(data.as_ref()).await?
+                    stream.write_all2(&data).await?;
                 }
+
                 stream.close2().await?;
-                let mut n = 0;
-                let mut b = vec![0; data.0.len()];
-                loop {
-                    let k = stream.read2(&mut b).await?;
-                    if k == 0 {
-                        break;
-                    }
-                    n += k
+
+                for _ in 0..nmessages {
+                    let mut frame = vec![0; data_len];
+                    stream.read_exact2(&mut frame).await?;
+                    assert_eq!(&data[..], &frame[..]);
                 }
-                tx.unbounded_send(n).expect("unbounded_send")
             } else {
-                // Send and receive `nmessages` messages.
-                let mut n = 0;
-                let mut b = vec![0; data.0.len()];
+                let mut frame = vec![0; data_len];
                 for _ in 0..nmessages {
-                    stream.write_all2(data.as_ref()).await?;
-                    stream.read_exact2(&mut b[..]).await?;
-                    n += b.len()
+                    stream.write_all2(&data).await?;
+                    stream.read_exact2(&mut frame).await?;
+                    assert_eq!(&data[..], &frame[..]);
                 }
                 stream.close2().await?;
-                tx.unbounded_send(n).expect("unbounded_send");
             }
-            Ok::<(), yamux::ConnectionError>(())
+
+            tx.unbounded_send(nmessages).expect("unbounded_send");
+            Ok::<(), yamux2::error::ConnectionError>(())
         });
     }
+    let n = rx.take(nstreams * nmessages).fold(0, |acc, n| future::ready(acc + n)).await;
+    assert_eq!(nstreams, n);
 
-    let n = rx.take(nstreams).fold(0, |acc, n| future::ready(acc + n)).await;
-    assert_eq!(n, nstreams * nmessages * msg_len);
-    ctrl.close().await.expect("close")
+    ctrl_client.close().await.expect("client close connection");
+    // ctrl_server.close().await.expect("server close connection");
+    stream_handle_server.await;
+    loop_handle_client.await;
+    loop_handle_server.await;
 }
 
 #[derive(Debug)]
@@ -208,6 +217,9 @@ impl Stream for Endpoint {
     type Item = Result<Vec<u8>, io::Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        if self.incoming.is_terminated() {
+            return Poll::Ready(None);
+        }
         if let Some(b) = ready!(Pin::new(&mut self.incoming).poll_next(cx)) {
             return Poll::Ready(Some(Ok(b)));
         }
