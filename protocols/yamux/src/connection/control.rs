@@ -18,39 +18,24 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use super::ControlCommand;
-use crate::{error::ConnectionError, Stream};
 use futures::{
     channel::{mpsc, oneshot},
-    prelude::*,
+    SinkExt,
 };
+
+use crate::{
+    connection::{stream::Stream, ControlCommand},
+    error::ConnectionError,
+};
+
+pub struct Control {
+    sender: mpsc::UnboundedSender<ControlCommand>,
+}
 
 type Result<T> = std::result::Result<T, ConnectionError>;
 
-/// The Yamux `Connection` controller.
-///
-/// While a Yamux connection makes progress via its `next_stream` method,
-/// this controller can be used to concurrently direct the connection,
-/// e.g. to open a new stream to the remote or to close the connection.
-///
-/// The possible operations are implemented as async methods and redundantly
-/// as poll-based variants which may be useful inside of other poll based
-/// environments such as certain trait implementations.
-pub struct Control {
-    /// Command channel to `Connection`.
-    sender: mpsc::Sender<ControlCommand>,
-}
-
-impl Clone for Control {
-    fn clone(&self) -> Self {
-        Control {
-            sender: self.sender.clone(),
-        }
-    }
-}
-
 impl Control {
-    pub(crate) fn new(sender: mpsc::Sender<ControlCommand>) -> Self {
+    pub fn new(sender: mpsc::UnboundedSender<ControlCommand>) -> Self {
         Control { sender }
     }
 
@@ -79,5 +64,13 @@ impl Control {
         // so we do not treat receive errors differently here.
         let _ = rx.await;
         Ok(())
+    }
+}
+
+impl Clone for Control {
+    fn clone(&self) -> Self {
+        Control {
+            sender: self.sender.clone(),
+        }
     }
 }

@@ -19,14 +19,12 @@
 // DEALINGS IN THE SOFTWARE.
 
 pub mod header;
-mod io;
+pub(crate) mod io;
 
-use futures::future::Either;
 use header::{Data, GoAway, Header, Ping, StreamId, WindowUpdate};
 use std::{convert::TryInto, num::TryFromIntError};
 
 pub use io::FrameDecodeError;
-pub(crate) use io::Io;
 
 /// A Yamux message frame consisting of header and body.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -46,22 +44,6 @@ impl<T> Frame<T> {
 
     pub fn header_mut(&mut self) -> &mut Header<T> {
         &mut self.header
-    }
-
-    /// Introduce this frame to the right of a binary frame type.
-    pub(crate) fn right<U>(self) -> Frame<Either<U, T>> {
-        Frame {
-            header: self.header.right(),
-            body: self.body,
-        }
-    }
-
-    /// Introduce this frame to the left of a binary frame type.
-    pub(crate) fn left<U>(self) -> Frame<Either<T, U>> {
-        Frame {
-            header: self.header.left(),
-            body: self.body,
-        }
     }
 }
 
@@ -108,6 +90,11 @@ impl Frame<Data> {
 
     pub fn into_body(self) -> Vec<u8> {
         self.body
+    }
+
+    pub fn truncate(&mut self, n: usize) {
+        self.header.set_len(n as u32);
+        self.body.truncate(n);
     }
 }
 
