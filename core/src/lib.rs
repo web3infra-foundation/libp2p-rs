@@ -26,6 +26,14 @@
 //!   Each node must have a different `PeerId`. Normally, a `PeerId` is the
 //!   hash of the public key used to negotiate encryption on the
 //!   communication channel, thereby guaranteeing that they cannot be spoofed.
+//! - The [`Transport`] trait defines how to reach a remote node or listen for
+//!   incoming remote connections. See the `transport` module.
+//! - The [`StreamMuxer`] trait is implemented on structs that hold a connection
+//!   to a remote and can subdivide this connection into multiple substreams.
+//!   See the `muxing` module.
+//! - The [`UpgradeInfo`] and [`Upgrader`] traits define how to upgrade each
+//!   individual substream to use a protocol.
+//!   See the `upgrade` module.
 
 pub mod keys_proto {
     include!(concat!(env!("OUT_DIR"), "/keys_proto.rs"));

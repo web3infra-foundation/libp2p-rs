@@ -38,6 +38,8 @@ lazy_static! {
 }
 
 /// Transport that supports `/memory/N` multiaddresses.
+///
+/// MemoryTransport is mainly for test purpose, used to write test code for basic transport functionality.
 #[derive(Debug, Clone, Default)]
 pub struct MemoryTransport;
 

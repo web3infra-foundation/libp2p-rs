@@ -43,13 +43,18 @@
 //!
 //! # Implementing a muxing protocol
 //!
-//! In order to implement a muxing protocol, create an object that implements the `UpgradeInfo`,
-//! `InboundUpgrade` and `OutboundUpgrade` traits. See the `upgrade` module for more information.
-//! The `Output` associated type of the `InboundUpgrade` and `OutboundUpgrade` traits should be
-//! identical, and should be an object that implements the `StreamMuxer` trait.
+//! In order to implement a muxing protocol, create an object that implements the `UpgradeInfo`
+//! and `Upgrader` traits. See the `upgrade` module for more information.
+//! The `Output` associated type of the `Upgrader` traits should be an object that implements
+//! the `StreamMuxer` trait.
 //!
 //! The upgrade process will take ownership of the connection, which makes it possible for the
 //! implementation of `StreamMuxer` to control everything that happens on the wire.
+//!
+//! The `Output` associated type of the `StreamMuxer` is a trait object `IReadWrite`, which is
+//! in fact ReadEx + WriteEx + StreamInfo + Unpin.
+//!
+//! IStreamMuxer is the trait object of StreamMuxer.
 
 use async_trait::async_trait;
 use futures::future::BoxFuture;
@@ -59,7 +64,9 @@ use crate::secure_io::SecureInfo;
 use crate::transport::{ConnectionInfo, TransportError};
 use futures::io::Error;
 
-/// Information about a stream.
+/// StreamInfo returns the information of a substream opened by stream muxer.
+///
+/// The output of StreamMuxer must implements this trait.
 pub trait StreamInfo: Send {
     /// Returns the identity of the stream.
     fn id(&self) -> usize;
