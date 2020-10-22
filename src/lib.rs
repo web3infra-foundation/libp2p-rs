@@ -38,8 +38,6 @@
 
 #![deny(missing_docs)]
 
-/// Re-pub bytes crate
-pub use bytes;
 /// Re-pub mplex crate
 pub use libp2prs_mplex;
 /// Re-pub multiaddr crate
@@ -51,16 +49,3 @@ pub use libp2prs_traits;
 /// Re-pub yamux crate
 pub use libp2prs_yamux;
 
-/*
-/// Some gadgets that help create a service
-pub mod builder;
-/// Context for Session and Service
-pub mod context;
-/// Error
-pub mod error;
-
-
-mod channel;
-
-pub(crate) mod upnp;
-*/

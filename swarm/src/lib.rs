@@ -49,7 +49,7 @@ mod control;
 //mod dial;
 mod muxer;
 mod network;
-//mod registry;
+mod registry;
 
 pub mod identify;
 pub mod ping;
