@@ -291,7 +291,6 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    #[allow(clippy::float_cmp)]
     fn addr_book_basic() {
         //env_logger::from_env(env_logger::Env::default().default_filter_or("trace")).init();
         let mut ab = AddrBook::default();
@@ -315,9 +314,9 @@ mod tests {
 
         ab.update_addr(&peer_id, Duration::from_secs(1), Duration::from_secs(3));
         info!("{}", ab.get_addr(&peer_id).unwrap().first().unwrap().ttl);
+        let zero = ab.get_addr(&peer_id).unwrap().first().unwrap().ttl - Duration::from_secs(3).as_secs_f64();
         assert_eq!(
-            ab.get_addr(&peer_id).unwrap().first().unwrap().ttl,
-            Duration::from_secs(3).as_secs_f64()
+            zero as i64, 0
         );
 
         ab.del_peer(&peer_id);
