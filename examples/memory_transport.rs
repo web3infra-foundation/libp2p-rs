@@ -32,8 +32,6 @@ use libp2prs_yamux as yamux;
 use std::time::Duration;
 
 fn main() {
-    //env_logger::init();
-
     env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     // Setup listener.
@@ -48,8 +46,6 @@ fn main() {
         let sec = secio::Config::new(Keypair::generate_secp256k1());
         //let sec = DummyUpgrader::new();
         let mux = Selector::new(yamux::Config::new(), Selector::new(yamux::Config::new(), yamux::Config::new()));
-        //let mux = yamux::Config::new();
-        //let mux = mplex::Config::new();
         let mut t1 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
         let mut listener = t1.listen_on(listen_addr).unwrap();
 
@@ -80,14 +76,6 @@ fn main() {
                         break;
                     }
                 }
-
-                // let mut msg = vec![0; 4096];
-                // loop {
-                //     let n = stream.read2(&mut msg).await?;
-                //     stream.write2(&msg[..n]).await?;
-                // }
-
-                //});
             });
         }
     });
@@ -101,11 +89,7 @@ fn main() {
             let addr = t1_addr.clone();
             task::spawn(async move {
                 let mut msg = [1, 2, 3];
-
                 let sec = secio::Config::new(Keypair::generate_secp256k1());
-                //let sec = DummyUpgrader::new();
-                //let mux = yamux::Config::new();
-                //let mux = mplex::Config::new();
                 let mux = Selector::new(yamux::Config::new(), Selector::new(yamux::Config::new(), yamux::Config::new()));
                 let mut t2 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
                 let mut stream_muxer = t2.dial(addr).await.expect("listener is started already");

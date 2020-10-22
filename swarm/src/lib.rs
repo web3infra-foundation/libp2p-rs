@@ -49,7 +49,7 @@ mod control;
 //mod dial;
 mod muxer;
 mod network;
-//mod registry;
+mod registry;
 
 pub mod identify;
 pub mod ping;
@@ -487,7 +487,7 @@ impl Swarm {
                 log::info!("closing the swarm...");
                 let _ = self.event_sender.close_channel();
             } // TODO:
-            //_ => {}
+              //_ => {}
         }
 
         Ok(())

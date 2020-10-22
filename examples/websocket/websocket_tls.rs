@@ -90,7 +90,12 @@ struct ClientTlsConfig {
 
     /// A file with a certificate authority chain, allows to connect
     /// to certificate authories not included in the default set
-    #[structopt(short = "c", long = "cafile", parse(from_os_str), default_value = "examples/websocket/cert/ca.cert")]
+    #[structopt(
+        short = "c",
+        long = "cafile",
+        parse(from_os_str),
+        default_value = "examples/websocket/cert/ca.cert"
+    )]
     cafile: PathBuf,
 }
 

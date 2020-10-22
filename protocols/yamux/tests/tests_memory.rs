@@ -22,7 +22,7 @@ use async_std::task;
 use futures::channel::oneshot;
 use futures::stream::FusedStream;
 use futures::{channel::mpsc, prelude::*, ready};
-use libp2prs_traits::{ReadEx, ReadExt2, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
 use libp2prs_yamux::{
     connection::{stream::Stream as yamux_stream, Connection, Mode},
     Config,
@@ -351,12 +351,12 @@ fn prop_echo() {
             // B act as server
             let mut mpb_ctrl1 = mpb_ctrl.clone();
             let handle_b = task::spawn(async move {
-                let mut sb = mpb_ctrl1.accept_stream().await.expect("B accept stream");
+                let sb = mpb_ctrl1.accept_stream().await.expect("B accept stream");
                 echo(sb).await;
             });
 
             // A act as client
-            let mut sa = mpa_ctrl.clone().open_stream().await.expect("client open stream");
+            let sa = mpa_ctrl.clone().open_stream().await.expect("client open stream");
 
             // A send and recv
             send_recv(sa).await;
@@ -393,7 +393,7 @@ fn prop_concurrent() {
 
             // create connection B
             let mpb = Connection::new(b, Config::default(), Mode::Client);
-            let mut mpb_ctrl = mpb.control();
+            let mpb_ctrl = mpb.control();
             let loop_handle_b = task::spawn(async {
                 let mut muxer_conn = mpb;
                 let _ = muxer_conn.next_stream().await;
@@ -413,7 +413,7 @@ fn prop_concurrent() {
                         // B echo
                         sb.read_exact2(&mut buf).await.expect("B read exact");
                         sb.write_all2(&buf).await.expect("B write all");
-                        sb.close2().await;
+                        let _ = sb.close2().await;
                     });
                     handles.push_back(handle);
                 }
@@ -645,12 +645,12 @@ fn prop_lazy_open() {
             // B act as server
             let mut mpb_ctrl1 = mpb_ctrl.clone();
             let stream_handle_b = task::spawn(async move {
-                let mut sb = mpb_ctrl1.accept_stream().await.expect("B accept stream");
+                let sb = mpb_ctrl1.accept_stream().await.expect("B accept stream");
                 echo(sb).await;
             });
 
             // A act as client
-            let mut sa = mpa_ctrl.clone().open_stream().await.expect("client open stream");
+            let sa = mpa_ctrl.clone().open_stream().await.expect("client open stream");
 
             // A send and recv
             send_recv(sa).await;
@@ -705,7 +705,7 @@ fn prop_cannot_read_after_close() {
             // B act as server
             let mut mpb_ctrl1 = mpb_ctrl.clone();
             let stream_handle_b = task::spawn(async move {
-                let mut sb = mpb_ctrl1.accept_stream().await.expect("B accept stream");
+                let sb = mpb_ctrl1.accept_stream().await.expect("B accept stream");
                 echo(sb).await;
             });
 
@@ -906,7 +906,7 @@ fn prop_stream_reset_after_conn_close() {
 
             // new stream
             if let Ok(mut sb) = mpb_ctrl.clone().open_stream().await {
-                sb.reset().await;
+                let _ = sb.reset().await;
             }
 
             // close connection A and B
@@ -953,8 +953,8 @@ fn prop_stream_close_after_conn_close() {
 
             // new stream
             if let Ok(mut sb) = mpb_ctrl.clone().open_stream().await {
-                sb.close2().await;
-                sb.reset().await;
+                let _ = sb.close2().await;
+                let _ = sb.reset().await;
             }
 
             // close connection A and B
@@ -1001,8 +1001,8 @@ fn prop_stream_write_after_conn_close() {
 
             // new stream
             if let Ok(mut sb) = mpb_ctrl.clone().open_stream().await {
-                sb.write2(b"Hello World").await;
-                sb.reset().await;
+                let _ = sb.write2(b"Hello World").await;
+                let _ = sb.reset().await;
             }
 
             // close connection A and B
@@ -1050,8 +1050,8 @@ fn prop_stream_read_after_conn_close() {
             // new stream
             if let Ok(mut sb) = mpb_ctrl.clone().open_stream().await {
                 let mut buf = vec![0; 64];
-                sb.read2(&mut buf).await;
-                sb.reset().await;
+                let _ = sb.read2(&mut buf).await;
+                let _ = sb.reset().await;
             }
 
             // close connection A and B
@@ -1098,7 +1098,7 @@ fn prop_goaway() {
             let mut remote_goaway = false;
             for _ in 0..100 {
                 if let Ok(mut sb) = mpb_ctrl.clone().open_stream().await {
-                    sb.close2().await;
+                    let _ = sb.close2().await;
                 } else {
                     remote_goaway = true;
                     break;
@@ -1315,7 +1315,7 @@ fn prop_accept_stream_after_close_conn() {
 
             // create connection B
             let mpb = Connection::new(b, Config::default(), Mode::Client);
-            let mut mpb_ctrl = mpb.control();
+            let mpb_ctrl = mpb.control();
             let loop_handle_b = task::spawn(async {
                 let mut muxer_conn = mpb;
                 let _ = muxer_conn.next_stream().await;

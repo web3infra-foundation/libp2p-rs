@@ -24,12 +24,7 @@ use async_std::{
 };
 use futures::{channel::mpsc, prelude::*};
 use libp2prs_traits::{ReadEx, WriteEx};
-use libp2prs_yamux::{
-    connection::Connection,
-    connection::Mode,
-    Config,
-    error::ConnectionError,
-};
+use libp2prs_yamux::{connection::Connection, connection::Mode, error::ConnectionError, Config};
 use std::collections::VecDeque;
 use std::{
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
@@ -59,7 +54,7 @@ async fn roundtrip(address: SocketAddr, nstreams: usize, data: Arc<Vec<u8>>) {
                 let mut len = [0; 4];
                 stream.read_exact2(&mut len).await?;
                 let mut buf = vec![0; u32::from_be_bytes(len) as usize];
-                stream.read_exact2(&mut buf).await;
+                let _ = stream.read_exact2(&mut buf).await;
                 stream.write_all2(&buf).await?;
                 stream.close2().await?;
                 Ok::<(), ConnectionError>(())
@@ -112,7 +107,7 @@ async fn roundtrip(address: SocketAddr, nstreams: usize, data: Arc<Vec<u8>>) {
     assert_eq!(nstreams, n);
 
     while let Some(handle) = handles.pop_front() {
-        handle.await;
+        let _ = handle.await;
     }
     loop_handle.await;
 

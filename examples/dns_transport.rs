@@ -45,12 +45,8 @@ fn main() {
 }
 
 fn run_server() {
-    let listen_addr: Multiaddr = "/ip4/127.0.0.1/tcp/8086".parse().unwrap();
+    let listen_addr: Multiaddr = "/ip4/127.0.0.1/tcp/38086".parse().unwrap();
     let sec = secio::Config::new(Keypair::generate_secp256k1());
-    //let sec = DummyUpgrader::new();
-    //let mux = Selector::new(yamux::Config::new(), Selector::new(yamux::Config::new(), yamux::Config::new()));
-    // let mux = yamux::Config::new();
-    // let mux = mplex::Config::new();
     let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
     let mut tu = TransportUpgrade::new(DnsConfig::new(TcpConfig::default()), mux, sec);
 
@@ -81,7 +77,6 @@ fn run_server() {
                         if n == 0 {
                             return;
                         }
-                        // info!("{:?} read {:?}", stream, &buf[..n]);
                         if let Err(e) = stream.write_all2(buf[..n].as_ref()).await {
                             error!("{:?} write failed: {:?}", stream, e);
                             return;
@@ -94,13 +89,8 @@ fn run_server() {
 }
 
 fn run_client() {
-    // let addr: Multiaddr = "/ip4/127.0.0.1/tcp/8086".parse().unwrap();
-    let addr: Multiaddr = "/dns4/example.com/tcp/8086".parse().unwrap();
+    let addr: Multiaddr = "/dns4/localhost/tcp/38086".parse().unwrap();
     let sec = secio::Config::new(Keypair::generate_secp256k1());
-    //let sec = DummyUpgrader::new();
-    //let mux = Selector::new(yamux::Config::new(), Selector::new(yamux::Config::new(), yamux::Config::new()));
-    // let mux = yamux::Config::new();
-    // let mux = mplex::Config::new();
     let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
     let mut tu = TransportUpgrade::new(DnsConfig::new(TcpConfig::default()), mux, sec);
 
@@ -112,33 +102,22 @@ fn run_client() {
             task::spawn(task);
         }
 
-        let mut handles = Vec::new();
-        for _ in 0..2_u32 {
-            let mut stream = stream_muxer.open_stream().await.unwrap();
-            let handle = task::spawn(async move {
-                info!("C: opened new stream {:?}", stream);
+        let mut stream = stream_muxer.open_stream().await.unwrap();
+        task::spawn(async move {
+            info!("opened new stream {:?}", stream);
+            let data = b"hello world";
 
-                let data = b"hello world";
+            stream.write_all2(data.as_ref()).await.unwrap();
+            info!("stream: {:?}: write {:?}", stream, String::from_utf8_lossy(data));
 
-                stream.write_all2(data.as_ref()).await.unwrap();
-                info!("C: {:?}: wrote {} bytes", stream, data.len());
+            let mut frame = vec![0; data.len()];
+            stream.read_exact2(&mut frame).await.unwrap();
+            info!("stream: {:?}: read {:?}", stream, String::from_utf8_lossy(&frame));
 
-                let mut frame = vec![0; data.len()];
-                stream.read_exact2(&mut frame).await.unwrap();
-                info!("C: {:?}: read {:?}", stream, &frame);
-                // assert_eq!(&data[..], &frame[..]);
-
-                stream.close2().await.expect("close stream");
-
-                // wait for stream to send and recv close frame
-                // task::sleep(Duration::from_secs(1)).await;
-            });
-            handles.push(handle);
-        }
-
-        for handle in handles {
-            handle.await;
-        }
+            assert_eq!(&data[..], &frame[..]);
+            stream.close2().await.expect("close stream");
+        })
+        .await;
 
         stream_muxer.close().await.expect("close connection");
 

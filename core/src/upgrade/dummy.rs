@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::identity::Keypair;
-use crate::muxing::{IReadWrite, IStreamMuxer, StreamMuxer};
+use crate::muxing::{IReadWrite, IStreamMuxer, StreamMuxer, StreamMuxerEx};
 use crate::secure_io::SecureInfo;
 use crate::transport::{ConnectionInfo, TransportError};
 use crate::upgrade::{UpgradeInfo, Upgrader};
@@ -170,3 +170,5 @@ impl<T> SecureInfo for DummyStream<T> {
         Keypair::generate_ed25519().public()
     }
 }
+
+impl<T: ConnectionInfo> StreamMuxerEx for DummyStream<T> {}

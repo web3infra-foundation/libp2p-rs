@@ -150,7 +150,7 @@ impl<T: WriteEx + ReadEx + Send + Unpin> WriteEx for NoiseOutput<T> {
             // self.io.send2(&frame_buf).map_err(|e| e.into()).await;
             match self.io.send2(&frame_buf).await {
                 Ok(()) => {}
-                Err(e) => return Err(e.into())
+                Err(e) => return Err(e.into()),
             }
             self.send_offset = 0;
         }
@@ -165,7 +165,7 @@ impl<T: WriteEx + ReadEx + Send + Unpin> WriteEx for NoiseOutput<T> {
 
         match self.flush2().await {
             Ok(()) => {}
-            Err(e) => return Err(e)
+            Err(e) => return Err(e),
         }
 
         Ok(n)
@@ -178,12 +178,12 @@ impl<T: WriteEx + ReadEx + Send + Unpin> WriteEx for NoiseOutput<T> {
         if self.send_offset > 0 {
             match self.io.ready2().await {
                 Ok(()) => {}
-                Err(e) => return Err(e.into())
+                Err(e) => return Err(e.into()),
             }
             trace!("flush: sending {} bytes", self.send_offset);
             match self.io.send2(&frame_buf).await {
                 Ok(()) => {}
-                Err(e) => return Err(e.into())
+                Err(e) => return Err(e.into()),
             }
             self.send_offset = 0;
         }
