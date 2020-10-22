@@ -46,7 +46,6 @@ run the following:
 
 ```
  cd libp2p-rs/examples/chat/go
- make deps
  go build
 ```
 
