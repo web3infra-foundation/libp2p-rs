@@ -40,27 +40,17 @@ pub enum State {
     SendClosed,
     /// Open for outgoing messages.
     RecvClosed,
-    /// Closed (terminal state).
-    Closed,
 }
 
 impl State {
     /// Can we receive messages over this stream?
     pub fn can_read(self) -> bool {
-        if let State::RecvClosed | State::Closed = self {
-            false
-        } else {
-            true
-        }
+        self != State::RecvClosed
     }
 
     /// Can we send messages over this stream?
     pub fn can_write(self) -> bool {
-        if let State::SendClosed | State::Closed = self {
-            false
-        } else {
-            true
-        }
+        self != State::SendClosed
     }
 }
 
@@ -164,15 +154,11 @@ impl Stream {
             return Ok(());
         }
 
-        // In order to support [`Clone`]
-        // When reference count is 1, we can close stream entirely
-        // Otherwise, just close sender channel
-        let count = Arc::strong_count(&self.receiver);
-        if count == 1 {
-            let frame = Frame::close_frame(self.id);
-            let cmd = StreamCommand::CloseStream(frame);
-            self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
-        }
+        let (tx, rx) = oneshot::channel();
+        let frame = Frame::close_frame(self.id);
+        let cmd = StreamCommand::CloseStream(frame, tx);
+        self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
+        rx.await.map_err(|_| self.closed_err())?;
 
         // step3: close channel
         self.sender.close().await.expect("send err");
@@ -187,17 +173,11 @@ impl Stream {
             return Ok(());
         }
 
-        // In order to support [`Clone`]
-        // When reference count is 1, we can close stream entirely
-        // Otherwise, just close sender channel
-        let count = Arc::strong_count(&self.receiver);
-        if count == 1 {
-            let frame = Frame::reset_frame(self.id);
-            let cmd = StreamCommand::ResetStream(frame);
-            self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
+        let frame = Frame::reset_frame(self.id);
+        let cmd = StreamCommand::ResetStream(frame);
+        self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
 
-            self.sender.close().await.map_err(|_| self.write_zero_err())?;
-        }
+        self.sender.close().await.map_err(|_| self.write_zero_err())?;
 
         Ok(())
     }
