@@ -41,27 +41,17 @@ pub enum State {
     SendClosed,
     /// Open for outgoing messages.
     RecvClosed,
-    /// Closed (terminal state).
-    Closed,
 }
 
 impl State {
     /// Can we receive messages over this stream?
     pub fn can_read(self) -> bool {
-        if let State::RecvClosed | State::Closed = self {
-            false
-        } else {
-            true
-        }
+        self != State::RecvClosed
     }
 
     /// Can we send messages over this stream?
     pub fn can_write(self) -> bool {
-        if let State::SendClosed | State::Closed = self {
-            false
-        } else {
-            true
-        }
+        self != State::SendClosed
     }
 }
 
@@ -89,25 +79,10 @@ impl StreamStat {
 
     /// Update the stream state and return the state before it was updated.
     pub(crate) fn update_state(&mut self, cid: Id, sid: StreamId, next: State) -> State {
-        use self::State::*;
-
         let current = self.state;
-
-        match (current, next) {
-            (Closed, _) => {}
-            (Open, _) => self.state = next,
-            (RecvClosed, Closed) => self.state = Closed,
-            (RecvClosed, Open) => {}
-            (RecvClosed, RecvClosed) => {}
-            (RecvClosed, SendClosed) => self.state = Closed,
-            (SendClosed, Closed) => self.state = Closed,
-            (SendClosed, Open) => {}
-            (SendClosed, RecvClosed) => self.state = Closed,
-            (SendClosed, SendClosed) => {}
-        }
+        self.state = next;
 
         log::trace!("{}/{}: update state: ({:?} {:?} {:?})", cid, sid, current, next, self.state);
-
         current // Return the previous stream state for informational purposes.
     }
 
@@ -227,7 +202,7 @@ impl Stream {
 
         let len = buf.len();
         if len == 0 {
-            return Err(io::ErrorKind::WriteZero.into());
+            return Ok(0);
         }
 
         let (tx, rx) = oneshot::channel();
@@ -249,19 +224,13 @@ impl Stream {
         if self.sender.is_closed() {
             return Ok(());
         }
-        // In order to support [`Clone`]
-        // When reference count is 1, we can close stream entirely
-        // Otherwise, just close sender channel
-        let count = Arc::strong_count(&self.receiver);
-        if count == 1 {
-            let (tx, rx) = oneshot::channel();
-            let cmd = StreamCommand::CloseStream(self.id, tx);
-            self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
-            rx.await.map_err(|_| self.closed_err())?;
-        }
 
-        // step3: close channel
-        self.sender.close().await.expect("send err");
+        let (tx, rx) = oneshot::channel();
+        let cmd = StreamCommand::CloseStream(self.id, tx);
+        self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
+        rx.await.map_err(|_| self.closed_err())?;
+
+        self.sender.close().await.expect("close err");
 
         Ok(())
     }
@@ -273,16 +242,9 @@ impl Stream {
             return Ok(());
         }
 
-        // In order to support [`Clone`]
-        // When reference count is 1, we can close stream entirely
-        // Otherwise, just close sender channel
-        let count = Arc::strong_count(&self.receiver);
-        if count == 1 {
-            let cmd = StreamCommand::ResetStream(self.id);
-            self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
-
-            self.sender.close().await.map_err(|_| self.write_zero_err())?;
-        }
+        let cmd = StreamCommand::ResetStream(self.id);
+        self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
+        self.sender.close().await.expect("close err");
 
         Ok(())
     }
