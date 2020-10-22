@@ -18,19 +18,15 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::{
-    net::{TcpListener, TcpStream},
-    task,
-};
+use async_std::task;
 use criterion::{criterion_group, criterion_main, Criterion};
 use futures::stream::FusedStream;
 use futures::{channel::mpsc, prelude::*, ready};
 use libp2prs_traits::{ReadEx, WriteEx};
-use libp2prs_yamux::{connection::Connection, connection::Mode, Config};
+use libp2prs_yamux::{connection::Connection, connection::Mode, error::ConnectionError, Config};
 use std::collections::VecDeque;
 use std::{
     fmt, io,
-    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -109,7 +105,7 @@ async fn roundtrip(nstreams: usize, nmessages: usize, data: Bytes, send_all: boo
     let client = client.into_async_read();
 
     let conn = Connection::new(server, Config::default(), Mode::Server);
-    let mut ctrl_server = conn.control();
+    let ctrl_server = conn.control();
     let loop_handle_server = task::spawn(async {
         let mut muxer_conn = conn;
         while muxer_conn.next_stream().await.is_ok() {}
@@ -128,7 +124,7 @@ async fn roundtrip(nstreams: usize, nmessages: usize, data: Bytes, send_all: boo
                     stream.write_all2(&buf).await?;
                 }
                 stream.close2().await?;
-                Ok::<(), yamux2::error::ConnectionError>(())
+                Ok::<(), ConnectionError>(())
             });
             handles.push_back(handle);
         }
@@ -176,7 +172,7 @@ async fn roundtrip(nstreams: usize, nmessages: usize, data: Bytes, send_all: boo
             }
 
             tx.unbounded_send(nmessages).expect("unbounded_send");
-            Ok::<(), yamux2::error::ConnectionError>(())
+            Ok::<(), ConnectionError>(())
         });
     }
     let n = rx.take(nstreams * nmessages).fold(0, |acc, n| future::ready(acc + n)).await;

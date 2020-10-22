@@ -39,7 +39,8 @@ use libp2prs_tcp::TcpConfig;
 use libp2prs_traits::{ReadEx, WriteEx};
 use libp2prs_yamux as yamux;
 
-#[test]
+//#[test]
+#[allow(dead_code)]
 fn concurrent_stream() {
     // env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
     task::spawn(async { run_server() });
