@@ -164,9 +164,6 @@ where
     state.finish(keypair)
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// Internal
-
 /// Handshake state.
 struct State<T> {
     /// The underlying I/O resource.
@@ -274,8 +271,7 @@ where
     Ok(())
 }
 
-/// Using async/await to receive a Noise handshake message with a payload
-/// identifying the remote.
+/// Using async/await to receive a Noise handshake message with a payload.
 async fn recv_identity<T>(state: &mut State<T>) -> Result<(), NoiseError>
 where
     T: ReadEx + WriteEx + Unpin + Send,

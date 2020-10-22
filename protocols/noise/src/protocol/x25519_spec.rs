@@ -77,7 +77,6 @@ impl From<SecretKey<X25519Spec>> for Keypair<X25519Spec> {
 
 impl UpgradeInfo for NoiseConfig<XX, X25519Spec> {
     type Info = &'static [u8];
-    // type InfoIter = std::iter::Once<Self::Info>;
 
     fn protocol_info(&self) -> Vec<Self::Info> {
         vec![b"/noise/x25519spec/1.0.0"]

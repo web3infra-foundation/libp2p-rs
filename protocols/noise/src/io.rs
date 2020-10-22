@@ -147,7 +147,6 @@ impl<T: WriteEx + ReadEx + Send + Unpin> WriteEx for NoiseOutput<T> {
         if self.send_offset == MAX_FRAME_LEN {
             trace!("write: sending {} bytes", MAX_FRAME_LEN);
 
-            // self.io.send2(&frame_buf).map_err(|e| e.into()).await;
             match self.io.send2(&frame_buf).await {
                 Ok(()) => {}
                 Err(e) => return Err(e.into()),
