@@ -33,7 +33,7 @@ jobs:
   
   build_and_test:
     name: Build and test
-    needs: [check_fmt_and_docs]
+    needs: [fmt_clippy_docs]
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:

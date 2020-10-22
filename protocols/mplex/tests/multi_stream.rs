@@ -42,7 +42,7 @@ fn multi_stream() {
             let mut ctrl = muxer_conn.control();
             task::spawn(async {
                 let mut muxer_conn = muxer_conn;
-                while let Ok(_) = muxer_conn.next_stream().await {}
+                while muxer_conn.next_stream().await.is_ok() {}
             });
 
             while let Ok(mut stream) = ctrl.accept_stream().await {
@@ -73,7 +73,7 @@ fn multi_stream() {
 
         task::spawn(async {
             let mut muxer_conn = muxer_conn;
-            while let Ok(_) = muxer_conn.next_stream().await {}
+            while muxer_conn.next_stream().await.is_ok() {}
         });
 
         let mut handles = Vec::new();

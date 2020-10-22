@@ -223,9 +223,9 @@ mod tests {
     use rand::seq::SliceRandom;
     use std::fmt;
 
-    const KEY1: &'static [u8] = include_bytes!("test/rsa-2048.pk8");
-    const KEY2: &'static [u8] = include_bytes!("test/rsa-3072.pk8");
-    const KEY3: &'static [u8] = include_bytes!("test/rsa-4096.pk8");
+    const KEY1: &[u8] = include_bytes!("test/rsa-2048.pk8");
+    const KEY2: &[u8] = include_bytes!("test/rsa-3072.pk8");
+    const KEY3: &[u8] = include_bytes!("test/rsa-4096.pk8");
 
     #[derive(Clone)]
     struct SomeKeypair(Keypair);

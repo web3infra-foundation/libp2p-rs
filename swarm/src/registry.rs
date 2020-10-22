@@ -218,7 +218,7 @@ mod tests {
         // Add an address a single time.
         let single: Multiaddr = "/tcp/2108".parse().unwrap();
         addresses.add(single.clone());
-        assert!(addresses.iter().find(|a| **a == single).is_some());
+        assert!(addresses.iter().any(|a| *a == single));
 
         // Then fill `addresses` with random stuff.
         let other: Multiaddr = "/tcp/120".parse().unwrap();

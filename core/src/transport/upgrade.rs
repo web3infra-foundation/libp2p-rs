@@ -176,7 +176,7 @@ mod tests {
         };
 
         // Setup dialer.
-        let mut t2 = TransportUpgrade::new(pro_trans.clone(), DummyUpgrader::new(), DummyUpgrader::new());
+        let mut t2 = TransportUpgrade::new(pro_trans, DummyUpgrader::new(), DummyUpgrader::new());
 
         let dialer = async move {
             let mut socket = t2.dial(cloned_t1_addr).await.unwrap();

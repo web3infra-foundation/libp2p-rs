@@ -18,7 +18,7 @@ Node B Viedo
 ```
 git clone https://github.com/netwarps/libp2p-rs.git
 ```
-## Rust server VS Rust client
+## Rust server and Rust client
 
 ```
  cd libp2p-rs
@@ -39,7 +39,7 @@ On node 'A'. Replace 127.0.0.1 with <PUBLIC_IP> if node 'B' has one.
 ```
 
 
-## Go server VS Go client
+## Go server and Go client
 
 
 run the following:
@@ -63,7 +63,7 @@ On node 'A'.
 ```
 
 
-## Rust server VS Go client
+## Rust server and Go client
 
 On node 'B'.
 ```
@@ -77,7 +77,7 @@ On node 'A'.
  ./chat -d /ip4/127.0.0.1/tcp/8086/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN
 ```
 
-##  Go server VS Rust client
+##  Go server and Rust client
 
 On node 'B'.
 ```
