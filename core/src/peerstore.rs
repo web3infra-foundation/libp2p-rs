@@ -330,11 +330,17 @@ mod tests {
         let peer_id = PeerId::random();
 
         let proto_list = vec!["/libp2p/secio/1.0.0".to_string(), "/libp2p/yamux/1.0.0".to_string()];
-        proto.add_protocol(&peer_id, proto_list);
-        assert_eq!(
-            proto.get_protocol(&peer_id).unwrap(),
-            vec!["/libp2p/secio/1.0.0", "/libp2p/yamux/1.0.0"]
-        );
+        proto.add_protocol(&peer_id, proto_list.clone());
+
+        let p = proto.get_protocol(&peer_id).unwrap();
+
+        for i in proto_list {
+            if p.contains(&i) {
+                continue;
+            } else {
+                assert!(false)
+            }
+        }
 
         let optional_list = vec!["/libp2p/noise/1.0.0".to_string(), "/libp2p/yamux/1.0.0".to_string()];
         let protocol = proto.first_supported_protocol(&peer_id, optional_list);
