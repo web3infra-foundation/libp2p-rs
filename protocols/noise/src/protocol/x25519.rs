@@ -258,7 +258,7 @@ mod tests {
             let x25519 = Keypair::from(SecretKey::from_ed25519(&ed25519.secret()));
 
             let sodium_sec = ed25519_sk_to_curve25519(&sign::SecretKey(ed25519.encode()));
-            let sodium_pub = ed25519_pk_to_curve25519(&sign::PublicKey(ed25519.public().encode().clone()));
+            let sodium_pub = ed25519_pk_to_curve25519(&sign::PublicKey(ed25519.public().encode()));
 
             let our_pub = x25519.public.0;
             // libsodium does the [clamping] of the scalar upon key construction,

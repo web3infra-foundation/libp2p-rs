@@ -53,8 +53,7 @@ fn build_pet_config() -> ProtectorTransport<DnsConfig<TcpConfig>> {
         .parse::<PreSharedKey>()
         .unwrap();
     let pnet = PnetConfig::new(psk);
-    let pro_trans = ProtectorTransport::new(DnsConfig::new(TcpConfig::default()), pnet);
-    return pro_trans;
+    ProtectorTransport::new(DnsConfig::new(TcpConfig::default()), pnet)
 }
 
 fn run_server() {

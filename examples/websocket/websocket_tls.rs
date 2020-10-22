@@ -122,8 +122,8 @@ fn build_client_tls_config(options: &ClientTlsConfig) -> tls::Config {
     let ca = load_certs(&options.cafile).unwrap();
     let ca_cert = &tls::Certificate::new(ca.get(0).unwrap().as_ref().to_vec());
     log::trace!("ca cert  {:?}", &ca_cert);
-    let builder = tls::Config::builder();
-    builder.clone().add_trust(ca_cert).unwrap().clone().finish()
+    let mut builder = tls::Config::builder();
+    builder.add_trust(ca_cert).unwrap().clone().finish()
 }
 // Build tls server config
 fn build_server_tls_config(options: &ServerTlsConfig) -> tls::Config {
@@ -178,6 +178,7 @@ lazy_static! {
     static ref SERVER_KEY: Keypair = Keypair::generate_ed25519_fixed();
 }
 
+#[allow(clippy::empty_loop)]
 fn run_server() -> io::Result<()> {
     let options = ServerTlsConfig::from_args();
     let addr = format!("/ip4/{}/tcp/{}/wss", &options.host, &options.port);
@@ -190,7 +191,7 @@ fn run_server() -> io::Result<()> {
     let mux = mplex::Config::new();
 
     let ws = WsConfig::new().set_tls_config(build_server_tls_config(&options)).to_owned();
-    let tu = TransportUpgrade::new(ws.clone(), mux.clone(), sec.clone());
+    let tu = TransportUpgrade::new(ws, mux, sec);
 
     let mut swarm = Swarm::new(PeerId::from_public_key(keys.public()))
         .with_transport(Box::new(tu))

@@ -19,7 +19,6 @@
 // DEALINGS IN THE SOFTWARE.
 
 use async_std::task;
-use env_logger;
 use libp2prs_core::identity::Keypair;
 use libp2prs_secio::Config;
 use log::info;
@@ -54,12 +53,8 @@ fn server() {
 
                 let mut buf = [0; 100];
 
-                loop {
-                    if let Ok(n) = handle.read2(&mut buf).await {
-                        if handle.write_all2(&buf[..n]).await.is_err() {
-                            break;
-                        }
-                    } else {
+                while let Ok(n) = handle.read2(&mut buf).await {
+                    if handle.write_all2(&buf[..n]).await.is_err() {
                         break;
                     }
                 }

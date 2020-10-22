@@ -52,6 +52,7 @@ lazy_static! {
     static ref SERVER_KEY: Keypair = Keypair::generate_ed25519_fixed();
 }
 
+#[allow(clippy::empty_loop)]
 fn run_server() {
     let keys = SERVER_KEY.clone();
 

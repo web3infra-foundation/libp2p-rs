@@ -51,13 +51,14 @@ lazy_static! {
     static ref SERVER_KEY: Keypair = Keypair::generate_ed25519_fixed();
 }
 
+#[allow(clippy::empty_loop)]
 fn run_server() {
     let keys = SERVER_KEY.clone();
 
     let listen_addr: Multiaddr = "/ip4/127.0.0.1/tcp/8086".parse().unwrap();
     let sec = secio::Config::new(keys.clone());
     let mux = yamux::Config::new();
-    let tu = TransportUpgrade::new(TcpConfig::default(), mux.clone(), sec.clone());
+    let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
 
     #[derive(Clone)]
     struct MyProtocolHandler;

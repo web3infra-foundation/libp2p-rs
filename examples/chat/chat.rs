@@ -122,14 +122,13 @@ impl ProtocolHandler for ChatHandler {
         let stream = stream;
         log::trace!("ChatHandler handling inbound {:?}", stream);
         let s1 = stream.clone();
-        let s2 = stream.clone();
 
         task::spawn(async {
-            read_data(s1).await;
+            read_data(stream).await;
         });
 
         task::spawn(async {
-            write_data(s2).await;
+            write_data(s1).await;
         });
         Ok(())
     }
@@ -139,6 +138,7 @@ impl ProtocolHandler for ChatHandler {
     }
 }
 
+#[allow(clippy::empty_loop)]
 fn run_server() {
     let keys = SERVER_KEY.clone();
     let options = Config::from_args();

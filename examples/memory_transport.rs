@@ -19,7 +19,6 @@
 // DEALINGS IN THE SOFTWARE.
 
 use async_std::task;
-use log;
 
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::transport::memory::MemoryTransport;
