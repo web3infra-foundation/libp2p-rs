@@ -5,7 +5,7 @@ ReadEx and WriteEx are the traits to support I/O operations, quite similar to th
 
 The async methods in ReadEx and WriteEx are almost the async cloned version of thoese in AsyncRead and AsyncWrite, f.g. AsyncRead::read => ReadEx::read2. In addition, ReadEx and WriteEx also provide some convenience by adding a few default implementations of fixed or variant length-prefix helper methods.
 
-ReadEx and WriteEx are define as below:
+ReadEx and WriteEx are defined as below:
 
 ```no_run
 
@@ -34,7 +34,7 @@ pub trait WriteEx: Send {
 }
 ```
 
-In general, all I/O objects in `libp2p-rs` support ReadEx/WriteEx, furthermore in Swarm, A trait object of ReadEx + WriteEx, called 'IReadWrite' is used to construct the Substream created by Swarm stream muxer.
+In general, all I/O objects in `libp2p-rs` support ReadEx/WriteEx, furthermore in Swarm, A trait object of ReadEx + WriteEx, called 'IReadWrite', is used to construct the Substream which contains a raw substream opened by stream muxer.
 
 In order to integrate with the standard AsyncRead and AsyncWrite, ReadEx and WriteEx are automatically implemented for any types which implement AsyncRead and AsyncWrite respectively.
 
@@ -66,7 +66,7 @@ impl<T: AsyncWrite + Unpin + Send> WriteEx for T {
 
 ## Issues
 
-Both ReadEx and WriteEx include methods with default implementations. As required by async-trait, they can be made into a trait object only when they are derived from `Send`, since default implemetations requires `Self` bound. This is why these two derive from `Send`. More details please check async-trait Readme.
+Both ReadEx and WriteEx include methods with default implementations. As required by async-trait, they can be made into a trait object only when they are derived from `Send`, since default implemetations requires `Self` bound. This is why these two traits both derive from `Send`. More details please check async-trait Readme.
 
-We haven't figured a good or proper way to add `split` method to a type which supports ReadEx + WriteEx, as AsyncRead/AsyncWrite does. It is quite important as most likely we 'd like to split an object into a ReadHalf and WriteHalf combination. There is a probably wrong implementation of 'split' at this moment. We'll look into it later... 
+We haven't figured out a proper way to add `split` method to a type which supports ReadEx + WriteEx, as AsyncRead/AsyncWrite does. However, it is quite important as most likely we 'd like to split an I/O object into the ReadHalf and WriteHalf pair. There is probably a wrong implementation of 'split' at this moment. We'll look into it later... 
 
