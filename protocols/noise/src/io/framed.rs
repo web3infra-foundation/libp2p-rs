@@ -18,7 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-//! This module uses `Sink` and `Stream` for length-delimited
+//! This module uses `ReadEx` and `WriteEx` for length-delimited
 //! Noise protocol messages in form of [`NoiseFramed`].
 
 use crate::error::NoiseError::{Io, Noise};
