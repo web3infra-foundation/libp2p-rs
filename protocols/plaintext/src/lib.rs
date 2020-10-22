@@ -50,7 +50,6 @@ pub struct PlainTextConfig {
 }
 
 impl PlainTextConfig {
-
     /// Create new config
     pub fn new(key: Keypair) -> Self {
         PlainTextConfig {
