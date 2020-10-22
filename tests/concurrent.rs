@@ -24,6 +24,7 @@ use std::time::Duration;
 #[macro_use]
 extern crate lazy_static;
 
+use futures_test::std_reexport::collections::VecDeque;
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::transport::upgrade::TransportUpgrade;
 use libp2prs_core::upgrade::UpgradeInfo;
@@ -37,18 +38,13 @@ use libp2prs_swarm::{DummyProtocolHandler, Swarm, SwarmError};
 use libp2prs_tcp::TcpConfig;
 use libp2prs_traits::{ReadEx, WriteEx};
 use libp2prs_yamux as yamux;
-use futures_test::std_reexport::collections::VecDeque;
 
 #[test]
 fn concurrent_stream() {
     // env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    task::spawn(async {
-       run_server()
-    });
+    task::spawn(async { run_server() });
 
-    task::block_on(async {
-       run_client()
-    });
+    task::block_on(async { run_client() });
 }
 
 lazy_static! {
@@ -161,7 +157,7 @@ fn run_client() {
 
                     task::sleep(Duration::from_secs(1)).await;
                 }
-                stream.close2().await;
+                //stream.close2().await;
             });
             handles.push_back(handle);
         }

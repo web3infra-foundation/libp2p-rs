@@ -154,7 +154,6 @@ mod tests {
     use crate::upgrade::dummy::DummyUpgrader;
     #[test]
     fn test_dialer_and_listener() {
-
         // Setup listener.
         let rand_port = rand::random::<u64>().saturating_add(1);
         let t1_addr: Multiaddr = format!("/memory/{}", rand_port).parse().unwrap();

@@ -51,14 +51,14 @@
 //! behaviour of the protocol.
 //!
 
-use std::borrow::Cow;
 use async_trait::async_trait;
+use std::borrow::Cow;
 
 use crate::transport::TransportError;
 
-pub(crate) mod select;
 pub(crate) mod dummy;
 pub(crate) mod multistream;
+pub(crate) mod select;
 
 pub use self::{dummy::DummyUpgrader, select::Selector};
 

@@ -21,7 +21,7 @@
 //! This module uses `Sink` and `Stream` for length-delimited
 //! Noise protocol messages in form of [`NoiseFramed`].
 
-use crate::error::NoiseError::{Noise, Io};
+use crate::error::NoiseError::{Io, Noise};
 use crate::io::NoiseOutput;
 use crate::{NoiseError, Protocol, PublicKey};
 use bytes::{Bytes, BytesMut};
@@ -88,8 +88,8 @@ impl<T> NoiseFramed<T, snow::HandshakeState> {
     /// an error is returned. Similarly if the remote's static DH key, if
     /// present, cannot be parsed.
     pub fn into_transport<C>(self, keypair: identity::Keypair) -> Result<(Option<PublicKey<C>>, NoiseOutput<T>), NoiseError>
-        where
-            C: Protocol<C> + AsRef<[u8]>,
+    where
+        C: Protocol<C> + AsRef<[u8]>,
     {
         let dh_remote_pubkey = match self.session.get_remote_static() {
             None => None,
@@ -149,9 +149,9 @@ enum WriteState {
 }
 
 impl<T, S> NoiseFramed<T, S>
-    where
-        T: WriteEx + ReadEx + Unpin + Send,
-        S: SessionState + Unpin,
+where
+    T: WriteEx + ReadEx + Unpin + Send,
+    S: SessionState + Unpin,
 {
     /// Read data
     pub(crate) async fn next(&mut self) -> Option<Result<Bytes, NoiseError>> {
@@ -310,23 +310,15 @@ impl<T, S> NoiseFramed<T, S>
 
     pub(crate) async fn flush2(&mut self) -> Result<(), NoiseError> {
         match self.ready2().await {
-            Ok(()) => {
-                self.io.flush2().await.map_err(|e| e.into())
-            }
-            Err(e) => {
-                return Err(e);
-            }
+            Ok(()) => self.io.flush2().await.map_err(|e| e.into()),
+            Err(e) => Err(e),
         }
     }
 
     pub(crate) async fn close2(&mut self) -> Result<(), NoiseError> {
         match self.ready2().await {
-            Ok(()) => {
-                self.io.close2().await.map_err(|e| e.into())
-            }
-            Err(e) => {
-                return Err(e);
-            }
+            Ok(()) => self.io.close2().await.map_err(|e| e.into()),
+            Err(e) => Err(e),
         }
     }
 }

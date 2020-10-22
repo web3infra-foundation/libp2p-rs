@@ -245,7 +245,7 @@ where
 {
     match state.io.next().await {
         None => Err(io::Error::new(io::ErrorKind::UnexpectedEof, "eof").into()),
-        Some(Err(e)) => Err(e.into()),
+        Some(Err(e)) => Err(e),
         Some(Ok(m)) => Ok(m),
     }
 }

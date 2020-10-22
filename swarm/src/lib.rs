@@ -487,7 +487,7 @@ impl Swarm {
                 log::info!("closing the swarm...");
                 let _ = self.event_sender.close_channel();
             } // TODO:
-            //_ => {}
+              //_ => {}
         }
 
         Ok(())

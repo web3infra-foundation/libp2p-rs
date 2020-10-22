@@ -172,4 +172,3 @@ impl<T> SecureInfo for DummyStream<T> {
 }
 
 impl<T: ConnectionInfo> StreamMuxerEx for DummyStream<T> {}
-

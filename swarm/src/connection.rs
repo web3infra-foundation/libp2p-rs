@@ -25,12 +25,12 @@
 //! the Swarm [`Substream`] via multistream select procedure.
 //!
 
+use smallvec::SmallVec;
 use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use std::{error::Error, fmt};
-use smallvec::SmallVec;
 
 use futures::channel::mpsc;
 use futures::prelude::*;

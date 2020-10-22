@@ -104,7 +104,7 @@ fn run_server() {
 
                     futures::future::join(read_handle, write_handle).await;
 
-                    stream.close2().await;
+                    let _ = stream.close2().await;
                 }
             });
         }
@@ -140,7 +140,7 @@ fn run_client() {
 
         futures::future::join(read_handle, write_handle).await;
 
-        stream.close2().await;
+        let _ = stream.close2().await;
 
         ctrl.close().await.expect("close connection");
 

@@ -102,7 +102,7 @@ fn run_client() {
 
         assert_eq!(&data[..], &frame[..]);
 
-        stream.close2().await;
+        let _ = stream.close2().await;
 
         ctrl.close().await.expect("close connection");
 

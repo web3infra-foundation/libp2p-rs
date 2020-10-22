@@ -24,12 +24,12 @@
 //! interface for establishing connections with other nodes, thereby negotiating
 //! any desired protocols.
 
+use async_trait::async_trait;
+use futures::prelude::*;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use std::{error::Error, fmt};
-use async_trait::async_trait;
-use futures::prelude::*;
 
 use libp2prs_multiaddr::Multiaddr;
 
@@ -38,10 +38,9 @@ use crate::pnet::PnetError;
 
 pub mod dummy;
 pub mod memory;
+pub mod protector;
 pub mod timeout;
 pub mod upgrade;
-pub mod protector;
-
 
 /// A transport provides connection-oriented communication between two peers
 /// through ordered streams of data (i.e. connections).
