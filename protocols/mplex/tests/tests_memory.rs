@@ -23,7 +23,7 @@ use futures::channel::oneshot;
 use futures::stream::FusedStream;
 use futures::{channel::mpsc, prelude::*, ready};
 use libp2prs_mplex::connection::{stream::Stream as mplex_stream, Connection};
-use libp2prs_traits::{ReadEx, ReadExt2, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
 use quickcheck::{QuickCheck, TestResult};
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -32,6 +32,8 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
+
+const TEST_COUNT: u64 = 200;
 
 #[test]
 fn prop_slow_reader() {
@@ -120,7 +122,7 @@ fn prop_basic_streams() {
 
             let msg = b"Hello World";
             let mut mpb_ctrl1 = mpb_ctrl.clone();
-            task::spawn(async move {
+            let stream_handle_b = task::spawn(async move {
                 let mut sb = mpb_ctrl1.accept_stream().await.expect("B accept stream");
                 sb.write_all2(msg).await.expect("B write all");
                 sb.close2().await.expect("B close stream");
@@ -134,6 +136,7 @@ fn prop_basic_streams() {
             }
             sa.close2().await.expect("B close stream");
 
+            stream_handle_b.await;
             mpa_ctrl.close().await.expect("A close connection");
             mpb_ctrl.close().await.expect("B close connection");
 
@@ -143,7 +146,7 @@ fn prop_basic_streams() {
             TestResult::passed()
         })
     }
-    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(TEST_COUNT).quickcheck(prop as fn() -> _)
 }
 
 #[test]
@@ -204,14 +207,15 @@ fn prop_write_after_close() {
             TestResult::passed()
         })
     }
-    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(TEST_COUNT).quickcheck(prop as fn() -> _)
 }
 
 #[test]
 fn prop_p2p() {
     async fn echo(mut s: mplex_stream) {
-        let (r, w) = s.clone().split2();
-        libp2prs_traits::copy(r, w).await.expect("copy");
+        let mut buf = vec![0; 64];
+        let n = s.read2(&mut buf).await.expect("read exact");
+        s.write_all2(&buf[..n]).await.expect("write all");
         s.close2().await.expect("close stream");
     }
     async fn send_recv(mut s: mplex_stream) {
@@ -252,24 +256,26 @@ fn prop_p2p() {
             let mut mpb_ctrl1 = mpb_ctrl.clone();
             let handle_a = task::spawn(async move {
                 let mut mpb_ctrl2 = mpb_ctrl1.clone();
-                task::spawn(async move {
+                let handle = task::spawn(async move {
                     let sb = mpb_ctrl2.accept_stream().await.expect("B accept stream");
                     echo(sb).await;
                 });
                 let sb = mpb_ctrl1.open_stream().await.expect("B accept stream");
                 send_recv(sb).await;
+                handle.await;
             });
 
             let mut mpa_ctrl1 = mpa_ctrl.clone();
             let handle_b = task::spawn(async move {
                 let mut mpa_ctrl2 = mpa_ctrl1.clone();
-                task::spawn(async move {
+                let handle = task::spawn(async move {
                     let sa = mpa_ctrl2.accept_stream().await.expect("accept stream");
                     echo(sa).await;
                 });
 
                 let sa = mpa_ctrl1.open_stream().await.expect("open stream");
                 send_recv(sa).await;
+                handle.await;
             });
 
             handle_a.await;
@@ -284,11 +290,28 @@ fn prop_p2p() {
             TestResult::passed()
         })
     }
-    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(TEST_COUNT).quickcheck(prop as fn() -> _)
 }
 
 #[test]
 fn prop_echo() {
+    async fn echo(mut s: mplex_stream) {
+        let mut buf = vec![0; 64];
+        let n = s.read2(&mut buf).await.expect("read exact");
+        s.write_all2(&buf[..n]).await.expect("write all");
+        s.close2().await.expect("close stream");
+    }
+    async fn send_recv(mut s: mplex_stream) {
+        // A send and recv
+        let msg = b"Hello World";
+        s.write_all2(msg).await.expect("write all");
+
+        let mut buf = vec![0; msg.len()];
+        s.read_exact2(&mut buf).await.expect("read exact");
+        assert_eq!(msg, buf.as_slice());
+
+        s.close2().await.expect("close stream");
+    }
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
@@ -315,29 +338,17 @@ fn prop_echo() {
 
             // B act as server
             let mut mpb_ctrl1 = mpb_ctrl.clone();
-            task::spawn(async move {
-                let mut sb = mpb_ctrl1.accept_stream().await.expect("B accept stream");
-                let (r, w) = sb.clone().split2();
-                libp2prs_traits::copy(r, w).await.expect("B copy");
-                sb.close2().await.expect("B close stream");
+            let stream_handle_b = task::spawn(async move {
+                let sb = mpb_ctrl1.accept_stream().await.expect("B accept stream");
+                echo(sb).await;
             });
 
             // A act as client
-            let mut sa = mpa_ctrl.clone().open_stream().await.expect("client open stream");
-
-            // A send and recv
-            let msg = b"Hello World";
-            sa.write_all2(msg).await.expect("A write all");
-
-            let mut buf = vec![0; msg.len()];
-            sa.read_exact2(&mut buf).await.expect("A read exact");
-            if !msg.eq(buf.as_slice()) {
-                return TestResult::failed();
-            }
-
-            sa.close2().await.expect("B close stream");
+            let sa = mpa_ctrl.clone().open_stream().await.expect("client open stream");
+            send_recv(sa).await;
 
             // close connection A and B
+            stream_handle_b.await;
             mpa_ctrl.close().await.expect("A close connection");
             mpb_ctrl.close().await.expect("B close connection");
             handle_a.await;
@@ -346,7 +357,7 @@ fn prop_echo() {
             TestResult::passed()
         })
     }
-    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(TEST_COUNT).quickcheck(prop as fn() -> _)
 }
 
 #[test]
@@ -380,7 +391,7 @@ fn prop_half_close() {
             // B act as server
             let mut mpb_ctrl1 = mpb_ctrl.clone();
             let msg1 = msg.clone();
-            task::spawn(async move {
+            let stream_handle_b = task::spawn(async move {
                 let mut sb = mpb_ctrl1.accept_stream().await.expect("B accept stream");
                 let _ = rx.await;
                 sb.write_all2(&msg1).await.expect("B write all");
@@ -388,7 +399,7 @@ fn prop_half_close() {
             });
 
             // A act as client
-            let mut sa = mpa_ctrl.clone().open_stream().await.expect("client open stream");
+            let mut sa = mpa_ctrl.clone().open_stream().await.expect("A open stream");
 
             sa.close2().await.expect("B close stream");
 
@@ -405,6 +416,7 @@ fn prop_half_close() {
             }
 
             // close connection A and B
+            stream_handle_b.await;
             mpa_ctrl.close().await.expect("A close connection");
             mpb_ctrl.close().await.expect("B close connection");
             handle_a.await;
@@ -413,53 +425,51 @@ fn prop_half_close() {
             TestResult::passed()
         })
     }
-    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(TEST_COUNT).quickcheck(prop as fn() -> _)
 }
 
 #[test]
 fn prop_fuzz_close_connection() {
     fn prop() -> TestResult {
         task::block_on(async {
-            for _ in 0..1000 {
-                let (a, b) = Endpoint::new();
-                let a = a.into_async_read();
-                let b = b.into_async_read();
+            let (a, b) = Endpoint::new();
+            let a = a.into_async_read();
+            let b = b.into_async_read();
 
-                // create connection A
-                let mpa = Connection::new(a);
-                let mpa_ctrl = mpa.control();
-                let handle_a = task::spawn(async {
-                    let mut muxer_conn = mpa;
-                    let _ = muxer_conn.next_stream().await;
-                    log::info!("A connection {} is closed", muxer_conn.id());
+            // create connection A
+            let mpa = Connection::new(a);
+            let mpa_ctrl = mpa.control();
+            let handle_a = task::spawn(async {
+                let mut muxer_conn = mpa;
+                let _ = muxer_conn.next_stream().await;
+                log::info!("A connection {} is closed", muxer_conn.id());
+            });
+
+            // create connection B
+            let mpb = Connection::new(b);
+            let mut mpb_ctrl = mpb.control();
+            let handle_b = task::spawn(async {
+                let mut muxer_conn = mpb;
+                let _ = muxer_conn.next_stream().await;
+                log::info!("B connection {} is closed", muxer_conn.id());
+            });
+
+            // close connection A and B
+            for _ in 0..2 {
+                let mut ctrl = mpa_ctrl.clone();
+                task::spawn(async move {
+                    ctrl.close().await.expect("A close connection");
                 });
-
-                // create connection B
-                let mpb = Connection::new(b);
-                let mut mpb_ctrl = mpb.control();
-                let handle_b = task::spawn(async {
-                    let mut muxer_conn = mpb;
-                    let _ = muxer_conn.next_stream().await;
-                    log::info!("B connection {} is closed", muxer_conn.id());
-                });
-
-                // close connection A and B
-                for _ in 0..2 {
-                    let mut ctrl = mpa_ctrl.clone();
-                    task::spawn(async move {
-                        ctrl.close().await.expect("A close connection");
-                    });
-                }
-
-                mpb_ctrl.close().await.expect("A close connection");
-                handle_a.await;
-                handle_b.await;
             }
+
+            mpb_ctrl.close().await.expect("A close connection");
+            handle_a.await;
+            handle_b.await;
 
             TestResult::passed()
         })
     }
-    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(1000).quickcheck(prop as fn() -> _)
 }
 
 #[test]
@@ -503,7 +513,7 @@ fn prop_closing() {
             TestResult::from_bool(na == 0 && nb == 0)
         })
     }
-    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(TEST_COUNT).quickcheck(prop as fn() -> _)
 }
 
 #[test]
@@ -565,7 +575,7 @@ fn prop_reset() {
             TestResult::passed()
         })
     }
-    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(TEST_COUNT).quickcheck(prop as fn() -> _)
 }
 
 #[test]
@@ -621,7 +631,7 @@ fn prop_reset_after_eof() {
             TestResult::passed()
         })
     }
-    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(TEST_COUNT).quickcheck(prop as fn() -> _)
 }
 
 #[test]
@@ -674,7 +684,7 @@ fn prop_open_after_close() {
             TestResult::passed()
         })
     }
-    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(TEST_COUNT).quickcheck(prop as fn() -> _)
 }
 
 #[test]
@@ -723,7 +733,7 @@ fn prop_read_after_close() {
             TestResult::passed()
         })
     }
-    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(TEST_COUNT).quickcheck(prop as fn() -> _)
 }
 
 #[test]
@@ -800,7 +810,7 @@ fn prop_fuzz_close_stream() {
             TestResult::from_bool(na == 0 && nb == 0)
         })
     }
-    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _)
+    QuickCheck::new().tests(TEST_COUNT).quickcheck(prop as fn() -> _)
 }
 
 #[derive(Debug)]

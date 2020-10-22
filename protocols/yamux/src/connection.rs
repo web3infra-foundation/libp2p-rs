@@ -70,10 +70,10 @@
 //
 // specific
 // ----------------------
-// - All stream's state is managed by connecttion, stream state get from channel
+// - All stream's state is managed by connection, stream state get from channel
 //   Shared lock is not efficient.
-// - Connecttion pushes incoming data to the `Stream` via channel, not buffer
-// - Stream must be closed explictly Since garbage collect is not implemented.
+// - Connection pushes incoming data to the `Stream` via channel, not buffer
+// - Stream must be closed explicitly Since garbage collect is not implemented.
 //   Drop it directly do nothing
 //
 // Potential improvements
@@ -516,21 +516,27 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
             return self.new_stream_data(stream_id, is_finish, frame.into_body()).await;
         }
 
+        // flag to remove stat from streams_stat
+        let mut rm = false;
         if let Some(stat) = self.streams_stat.get_mut(&stream_id) {
             if frame_len > stat.window {
                 log::error!("{}/{}: frame body larger than window of stream", self.id, stream_id);
                 return Action::Terminate(Frame::protocol_error());
             }
-            if is_finish {
-                stat.update_state(self.id, stream_id, State::RecvClosed);
-                self.streams.remove(&stream_id);
-            }
 
             stat.window = stat.window.saturating_sub(frame_len);
 
-            if self.config.read_after_close || stat.state() != State::RecvClosed {
+            if frame_len > 0 && (self.config.read_after_close || !stat.state().can_read()) {
                 if let Some(sender) = self.streams.get_mut(&stream_id) {
                     let _ = sender.send(frame.into_body()).await;
+                }
+            }
+
+            if is_finish {
+                self.streams.remove(&stream_id);
+                let prev = stat.update_state(self.id, stream_id, State::RecvClosed);
+                if prev == State::SendClosed {
+                    rm = true;
                 }
             }
 
@@ -542,6 +548,12 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
         } else if !is_finish {
             log::debug!("{}/{}: data for unknown stream", self.id, stream_id);
             return Action::Reset(stream_id);
+        }
+
+        // If stream is completely closed, remove it
+        if rm {
+            self.streams_stat.remove(&stream_id);
+            self.pending_frames.remove(&stream_id);
         }
 
         Action::None
@@ -604,19 +616,29 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
             return self.new_stream_window_update(stream_id, is_finish);
         }
 
+        // flag to remove stat from streams_stat
+        let mut rm = false;
         if let Some(stat) = self.streams_stat.get_mut(&stream_id) {
             stat.credit += frame.header().credit();
             updated = true;
             if is_finish {
-                stat.update_state(self.id, stream_id, State::RecvClosed);
                 self.streams.remove(&stream_id);
+                let prev = stat.update_state(self.id, stream_id, State::RecvClosed);
+                if prev == State::SendClosed {
+                    rm = true;
+                }
             }
         } else if !is_finish {
             log::debug!("{}/{}: window update for unknown stream", self.id, stream_id);
             return Action::Reset(stream_id);
         }
 
-        if updated {
+        // If stream is completely closed, remove it
+        if rm {
+            self.streams_stat.remove(&stream_id);
+            self.pending_frames.remove(&stream_id);
+        } else if updated {
+            // If window size is updated, send pending frames
             if let Some((frame, reply)) = self.pending_frames.remove(&stream_id) {
                 let _ = self.send_frame(frame, reply).await;
             }
@@ -664,6 +686,10 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
                 log::info!("{}: sending: {}", self.id, frame.header());
 
                 if stat.credit == 0 {
+                    if self.pending_frames.contains_key(&stream_id) {
+                        let _ = reply.send(0);
+                        return Ok(());
+                    }
                     self.pending_frames.insert(stream_id, (frame, reply));
                     return Ok(());
                 }
@@ -682,6 +708,8 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
                 log::info!("{}: stream {} have been removed", self.id, stream_id);
                 drop(reply);
             }
+        } else {
+            drop(reply);
         }
         Ok(())
     }
@@ -694,28 +722,39 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
             }
             Some(StreamCommand::CloseStream(stream_id, reply)) => {
                 log::info!("{}: closing stream {} of {}", self.id, stream_id, self);
-
+                // flag to remove stat from streams_stat
+                let mut rm = false;
                 if let Some(stat) = self.streams_stat.get_mut(&stream_id) {
-                    // step1: send close frame
-                    let mut header = Header::data(stream_id, 0);
-                    header.fin();
-                    if stat.get_flag() == Flag::Ack {
-                        header.ack();
-                        stat.set_flag(Flag::None);
+                    if stat.state().can_write() {
+                        // step1: send close frame
+                        let mut header = Header::data(stream_id, 0);
+                        header.fin();
+                        if stat.get_flag() == Flag::Ack {
+                            header.ack();
+                            stat.set_flag(Flag::None);
+                        }
+                        let frame = Frame::new(header);
+                        self.writer.send_frame(&frame).await.or(Err(ConnectionError::Closed))?;
+
+                        // step2: update state
+                        let prev = stat.update_state(self.id, stream_id, State::SendClosed);
+                        if prev == State::RecvClosed {
+                            rm = true;
+                        }
                     }
-                    let frame = Frame::new(header);
-                    self.writer.send_frame(&frame).await.or(Err(ConnectionError::Closed))?;
-
-                    // step2: update state
-                    stat.update_state(self.id, stream_id, State::SendClosed);
-
-                    // step3： reply
-                    let _ = reply.send(());
                 }
+                // If stream is completely closed, remove it
+                if rm {
+                    self.streams_stat.remove(&stream_id);
+                    self.pending_frames.remove(&stream_id);
+                }
+                let _ = reply.send(());
             }
             Some(StreamCommand::ResetStream(stream_id)) => {
                 log::info!("{}: reset stream {} of {}", self.id, stream_id, self);
-                self.send_reset_stream(stream_id).await?;
+                if self.streams_stat.contains_key(&stream_id) {
+                    self.send_reset_stream(stream_id).await?;
+                }
             }
             None => {
                 // We only get to this point when `self.stream_receiver`
@@ -868,15 +907,21 @@ impl<T> Connection<T> {
     }
 
     pub fn streams_length(&self) -> usize {
-        self.streams.len()
+        self.streams_stat.len()
     }
 
-    /// Close and drop all `Stream`s and wake any pending `Waker`s.
+    /// Close and drop all `Stream`s sender and stat.
     async fn drop_all_streams(&mut self) {
-        log::info!("{}: Drop all Streams count={}", self.id, self.streams.len());
+        log::info!("{}: Drop all Streams sender count={}", self.id, self.streams.len());
         for (id, _sender) in self.streams.drain().take(1) {
             // drop it
-            log::info!("{}: drop stream {:?}", self.id, id);
+            log::trace!("{}: drop stream sender {:?}", self.id, id);
+        }
+
+        log::info!("{}: Drop all Streams stat count={}", self.id, self.streams.len());
+        for (id, _stat) in self.streams_stat.drain().take(1) {
+            // drop it
+            log::trace!("{}: drop stream stat {:?}", self.id, id);
         }
     }
 

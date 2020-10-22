@@ -129,10 +129,10 @@ pub enum ControlCommand {
 pub(crate) enum StreamCommand {
     /// A new frame should be sent to the remote.
     SendFrame(Frame, oneshot::Sender<()>),
+    /// Close a stream.
+    CloseStream(Frame, oneshot::Sender<()>),
     /// Reset a stream.
     ResetStream(Frame),
-    /// Close a stream.
-    CloseStream(Frame),
 }
 
 /// The connection identifier.
@@ -314,8 +314,19 @@ impl<T: ReadEx + WriteEx + Unpin + 'static> Connection<T> {
         if !self.stream_receiver.is_terminated() {
             self.stream_receiver.close();
             while self.stream_receiver.next().await.is_some() {
-                // drop it
-                log::trace!("drop stream receiver frame");
+                while let Some(cmd) = self.stream_receiver.next().await {
+                    match cmd {
+                        StreamCommand::SendFrame(_, reply) => {
+                            let _ = reply.send(());
+                        }
+                        StreamCommand::CloseStream(_, reply) => {
+                            let _ = reply.send(());
+                        }
+                        _ => {}
+                    }
+                    // drop it
+                    log::info!("drop stream receiver frame");
+                }
             }
         }
 
@@ -415,17 +426,19 @@ impl<T: ReadEx + WriteEx + Unpin + 'static> Connection<T> {
             Tag::Close => {
                 let stream_id = frame.header().stream_id();
                 log::info!("{}: remote close stream {} of {}", self.id, stream_id, self);
+                self.streams.remove(&stream_id);
+                // flag to remove stat from streams_stat
+                let mut rm = false;
                 if let Some(stat) = self.streams_stat.get_mut(&stream_id) {
-                    match stat {
-                        State::Open => {
-                            self.streams.remove(&stream_id);
-                            *stat = State::RecvClosed;
-                        }
-                        State::SendClosed => {
-                            *stat = State::Closed;
-                        }
-                        _ => {}
+                    if *stat == State::SendClosed {
+                        rm = true;
+                    } else {
+                        *stat = State::RecvClosed;
                     }
+                }
+                // If stream is completely closed, remove it
+                if rm {
+                    self.streams_stat.remove(&stream_id);
                 }
             }
             Tag::Reset => {
@@ -456,34 +469,40 @@ impl<T: ReadEx + WriteEx + Unpin + 'static> Connection<T> {
                     }
                 }
             }
-            Some(StreamCommand::CloseStream(frame)) => {
+            Some(StreamCommand::CloseStream(frame, reply)) => {
                 let stream_id = frame.stream_id();
                 log::info!("{}: closing stream {} of {}", self.id, stream_id, self);
-                // step1: send close frame
-                self.writer.send_frame(&frame).await.or(Err(ConnectionError::Closed))?;
-
-                // step2: remove stream
+                // flag to remove stat from streams_stat
+                let mut rm = false;
                 if let Some(stat) = self.streams_stat.get_mut(&stream_id) {
-                    match stat {
-                        State::Open => {
+                    if stat.can_write() {
+                        // send close frame
+                        self.writer.send_frame(&frame).await.or(Err(ConnectionError::Closed))?;
+
+                        if *stat == State::RecvClosed {
+                            rm = true;
+                        } else {
                             *stat = State::SendClosed;
                         }
-                        State::RecvClosed => {
-                            *stat = State::Closed;
-                        }
-                        _ => {}
                     }
                 }
+                // If stream is completely closed, remove it
+                if rm {
+                    self.streams_stat.remove(&stream_id);
+                }
+                let _ = reply.send(());
             }
             Some(StreamCommand::ResetStream(frame)) => {
                 let stream_id = frame.stream_id();
                 log::info!("{}: reset stream {} of {}", self.id, stream_id, self);
-                // step1: send close frame
-                self.writer.send_frame(&frame).await.or(Err(ConnectionError::Closed))?;
+                if self.streams_stat.contains_key(&stream_id) {
+                    // step1: send close frame
+                    self.writer.send_frame(&frame).await.or(Err(ConnectionError::Closed))?;
 
-                // step2: remove stream
-                self.streams_stat.remove(&stream_id);
-                self.streams.remove(&stream_id);
+                    // step2: remove stream
+                    self.streams_stat.remove(&stream_id);
+                    self.streams.remove(&stream_id);
+                }
             }
             None => {
                 // We only get to this point when `self.stream_receiver`
@@ -599,15 +618,21 @@ impl<T> Connection<T> {
     }
 
     pub fn streams_length(&self) -> usize {
-        self.streams.len()
+        self.streams_stat.len()
     }
 
-    /// Close and drop all `Stream`s and wake any pending `Waker`s.
+    /// Close and drop all `Stream`s sender and stat.
     async fn drop_all_streams(&mut self) {
-        log::info!("Drop all Streams count={}", self.streams.len());
+        log::info!("{}: Drop all Streams sender count={}", self.id, self.streams.len());
         for (id, _sender) in self.streams.drain().take(1) {
             // drop it
-            log::trace!("drop stream {:?}", id);
+            log::trace!("{}: drop stream sender {:?}", self.id, id);
+        }
+
+        log::info!("{}: Drop all Streams stat count={}", self.id, self.streams.len());
+        for (id, _stat) in self.streams_stat.drain().take(1) {
+            // drop it
+            log::trace!("{}: drop stream stat {:?}", self.id, id);
         }
     }
 }
