@@ -338,7 +338,7 @@ mod tests {
             if p.contains(&i) {
                 continue;
             } else {
-                assert_eq!(1, 0)
+                unreachable!()
             }
         }
 
