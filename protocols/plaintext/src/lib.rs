@@ -42,6 +42,7 @@ pub mod structs_proto {
 
 const MAX_FRAME_SIZE: usize = 1024 * 1024 * 8;
 
+/// Config for PlainText
 #[derive(Clone)]
 pub struct PlainTextConfig {
     pub(crate) key: Keypair,
@@ -49,6 +50,8 @@ pub struct PlainTextConfig {
 }
 
 impl PlainTextConfig {
+
+    /// Create new config
     pub fn new(key: Keypair) -> Self {
         PlainTextConfig {
             key,
@@ -56,6 +59,10 @@ impl PlainTextConfig {
         }
     }
 
+    /// Attempts to perform a handshake on the given socket.
+    ///
+    /// On success, produces a `SecureStream` that can then be used to encode/decode
+    /// communications, plus the remote info that contains public key and peer_id
     pub async fn handshake<T>(self, socket: T) -> Result<(SecureStream<T>, Remote), PlaintextError>
     where
         T: ReadEx + WriteEx + 'static,
@@ -108,8 +115,11 @@ where
     Ok(output)
 }
 
+/// Output of the plaintext protocol. It implements the SecureStream trait
 pub struct PlainTextOutput<T> {
+    /// The encrypted stream, actually not any encrypt action.
     pub stream: SecureStream<T>,
+    /// The private key of the local
     pub local_priv_key: Keypair,
     /// For convenience, the local peer ID, generated from local pub key
     pub local_peer_id: PeerId,
@@ -118,9 +128,9 @@ pub struct PlainTextOutput<T> {
     /// For convenience, put a PeerId here, which is actually calculated from remote_key
     pub remote_peer_id: PeerId,
     /// The local multiaddr of this connection
-    pub la: Multiaddr,
+    la: Multiaddr,
     /// The remote multiaddr of this connection
-    pub ra: Multiaddr,
+    ra: Multiaddr,
 }
 
 impl<T> SecureInfo for PlainTextOutput<T> {
