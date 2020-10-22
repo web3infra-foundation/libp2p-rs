@@ -34,10 +34,12 @@ struct HandshakeContext<T> {
     state: T,
 }
 
+// HandshakeContext<()> --with_local-> HandshakeContext<Local>
 pub struct Local {
     exchange_bytes: Vec<u8>,
 }
 
+// HandshakeContext<Local> --with_remote-> HandshakeContext<Remote>
 #[derive(Clone)]
 pub struct Remote {
     pub peer_id: PeerId,
