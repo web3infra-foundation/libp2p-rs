@@ -422,7 +422,7 @@ mod tests {
 
     impl Arbitrary for Header<()> {
         fn arbitrary<G: Gen>(g: &mut G) -> Self {
-            let tag = [Tag::Data, Tag::WindowUpdate, Tag::Ping, Tag::GoAway].choose(g).unwrap().clone();
+            let tag = *[Tag::Data, Tag::WindowUpdate, Tag::Ping, Tag::GoAway].choose(g).unwrap();
 
             Header {
                 version: Version(0),

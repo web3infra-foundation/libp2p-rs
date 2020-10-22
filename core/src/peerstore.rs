@@ -291,6 +291,7 @@ mod tests {
     use std::time::Duration;
 
     #[test]
+    #[allow(clippy::float_cmp)]
     fn addr_book_basic() {
         //env_logger::from_env(env_logger::Env::default().default_filter_or("trace")).init();
         let mut ab = AddrBook::default();
@@ -338,7 +339,7 @@ mod tests {
             if p.contains(&i) {
                 continue;
             } else {
-                assert!(false)
+                unreachable!()
             }
         }
 

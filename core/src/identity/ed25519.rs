@@ -216,15 +216,15 @@ mod tests {
         let kp = Keypair::generate();
         let pk = kp.public();
 
-        let msg = "hello world".as_bytes();
-        let sig = kp.sign(&msg);
+        let msg = b"hello world";
+        let sig = kp.sign(msg);
         assert!(pk.verify(msg, &sig));
 
         let mut invalid_sig = sig.clone();
         invalid_sig[3..6].copy_from_slice(&[10, 23, 42]);
         assert!(!pk.verify(msg, &invalid_sig));
 
-        let invalid_msg = "h3ll0 w0rld".as_bytes();
-        assert!(!pk.verify(invalid_msg, &sig));
+        let invalid_msg = b"h3ll0 w0rld";
+        assert!(!pk.verify(invalid_msg, &sig[..]));
     }
 }

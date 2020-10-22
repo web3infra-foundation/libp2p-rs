@@ -303,19 +303,16 @@ mod tests {
 
         async_std::task::spawn(async move {
             let r = rx.next().await.unwrap();
-            match r {
-                SwarmControlCmd::IdentifyInfo(reply) => {
-                    // a fake IdentifyInfo
-                    let info = IdentifyInfo {
-                        public_key: key_cloned,
-                        protocol_version: "".to_string(),
-                        agent_version: "abc".to_string(),
-                        listen_addrs: vec![],
-                        protocols: vec![],
-                    };
-                    let _ = reply.send(Ok(info));
-                }
-                _ => {}
+            if let SwarmControlCmd::IdentifyInfo(reply) = r {
+                // a fake IdentifyInfo
+                let info = IdentifyInfo {
+                    public_key: key_cloned,
+                    protocol_version: "".to_string(),
+                    agent_version: "abc".to_string(),
+                    listen_addrs: vec![],
+                    protocols: vec![],
+                };
+                let _ = reply.send(Ok(info));
             }
         });
 
@@ -366,7 +363,7 @@ mod tests {
             if let SwarmEvent::IdentifyResult { cid: _, result } = r {
                 assert_eq!(result.unwrap().0.public_key, pubkey);
             } else {
-                assert!(false);
+                unreachable!()
             }
         });
     }

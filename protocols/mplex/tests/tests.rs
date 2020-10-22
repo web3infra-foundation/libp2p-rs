@@ -125,11 +125,7 @@ fn prop_slow_reader() {
             control.close().await.expect("close connection");
             loop_handle.await;
 
-            if res.is_err() {
-                true
-            } else {
-                false
-            }
+            res.is_err()
         })
     }
     QuickCheck::new().tests(5).quickcheck(prop as fn() -> _)

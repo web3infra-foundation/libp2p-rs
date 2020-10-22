@@ -363,8 +363,8 @@ mod tests {
     fn test_write_all2() {
         async_std::task::block_on(async {
             let mut writer = Test(Cursor::new(vec![0u8; 4]));
-            let mut output = vec![1, 2, 3, 4, 5];
-            let _bytes = writer.write_all2(&mut output[..]).await.unwrap();
+            let output = vec![1, 2, 3, 4, 5];
+            let _bytes = writer.write_all2(&output[..]).await.unwrap();
 
             assert_eq!(writer.0.get_mut(), &[1, 2, 3, 4, 5]);
         });

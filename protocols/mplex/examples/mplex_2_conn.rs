@@ -52,7 +52,7 @@ fn run_server() {
 
                 task::spawn(async {
                     let mut muxer_conn = muxer_conn;
-                    while let Ok(_) = muxer_conn.next_stream().await {}
+                    while muxer_conn.next_stream().await.is_ok() {}
                     info!("connection is closed");
                 });
 
@@ -96,7 +96,7 @@ fn run_client_one_by_one() {
 
                 task::spawn(async {
                     let mut muxer_conn = muxer_conn;
-                    while let Ok(_) = muxer_conn.next_stream().await {}
+                    while muxer_conn.next_stream().await.is_ok() {}
                     info!("connection is closed");
                 });
 
@@ -149,7 +149,7 @@ fn run_2_client() {
 
                 task::spawn(async {
                     let mut muxer_conn = muxer_conn;
-                    while let Ok(_) = muxer_conn.next_stream().await {}
+                    while muxer_conn.next_stream().await.is_ok() {}
                     info!("connection is closed");
                 });
 
