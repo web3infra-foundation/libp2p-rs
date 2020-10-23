@@ -25,28 +25,83 @@ use std::io;
 use crate::codec::len_prefix::LengthPrefixSocket;
 
 use async_trait::async_trait;
-use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx, Split};
+use futures::io::Error;
 
 /// Encrypted stream
-pub struct SecureStream<T> {
+pub struct SecureStream<R, W> {
+    reader: SecureStreamReader<R>,
+    writer: SecureStreamWriter<W>,
+}
+
+impl<R, W> SecureStream<R, W>
+where
+    R: ReadEx + 'static,
+    W: WriteEx + 'static,
+{
+    /// New a secure stream
+    pub(crate) fn new(reader: LengthPrefixSocket<R>, writer: LengthPrefixSocket<W>) -> Self {
+        SecureStream {
+            reader: SecureStreamReader::new(reader),
+            writer: SecureStreamWriter::new(writer),
+        }
+    }
+}
+
+#[async_trait]
+impl<R, W> ReadEx for SecureStream<R, W>
+where
+    R: ReadEx + 'static,
+    W: WriteEx + 'static,
+{
+    async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
+        self.reader.read2(buf).await
+    }
+}
+
+#[async_trait]
+impl<R, W> WriteEx for SecureStream<R, W>
+where
+    R: ReadEx + 'static,
+    W: WriteEx + 'static,
+{
+    async fn write2(&mut self, buf: &[u8]) -> Result<usize, Error> {
+        self.writer.write2(buf).await
+    }
+
+    async fn flush2(&mut self) -> Result<(), Error> {
+        self.writer.flush2().await
+    }
+
+    async fn close2(&mut self) -> Result<(), Error> {
+        self.writer.close2().await
+    }
+}
+
+impl<R, W> Split for SecureStream<R, W>
+where
+    R: ReadEx + Unpin + 'static,
+    W: WriteEx + Unpin + 'static,
+{
+    type Reader = SecureStreamReader<R>;
+    type Writer = SecureStreamWriter<W>;
+
+    fn split(self) -> (Self::Reader, Self::Writer) {
+        (self.reader, self.writer)
+    }
+}
+
+pub struct SecureStreamReader<T> {
     socket: LengthPrefixSocket<T>,
-    /// recv buffer
-    /// internal buffer for 'message too big'
-    ///
-    /// when the input buffer is not big enough to hold the entire
-    /// frame from the underlying Framed<>, the frame will be filled
-    /// into this buffer so that multiple following 'read' will eventually
-    /// get the message correctly
     recv_buf: Vec<u8>,
 }
 
-impl<T> SecureStream<T>
+impl<T> SecureStreamReader<T>
 where
-    T: ReadEx + WriteEx + 'static,
+    T: ReadEx + 'static,
 {
-    /// New a secure stream
-    pub(crate) fn new(socket: LengthPrefixSocket<T>) -> Self {
-        SecureStream {
+    fn new(socket: LengthPrefixSocket<T>) -> Self {
+        SecureStreamReader {
             socket,
             recv_buf: Vec::default(),
         }
@@ -72,10 +127,23 @@ where
     }
 }
 
-#[async_trait]
-impl<T> ReadEx for SecureStream<T>
+pub struct SecureStreamWriter<T> {
+    socket: LengthPrefixSocket<T>,
+}
+
+impl<T> SecureStreamWriter<T>
 where
-    T: ReadEx + WriteEx + 'static,
+    T: WriteEx + 'static,
+{
+    fn new(socket: LengthPrefixSocket<T>) -> Self {
+        SecureStreamWriter {socket}
+    }
+}
+
+#[async_trait]
+impl<T> ReadEx for SecureStreamReader<T>
+where
+    T: ReadEx + 'static,
 {
     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         // when there is somthing in recv_buffer
@@ -104,9 +172,9 @@ where
 }
 
 #[async_trait]
-impl<T> WriteEx for SecureStream<T>
+impl<T> WriteEx for SecureStreamWriter<T>
 where
-    T: ReadEx + WriteEx + 'static,
+    T: WriteEx + 'static,
 {
     async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
         debug!("start sending plain data: {:?}", buf);

@@ -29,6 +29,9 @@ use futures::AsyncWriteExt;
 use libp2prs_traits::{ReadEx, WriteEx};
 use libp2prs_yamux::{connection::Connection, connection::Mode, Config};
 
+use libp2prs_core::identity::Keypair;
+use libp2prs_plaintext::PlainTextConfig;
+
 async fn write_data<C>(mut stream: C)
 where
     C: ReadEx + WriteEx + Send,
@@ -74,12 +77,18 @@ fn main() {
 
 fn run_server() {
     task::block_on(async {
+
+        let key = Keypair::generate_secp256k1();
+        let config = PlainTextConfig::new(key);
+
         let listener = TcpListener::bind("127.0.0.1:12345").await.unwrap();
 
         while let Ok((socket, _)) = listener.accept().await {
             info!("accepted a socket: {:?}", socket.peer_addr());
 
+            let config = config.clone();
             task::spawn(async move {
+                let (socket, _) = config.handshake(socket).await.unwrap();
                 let conn = Connection::new(socket, Config::default(), Mode::Server);
                 let mut ctrl = conn.control();
 
@@ -113,8 +122,13 @@ fn run_server() {
 
 fn run_client() {
     task::block_on(async move {
+        let key = Keypair::generate_secp256k1();
+        let config = PlainTextConfig::new(key);
+
         let socket = TcpStream::connect("127.0.0.1:12345").await.unwrap();
         info!("[client] connected to server: {:?}", socket.peer_addr());
+
+        let (socket, _) = config.handshake(socket).await.unwrap();
 
         let conn = Connection::new(socket, Config::default(), Mode::Client);
         let mut ctrl = conn.control();

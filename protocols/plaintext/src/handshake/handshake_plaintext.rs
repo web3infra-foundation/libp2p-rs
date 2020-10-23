@@ -24,10 +24,11 @@ use crate::secure_stream::SecureStream;
 use crate::structs_proto::Exchange;
 use crate::PlainTextConfig;
 use libp2prs_core::{PeerId, PublicKey};
-use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx, Split};
 use log::error;
 use prost::Message;
 use std::io;
+use prost::encoding::WireType::LengthDelimited;
 
 struct HandshakeContext<T> {
     config: PlainTextConfig,
@@ -52,30 +53,33 @@ pub struct Remote {
 ///
 /// If remote peer_id is the same as local, it means connected to self, throws error.
 /// Otherwise, returns an object that implements the `WriteEx` and `ReadEx` trait.
-pub(crate) async fn handshake<T>(socket: T, config: PlainTextConfig) -> Result<(SecureStream<T>, Remote), PlaintextError>
+pub(crate) async fn handshake<T>(socket: T, config: PlainTextConfig) -> Result<(SecureStream<T::Reader, T::Writer>, Remote), PlaintextError>
 where
-    T: ReadEx + WriteEx + 'static,
+    T: ReadEx + WriteEx + Split + 'static,
 {
-    let mut socket = LengthPrefixSocket::new(socket, config.clone().max_frame_length);
-    let local_context = HandshakeContext::new(config.clone())?;
-    socket.send_frame(local_context.state.exchange_bytes.as_ref()).await?;
 
-    let buf = socket.recv_frame().await?;
+    let (r, w) = socket.split();
+
+    let mut reader = LengthPrefixSocket::new(r, config.max_frame_length);
+    let mut writer = LengthPrefixSocket::new(w, config.max_frame_length);
+
+
+    // let mut socket = LengthPrefixSocket::new(socket, config.clone().max_frame_length);
+    let local_context = HandshakeContext::new(config.clone())?;
+    writer.send_frame(local_context.state.exchange_bytes.as_ref()).await?;
+
+    let buf = reader.recv_frame().await?;
     let remote_context = local_context.with_remote(buf)?;
 
     let local_id = config.clone().key.public().into_peer_id();
 
     let remote_state = remote_context.state;
 
-    // info!("Remote ID: {:?}", remote_state.clone().peer_id);
-    //
-    // info!("Local ID: {:?}", local_id.clone());
-
     if remote_state.clone().public_key.into_peer_id() == local_id {
         return Err(PlaintextError::ConnectSelf);
     }
 
-    let secure_stream = SecureStream::new(socket);
+    let secure_stream = SecureStream::new(reader, writer);
 
     Ok((secure_stream, remote_state))
 }

@@ -34,6 +34,10 @@ async-std = "1.6"
 [dev-dependencies.libp2prs-secio]
 path = "../secio"
 
+[dev-dependencies.libp2prs-plaintext]
+path = "../plaintext"
+package = "libp2prs-plaintext"
+
 [dev-dependencies.libp2prs-core]
 path = "../../core"
 version = "0.1.0"

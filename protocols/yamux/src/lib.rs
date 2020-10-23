@@ -38,7 +38,7 @@ use libp2prs_core::secure_io::SecureInfo;
 use libp2prs_core::transport::{ConnectionInfo, TransportError};
 use libp2prs_core::upgrade::{UpgradeInfo, Upgrader};
 use libp2prs_core::{Multiaddr, PeerId, PublicKey};
-use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx, Split};
 
 const DEFAULT_CREDIT: u32 = 256 * 1024; // as per yamux specification
 const MAX_MSG_SIZE: usize = 64 * 1024; // max message size
@@ -175,7 +175,7 @@ impl Config {
 ///
 /// This implementation isn't capable of detecting when the underlying socket changes its address,
 /// and no [`StreamMuxerEvent::AddressChange`] event is ever emitted.
-pub struct Yamux<C> {
+pub struct Yamux<C: Split> {
     /// The [`futures::stream::Stream`] of incoming substreams.
     connection: Option<Connection<C>>,
     /// Handle to control the connection.
@@ -199,7 +199,7 @@ pub struct Yamux<C> {
     pub remote_peer_id: PeerId,
 }
 
-impl<C> Clone for Yamux<C> {
+impl<C: Split> Clone for Yamux<C> {
     fn clone(&self) -> Self {
         Yamux {
             connection: None,
@@ -215,7 +215,7 @@ impl<C> Clone for Yamux<C> {
     }
 }
 
-impl<C> fmt::Debug for Yamux<C> {
+impl<C: Split> fmt::Debug for Yamux<C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Yamux")
             .field("Id", &self.id)
@@ -225,7 +225,7 @@ impl<C> fmt::Debug for Yamux<C> {
     }
 }
 
-impl<C: ConnectionInfo + SecureInfo + ReadEx + WriteEx + Unpin + Send + 'static> Yamux<C> {
+impl<C: ConnectionInfo + SecureInfo + ReadEx + WriteEx + Split + Unpin + Send + 'static> Yamux<C> {
     /// Create a new Yamux connection.
     pub fn new(io: C, mut cfg: Config, mode: Mode) -> Self {
         cfg.set_read_after_close(false);
@@ -255,7 +255,7 @@ impl<C: ConnectionInfo + SecureInfo + ReadEx + WriteEx + Unpin + Send + 'static>
     }
 }
 
-impl<C> SecureInfo for Yamux<C> {
+impl<C: Split> SecureInfo for Yamux<C> {
     fn local_peer(&self) -> PeerId {
         self.local_peer_id.clone()
     }
@@ -273,7 +273,7 @@ impl<C> SecureInfo for Yamux<C> {
     }
 }
 
-impl<C: Send> ConnectionInfo for Yamux<C> {
+impl<C: Split + Send> ConnectionInfo for Yamux<C> {
     fn local_multiaddr(&self) -> Multiaddr {
         self.la.clone()
     }
@@ -296,10 +296,10 @@ impl ReadWriteEx for Stream {
     }
 }
 
-impl<C: ReadEx + WriteEx + Unpin + 'static> StreamMuxerEx for Yamux<C> {}
+impl<C: ReadEx + WriteEx + Split + Unpin + 'static> StreamMuxerEx for Yamux<C> {}
 
 #[async_trait]
-impl<C: ReadEx + WriteEx + Unpin + 'static> StreamMuxer for Yamux<C> {
+impl<C: ReadEx + WriteEx + Split + Unpin + 'static> StreamMuxer for Yamux<C> {
     async fn open_stream(&mut self) -> Result<IReadWrite, TransportError> {
         let s = self.control.open_stream().await?;
         trace!("a new outbound substream {:?} opened for yamux... ", s);
@@ -351,7 +351,7 @@ impl UpgradeInfo for Config {
 #[async_trait]
 impl<T> Upgrader<T> for Config
 where
-    T: ConnectionInfo + SecureInfo + ReadEx + WriteEx + Send + Unpin + 'static,
+    T: ConnectionInfo + SecureInfo + ReadEx + WriteEx + Split + Send + Unpin + 'static,
 {
     type Output = Yamux<T>;
 

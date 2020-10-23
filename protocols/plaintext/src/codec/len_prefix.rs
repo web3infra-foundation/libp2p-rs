@@ -20,7 +20,8 @@
 
 use bytes::{BufMut, BytesMut};
 use libp2prs_traits::{ReadEx, WriteEx};
-use std::{fmt, io};
+use std::{fmt, io, time::Duration};
+use async_std::task;
 
 /// Use `ReadEx` & `WriteEx` to read and write a length prefix in front of the actual data.
 pub struct LengthPrefixSocket<T> {
@@ -34,10 +35,7 @@ impl<T> fmt::Debug for LengthPrefixSocket<T> {
     }
 }
 
-impl<T> LengthPrefixSocket<T>
-where
-    T: ReadEx + WriteEx + 'static,
-{
+impl<T> LengthPrefixSocket<T> {
     /// create a new LengthPrefixSocket
     pub fn new(socket: T, max_len: usize) -> Self {
         Self {
@@ -45,7 +43,12 @@ where
             max_frame_len: max_len,
         }
     }
+}
 
+impl<T> LengthPrefixSocket<T>
+where
+    T: ReadEx + 'static,
+{
     /// convenient method for reading a whole frame
     #[allow(clippy::let_unit_value)]
     pub async fn recv_frame(&mut self) -> io::Result<Vec<u8>> {
@@ -57,13 +60,19 @@ where
             let msg = format!("data length {} exceeds allowed maximum {}", n, self.max_frame_len);
             return Err(io::Error::new(io::ErrorKind::PermissionDenied, msg));
         }
+        task::sleep(Duration::from_secs(3)).await;
 
         let mut frame = vec![0; n];
         self.inner.read_exact2(&mut frame).await?;
 
         Ok(frame)
     }
+}
 
+impl<T> LengthPrefixSocket<T>
+where
+    T: WriteEx + 'static,
+{
     /// sending a length delimited frame
     pub async fn send_frame(&mut self, frame: &[u8]) -> io::Result<()> {
         let mut buf = BytesMut::with_capacity(frame.len() + 4);

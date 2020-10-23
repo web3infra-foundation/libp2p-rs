@@ -29,6 +29,7 @@ use std::io::ErrorKind;
 
 pub use copy::copy;
 pub use ext::ReadExt2;
+use futures::io::Error;
 
 /// Read Trait for async/await
 ///
@@ -146,6 +147,15 @@ pub trait ReadEx: Send {
     }
 }
 
+pub type IReadEx = Box<dyn ReadEx>;
+
+#[async_trait]
+impl ReadEx for IReadEx {
+    async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
+        (&mut **self).read2(buf).await
+    }
+}
+
 /// Write Trait for async/await
 ///
 #[async_trait]
@@ -226,6 +236,23 @@ pub trait WriteEx: Send {
     async fn close2(&mut self) -> Result<(), io::Error>;
 }
 
+pub type IWriteEx = Box<dyn WriteEx>;
+
+#[async_trait]
+impl WriteEx for IWriteEx {
+    async fn write2(&mut self, buf: &[u8]) -> Result<usize, Error> {
+        (&mut **self).write2(buf).await
+    }
+
+    async fn flush2(&mut self) -> Result<(), Error> {
+        (&mut **self).flush2().await
+    }
+
+    async fn close2(&mut self) -> Result<(), Error> {
+        (&mut **self).close2().await
+    }
+}
+
 #[async_trait]
 impl<T: AsyncRead + Unpin + Send> ReadEx for T {
     async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
@@ -248,6 +275,28 @@ impl<T: AsyncWrite + Unpin + Send> WriteEx for T {
         AsyncWriteExt::close(self).await
     }
 }
+
+pub trait Split {
+    type Reader: ReadEx + Unpin + Send;
+    type Writer: WriteEx + Unpin + Send;
+
+    fn split(self) -> (Self::Reader, Self::Writer);
+}
+
+impl<T: ReadEx + WriteEx + Unpin + Send + Clone> Split for T {
+    type Reader = T;
+    type Writer = T;
+
+    fn split(self) -> (Self::Reader, Self::Writer) {
+        let r = self.clone();
+        let w = self;
+        (r, w)
+    }
+}
+
+pub trait SplittableReadWrite: ReadEx + WriteEx + Split + Send + Unpin + 'static {}
+
+impl<T: ReadEx + WriteEx + Split + Send + Unpin + 'static> SplittableReadWrite for T {}
 
 #[cfg(test)]
 mod tests {
