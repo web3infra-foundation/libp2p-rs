@@ -514,7 +514,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
 
             stat.window = stat.window.saturating_sub(frame_len);
 
-            if frame_len > 0 && (self.config.read_after_close || !stat.state().can_read()) {
+            if frame_len > 0 && (self.config.read_after_close || stat.state().can_read()) {
                 if let Some(sender) = self.streams.get_mut(&stream_id) {
                     let _ = sender.send(frame.into_body()).await;
                 }
