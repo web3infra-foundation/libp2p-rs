@@ -389,7 +389,7 @@ impl<T: ReadEx + WriteEx + Unpin + 'static> Connection<T> {
                 // If stream is closed, ignore frame
                 if let Some(sender) = self.streams.get_mut(&stream_id) {
                     if !sender.is_closed() {
-                        let sender = sender.send(frame.body().to_vec());
+                        let sender = sender.send(frame.body());
                         if send_channel_timeout(sender, RECEIVE_TIMEOUT).await.is_err() {
                             // reset stream
                             log::info!("stream {} send timeout, Reset it", stream_id);
