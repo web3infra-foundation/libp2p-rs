@@ -74,7 +74,7 @@ In general, to use libp2p-rs, you would always create a Swarm object to access t
 Creating and initializing a swarm:
 
 ```no_run
-    let mut swarm = Swarm::new(PeerId::from_public_key(keys.public()))
+    let mut swarm = Swarm::new(keys.public())
         .with_transport(Box::new(t1))
         .with_transport(Box::new(t2))
         .with_protocol(Box::new(DummyProtocolHandler::new()))
