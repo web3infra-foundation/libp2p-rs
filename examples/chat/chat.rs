@@ -21,6 +21,7 @@
 use async_std::task;
 use async_trait::async_trait;
 use std::time::Duration;
+
 #[macro_use]
 extern crate lazy_static;
 
@@ -42,6 +43,7 @@ use libp2prs_yamux as yamux;
 //use libp2prs_mplex as mplex;
 use std::str::FromStr;
 use structopt::StructOpt;
+
 #[derive(StructOpt)]
 struct Config {
     client_or_server: String,
@@ -147,7 +149,7 @@ fn run_server() {
     let mux = yamux::Config::new();
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
 
-    let mut swarm = Swarm::new(PeerId::from_public_key(keys.public()))
+    let mut swarm = Swarm::new(keys.public())
         .with_transport(Box::new(tu))
         .with_protocol(Box::new(ChatHandler {}));
 
@@ -175,7 +177,7 @@ fn run_client() {
     let mux = yamux::Config::new();
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
 
-    let mut swarm = Swarm::new(PeerId::from_public_key(keys.public())).with_transport(Box::new(tu));
+    let mut swarm = Swarm::new(keys.public()).with_transport(Box::new(tu));
 
     let mut control = swarm.control();
 
@@ -183,7 +185,7 @@ fn run_client() {
 
     log::info!("about to connect to {:?}", remote_peer_id);
 
-    swarm.peers.addrs.add_addr(&remote_peer_id, dial_addr, Duration::default());
+    swarm.peer_addrs_add(&remote_peer_id, dial_addr, Duration::default());
 
     swarm.start();
 
