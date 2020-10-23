@@ -33,7 +33,7 @@ fn decode_encode(data: &[u8], cipher: CipherType) {
     let mut decode_cipher = new_stream(cipher, &cipher_key, &iv, CryptoMode::Decrypt);
     let (mut decode_hmac, mut encode_hmac): (Option<Hmac>, Option<Hmac>) = match cipher {
         CipherType::ChaCha20Poly1305 | CipherType::Aes128Gcm | CipherType::Aes256Gcm => (None, None),
-        #[cfg(unix)]
+        // #[cfg(unix)]
         _ => {
             use libp2prs_secio::Digest;
             let encode_hmac = Hmac::from_key(Digest::Sha256, &_hmac_key);
@@ -71,7 +71,7 @@ fn bench_test(bench: &mut Bencher, cipher: CipherType, data: &[u8]) {
 
 fn criterion_benchmark(bench: &mut Criterion) {
     let data = (0..1024 * 256).map(|_| rand::random::<u8>()).collect::<Vec<_>>();
-    #[cfg(unix)]
+    // #[cfg(unix)]
     bench.bench_function("1kb_aes128ctr", {
         let data = data.clone();
         move |b| bench_test(b, CipherType::Aes128Ctr, &data)
@@ -92,7 +92,7 @@ fn criterion_benchmark(bench: &mut Criterion) {
     bench.bench_function("1kb_chacha20poly1305", move |b| bench_test(b, CipherType::ChaCha20Poly1305, &data));
 
     let data = (0..1024 * 1024).map(|_| rand::random::<u8>()).collect::<Vec<_>>();
-    #[cfg(unix)]
+    // #[cfg(unix)]
     bench.bench_function("1mb_aes128ctr", {
         let data = data.clone();
         move |b| bench_test(b, CipherType::Aes128Ctr, &data)
