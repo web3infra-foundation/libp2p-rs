@@ -123,7 +123,29 @@ pub trait ReadEx: Send {
         }
     }
 
-    /// Reads a length-prefixed message from the underlying IO.
+    /// Reads a fixed length-prefixed message from the underlying IO.
+    ///
+    /// The `max_size` parameter is the maximum size in bytes of the message that we accept. This is
+    /// necessary in order to avoid DoS attacks where the remote sends us a message of several
+    /// gigabytes.
+    ///
+    /// > **Note**: Assumes that a fixed-length prefix indicates the length of the message. This is
+    /// >           compatible with what `write_one_fixed` does.
+    async fn read_one_fixed(&mut self, max_size: usize) -> Result<Vec<u8>, io::Error> {
+        let len = self.read_fixed_u32().await?;
+        if len > max_size {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Received data size over maximum frame length: {}>{}", len, max_size),
+            ));
+        }
+
+        let mut buf = vec![0; len];
+        self.read_exact2(&mut buf).await?;
+        Ok(buf)
+    }
+
+    /// Reads a variable length-prefixed message from the underlying IO.
     ///
     /// The `max_size` parameter is the maximum size in bytes of the message that we accept. This is
     /// necessary in order to avoid DoS attacks where the remote sends us a message of several
@@ -191,7 +213,18 @@ pub trait WriteEx: Send {
         Ok(())
     }
 
-    /// Send a message to the underlying IO, then flushes the writing side.
+    /// Send a fixed length message to the underlying IO, then flushes the writing side.
+    ///
+    /// > **Note**: Prepends a fixed-length prefix indicate the length of the message. This is
+    /// >           compatible with what `read_one_fixed` expects.
+    async fn write_one_fixed(&mut self, buf: &[u8]) -> Result<(), io::Error> {
+        self.write_fixed_u32(buf.len()).await?;
+        self.write_all2(buf).await?;
+        self.flush2().await?;
+        Ok(())
+    }
+
+    /// Send a variable length message to the underlying IO, then flushes the writing side.
     ///
     /// > **Note**: Prepends a variable-length prefix indicate the length of the message. This is
     /// >           compatible with what `read_one` expects.
