@@ -22,14 +22,13 @@ use log::debug;
 
 use std::io;
 
-use crate::codec::len_prefix::LengthPrefixSocket;
-
 use async_trait::async_trait;
-use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx, Split};
 
-/// Encrypted stream
-pub struct SecureStream<T> {
-    socket: LengthPrefixSocket<T>,
+/// SecureStreamReader
+pub struct SecureStreamReader<R> {
+    socket: R,
+    max_frame_len: usize,
     /// recv buffer
     /// internal buffer for 'message too big'
     ///
@@ -40,14 +39,14 @@ pub struct SecureStream<T> {
     recv_buf: Vec<u8>,
 }
 
-impl<T> SecureStream<T>
+impl<R> SecureStreamReader<R>
 where
-    T: ReadEx + WriteEx + 'static,
+    R: ReadEx + 'static,
 {
-    /// New a secure stream
-    pub(crate) fn new(socket: LengthPrefixSocket<T>) -> Self {
-        SecureStream {
+    fn new(socket: R, max_frame_len: usize) -> Self {
+        SecureStreamReader {
             socket,
+            max_frame_len,
             recv_buf: Vec::default(),
         }
     }
@@ -73,9 +72,9 @@ where
 }
 
 #[async_trait]
-impl<T> ReadEx for SecureStream<T>
+impl<R> ReadEx for SecureStreamReader<R>
 where
-    T: ReadEx + WriteEx + 'static,
+    R: ReadEx + 'static,
 {
     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         // when there is somthing in recv_buffer
@@ -85,7 +84,7 @@ where
             return Ok(copied);
         }
 
-        let t = self.socket.recv_frame().await?;
+        let t = self.socket.read_one_fixed(self.max_frame_len).await?;
         debug!("receive data size: {:?}", t.len());
 
         // when input buffer is big enough
@@ -103,22 +102,98 @@ where
     }
 }
 
-#[async_trait]
-impl<T> WriteEx for SecureStream<T>
+pub struct SecureStreamWriter<W> {
+    socket: W,
+}
+
+impl<W> SecureStreamWriter<W>
 where
-    T: ReadEx + WriteEx + 'static,
+    W: WriteEx + 'static,
+{
+    fn new(socket: W) -> Self {
+        SecureStreamWriter {socket}
+    }
+}
+
+#[async_trait]
+impl<R> WriteEx for SecureStreamWriter<R>
+where
+    R: WriteEx + 'static,
 {
     async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
         debug!("start sending plain data: {:?}", buf);
 
-        self.socket.send_frame(buf).await?;
+        self.socket.write_one_fixed(buf).await?;
         Ok(buf.len())
     }
 
     async fn flush2(&mut self) -> io::Result<()> {
-        self.socket.flush().await
+        self.socket.flush2().await
     }
     async fn close2(&mut self) -> io::Result<()> {
-        self.socket.close().await
+        self.socket.close2().await
+    }
+}
+
+/// Encrypted stream
+pub struct SecureStream<R, W> {
+    reader: SecureStreamReader<R>,
+    writer: SecureStreamWriter<W>,
+}
+
+impl<R, W> SecureStream<R, W>
+    where
+        R: ReadEx + 'static,
+        W: WriteEx + 'static,
+{
+    /// New a secure stream
+    pub(crate) fn new(reader: R, writer: W, max_frame_len: usize) -> Self {
+        SecureStream {
+            reader: SecureStreamReader::new(reader, max_frame_len),
+            writer: SecureStreamWriter::new(writer),
+        }
+    }
+}
+
+#[async_trait]
+impl<R, W> ReadEx for SecureStream<R, W>
+    where
+        R: ReadEx + 'static,
+        W: WriteEx + 'static,
+{
+    async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
+        self.reader.read2(buf).await
+    }
+}
+
+#[async_trait]
+impl<R, W> WriteEx for SecureStream<R, W>
+    where
+        R: ReadEx + 'static,
+        W: WriteEx + 'static,
+{
+    async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
+        self.writer.write2(buf).await
+    }
+
+    async fn flush2(&mut self) -> Result<(), io::Error> {
+        self.writer.flush2().await
+    }
+
+    async fn close2(&mut self) -> Result<(), io::Error> {
+        self.writer.close2().await
+    }
+}
+
+impl<R, W> Split for SecureStream<R, W>
+    where
+        R: ReadEx + Unpin + 'static,
+        W: WriteEx + Unpin + 'static,
+{
+    type Reader = SecureStreamReader<R>;
+    type Writer = SecureStreamWriter<W>;
+
+    fn split(self) -> (Self::Reader, Self::Writer) {
+        (self.reader, self.writer)
     }
 }

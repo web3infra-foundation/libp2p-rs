@@ -25,13 +25,13 @@ mod secure_stream;
 
 use crate::error::PlaintextError;
 use crate::handshake::handshake_plaintext::Remote;
-use crate::secure_stream::SecureStream;
+use crate::secure_stream::{SecureStream, SecureStreamReader, SecureStreamWriter};
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::secure_io::SecureInfo;
 use libp2prs_core::transport::{ConnectionInfo, TransportError};
 use libp2prs_core::upgrade::{UpgradeInfo, Upgrader};
 use libp2prs_core::{Multiaddr, PeerId, PublicKey};
-use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx, Split, SplittableReadWrite};
 use std::io;
 
 use async_trait::async_trait;
@@ -62,9 +62,9 @@ impl PlainTextConfig {
     ///
     /// On success, produces a `SecureStream` that can then be used to encode/decode
     /// communications, plus the remote info that contains public key and peer_id
-    pub async fn handshake<T>(self, socket: T) -> Result<(SecureStream<T>, Remote), PlaintextError>
+    pub async fn handshake<T>(self, socket: T) -> Result<(SecureStream<T::Reader, T::Writer>, Remote), PlaintextError>
     where
-        T: ReadEx + WriteEx + 'static,
+        T: SplittableReadWrite,
     {
         handshake::handshake_plaintext::handshake(socket, self).await
     }
@@ -81,7 +81,7 @@ impl UpgradeInfo for PlainTextConfig {
 #[async_trait]
 impl<T> Upgrader<T> for PlainTextConfig
 where
-    T: ConnectionInfo + ReadEx + WriteEx + Unpin + 'static,
+    T: ConnectionInfo + SplittableReadWrite,
 {
     type Output = PlainTextOutput<T>;
 
@@ -96,7 +96,7 @@ where
 
 async fn make_secure_output<T>(config: PlainTextConfig, socket: T) -> Result<PlainTextOutput<T>, TransportError>
 where
-    T: ConnectionInfo + ReadEx + WriteEx + Unpin + 'static,
+    T: ConnectionInfo + SplittableReadWrite,
 {
     let pri_key = config.key.clone();
     let la = socket.local_multiaddr();
@@ -115,9 +115,9 @@ where
 }
 
 /// Output of the plaintext protocol. It implements the SecureStream trait
-pub struct PlainTextOutput<T> {
+pub struct PlainTextOutput<T: Split> {
     /// The encrypted stream, actually not any encrypt action.
-    pub stream: SecureStream<T>,
+    pub stream: SecureStream<T::Reader, T::Writer>,
     /// The private key of the local
     pub local_priv_key: Keypair,
     /// For convenience, the local peer ID, generated from local pub key
@@ -132,7 +132,7 @@ pub struct PlainTextOutput<T> {
     ra: Multiaddr,
 }
 
-impl<T> SecureInfo for PlainTextOutput<T> {
+impl<T: Split> SecureInfo for PlainTextOutput<T> {
     fn local_peer(&self) -> PeerId {
         self.local_peer_id.clone()
     }
@@ -150,7 +150,7 @@ impl<T> SecureInfo for PlainTextOutput<T> {
     }
 }
 
-impl<T: Send> ConnectionInfo for PlainTextOutput<T> {
+impl<T: Split + Send> ConnectionInfo for PlainTextOutput<T> {
     fn local_multiaddr(&self) -> Multiaddr {
         self.la.clone()
     }
@@ -160,14 +160,14 @@ impl<T: Send> ConnectionInfo for PlainTextOutput<T> {
 }
 
 #[async_trait]
-impl<S: ReadEx + WriteEx + Unpin + Send + 'static> ReadEx for PlainTextOutput<S> {
+impl<S: SplittableReadWrite> ReadEx for PlainTextOutput<S> {
     async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
         self.stream.read2(buf).await
     }
 }
 
 #[async_trait]
-impl<S: ReadEx + WriteEx + Unpin + Send + 'static> WriteEx for PlainTextOutput<S> {
+impl<S: SplittableReadWrite> WriteEx for PlainTextOutput<S> {
     async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
         self.stream.write2(buf).await
     }
@@ -178,6 +178,16 @@ impl<S: ReadEx + WriteEx + Unpin + Send + 'static> WriteEx for PlainTextOutput<S
 
     async fn close2(&mut self) -> Result<(), io::Error> {
         self.stream.close2().await
+    }
+}
+
+impl<S: SplittableReadWrite> Split for PlainTextOutput<S> {
+    type Reader = SecureStreamReader<S::Reader>;
+    type Writer = SecureStreamWriter<S::Writer>;
+
+    fn split(self) -> (Self::Reader, Self::Writer) {
+        let (r, w) = self.stream.split();
+        (r, w)
     }
 }
 

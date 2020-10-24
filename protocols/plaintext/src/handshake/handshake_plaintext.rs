@@ -18,13 +18,12 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use crate::codec::len_prefix::LengthPrefixSocket;
 use crate::error::PlaintextError;
 use crate::secure_stream::SecureStream;
 use crate::structs_proto::Exchange;
 use crate::PlainTextConfig;
 use libp2prs_core::{PeerId, PublicKey};
-use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx, SplittableReadWrite};
 use log::error;
 use prost::Message;
 use std::io;
@@ -52,15 +51,17 @@ pub struct Remote {
 ///
 /// If remote peer_id is the same as local, it means connected to self, throws error.
 /// Otherwise, returns an object that implements the `WriteEx` and `ReadEx` trait.
-pub(crate) async fn handshake<T>(socket: T, config: PlainTextConfig) -> Result<(SecureStream<T>, Remote), PlaintextError>
+pub(crate) async fn handshake<T>(socket: T, config: PlainTextConfig) -> Result<(SecureStream<T::Reader, T::Writer>, Remote), PlaintextError>
 where
-    T: ReadEx + WriteEx + 'static,
+    T: SplittableReadWrite,
 {
-    let mut socket = LengthPrefixSocket::new(socket, config.clone().max_frame_length);
+    let max_frame_len = config.max_frame_length;
+    let (mut reader, mut writer) = socket.split();
     let local_context = HandshakeContext::new(config.clone())?;
-    socket.send_frame(local_context.state.exchange_bytes.as_ref()).await?;
 
-    let buf = socket.recv_frame().await?;
+    writer.write_one_fixed(local_context.state.exchange_bytes.as_ref()).await?;
+
+    let buf = reader.read_one_fixed(max_frame_len).await?;
     let remote_context = local_context.with_remote(buf)?;
 
     let local_id = config.clone().key.public().into_peer_id();
@@ -75,7 +76,7 @@ where
         return Err(PlaintextError::ConnectSelf);
     }
 
-    let secure_stream = SecureStream::new(socket);
+    let secure_stream = SecureStream::new(reader, writer, max_frame_len);
 
     Ok((secure_stream, remote_state))
 }
