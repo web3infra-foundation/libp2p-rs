@@ -193,7 +193,7 @@ fn run_server() -> io::Result<()> {
     let ws = WsConfig::new().set_tls_config(build_server_tls_config(&options)).to_owned();
     let tu = TransportUpgrade::new(ws, mux, sec);
 
-    let mut swarm = Swarm::new(PeerId::from_public_key(keys.public()))
+    let mut swarm = Swarm::new(keys.public())
         .with_transport(Box::new(tu))
         .with_protocol(Box::new(MyProtocolHandler))
         .with_identify(IdentifyConfig::new(false));
@@ -225,7 +225,7 @@ fn run_client() -> io::Result<()> {
         .to_owned();
     let tu = TransportUpgrade::new(ws, mux, sec);
 
-    let mut swarm = Swarm::new(PeerId::from_public_key(keys.public())).with_transport(Box::new(tu));
+    let mut swarm = Swarm::new(keys.public()).with_transport(Box::new(tu));
 
     let mut control = swarm.control();
 
@@ -233,7 +233,7 @@ fn run_client() -> io::Result<()> {
 
     log::info!("about to connect to {:?}", remote_peer_id);
 
-    swarm.peers.addrs.add_addr(&remote_peer_id, addr, Duration::default());
+    swarm.peer_addrs_add(&remote_peer_id, addr, Duration::default());
 
     swarm.start();
 

@@ -313,7 +313,7 @@ impl<T: ReadEx + WriteEx + Unpin + 'static> Connection<T> {
                         _ => {}
                     }
                     // drop it
-                    log::info!("drop stream receiver frame");
+                    log::debug!("drop stream receiver frame");
                 }
             }
         }
@@ -366,7 +366,7 @@ impl<T: ReadEx + WriteEx + Unpin + 'static> Connection<T> {
 
                 let stream = Stream::new(stream_id, self.id, self.stream_sender.clone(), stream_receiver);
 
-                log::info!("{}: new inbound {} of {}", self.id, stream, self);
+                log::debug!("{}: new inbound {} of {}", self.id, stream, self);
                 if let Some(sender) = self.waiting_stream_sender.take() {
                     sender.send(Ok(stream)).expect("send err");
                 } else {
@@ -392,7 +392,7 @@ impl<T: ReadEx + WriteEx + Unpin + 'static> Connection<T> {
                         let sender = sender.send(frame.body());
                         if send_channel_timeout(sender, RECEIVE_TIMEOUT).await.is_err() {
                             // reset stream
-                            log::info!("stream {} send timeout, Reset it", stream_id);
+                            log::debug!("stream {} send timeout, Reset it", stream_id);
                             reset = true;
                             // info.sender.close().await;
                             let frame = Frame::reset_frame(stream_id);
@@ -413,7 +413,7 @@ impl<T: ReadEx + WriteEx + Unpin + 'static> Connection<T> {
             }
             Tag::Close => {
                 let stream_id = frame.header().stream_id();
-                log::info!("{}: remote close stream {} of {}", self.id, stream_id, self);
+                log::debug!("{}: remote close stream {} of {}", self.id, stream_id, self);
                 self.streams.remove(&stream_id);
                 // flag to remove stat from streams_stat
                 let mut rm = false;
@@ -459,7 +459,7 @@ impl<T: ReadEx + WriteEx + Unpin + 'static> Connection<T> {
             }
             Some(StreamCommand::CloseStream(frame, reply)) => {
                 let stream_id = frame.stream_id();
-                log::info!("{}: closing stream {} of {}", self.id, stream_id, self);
+                log::debug!("{}: closing stream {} of {}", self.id, stream_id, self);
                 // flag to remove stat from streams_stat
                 let mut rm = false;
                 if let Some(stat) = self.streams_stat.get_mut(&stream_id) {
@@ -482,7 +482,7 @@ impl<T: ReadEx + WriteEx + Unpin + 'static> Connection<T> {
             }
             Some(StreamCommand::ResetStream(frame)) => {
                 let stream_id = frame.stream_id();
-                log::info!("{}: reset stream {} of {}", self.id, stream_id, self);
+                log::debug!("{}: reset stream {} of {}", self.id, stream_id, self);
                 if self.streams_stat.contains_key(&stream_id) {
                     // step1: send close frame
                     self.writer.send_frame(&frame).await.or(Err(ConnectionError::Closed))?;
@@ -525,7 +525,7 @@ impl<T: ReadEx + WriteEx + Unpin + 'static> Connection<T> {
                 self.streams.insert(stream_id, stream_sender);
                 self.streams_stat.insert(stream_id, State::Open);
 
-                log::info!("{}: new outbound {} of {}", self.id, stream_id, self);
+                log::debug!("{}: new outbound {} of {}", self.id, stream_id, self);
 
                 // send to peer with new stream frame
                 let body = format!("{}", stream_id.val());
@@ -549,12 +549,12 @@ impl<T: ReadEx + WriteEx + Unpin + 'static> Connection<T> {
             }
             Some(ControlCommand::CloseConnection(reply)) => {
                 if !self.shutdown.has_not_started() {
-                    log::info!("shutdown had started, ingore this request");
+                    log::debug!("shutdown had started, ingore this request");
                     let _ = reply.send(());
                     return Ok(());
                 }
                 self.shutdown = Shutdown::InProgress(reply);
-                log::info!("closing connection {}", self);
+                log::debug!("closing connection {}", self);
                 self.stream_receiver.close();
                 self.control_receiver.pause();
             }
@@ -563,7 +563,7 @@ impl<T: ReadEx + WriteEx + Unpin + 'static> Connection<T> {
                 // No further processing of commands of any kind or incoming frames
                 // will happen.
                 debug_assert!(self.shutdown.is_in_progress());
-                log::info!("{}: closing {}", self.id, self);
+                log::debug!("{}: closing {}", self.id, self);
 
                 let shutdown = std::mem::replace(&mut self.shutdown, Shutdown::Complete);
                 if let Shutdown::InProgress(tx) = shutdown {
@@ -611,13 +611,13 @@ impl<T> Connection<T> {
 
     /// Close and drop all `Stream`s sender and stat.
     async fn drop_all_streams(&mut self) {
-        log::info!("{}: Drop all Streams sender count={}", self.id, self.streams.len());
+        log::trace!("{}: Drop all Streams sender count={}", self.id, self.streams.len());
         for (id, _sender) in self.streams.drain().take(1) {
             // drop it
             log::trace!("{}: drop stream sender {:?}", self.id, id);
         }
 
-        log::info!("{}: Drop all Streams stat count={}", self.id, self.streams.len());
+        log::trace!("{}: Drop all Streams stat count={}", self.id, self.streams.len());
         for (id, _stat) in self.streams_stat.drain().take(1) {
             // drop it
             log::trace!("{}: drop stream stat {:?}", self.id, id);

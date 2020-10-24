@@ -315,9 +315,7 @@ mod tests {
         ab.update_addr(&peer_id, Duration::from_secs(1), Duration::from_secs(3));
         info!("{}", ab.get_addr(&peer_id).unwrap().first().unwrap().ttl);
         let zero = ab.get_addr(&peer_id).unwrap().first().unwrap().ttl - Duration::from_secs(3).as_secs_f64();
-        assert_eq!(
-            zero as i64, 0
-        );
+        assert_eq!(zero as i64, 0);
 
         ab.del_peer(&peer_id);
         assert!(ab.get_addr(&peer_id).is_none());

@@ -4,6 +4,7 @@ use arrayref::array_ref;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
 use data_encoding::BASE32;
 use multihash::Multihash;
+pub use multihash::{Code, Sha2_256};
 use std::{
     borrow::Cow,
     convert::From,
@@ -195,24 +196,62 @@ impl<'a> Protocol<'a> {
 
     pub fn get_enum(id: u32) -> Result<Self> {
         match id {
+            IP4 => Ok(Protocol::Ip4(Ipv4Addr::new(127, 0, 0, 1))),
+            IP6 => Ok(Protocol::Ip6(Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0xc00a, 0x2ff))),
             MEMORY => Ok(Protocol::Memory(0)),
+            ONION => Ok(Protocol::Onion(Cow::Owned([0_u8; 10]), 0)),
+            ONION3 => Ok(Protocol::Onion3(Onion3Addr::from(([0_u8; 35], 0)))),
             TCP => Ok(Protocol::Tcp(0)),
+            UDP => Ok(Protocol::Udp(0)),
+            SCTP => Ok(Protocol::Sctp(0)),
+            UDT => Ok(Protocol::Udt),
+            UTP => Ok(Protocol::Utp),
+            UNIX => Ok(Protocol::Unix(Cow::Borrowed(""))),
             QUIC => Ok(Protocol::Quic),
+            DCCP => Ok(Protocol::Dccp(0)),
             DNS => Ok(Protocol::Dns(Cow::Borrowed(""))),
+            DNS4 => Ok(Protocol::Dns4(Cow::Borrowed(""))),
+            DNS6 => Ok(Protocol::Dns6(Cow::Borrowed(""))),
+            DNSADDR => Ok(Protocol::Dnsaddr(Cow::Borrowed(""))),
             WS => Ok(Protocol::Ws(Cow::Borrowed("/"))),
             WSS => Ok(Protocol::Wss(Cow::Borrowed("/"))),
+            HTTP => Ok(Protocol::Http),
+            HTTPS => Ok(Protocol::Https),
+            P2P => Ok(Protocol::P2p(multihash::wrap(Code::Sha2_256, &Sha2_256::digest(b"0").digest()))),
+            P2P_CIRCUIT => Ok(Protocol::P2pCircuit),
+            P2P_WEBRTC_DIRECT => Ok(Protocol::P2pWebRtcDirect),
+            P2P_WEBRTC_STAR => Ok(Protocol::P2pWebRtcStar),
+            P2P_WEBSOCKET_STAR => Ok(Protocol::P2pWebSocketStar),
             _ => Err(Error::UnknownProtocolId(id)),
         }
     }
 
     pub fn get_key(&self) -> Result<u32> {
         match self {
+            Protocol::Ip4(_) => Ok(IP4),
+            Protocol::Ip6(_) => Ok(IP6),
             Protocol::Memory(_) => Ok(MEMORY),
+            Protocol::Onion(_, _) => Ok(ONION),
+            Protocol::Onion3(_) => Ok(ONION3),
             Protocol::Tcp(_) => Ok(TCP),
+            Protocol::Udp(_) => Ok(UDP),
+            Protocol::Sctp(_) => Ok(SCTP),
+            Protocol::Udt => Ok(UDT),
+            Protocol::Utp => Ok(UTP),
+            Protocol::Unix(_) => Ok(UNIX),
             Protocol::Quic => Ok(QUIC),
+            Protocol::Dccp(_) => Ok(DCCP),
             Protocol::Dns(_) => Ok(DNS),
-            Protocol::Ws(_) => Ok(WS),
+            Protocol::Dns4(_) => Ok(DNS4),
+            Protocol::Dns6(_) => Ok(DNS6),
+            Protocol::Dnsaddr(_) => Ok(DNSADDR),
             Protocol::Wss(_) => Ok(WSS),
+            Protocol::Http => Ok(HTTP),
+            Protocol::Https => Ok(HTTPS),
+            Protocol::P2pCircuit => Ok(P2P_CIRCUIT),
+            Protocol::P2pWebRtcDirect => Ok(P2P_WEBRTC_DIRECT),
+            Protocol::P2pWebRtcStar => Ok(P2P_WEBRTC_STAR),
+            Protocol::P2pWebSocketStar => Ok(P2P_WEBSOCKET_STAR),
             _ => Err(Error::InvalidProtocolString),
         }
     }

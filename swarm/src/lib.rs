@@ -75,7 +75,7 @@ use libp2prs_core::{
     multiaddr::{protocol, Multiaddr},
     muxing::IStreamMuxer,
     transport::{upgrade::ITransportEx, TransportError},
-    PeerId,
+    PeerId, PublicKey,
 };
 
 use crate::connection::{Connection, ConnectionId, ConnectionLimit, Direction};
@@ -215,8 +215,8 @@ type ProtocolId = &'static [u8];
 
 /// Contains the state of the network, plus the way it should behave.
 pub struct Swarm {
-    /// TODO: to improve peerstore... we don't want to leak PeerStore
-    pub peers: PeerStore,
+    // to improve peerstore... we don't want to leak PeerStore
+    peers: PeerStore,
 
     /// The protocol multistream selector.
     muxer: Muxer,
@@ -281,17 +281,21 @@ pub struct Swarm {
 impl Swarm {
     /// Builds a new `Swarm`.
     pub fn new(
-        local_peer_id: PeerId,
+        key: PublicKey,
         //_config: NetworkConfig,
     ) -> Self {
         // unbounded channel for events, so that we can send a message to ourselves
         let (event_tx, event_rx) = mpsc::unbounded();
         let (ctrl_tx, ctrl_rx) = mpsc::channel(0);
+
+        let mut peers = PeerStore::default();
+        peers.keys.add_key(&key.clone().into_peer_id(), key.clone());
+
         Swarm {
-            peers: PeerStore::default(),
+            peers,
             muxer: Muxer::new(),
             transports: Default::default(),
-            local_peer_id,
+            local_peer_id: key.into_peer_id(),
             // listeners: SmallVec::with_capacity(16),
             next_connection_id: 0,
             listened_addrs: Default::default(),
@@ -1153,7 +1157,7 @@ impl Swarm {
                 Ok(ttl) => {
                     //let remote_peer_id = c.remote_peer();
                     log::trace!("ping TTL={:?} for {:?}", ttl, connection);
-                    // TODO: update peer store with the TTL
+                    // update peer store with the TTL
                     let peer_id = connection.stream_muxer().remote_peer();
                     self.peers.addrs.update_addr(&peer_id, Duration::from_secs(1), ttl);
 
@@ -1179,11 +1183,15 @@ impl Swarm {
         if let Some(connection) = self.connections_by_id.get_mut(&cid) {
             match result {
                 Ok((info, observed_addr)) => {
+                    let remote_pubkey = connection.stream_muxer().remote_pub_key();
                     let peer_id = connection.stream_muxer().remote_peer();
                     //let remote_peer_id = c.remote_peer();
                     log::trace!("identify observed_addr: {} info={:?} for {:?}", observed_addr, info, connection);
 
-                    // TODO: update peer store with the
+                    // Insert remote peer_id and public key into peerstore->KeyBook if non-exist
+                    self.peers.keys.add_key(&peer_id, remote_pubkey);
+
+                    // update peer store with the
                     self.peers.addrs.add_addr(&peer_id, observed_addr, Duration::from_secs(1));
                     self.peers.protos.add_protocol(&peer_id, info.protocols);
                     //
@@ -1195,6 +1203,10 @@ impl Swarm {
         }
 
         Ok(())
+    }
+
+    pub fn peer_addrs_add(&mut self, peer_id: &PeerId, addr: Multiaddr, ttl: Duration) {
+        self.peers.addrs.add_addr(peer_id, addr, ttl);
     }
 }
 

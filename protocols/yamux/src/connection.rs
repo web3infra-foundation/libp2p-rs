@@ -341,7 +341,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
                     _ => {}
                 }
                 // drop it
-                log::info!("drop stream receiver frame");
+                log::trace!("drop stream receiver frame");
             }
         }
 
@@ -441,7 +441,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
             return Action::Terminate(Frame::protocol_error());
         }
         if self.streams.len() == self.config.max_num_streams {
-            // log::error!("{}: maximum number of streams reached", self.id);
+            log::error!("{}: maximum number of streams reached", self.id);
             return Action::Terminate(Frame::internal_error());
         }
         if self.streams_stat.contains_key(&stream_id) {
@@ -514,7 +514,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
 
             stat.window = stat.window.saturating_sub(frame_len);
 
-            if frame_len > 0 && (self.config.read_after_close || !stat.state().can_read()) {
+            if frame_len > 0 && (self.config.read_after_close || stat.state().can_read()) {
                 if let Some(sender) = self.streams.get_mut(&stream_id) {
                     let _ = sender.send(frame.into_body()).await;
                 }
@@ -671,8 +671,6 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
         let stream_id = frame.header().stream_id();
         if let Some(stat) = self.streams_stat.get_mut(&stream_id) {
             if stat.state().can_write() {
-                log::info!("{}: sending: {}", self.id, frame.header());
-
                 if stat.credit == 0 {
                     if self.pending_frames.contains_key(&stream_id) {
                         let _ = reply.send(0);
@@ -691,9 +689,10 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
                 stat.credit -= n;
                 send_flag(stat, &mut frame);
                 self.writer.send_frame(&frame).await.or(Err(ConnectionError::Closed))?;
+                log::debug!("{}: sending: {}", self.id, frame.header());
                 let _ = reply.send(n);
             } else {
-                log::info!("{}: stream {} have been removed", self.id, stream_id);
+                log::debug!("{}: stream {} have been removed", self.id, stream_id);
                 drop(reply);
             }
         } else {
@@ -709,7 +708,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
                 self.send_frame(frame, reply).await?;
             }
             Some(StreamCommand::CloseStream(stream_id, reply)) => {
-                log::info!("{}: closing stream {} of {}", self.id, stream_id, self);
+                log::debug!("{}: closing stream {} of {}", self.id, stream_id, self);
                 // flag to remove stat from streams_stat
                 let mut rm = false;
                 if let Some(stat) = self.streams_stat.get_mut(&stream_id) {
@@ -739,7 +738,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
                 let _ = reply.send(());
             }
             Some(StreamCommand::ResetStream(stream_id)) => {
-                log::info!("{}: reset stream {} of {}", self.id, stream_id, self);
+                log::debug!("{}: reset stream {} of {}", self.id, stream_id, self);
                 if self.streams_stat.contains_key(&stream_id) {
                     self.send_reset_stream(stream_id).await?;
                 }
@@ -796,7 +795,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
 
                 let stream = Stream::new(stream_id, self.id, self.config.clone(), self.stream_sender.clone(), stream_receiver);
                 if reply.send(Ok(stream)).is_ok() {
-                    log::info!("{}: new outbound {}", self.id, stream_id);
+                    log::debug!("{}: new outbound {}", self.id, stream_id);
                     self.streams.insert(stream_id, stream_sender);
                     self.streams_stat.insert(stream_id, stream_stat);
                 } else {
@@ -820,12 +819,12 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
             }
             Some(ControlCommand::CloseConnection(reply)) => {
                 if !self.shutdown.has_not_started() {
-                    log::info!("shutdown had started, ingore this request");
+                    log::debug!("shutdown had started, ingore this request");
                     let _ = reply.send(());
                     return Ok(());
                 }
                 self.shutdown = Shutdown::InProgress(reply);
-                log::info!("closing connection {}", self);
+                log::debug!("closing connection {}", self);
                 self.stream_receiver.close();
                 self.control_receiver.pause();
             }
@@ -834,7 +833,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
                 // No further processing of commands of any kind or incoming frames
                 // will happen.
                 debug_assert!(self.shutdown.is_in_progress());
-                log::info!("{}: closing {}", self.id, self);
+                log::debug!("{}: closing {}", self.id, self);
 
                 let shutdown = std::mem::replace(&mut self.shutdown, Shutdown::Complete);
                 if let Shutdown::InProgress(tx) = shutdown {
@@ -900,13 +899,13 @@ impl<T> Connection<T> {
 
     /// Close and drop all `Stream`s sender and stat.
     async fn drop_all_streams(&mut self) {
-        log::info!("{}: Drop all Streams sender count={}", self.id, self.streams.len());
+        log::trace!("{}: Drop all Streams sender count={}", self.id, self.streams.len());
         for (id, _sender) in self.streams.drain().take(1) {
             // drop it
             log::trace!("{}: drop stream sender {:?}", self.id, id);
         }
 
-        log::info!("{}: Drop all Streams stat count={}", self.id, self.streams.len());
+        log::trace!("{}: Drop all Streams stat count={}", self.id, self.streams.len());
         for (id, _stat) in self.streams_stat.drain().take(1) {
             // drop it
             log::trace!("{}: drop stream stat {:?}", self.id, id);
@@ -914,9 +913,9 @@ impl<T> Connection<T> {
     }
 
     fn drop_pending_frame(&mut self) {
-        log::info!("{}: Drop all pengding frame count={}", self.id, self.pending_frames.len());
+        log::trace!("{}: Drop all pengding frame count={}", self.id, self.pending_frames.len());
         for (stream_id, (_, reply)) in self.pending_frames.drain().take(1) {
-            log::info!("{} drop pengding frame of stream {:?}", self.id, stream_id);
+            log::trace!("{} drop pengding frame of stream {:?}", self.id, stream_id);
             let _ = reply.send(0);
         }
     }

@@ -683,6 +683,7 @@ fn prop_cannot_read_after_close() {
             let b = b.into_async_read();
             let mut config = Config::default();
             config.set_read_after_close(false);
+            let config_b = config.clone();
 
             // create connection A
             let mpa = Connection::new(a, config, Mode::Server);
@@ -694,7 +695,7 @@ fn prop_cannot_read_after_close() {
             });
 
             // create connection B
-            let mpb = Connection::new(b, Config::default(), Mode::Client);
+            let mpb = Connection::new(b, config_b, Mode::Client);
             let mut mpb_ctrl = mpb.control();
             let handle_b = task::spawn(async {
                 let mut muxer_conn = mpb;

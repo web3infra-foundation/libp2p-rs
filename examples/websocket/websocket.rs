@@ -90,7 +90,7 @@ fn run_server() {
         }
     }
 
-    let mut swarm = Swarm::new(PeerId::from_public_key(keys.public()))
+    let mut swarm = Swarm::new(keys.public())
         .with_transport(Box::new(tu))
         .with_protocol(Box::new(DummyProtocolHandler::new()))
         .with_protocol(Box::new(MyProtocolHandler))
@@ -115,7 +115,7 @@ fn run_client() {
     let mux = mplex::Config::new();
     let tu = TransportUpgrade::new(WsConfig::new(), mux, sec);
 
-    let mut swarm = Swarm::new(PeerId::from_public_key(keys.public()))
+    let mut swarm = Swarm::new(keys.public())
         .with_transport(Box::new(tu))
         .with_identify(IdentifyConfig::new(false));
 
@@ -125,7 +125,7 @@ fn run_client() {
 
     log::info!("about to connect to {:?}", remote_peer_id);
 
-    swarm.peers.addrs.add_addr(&remote_peer_id, addr, Duration::default());
+    swarm.peer_addrs_add(&remote_peer_id, addr, Duration::default());
 
     swarm.start();
 

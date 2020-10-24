@@ -18,19 +18,15 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::{
-    net::{TcpListener, TcpStream},
-    task,
-};
+use async_std::task;
 use criterion::{criterion_group, criterion_main, Criterion};
 use futures::stream::FusedStream;
 use futures::{channel::mpsc, prelude::*, ready};
 use libp2prs_traits::{ReadEx, WriteEx};
-use libp2prs_yamux::{connection::Connection, connection::Mode, Config};
+use libp2prs_yamux::{connection::Connection, connection::Mode, error::ConnectionError, Config};
 use std::collections::VecDeque;
 use std::{
     fmt, io,
-    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -61,7 +57,7 @@ impl AsRef<[u8]> for Bytes {
 }
 
 fn concurrent(c: &mut Criterion) {
-    env_logger::from_env(env_logger::Env::default().default_filter_or("error")).init();
+    // env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();
     let params = &[
         Params { streams: 1, messages: 1 },
         Params { streams: 10, messages: 1 },
@@ -109,7 +105,7 @@ async fn roundtrip(nstreams: usize, nmessages: usize, data: Bytes, send_all: boo
     let client = client.into_async_read();
 
     let conn = Connection::new(server, Config::default(), Mode::Server);
-    let mut ctrl_server = conn.control();
+    let ctrl_server = conn.control();
     let loop_handle_server = task::spawn(async {
         let mut muxer_conn = conn;
         while muxer_conn.next_stream().await.is_ok() {}
@@ -122,13 +118,15 @@ async fn roundtrip(nstreams: usize, nmessages: usize, data: Bytes, send_all: boo
         while let Ok(mut stream) = ctrl.accept_stream().await {
             log::debug!("S: accepted new stream");
             let handle = task::spawn(async move {
-                let mut buf = vec![0; data_len];
-                for _ in 0..nmessages {
-                    stream.read_exact2(&mut buf).await?;
-                    stream.write_all2(&buf).await?;
+                let r = stream.clone();
+                let w = stream.clone();
+                if let Err(e) = libp2prs_traits::copy(r, w).await {
+                    if e.kind() != io::ErrorKind::UnexpectedEof {
+                        return Err(e);
+                    }
                 }
-                stream.close2().await?;
-                Ok::<(), yamux2::error::ConnectionError>(())
+                let _ = stream.close2().await;
+                Ok(())
             });
             handles.push_back(handle);
         }
@@ -175,16 +173,16 @@ async fn roundtrip(nstreams: usize, nmessages: usize, data: Bytes, send_all: boo
                 stream.close2().await?;
             }
 
-            tx.unbounded_send(nmessages).expect("unbounded_send");
-            Ok::<(), yamux2::error::ConnectionError>(())
+            tx.unbounded_send(1).expect("unbounded_send");
+            Ok::<(), ConnectionError>(())
         });
     }
-    let n = rx.take(nstreams * nmessages).fold(0, |acc, n| future::ready(acc + n)).await;
+    let n = rx.take(nstreams).fold(0, |acc, n| future::ready(acc + n)).await;
     assert_eq!(nstreams, n);
 
     ctrl_client.close().await.expect("client close connection");
-    // ctrl_server.close().await.expect("server close connection");
     stream_handle_server.await;
+    // ctrl_server.close().await.expect("server close connection");
     loop_handle_client.await;
     loop_handle_server.await;
 }
