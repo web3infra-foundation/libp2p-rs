@@ -57,7 +57,7 @@ impl AsRef<[u8]> for Bytes {
 }
 
 fn concurrent(c: &mut Criterion) {
-    env_logger::from_env(env_logger::Env::default().default_filter_or("error")).init();
+    // env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();
     let params = &[
         Params { streams: 1, messages: 1 },
         Params { streams: 10, messages: 1 },
@@ -118,13 +118,15 @@ async fn roundtrip(nstreams: usize, nmessages: usize, data: Bytes, send_all: boo
         while let Ok(mut stream) = ctrl.accept_stream().await {
             log::debug!("S: accepted new stream");
             let handle = task::spawn(async move {
-                let mut buf = vec![0; data_len];
-                for _ in 0..nmessages {
-                    stream.read_exact2(&mut buf).await?;
-                    stream.write_all2(&buf).await?;
+                let r = stream.clone();
+                let w = stream.clone();
+                if let Err(e) = libp2prs_traits::copy(r, w).await {
+                    if e.kind() != io::ErrorKind::UnexpectedEof {
+                        return Err(e);
+                    }
                 }
-                stream.close2().await?;
-                Ok::<(), ConnectionError>(())
+                let _ = stream.close2().await;
+                Ok(())
             });
             handles.push_back(handle);
         }
@@ -171,16 +173,16 @@ async fn roundtrip(nstreams: usize, nmessages: usize, data: Bytes, send_all: boo
                 stream.close2().await?;
             }
 
-            tx.unbounded_send(nmessages).expect("unbounded_send");
+            tx.unbounded_send(1).expect("unbounded_send");
             Ok::<(), ConnectionError>(())
         });
     }
-    let n = rx.take(nstreams * nmessages).fold(0, |acc, n| future::ready(acc + n)).await;
+    let n = rx.take(nstreams).fold(0, |acc, n| future::ready(acc + n)).await;
     assert_eq!(nstreams, n);
 
     ctrl_client.close().await.expect("client close connection");
-    // ctrl_server.close().await.expect("server close connection");
     stream_handle_server.await;
+    // ctrl_server.close().await.expect("server close connection");
     loop_handle_client.await;
     loop_handle_server.await;
 }
