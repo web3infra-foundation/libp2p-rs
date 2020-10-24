@@ -671,8 +671,6 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
         let stream_id = frame.header().stream_id();
         if let Some(stat) = self.streams_stat.get_mut(&stream_id) {
             if stat.state().can_write() {
-                log::info!("{}: sending: {}", self.id, frame.header());
-
                 if stat.credit == 0 {
                     if self.pending_frames.contains_key(&stream_id) {
                         let _ = reply.send(0);
@@ -691,6 +689,7 @@ impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
                 stat.credit -= n;
                 send_flag(stat, &mut frame);
                 self.writer.send_frame(&frame).await.or(Err(ConnectionError::Closed))?;
+                log::info!("{}: sending: {}", self.id, frame.header());
                 let _ = reply.send(n);
             } else {
                 log::info!("{}: stream {} have been removed", self.id, stream_id);
