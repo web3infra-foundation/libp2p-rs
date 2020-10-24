@@ -6,7 +6,7 @@ use log::{debug, info, trace};
 use std::cmp::Ordering;
 
 use crate::{
-    codec::{len_prefix::LengthPrefixSocket, secure_stream::SecureStream, Hmac},
+    codec::{secure_stream::SecureStream, Hmac},
     crypto::{cipher::CipherType, new_stream, BoxStreamCipher, CryptoMode},
     error::SecioError,
     exchange,
@@ -18,7 +18,7 @@ use crate::{
 use libp2prs_core::identity::*;
 use libp2prs_core::PublicKey;
 
-use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx, SplittableReadWrite};
 use prost::Message;
 
 /// Performs a handshake on the given socket.
@@ -30,22 +30,24 @@ use prost::Message;
 /// On success, returns an object that implements the `WriteEx` and `ReadEx` trait,
 /// plus the public key of the remote, plus the ephemeral public key used during
 /// negotiation.
-pub(crate) async fn handshake<T>(socket: T, config: Config) -> Result<(SecureStream<T>, PublicKey, EphemeralPublicKey), SecioError>
+pub(crate) async fn handshake<T>(socket: T, config: Config) -> Result<(SecureStream<T::Reader, T::Writer>, PublicKey, EphemeralPublicKey), SecioError>
 where
-    T: ReadEx + WriteEx + 'static,
+    T: SplittableReadWrite,
 {
+    let max_frame_len = config.max_frame_length;
     // The handshake messages all start with a 4-bytes message length prefix.
-    let mut socket = LengthPrefixSocket::new(socket, config.max_frame_length);
+    // let mut socket = LengthPrefixSocket::new(socket, config.max_frame_length);
+    let (mut reader, mut writer) = socket.split();
 
     // Generate our nonce.
     let local_context = HandshakeContext::new(config).with_local();
     trace!("starting handshake; local nonce = {:?}", local_context.state.nonce);
 
     trace!("sending proposition to remote");
-    socket.send_frame(&local_context.state.proposition_bytes).await?;
+    writer.write_one_fixed(&local_context.state.proposition_bytes).await?;
 
     // Receive the remote's proposition.
-    let remote_proposition = socket.recv_frame().await?;
+    let remote_proposition = reader.read_one_fixed(max_frame_len).await?;
     let remote_context = local_context.with_remote(remote_proposition)?;
 
     trace!(
@@ -88,10 +90,10 @@ where
     // Send our local `Exchange`.
     trace!("sending exchange to remote");
 
-    socket.send_frame(&local_exchanges).await?;
+    writer.write_one_fixed(&local_exchanges).await?;
 
     // Receive the remote's `Exchange`.
-    let raw_exchanges = socket.recv_frame().await?;
+    let raw_exchanges = reader.read_one_fixed(max_frame_len).await?;
     let remote_exchanges = match Exchange::decode(&raw_exchanges[..]) {
         Ok(e) => e,
         Err(err) => {
@@ -170,7 +172,9 @@ where
     );
 
     let mut secure_stream = SecureStream::new(
-        socket,
+        reader,
+        writer,
+        max_frame_len,
         decode_cipher,
         decode_hmac,
         encode_cipher,

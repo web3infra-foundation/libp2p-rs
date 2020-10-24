@@ -2,21 +2,22 @@ use log::{debug, trace};
 
 use std::{cmp::min, io};
 
-use crate::{codec::len_prefix::LengthPrefixSocket, codec::Hmac, crypto::BoxStreamCipher, error::SecioError};
+use crate::{codec::Hmac, crypto::BoxStreamCipher, error::SecioError};
 
 use async_trait::async_trait;
-use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx, Split};
+use futures::io::Error;
 
-/// Encrypted stream
-pub struct SecureStream<T> {
-    socket: LengthPrefixSocket<T>,
-    decode_cipher: BoxStreamCipher,
+/// SecureStreamReader
+pub struct SecureStreamReader<R> {
+
+    socket: R,
+
+    max_frame_len: usize,
+
     decode_hmac: Option<Hmac>,
-    encode_cipher: BoxStreamCipher,
-    encode_hmac: Option<Hmac>,
-    /// denotes a sequence of bytes which are expected to be
-    /// found at the beginning of the stream and are checked for equality
-    nonce: Vec<u8>,
+    decode_cipher: BoxStreamCipher,
+
     /// recv buffer
     /// internal buffer for 'message too big'
     ///
@@ -27,28 +28,42 @@ pub struct SecureStream<T> {
     recv_buf: Vec<u8>,
 }
 
-impl<T> SecureStream<T>
+impl<R> SecureStreamReader<R>
 where
-    T: ReadEx + WriteEx + 'static,
+    R: ReadEx + 'static,
 {
-    /// New a secure stream
-    pub(crate) fn new(
-        socket: LengthPrefixSocket<T>,
+    fn new(
+        reader: R,
+        max_frame_len: usize,
         decode_cipher: BoxStreamCipher,
         decode_hmac: Option<Hmac>,
-        encode_cipher: BoxStreamCipher,
-        encode_hmac: Option<Hmac>,
-        nonce: Vec<u8>,
     ) -> Self {
-        SecureStream {
-            socket,
+        SecureStreamReader {
+            socket: reader,
+            max_frame_len,
             decode_cipher,
             decode_hmac,
-            encode_cipher,
-            encode_hmac,
-            nonce,
             recv_buf: Vec::default(),
         }
+    }
+
+    #[inline]
+    fn drain(&mut self, buf: &mut [u8]) -> usize {
+        // Return zero if there is no data remaining in the internal buffer.
+        if self.recv_buf.is_empty() {
+            return 0;
+        }
+
+        // calculate number of bytes that we can copy
+        let n = ::std::cmp::min(buf.len(), self.recv_buf.len());
+
+        // Copy data to the output buffer
+        buf[..n].copy_from_slice(self.recv_buf[..n].as_ref());
+
+        // drain n bytes of recv_buf
+        self.recv_buf = self.recv_buf.split_off(n);
+
+        n
     }
 
     /// Decoding data
@@ -79,60 +94,12 @@ where
         Ok(out)
     }
 
-    /// Verify nonce between local and remote
-    pub(crate) async fn verify_nonce(&mut self) -> Result<(), SecioError> {
-        if !self.nonce.is_empty() {
-            let mut nonce = self.nonce.clone();
-            let nonce_len = self.read2(&mut nonce).await?;
-
-            trace!("verify_nonce nonce={}, my_nonce={}", nonce_len, self.nonce.len());
-
-            let n = min(nonce.len(), self.nonce.len());
-            if nonce[..n] != self.nonce[..n] {
-                return Err(SecioError::NonceVerificationFailed);
-            }
-            self.nonce.drain(..n);
-            self.nonce.shrink_to_fit();
-        }
-
-        Ok(())
-    }
-
-    /// Encoding buffer
-    #[inline]
-    fn encode_buffer(&mut self, buf: &[u8]) -> Vec<u8> {
-        let mut out = self.encode_cipher.encrypt(buf).unwrap();
-        if let Some(ref mut hmac) = self.encode_hmac {
-            let signature = hmac.sign(&out[..]);
-            out.extend_from_slice(signature.as_ref());
-        }
-        out
-    }
-
-    #[inline]
-    fn drain(&mut self, buf: &mut [u8]) -> usize {
-        // Return zero if there is no data remaining in the internal buffer.
-        if self.recv_buf.is_empty() {
-            return 0;
-        }
-
-        // calculate number of bytes that we can copy
-        let n = ::std::cmp::min(buf.len(), self.recv_buf.len());
-
-        // Copy data to the output buffer
-        buf[..n].copy_from_slice(self.recv_buf[..n].as_ref());
-
-        // drain n bytes of recv_buf
-        self.recv_buf = self.recv_buf.split_off(n);
-
-        n
-    }
 }
 
 #[async_trait]
-impl<T> ReadEx for SecureStream<T>
+impl<R> ReadEx for SecureStreamReader<R>
 where
-    T: ReadEx + WriteEx + 'static,
+    R: ReadEx + 'static,
 {
     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         // when there is something in recv_buffer
@@ -142,7 +109,8 @@ where
             return Ok(copied);
         }
 
-        let t = self.socket.recv_frame().await?;
+        let t = self.socket.read_one_fixed(self.max_frame_len).await?;
+
         debug!("receive encrypted data size: {:?}", t.len());
 
         let decoded = self.decode_buffer(t).map_err::<io::Error, _>(|err| err.into())?;
@@ -162,25 +130,157 @@ where
     }
 }
 
-#[async_trait]
-impl<T> WriteEx for SecureStream<T>
+/// SecureStreamWriter
+pub struct SecureStreamWriter<W> {
+    socket: W,
+
+    encode_hmac: Option<Hmac>,
+    encode_cipher: BoxStreamCipher,
+}
+
+impl<W> SecureStreamWriter<W>
 where
-    T: ReadEx + WriteEx + 'static,
+    W: WriteEx + 'static,
+{
+    fn new(
+        writer: W,
+        encode_cipher: BoxStreamCipher,
+        encode_hmac: Option<Hmac>,
+    ) -> Self {
+        SecureStreamWriter {
+            socket: writer,
+            encode_cipher,
+            encode_hmac,
+        }
+    }
+
+    /// Encoding buffer
+    #[inline]
+    fn encode_buffer(&mut self, buf: &[u8]) -> Vec<u8> {
+        let mut out = self.encode_cipher.encrypt(buf).unwrap();
+        if let Some(ref mut hmac) = self.encode_hmac {
+            let signature = hmac.sign(&out[..]);
+            out.extend_from_slice(signature.as_ref());
+        }
+        out
+    }
+}
+
+#[async_trait]
+impl<W> WriteEx for SecureStreamWriter<W>
+where
+    W: WriteEx + 'static,
 {
     async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
         debug!("start sending plain data: {:?}", buf);
 
         let frame = self.encode_buffer(buf);
         trace!("start sending encrypted data size: {:?}", frame.len());
-        self.socket.send_frame(frame.as_ref()).await?;
+        self.socket.write_one_fixed(frame.as_ref()).await?;
         Ok(buf.len())
     }
 
     async fn flush2(&mut self) -> io::Result<()> {
-        self.socket.flush().await
+        self.socket.flush2().await
     }
     async fn close2(&mut self) -> io::Result<()> {
-        self.socket.close().await
+        self.socket.close2().await
+    }
+}
+
+
+/// Encrypted stream
+pub struct SecureStream<R, W> {
+    reader: SecureStreamReader<R>,
+    writer: SecureStreamWriter<W>,
+    /// denotes a sequence of bytes which are expected to be
+    /// found at the beginning of the stream and are checked for equality
+    nonce: Vec<u8>,
+}
+
+impl<R, W> SecureStream<R, W>
+where
+    R: ReadEx + 'static,
+    W: WriteEx + 'static,
+{
+    /// New a secure stream
+    pub(crate) fn new(
+        reader: R,
+        writer: W,
+        max_frame_len: usize,
+        decode_cipher: BoxStreamCipher,
+        decode_hmac: Option<Hmac>,
+        encode_cipher: BoxStreamCipher,
+        encode_hmac: Option<Hmac>,
+        nonce: Vec<u8>,
+    ) -> Self {
+        SecureStream {
+            reader: SecureStreamReader::new(reader, max_frame_len, decode_cipher, decode_hmac),
+            writer: SecureStreamWriter::new(writer, encode_cipher, encode_hmac),
+            nonce,
+        }
+    }
+
+    /// Verify nonce between local and remote
+    pub(crate) async fn verify_nonce(&mut self) -> Result<(), SecioError> {
+        if !self.nonce.is_empty() {
+            let mut nonce = self.nonce.clone();
+            let nonce_len = self.read2(&mut nonce).await?;
+
+            trace!("verify_nonce nonce={}, my_nonce={}", nonce_len, self.nonce.len());
+
+            let n = min(nonce.len(), self.nonce.len());
+            if nonce[..n] != self.nonce[..n] {
+                return Err(SecioError::NonceVerificationFailed);
+            }
+            self.nonce.drain(..n);
+            self.nonce.shrink_to_fit();
+        }
+
+        Ok(())
+    }
+
+}
+
+#[async_trait]
+impl<R, W> ReadEx for SecureStream<R, W>
+where
+    R: ReadEx + 'static,
+    W: WriteEx + 'static,
+{
+    async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
+        self.reader.read2(buf).await
+    }
+}
+
+#[async_trait]
+impl<R, W> WriteEx for SecureStream<R, W>
+where
+    R: ReadEx + 'static,
+    W: WriteEx + 'static,
+{
+    async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.writer.write2(buf).await
+    }
+
+    async fn flush2(&mut self) -> io::Result<()> {
+        self.writer.flush2().await
+    }
+    async fn close2(&mut self) -> io::Result<()> {
+        self.writer.close2().await
+    }
+}
+
+impl<R, W> Split for SecureStream<R, W>
+where
+    R: ReadEx + Unpin + 'static,
+    W: WriteEx + Unpin + 'static,
+{
+    type Reader = SecureStreamReader<R>;
+    type Writer = SecureStreamWriter<W>;
+
+    fn split(self) -> (Self::Reader, Self::Writer) {
+        (self.reader, self.writer)
     }
 }
 
@@ -193,7 +293,7 @@ mod tests {
     use async_std::task;
     use bytes::BytesMut;
     use futures::channel;
-    use libp2prs_traits::{ReadEx, WriteEx};
+    use libp2prs_traits::{ReadEx, WriteEx, Split};
 
     fn test_decode_encode(cipher: CipherType) {
         let cipher_key = (0..cipher.key_size()).map(|_| rand::random::<u8>()).collect::<Vec<_>>();
@@ -263,8 +363,11 @@ mod tests {
                     Some(Hmac::from_key(Digest::Sha256, &_hmac_key_clone)),
                 ),
             };
+            let (reader, writer) = socket.split();
             let mut handle = SecureStream::new(
-                LengthPrefixSocket::new(socket, 4096),
+                reader,
+                writer,
+                4096_usize,
                 new_stream(cipher, &cipher_key_clone[..key_size], &iv_clone, CryptoMode::Decrypt),
                 decode_hmac,
                 new_stream(cipher, &cipher_key_clone[..key_size], &iv_clone, CryptoMode::Encrypt),
@@ -287,8 +390,11 @@ mod tests {
                     Some(Hmac::from_key(Digest::Sha256, &_hmac_key_clone)),
                 ),
             };
+            let (reader, writer) = stream.split();
             let mut handle = SecureStream::new(
-                LengthPrefixSocket::new(stream, 4096),
+                reader,
+                writer,
+                4096_usize,
                 new_stream(cipher, &cipher_key_clone[..key_size], &iv, CryptoMode::Decrypt),
                 decode_hmac,
                 new_stream(cipher, &cipher_key_clone[..key_size], &iv, CryptoMode::Encrypt),

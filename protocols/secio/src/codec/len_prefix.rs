@@ -2,17 +2,20 @@ use libp2prs_traits::{ReadEx, WriteEx};
 use std::{fmt, io};
 
 /// Use `ReadEx` & `WriteEx` to read and write a length prefix in front of the actual data.
+#[allow(dead_code)]
 pub struct LengthPrefixSocket<T> {
     inner: T,
     max_frame_len: usize,
 }
 
+#[allow(dead_code)]
 impl<T> fmt::Debug for LengthPrefixSocket<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("LengthPrefixSocket")
     }
 }
 
+#[allow(dead_code)]
 impl<T> LengthPrefixSocket<T>
 where
     T: ReadEx + WriteEx + 'static,
