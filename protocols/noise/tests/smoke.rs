@@ -54,7 +54,7 @@ use log::info;
 // }
 //
 #[test]
-fn xx() {
+fn test_mode_xx() {
     task::block_on(async {
         // server
         task::spawn(async {
@@ -65,33 +65,18 @@ fn xx() {
             let listener = async_std::net::TcpListener::bind("127.0.0.1:9876").await.unwrap();
             while let Ok((socket, _)) = listener.accept().await {
                 let cfg = server_config.clone();
-                task::spawn(async move {
-                    let (_, mut output) = cfg.handshake(socket, false).await.unwrap();
-
-                    info!("handshake finished");
-
-                    let mut buf = [0; 100];
-
-                    loop {
-                        info!("outside loop");
-                        if let Ok(_n) = output.read2(&mut buf).await {
-                            // info!("public key is {:?}", b.remote_pub_key());
-                            info!("data is {:?}", buf.to_vec());
-                            // let mut buffer = Vec::from(buf[..11]);
-                            let u = b"!";
-                            // buffer.push(u[0]);
-                            buf[11] = u[0];
-                            if output.write_all2(&buf).await.is_err() {
-                                break;
-                            }
-                        } else {
-                            break;
-                        }
-                    }
-                });
+                let (_, mut output) = cfg.handshake(socket, false).await.unwrap();
+                info!("handshake finished");
+                let mut buf = [0; 100];
+                let _ = output.read2(&mut buf).await;
+                info!("data is {:?}", buf.to_vec());
+                let u = b"!";
+                buf[11] = u[0];
+                let _ = output.write_all2(&buf).await;
             }
         });
 
+        task::sleep(std::time::Duration::from_secs(1)).await;
         let client_id = identity::Keypair::generate_ed25519();
         let client_auth = Keypair::<X25519>::new().into_authentic(&client_id).unwrap();
         let client_config = NoiseConfig::xx(client_auth, client_id);

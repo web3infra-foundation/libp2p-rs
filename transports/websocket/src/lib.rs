@@ -134,7 +134,9 @@ mod tests {
             client(dial_addr, false).await;
         });
         futures::executor::block_on(async {
-            futures::join!(s, c);
+            //futures::join!(s, c);
+            s.await;
+            c.await;
         });
     }
 
@@ -150,7 +152,8 @@ mod tests {
             client(dial_addr, true).await;
         });
         futures::executor::block_on(async {
-            futures::join!(s, c);
+            s.await;
+            c.await;
         });
     }
 
@@ -166,7 +169,8 @@ mod tests {
             client(dial_addr, false).await;
         });
         futures::executor::block_on(async {
-            futures::join!(s, c);
+            s.await;
+            c.await;
         });
     }
 

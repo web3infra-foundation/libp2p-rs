@@ -46,7 +46,6 @@
 
 mod connection;
 mod control;
-//mod dial;
 mod muxer;
 mod network;
 mod registry;
