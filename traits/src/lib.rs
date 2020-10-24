@@ -29,6 +29,8 @@ use std::io::ErrorKind;
 
 pub use copy::copy;
 pub use ext::ReadExt2;
+// use futures::io::ReadHalf;
+// use crate::ext::WriteHalf;
 
 /// Read Trait for async/await
 ///
@@ -281,6 +283,48 @@ impl<T: AsyncWrite + Unpin + Send> WriteEx for T {
         AsyncWriteExt::close(self).await
     }
 }
+
+///
+/// Split Trait for read and write separation
+///
+pub trait Split {
+    /// read half
+    type Reader: ReadEx + Unpin;
+    /// write half
+    type Writer: WriteEx + Unpin;
+
+    /// split Self to independent reader and writer
+    fn split(self) -> (Self::Reader, Self::Writer);
+}
+
+impl<T: ReadEx + WriteEx + Unpin + Clone> Split for T {
+    type Reader = T;
+    type Writer = T;
+
+    fn split(self) -> (Self::Reader, Self::Writer) {
+        let r = self.clone();
+        let w = self;
+        (r, w)
+    }
+}
+
+/// SplittableReadWrite trait for Simplify generic constraints
+pub trait SplittableReadWrite: ReadEx + WriteEx + Split + Send + Unpin + 'static {}
+
+impl<T: ReadEx + WriteEx + Split + Send + Unpin + 'static> SplittableReadWrite for T {}
+
+
+/*
+impl<T: AsyncRead + AsyncWrite> Split for T {
+    type Reader = ReadHalf<T>;
+    type Writer = WriteHalf<T>;
+
+    fn split(self) -> (Self::Reader, Self::Writer) {
+        let (r, w) = AsyncReadExt::split(self);
+        (r, w)
+    }
+}
+ */
 
 #[cfg(test)]
 mod tests {
