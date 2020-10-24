@@ -119,5 +119,5 @@ fn concurrent_streams() {
     // env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();
     let data = Arc::new(vec![0x42; 100 * 1024]);
     let addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 0));
-    task::block_on(roundtrip(addr, 1000, data))
+    task::block_on(roundtrip(addr, 1, data))
 }
