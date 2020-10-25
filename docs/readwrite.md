@@ -63,10 +63,27 @@ impl<T: AsyncWrite + Unpin + Send> WriteEx for T {
 }
 ```
 
+## SplitEx
+As you know, there is a split() method in AsyncReadExt to support splitting T: AsyncRead + AsyncWrite to a ReadHalf and WriteHalf pair, so that they can be handled/moved separately. Unfortunately We haven't figured out a proper way to add `split` method to a type which supports ReadEx + WriteEx, as AsyncRead/AsyncWrite does. However, it is absolutely important for Yamux/Mplex to be able to split an underlying connection and then handle the receiving procedure properly. More details about it please check the code of Yamux Connection.
 
-## Issues
+As a workaround, we introduce this trait to solve the problem. In order to support splitting, a I/O connection/socket has to support `SplitEx` trait. As a result, the secure stream layer is required to implement `SplitEx`, which can be later used by the stream muxer layer.
+
+And for any T which supports AsyncRead and AsyncWrite, SplitEx will be implemeted automatically. This is to say, a TcpStream will have `SplitEx`:
+
+```no_run
+impl<T: AsyncRead + AsyncWrite + Send + Unpin> SplitEx for T {
+    type Reader = ReadHalf<T>;
+    type Writer = WriteHalf<T>;
+
+    fn split(self) -> (Self::Reader, Self::Writer) {
+        futures::AsyncReadExt::split(self)
+    }
+}
+```
+> Note: `SplitEx` is only required by Stream Muxer layer. As for Swarm::Substream, which supports `Clone`, we don't apply `SplitEx` at all.
+
+## Issue about AsyncTrait default implementation 
 
 Both ReadEx and WriteEx include methods with default implementations. As required by async-trait, they can be made into a trait object only when they are derived from `Send`, since default implemetations requires `Self` bound. This is why these two traits both derive from `Send`. More details please check async-trait Readme.
 
-We haven't figured out a proper way to add `split` method to a type which supports ReadEx + WriteEx, as AsyncRead/AsyncWrite does. However, it is quite important as most likely we 'd like to split an I/O object into the ReadHalf and WriteHalf pair. There is probably a wrong implementation of 'split' at this moment. We'll look into it later... 
 
