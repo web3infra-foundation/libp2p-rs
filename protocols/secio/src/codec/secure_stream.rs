@@ -287,7 +287,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::{Hmac, SecureStream};
-    use crate::codec::len_prefix::LengthPrefixSocket;
     use crate::crypto::{cipher::CipherType, new_stream, CryptoMode};
     use crate::Digest;
     use async_std::task;
