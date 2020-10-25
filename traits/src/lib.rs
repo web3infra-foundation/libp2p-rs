@@ -21,16 +21,16 @@
 mod copy;
 pub mod ext;
 
-use async_trait::async_trait;
-use futures::prelude::*;
-use futures::{AsyncReadExt, AsyncWriteExt};
 use std::io;
 use std::io::ErrorKind;
 
+use async_trait::async_trait;
+use futures::prelude::*;
+use futures::{AsyncReadExt, AsyncWriteExt};
+use futures::io::{ReadHalf, WriteHalf};
+
 pub use copy::copy;
 pub use ext::ReadExt2;
-// use futures::io::ReadHalf;
-// use crate::ext::WriteHalf;
 
 /// Read Trait for async/await
 ///
@@ -297,6 +297,19 @@ pub trait Split {
     fn split(self) -> (Self::Reader, Self::Writer);
 }
 
+// a common way to support Split for T, requires T: AsyncRead+AsyncWrite
+impl<T: AsyncRead + AsyncWrite + Send + Unpin> Split for T {
+    type Reader = ReadHalf<T>;
+    type Writer = WriteHalf<T>;
+
+    fn split(self) -> (Self::Reader, Self::Writer) {
+        futures::AsyncReadExt::split(self)
+    }
+}
+
+// the other way around to implement Split for T, requires T supports Clone
+// which async-std::TcpStream does
+/*
 impl<T: ReadEx + WriteEx + Unpin + Clone> Split for T {
     type Reader = T;
     type Writer = T;
@@ -307,24 +320,13 @@ impl<T: ReadEx + WriteEx + Unpin + Clone> Split for T {
         (r, w)
     }
 }
+*/
 
-/// SplittableReadWrite trait for Simplify generic constraints
-pub trait SplittableReadWrite: ReadEx + WriteEx + Split + Send + Unpin + 'static {}
+/// SplittableReadWrite trait for simplifying generic type constraints
+pub trait SplittableReadWrite: ReadEx + WriteEx + Split + Unpin + 'static {}
 
-impl<T: ReadEx + WriteEx + Split + Send + Unpin + 'static> SplittableReadWrite for T {}
+impl<T: ReadEx + WriteEx + Split + Unpin + 'static> SplittableReadWrite for T {}
 
-
-/*
-impl<T: AsyncRead + AsyncWrite> Split for T {
-    type Reader = ReadHalf<T>;
-    type Writer = WriteHalf<T>;
-
-    fn split(self) -> (Self::Reader, Self::Writer) {
-        let (r, w) = AsyncReadExt::split(self);
-        (r, w)
-    }
-}
- */
 
 #[cfg(test)]
 mod tests {

@@ -113,7 +113,9 @@ fn run_server() {
 
     swarm.start();
 
-    loop {}
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(5));
+    }
 }
 
 fn run_client() {
@@ -149,9 +151,9 @@ fn run_client() {
 
         let _ = stream.write_all2(b"hello").await;
 
-        task::sleep(Duration::from_secs(40)).await;
+        task::sleep(Duration::from_secs(10)).await;
 
-        //stream.close2().await;
+        let _ = stream.close2().await;
 
         log::info!("shutdown is completed");
     });
