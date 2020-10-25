@@ -173,11 +173,11 @@ pub async fn ping<T: ReadEx + WriteEx + Send + std::fmt::Debug>(mut stream: T, t
         log::trace!("Preparing ping payload {:?}", payload);
 
         stream.write_all2(&payload).await?;
-        stream.close2().await?;
         let started = Instant::now();
 
         let mut recv_payload = [0u8; PING_SIZE];
         stream.read_exact2(&mut recv_payload).await?;
+        stream.close2().await?;
         if recv_payload == payload {
             log::trace!("ping succeeded for {:?}", stream);
             Ok(started.elapsed())
