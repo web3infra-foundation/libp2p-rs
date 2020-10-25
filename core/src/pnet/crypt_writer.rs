@@ -22,7 +22,7 @@ use crate::transport::ConnectionInfo;
 use crate::Multiaddr;
 use async_trait::async_trait;
 use futures::io;
-use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{WriteEx};
 use log::trace;
 use salsa20::{stream_cipher::SyncStreamCipher, XSalsa20};
 use std::fmt;
@@ -36,7 +36,7 @@ pub struct CryptWriter<W> {
 
 impl<W> CryptWriter<W>
 where
-    W: ReadEx + WriteEx + 'static,
+    W: WriteEx + 'static,
 {
     /// Creates a new `CryptWriter` with the specified buffer capacity.
     pub fn with_capacity(capacity: usize, inner: W, cipher: XSalsa20) -> CryptWriter<W> {
@@ -51,7 +51,7 @@ where
 #[async_trait]
 impl<W> WriteEx for CryptWriter<W>
 where
-    W: ReadEx + WriteEx + 'static,
+    W: WriteEx + 'static,
 {
     async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.buf.append(&mut buf.to_vec());
@@ -77,16 +77,6 @@ impl<W: WriteEx + fmt::Debug> fmt::Debug for CryptWriter<W> {
             .field("writer", &self.inner)
             .field("buf", &self.buf)
             .finish()
-    }
-}
-
-#[async_trait]
-impl<W> ReadEx for CryptWriter<W>
-where
-    W: ReadEx + WriteEx,
-{
-    async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.inner.read2(buf).await
     }
 }
 

@@ -31,7 +31,7 @@ use crate::{
     Multiaddr, Transport,
 };
 use async_trait::async_trait;
-use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{SplittableReadWrite};
 
 /// ProtecotrTransport wraps an inner transport, adds the `pnet` support onto of it.
 #[derive(Debug, Clone)]
@@ -51,7 +51,7 @@ impl<InnerTrans> ProtectorTransport<InnerTrans> {
 impl<InnerTrans> Transport for ProtectorTransport<InnerTrans>
 where
     InnerTrans: Transport + Clone + 'static,
-    InnerTrans::Output: ConnectionInfo + ReadEx + WriteEx + Unpin + 'static,
+    InnerTrans::Output: ConnectionInfo + SplittableReadWrite,
 {
     type Output = PnetOutput<InnerTrans::Output>;
 
@@ -89,7 +89,7 @@ impl<TOutput> ProtectorListener<TOutput> {
 #[async_trait]
 impl<TOutput> TransportListener for ProtectorListener<TOutput>
 where
-    TOutput: ConnectionInfo + ReadEx + WriteEx + Unpin + 'static,
+    TOutput: ConnectionInfo + SplittableReadWrite,
 {
     type Output = PnetOutput<TOutput>;
 
