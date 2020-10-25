@@ -245,6 +245,7 @@ impl<'a> Protocol<'a> {
             Protocol::Dns4(_) => Ok(DNS4),
             Protocol::Dns6(_) => Ok(DNS6),
             Protocol::Dnsaddr(_) => Ok(DNSADDR),
+            Protocol::Ws(_) => Ok(WS),
             Protocol::Wss(_) => Ok(WSS),
             Protocol::Http => Ok(HTTP),
             Protocol::Https => Ok(HTTPS),

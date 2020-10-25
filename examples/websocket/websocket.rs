@@ -38,7 +38,7 @@ use libp2prs_traits::{ReadEx, WriteEx};
 use libp2prs_websocket::WsConfig;
 
 fn main() {
-    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    env_logger::from_env(env_logger::Env::default().default_filter_or("libp2prs_websocket,libp2prs_tcp,libp2prs_core=trace")).init();
     if std::env::args().nth(1) == Some("server".to_string()) {
         log::info!("Starting server ......");
         run_server();
@@ -100,7 +100,9 @@ fn run_server() {
 
     let _control = swarm.control();
 
-    swarm.listen_on(vec![listen_addr]).unwrap();
+    swarm.listen_on(vec![listen_addr]).map_err(|e| {
+        log::error!("{:?}", e);
+    }).expect("listen on error");
 
     swarm.start();
 
