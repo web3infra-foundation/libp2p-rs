@@ -26,10 +26,9 @@ use futures::{SinkExt, StreamExt};
 use pin_project::pin_project;
 
 use lazy_static::lazy_static;
+use libp2prs_multiaddr::{protocol, protocol::Protocol, Multiaddr};
 use parking_lot::Mutex;
 use rw_stream_sink::RwStreamSink;
-
-use libp2prs_multiaddr::{protocol, protocol::Protocol, Multiaddr};
 
 use crate::muxing::{IReadWrite, ReadWriteEx, StreamInfo};
 use crate::transport::{ConnectionInfo, IListener, ITransport, TransportListener};
@@ -233,6 +232,18 @@ impl AsyncWrite for Channel {
     }
 }
 
+/*
+impl Split for Channel {
+    type Reader = ReadHalf<RwStreamSink<Chan>>;
+    type Writer = WriteHalf<RwStreamSink<Chan>>;
+
+    fn split(self) -> (Self::Reader, Self::Writer) {
+        let (r, w) = AsyncReadExt::split(self.io);
+        (r, w)
+    }
+}
+ */
+
 /// A channel represents an established, in-memory, logical connection between two endpoints.
 ///
 /// Implements `Sink` and `Stream`.
@@ -293,16 +304,6 @@ impl StreamInfo for Channel {
     }
 }
 
-/*
-impl Split for Channel {
-    type Reader = ReadHalf<Channel>;
-    type Writer = WriteHalf<Channel>;
-
-    fn split(self) -> (Self::Reader, Self::Writer) {
-        futures::AsyncReadExt::split(self)
-    }
-}
-*/
 impl ReadWriteEx for Channel {
     fn box_clone(&self) -> IReadWrite {
         unimplemented!()
@@ -311,6 +312,7 @@ impl ReadWriteEx for Channel {
 
 #[cfg(test)]
 mod tests {
+    use libp2prs_traits::{ReadEx as _ReadEx, WriteEx as _WriteEx};
     use super::*;
 
     #[test]
