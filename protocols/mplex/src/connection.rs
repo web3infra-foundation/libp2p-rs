@@ -105,7 +105,7 @@ use crate::{
     pause::Pausable,
 };
 use control::Control;
-use libp2prs_traits::{ext::split::WriteHalf, ReadEx, ReadExt2, WriteEx};
+use libp2prs_traits::{SplittableReadWrite, Split};
 use nohash_hasher::IntMap;
 use std::collections::VecDeque;
 use std::fmt;
@@ -195,10 +195,10 @@ const RECEIVE_TIMEOUT: Duration = Duration::from_secs(5);
 
 type Result<T> = std::result::Result<T, ConnectionError>;
 
-pub struct Connection<T> {
+pub struct Connection<T: Split> {
     id: Id,
     reader: Pin<Box<dyn FusedStream<Item = std::result::Result<Frame, FrameDecodeError>> + Send>>,
-    writer: io::IO<WriteHalf<T>>,
+    writer: io::IO<T::Writer>,
     is_closed: bool,
     shutdown: Shutdown,
     next_stream_id: u32,
@@ -212,13 +212,13 @@ pub struct Connection<T> {
     pending_streams: VecDeque<stream::Stream>,
 }
 
-impl<T: ReadEx + WriteEx + Unpin + 'static> Connection<T> {
+impl<T: SplittableReadWrite> Connection<T> {
     /// Create a new `Connection` from the given I/O resource.
     pub fn new(socket: T) -> Self {
         let id = Id::random();
         log::debug!("new connection: {}", id);
 
-        let (reader, writer) = socket.split2();
+        let (reader, writer) = socket.split();
         let reader = io::IO::new(id, reader);
         let reader = futures::stream::unfold(reader, |mut io| async { Some((io.recv_frame().await, io)) });
         let reader = Box::pin(reader);
@@ -590,13 +590,13 @@ where
     }
 }
 
-impl<T> fmt::Display for Connection<T> {
+impl<T: Split> fmt::Display for Connection<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "(Connection {} (streams {}))", self.id, self.streams.len())
     }
 }
 
-impl<T> Connection<T> {
+impl<T: Split> Connection<T> {
     // next_stream_id is only used to get stream id when open stream
     fn next_stream_id(&mut self) -> Result<StreamID> {
         let proposed = StreamID::new(self.next_stream_id, true);

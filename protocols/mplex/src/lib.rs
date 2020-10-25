@@ -31,7 +31,7 @@ use std::fmt;
 use libp2prs_core::muxing::{IReadWrite, IStreamMuxer, ReadWriteEx, StreamInfo, StreamMuxer, StreamMuxerEx};
 use libp2prs_core::transport::{ConnectionInfo, TransportError};
 use libp2prs_core::upgrade::{UpgradeInfo, Upgrader};
-use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{Split, SplittableReadWrite};
 
 use crate::connection::Connection;
 use connection::{control::Control, stream::Stream, Id};
@@ -60,7 +60,7 @@ impl Default for Config {
 ///
 /// This implementation isn't capable of detecting when the underlying socket changes its address,
 /// and no [`StreamMuxerEvent::AddressChange`] event is ever emitted.
-pub struct Mplex<C> {
+pub struct Mplex<C: Split> {
     /// The [`futures::stream::Stream`] of incoming substreams.
     conn: Option<Connection<C>>,
     /// Handle to control the connection.
@@ -84,7 +84,7 @@ pub struct Mplex<C> {
     pub remote_peer_id: PeerId,
 }
 
-impl<C> Clone for Mplex<C> {
+impl<C: Split> Clone for Mplex<C> {
     fn clone(&self) -> Self {
         Mplex {
             conn: None,
@@ -100,7 +100,7 @@ impl<C> Clone for Mplex<C> {
     }
 }
 
-impl<C> fmt::Debug for Mplex<C> {
+impl<C: Split> fmt::Debug for Mplex<C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Mplex")
             .field("Id", &self.id)
@@ -110,7 +110,7 @@ impl<C> fmt::Debug for Mplex<C> {
     }
 }
 
-impl<C: ConnectionInfo + SecureInfo + ReadEx + WriteEx + Unpin + 'static> Mplex<C> {
+impl<C: ConnectionInfo + SecureInfo + SplittableReadWrite> Mplex<C> {
     pub fn new(io: C) -> Self {
         // `io` will be moved into Connection soon, make a copy of the connection & secure info
         let la = io.local_multiaddr();
@@ -137,7 +137,7 @@ impl<C: ConnectionInfo + SecureInfo + ReadEx + WriteEx + Unpin + 'static> Mplex<
     }
 }
 
-impl<C: Send> ConnectionInfo for Mplex<C> {
+impl<C: Split + Send> ConnectionInfo for Mplex<C> {
     fn local_multiaddr(&self) -> Multiaddr {
         self.la.clone()
     }
@@ -146,7 +146,7 @@ impl<C: Send> ConnectionInfo for Mplex<C> {
     }
 }
 
-impl<C> SecureInfo for Mplex<C> {
+impl<C: Split> SecureInfo for Mplex<C> {
     fn local_peer(&self) -> PeerId {
         self.local_peer_id.clone()
     }
@@ -178,10 +178,10 @@ impl ReadWriteEx for Stream {
     }
 }
 
-impl<C: ReadEx + WriteEx + Unpin + 'static> StreamMuxerEx for Mplex<C> {}
+impl<C: SplittableReadWrite> StreamMuxerEx for Mplex<C> {}
 
 #[async_trait]
-impl<C: ReadEx + WriteEx + Unpin + 'static> StreamMuxer for Mplex<C> {
+impl<C: SplittableReadWrite> StreamMuxer for Mplex<C> {
     async fn open_stream(&mut self) -> Result<IReadWrite, TransportError> {
         trace!("opening a new outbound substream for mplex...");
         let s = self.ctrl.open_stream().await?;
@@ -228,7 +228,7 @@ impl UpgradeInfo for Config {
 #[async_trait]
 impl<T> Upgrader<T> for Config
 where
-    T: ConnectionInfo + SecureInfo + ReadEx + WriteEx + Unpin + 'static,
+    T: ConnectionInfo + SecureInfo + SplittableReadWrite,
 {
     type Output = Mplex<T>;
 
