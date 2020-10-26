@@ -1,0 +1,24 @@
+[package]
+name = "libp2prs-traits"
+version = "0.1.0"
+license = "MIT"
+description = "Read/Write traits"
+authors = ["Netwarps Technologies admin@paradeum.com"]
+repository = "https://github.com/netwarps/libp2p-rs"
+keywords = ["peer-to-peer", "libp2p", "networking"]
+categories = ["network-programming", "asynchronous"]
+edition = "2018"
+
+[dependencies]
+async-trait = "0.1"
+unsigned-varint = "0.4"
+futures = { version = "0.3", features = ["default", "bilock", "unstable"] }
+
+[dev-dependencies]
+env_logger = "0.6"
+criterion = "0.3"
+async-std = "1.6"
+futures-lite="1.4.0"
+blocking="1.0.0"
+
+

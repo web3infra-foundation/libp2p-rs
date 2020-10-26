@@ -1,0 +1,44 @@
+[package]
+name = "libp2prs-secio"
+version = "0.1.0"
+license = "MIT"
+description = "Secio encryption protocol for libp2p"
+authors = ["Netwarps Technologies admin@paradeum.com"]
+repository = "https://github.com/netwarps/libp2p-rs"
+keywords = ["peer-to-peer", "libp2p", "networking"]
+categories = ["network-programming", "asynchronous"]
+edition = "2018"
+
+[package.metadata.docs.rs]
+features = [ "molc" ]
+all-features = false
+no-default-features = true
+
+[dependencies]
+libp2prs-core = { path = "../../core", version = "0.1.0", package = "libp2prs-core" }
+libp2prs-traits = { path = "../../traits", version = "0.1.0", package = "libp2prs-traits" }
+bytes = "0.5"
+futures = "0.3.0"
+log = "0.4.1"
+async-trait = "0.1"
+
+secp256k1 = "0.17"
+rand = "0.7"
+ring = "0.16.5"
+unsigned-varint = "0.3"
+bs58 = "0.3.0"
+prost = "0.6.1"
+aes-ctr = "0.4.0"
+stream-cipher = "0.4.1"
+
+[build-dependencies]
+prost-build = "0.6.1"
+
+[dev-dependencies]
+env_logger = "0.6"
+criterion = "0.3"
+async-std = "1.6"
+
+[[bench]]
+name = "bench"
+harness = false

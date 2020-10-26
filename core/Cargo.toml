@@ -1,0 +1,54 @@
+[package]
+name = "libp2prs-core"
+version = "0.1.0"
+license = "MIT"
+description = "Core traits and structs of libp2p"
+authors = ["Netwarps Technologies admin@paradeum.com"]
+repository = "https://github.com/netwarps/libp2p-rs"
+keywords = ["peer-to-peer", "libp2p", "networking"]
+categories = ["network-programming", "asynchronous"]
+edition = "2018"
+
+[dependencies]
+asn1_der = "0.6.1"
+bs58 = "0.3.0"
+ed25519-dalek ={ version="1.0.0-pre.4"}
+fnv = "1.0"
+futures = { version = "0.3.1", features = ["executor", "thread-pool"] }
+futures-timer = "3"
+lazy_static = "1.2"
+libsecp256k1 = { version = "0.3.1", optional = true }
+log = "0.4"
+multihash = "0.11.0"
+prost = "0.6.1"
+rand = "0.7"
+sha2 = "0.8.0"
+smallvec = "1.0"
+thiserror = "1.0"
+unsigned-varint = "0.3"
+zeroize = "1"
+async-trait = "0.1"
+parking_lot = "0.10.0"
+rw-stream-sink = "0.2.0"
+bytes = "0.5"
+pin-project = "0.4"
+libp2prs-multiaddr = { path = "../multiaddr", version = "0.1.0", package = "libp2prs-multiaddr"}
+libp2prs-traits = { path = "../traits", version = "0.1.0", package = "libp2prs-traits" }
+[target.'cfg(not(any(target_os = "emscripten", target_os = "unknown")))'.dependencies]
+ring = { version = "0.16.9", features = ["alloc", "std"], default-features = true }
+salsa20 = "0.3.0"
+sha3 = "0.8"
+
+[dev-dependencies]
+async-std = "1.6.2"
+quickcheck = "0.9.0"
+wasm-timer = "0.2"
+env_logger = "0.6"
+
+[build-dependencies]
+prost-build = "0.6"
+
+[features]
+default = ["secp256k1"]
+secp256k1 = ["libsecp256k1"]
+

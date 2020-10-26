@@ -1,0 +1,44 @@
+[package]
+name = "libp2prs-yamux"
+version = "0.1.0"
+license = "MIT"
+description = "Yamux multiplexing protocol for libp2p"
+authors = ["Netwarps Technologies admin@paradeum.com"]
+repository = "https://github.com/netwarps/libp2p-rs"
+keywords = ["peer-to-peer", "libp2p", "networking"]
+categories = ["network-programming", "asynchronous"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[dependencies]
+libp2prs-traits = { path = "../../traits", version = "0.1.0", package = "libp2prs-traits" }
+libp2prs-core = { path = "../../core", version = "0.1.0", package = "libp2prs-core" }
+nohash-hasher = "0.2"
+unsigned-varint = "0.4"
+async-trait = "0.1"
+bytes = "0.5.6"
+log = "0.4.8"
+rand = "0.7.2"
+futures-timer = "3"
+
+[dependencies.futures]
+version = "0.3.4"
+features = ["std"]
+default-features = false
+
+[dev-dependencies]
+env_logger = "0.6"
+criterion = "0.3"
+async-std = "1.6"
+
+[dev-dependencies.libp2prs-core]
+path = "../../core"
+version = "0.1.0"
+package = "libp2prs-core"
+
+[dev-dependencies.quickcheck]
+version = "0.9"
+
+[[bench]]
+name = "yamux_concurrent_bench"
+harness = false
