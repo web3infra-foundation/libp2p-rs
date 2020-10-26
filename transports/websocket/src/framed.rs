@@ -303,7 +303,6 @@ impl WsConfig {
         };
 
         let raw_stream = self.transport.dial(inner_addr).await.map_err(WsError::Transport)?;
-        // let inner_raw_stream = raw_stream.clone();
         trace!("[Client] connected to {}", address);
         let local_addr = raw_stream.local_multiaddr();
         let remote_addr = raw_stream.remote_multiaddr();
@@ -357,14 +356,6 @@ impl WsConfig {
             }
             handshake::ServerResponse::Accepted { .. } => {
                 debug!("[Client] websocket handshake with {} successful", address);
-                /*
-                Ok(Either::Right(Connection::new(
-                    inner_raw_stream,
-                    client.into_builder(),
-                    local_addr,
-                    remote_addr,
-                )))
-                 */
                 Ok(Either::Right(Connection::new(client.into_builder(), local_addr, remote_addr)))
             }
         }
