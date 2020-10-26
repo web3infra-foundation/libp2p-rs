@@ -3,8 +3,6 @@
 /// Encryption and decryption stream
 pub mod secure_stream;
 
-/// length prefix codec for underlying socket
-
 use crate::Digest;
 
 /// Hash-based Message Authentication Code (HMAC).
