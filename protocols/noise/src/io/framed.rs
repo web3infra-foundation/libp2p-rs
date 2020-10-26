@@ -66,7 +66,7 @@ impl<T, S> fmt::Debug for NoiseFramed<T, S> {
 }
 
 impl<T> NoiseFramed<T, snow::HandshakeState> {
-    /// Creates a nwe `NoiseFramed` for beginning a Noise protocol handshake.
+    /// Creates a new `NoiseFramed` for beginning a Noise protocol handshake.
     pub fn new(io: T, state: snow::HandshakeState) -> Self {
         NoiseFramed {
             io,
