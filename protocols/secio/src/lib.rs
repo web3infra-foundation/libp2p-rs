@@ -13,7 +13,7 @@ use crate::codec::secure_stream::{SecureStream, SecureStreamReader, SecureStream
 use libp2prs_core::secure_io::SecureInfo;
 use libp2prs_core::transport::{ConnectionInfo, TransportError};
 use libp2prs_core::upgrade::{UpgradeInfo, Upgrader};
-use libp2prs_traits::{ReadEx, WriteEx, SplitEx, SplittableReadWrite};
+use libp2prs_traits::{ReadEx, SplitEx, SplittableReadWrite, WriteEx};
 use std::io;
 
 /// Encrypted and decrypted codec implementation, and stream handle
@@ -118,7 +118,10 @@ impl Config {
     ///
     /// On success, produces a `SecureStream` that can then be used to encode/decode
     /// communications, plus the public key of the remote, plus the ephemeral public key.
-    pub async fn handshake<T>(self, socket: T) -> Result<(SecureStream<T::Reader, T::Writer>, PublicKey, EphemeralPublicKey), SecioError>
+    pub async fn handshake<T>(
+        self,
+        socket: T,
+    ) -> Result<(SecureStream<T::Reader, T::Writer>, PublicKey, EphemeralPublicKey), SecioError>
     where
         T: SplittableReadWrite,
     {

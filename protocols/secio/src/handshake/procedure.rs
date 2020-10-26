@@ -18,7 +18,7 @@ use crate::{
 use libp2prs_core::identity::*;
 use libp2prs_core::PublicKey;
 
-use libp2prs_traits::{ReadEx, WriteEx, SplittableReadWrite};
+use libp2prs_traits::{ReadEx, SplittableReadWrite, WriteEx};
 use prost::Message;
 
 /// Performs a handshake on the given socket.
@@ -30,7 +30,10 @@ use prost::Message;
 /// On success, returns an object that implements the `WriteEx` and `ReadEx` trait,
 /// plus the public key of the remote, plus the ephemeral public key used during
 /// negotiation.
-pub(crate) async fn handshake<T>(socket: T, config: Config) -> Result<(SecureStream<T::Reader, T::Writer>, PublicKey, EphemeralPublicKey), SecioError>
+pub(crate) async fn handshake<T>(
+    socket: T,
+    config: Config,
+) -> Result<(SecureStream<T::Reader, T::Writer>, PublicKey, EphemeralPublicKey), SecioError>
 where
     T: SplittableReadWrite,
 {

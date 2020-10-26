@@ -105,7 +105,7 @@ use crate::{
     pause::Pausable,
 };
 use control::Control;
-use libp2prs_traits::{SplittableReadWrite, SplitEx};
+use libp2prs_traits::{SplitEx, SplittableReadWrite};
 use nohash_hasher::IntMap;
 use std::collections::VecDeque;
 use std::fmt;

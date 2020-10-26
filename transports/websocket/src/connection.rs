@@ -1,292 +1,238 @@
-// Copyright 2020 Netwarps Ltd.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the "Software"),
-// to deal in the Software without restriction, including without limitation
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,
-// and/or sell copies of the Software, and to permit persons to whom the
-// Software is furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-
-use async_tls::{client, server};
 use async_trait::async_trait;
 use futures::prelude::*;
-use futures::{ready, stream::BoxStream};
+use libp2prs_core::either::AsyncEitherOutput;
+use libp2prs_core::multiaddr::Multiaddr;
 use libp2prs_core::transport::ConnectionInfo;
-use libp2prs_core::{either::AsyncEitherOutput, multiaddr::Multiaddr};
-use libp2prs_tcp::TcpTransStream;
-use libp2prs_traits::{ReadEx, WriteEx};
-use log::trace;
+use libp2prs_traits::{ReadEx, SplitEx, WriteEx};
 use soketto::connection;
-use std::{convert::TryInto, fmt, io, mem, pin::Pin, task::Context, task::Poll};
+use std::{
+    io::{self, Error},
+    pin::Pin,
+    task::{Context, Poll},
+};
 
-//type SokettoReceiver<T>=soketto::Receiver<EitherOutput<EitherOutput<client::TlsStream<T>, server::TlsStream<T>>, T>>;
-//type SokettoSender<T>=soketto::Sender<EitherOutput<EitherOutput<client::TlsStream<T>, server::TlsStream<T>>, T>>;
-pub(crate) type TlsOrPlain<T> = AsyncEitherOutput<AsyncEitherOutput<client::TlsStream<T>, server::TlsStream<T>>, T>;
+pub type TlsOrPlain<T> = AsyncEitherOutput<AsyncEitherOutput<TlsClientStream<T>, TlsServerStream<T>>, T>;
 
-/// The websocket connection.
+pub struct ConnectionReader<R> {
+    recvier: connection::Receiver<R>,
+    recv_buf: Vec<u8>,
+}
+
+impl<R> ConnectionReader<R> {
+    #[inline]
+    fn drain(&mut self, buf: &mut [u8]) -> usize {
+        // Return zero if there is no data remaining in the internal buffer.
+        if self.recv_buf.is_empty() {
+            return 0;
+        }
+
+        // calculate number of bytes that we can copy
+        let n = ::std::cmp::min(buf.len(), self.recv_buf.len());
+
+        // Copy data to the output buffer
+        buf[..n].copy_from_slice(self.recv_buf[..n].as_ref());
+
+        // drain n bytes of recv_buf
+        self.recv_buf = self.recv_buf.split_off(n);
+
+        n
+    }
+}
+
+#[async_trait]
+impl<R: AsyncRead + AsyncWrite + Unpin + Send> ReadEx for ConnectionReader<R> {
+    async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
+        // when there is something in recv_buffer
+        let copied = self.drain(buf);
+        if copied > 0 {
+            log::debug!("drain recv buffer data size: {:?}", copied);
+            return Ok(copied);
+        }
+        let mut v = Vec::with_capacity(buf.len());
+        match self.recvier.receive_data(&mut v).await.map_err(|e| {
+            log::error!("{:?}", e);
+            std::io::Error::new(std::io::ErrorKind::Other, e)
+        })? {
+            soketto::Data::Binary(n) | soketto::Data::Text(n) => {
+                if buf.len() >= n {
+                    buf[..n].copy_from_slice(v.as_ref());
+                    Ok(n)
+                } else {
+                    // fill internal recv buffer
+                    self.recv_buf = v;
+                    // drain for input buffer
+                    let copied = self.drain(buf);
+                    Ok(copied)
+                }
+            }
+        }
+    }
+}
+
+pub struct ConnectionWriter<W> {
+    sender: connection::Sender<W>,
+}
+
+#[async_trait]
+impl<W: AsyncRead + AsyncWrite + Unpin + Send> WriteEx for ConnectionWriter<W> {
+    async fn write2(&mut self, buf: &[u8]) -> Result<usize, Error> {
+        let n = buf.len();
+        self.sender
+            .send_binary(buf)
+            .await
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        Ok(n)
+    }
+
+    async fn flush2(&mut self) -> Result<(), Error> {
+        self.sender
+            .flush()
+            .await
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        Ok(())
+    }
+
+    async fn close2(&mut self) -> Result<(), Error> {
+        self.sender
+            .close()
+            .await
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        Ok(())
+    }
+}
+
 pub struct Connection<T> {
-    //reader:SokettoReceiver<T>,
-    //writer:SokettoSender<T>,
-    inner: TcpTransStream,
-    receiver: BoxStream<'static, Result<IncomingData, connection::Error>>,
-    sender: Pin<Box<dyn Sink<OutgoingData, Error = connection::Error> + Send>>,
-    _marker: std::marker::PhantomData<T>,
-    la: Multiaddr,
-    ra: Multiaddr,
-    buf: Vec<u8>,
-}
+    reader: ConnectionReader<T>,
+    writer: ConnectionWriter<T>,
 
-//impl ConnectionInfo
-impl<T: ConnectionInfo> ConnectionInfo for Connection<T> {
-    fn local_multiaddr(&self) -> Multiaddr {
-        self.la.clone()
-    }
-
-    fn remote_multiaddr(&self) -> Multiaddr {
-        self.ra.clone()
-    }
-}
-
-/// Data received over the websocket connection.
-#[derive(Debug, Clone, PartialEq)]
-pub enum IncomingData {
-    /// Binary application data.
-    Binary(Vec<u8>),
-    /// UTF-8 encoded application data.
-    Text(Vec<u8>),
-    /// PONG control frame data.
-    Pong(Vec<u8>),
-}
-
-#[allow(dead_code)]
-impl IncomingData {
-    pub fn is_data(&self) -> bool {
-        self.is_binary() || self.is_text()
-    }
-
-    pub fn is_binary(&self) -> bool {
-        matches!(self, IncomingData::Binary(_))
-    }
-
-    pub fn is_text(&self) -> bool {
-        matches!(self, IncomingData::Text(_))
-    }
-
-    pub fn is_pong(&self) -> bool {
-        matches!(self, IncomingData::Pong(_))
-    }
-
-    pub fn into_bytes(self) -> Vec<u8> {
-        match self {
-            IncomingData::Binary(d) => d,
-            IncomingData::Text(d) => d,
-            IncomingData::Pong(d) => d,
-        }
-    }
-}
-
-impl AsRef<[u8]> for IncomingData {
-    fn as_ref(&self) -> &[u8] {
-        match self {
-            IncomingData::Binary(d) => d,
-            IncomingData::Text(d) => d,
-            IncomingData::Pong(d) => d,
-        }
-    }
-}
-
-/// Data sent over the websocket connection.
-#[derive(Debug, Clone)]
-pub enum OutgoingData {
-    /// Send some bytes.
-    Binary(Vec<u8>),
-    /// Send a PING message.
-    Ping(Vec<u8>),
-    /// Send an unsolicited PONG message.
-    /// (Incoming PINGs are answered automatically.)
-    Pong(Vec<u8>),
-}
-
-impl<T> fmt::Debug for Connection<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("Connection")
-    }
+    local_addr: Multiaddr,
+    remote_addr: Multiaddr,
 }
 
 impl<T> Connection<T>
 where
-    T: AsyncRead + AsyncWrite + Send + Unpin + 'static,
+    T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
-    pub(crate) fn new(inner: TcpTransStream, builder: connection::Builder<TlsOrPlain<T>>, la: Multiaddr, ra: Multiaddr) -> Self {
-        let (sender, receiver) = builder.finish();
-        let sink = quicksink::make_sink(sender, |mut sender, action| async move {
-            match action {
-                quicksink::Action::Send(OutgoingData::Binary(x)) => sender.send_binary_mut(x).await?,
-                quicksink::Action::Send(OutgoingData::Ping(x)) => {
-                    let data = x[..]
-                        .try_into()
-                        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "PING data must be < 126 bytes"))?;
-                    sender.send_ping(data).await?
-                }
-                quicksink::Action::Send(OutgoingData::Pong(x)) => {
-                    let data = x[..]
-                        .try_into()
-                        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "PONG data must be < 126 bytes"))?;
-                    sender.send_pong(data).await?
-                }
-                quicksink::Action::Flush => sender.flush().await?,
-                quicksink::Action::Close => sender.close().await?,
-            }
-            Ok(sender)
-        });
-
-        let stream = stream::unfold((Vec::new(), receiver), |(mut data, mut receiver)| async {
-            match receiver.receive(&mut data).await {
-                Ok(soketto::Incoming::Data(soketto::Data::Text(_))) => {
-                    Some((Ok(IncomingData::Text(mem::take(&mut data))), (data, receiver)))
-                }
-                Ok(soketto::Incoming::Data(soketto::Data::Binary(_))) => {
-                    Some((Ok(IncomingData::Binary(mem::take(&mut data))), (data, receiver)))
-                }
-                Ok(soketto::Incoming::Pong(pong)) => Some((Ok(IncomingData::Pong(Vec::from(pong))), (data, receiver))),
-                Err(connection::Error::Closed) => None,
-                Err(e) => Some((Err(e), (data, receiver))),
-            }
-        });
+    pub fn new(builder: connection::Builder<T>, local_addr: Multiaddr, remote_addr: Multiaddr) -> Self {
+        let (tx, rx) = builder.finish();
         Connection {
-            inner,
-            receiver: stream.boxed(),
-            sender: Box::pin(sink),
-            _marker: std::marker::PhantomData,
-            la,
-            ra,
-            buf: Vec::with_capacity(128),
+            reader: ConnectionReader {
+                recvier: rx,
+                recv_buf: Vec::default(),
+            },
+            writer: ConnectionWriter { sender: tx },
+            local_addr,
+            remote_addr,
         }
-    }
-
-    /// Send binary application data to the remote.
-    pub fn send_data(&mut self, data: Vec<u8>) -> sink::Send<'_, Self, OutgoingData> {
-        self.send(OutgoingData::Binary(data))
-    }
-
-    /// Send a PING to the remote.
-    pub fn send_ping(&mut self, data: Vec<u8>) -> sink::Send<'_, Self, OutgoingData> {
-        self.send(OutgoingData::Ping(data))
-    }
-
-    /// Send an unsolicited PONG to the remote.
-    pub fn send_pong(&mut self, data: Vec<u8>) -> sink::Send<'_, Self, OutgoingData> {
-        self.send(OutgoingData::Pong(data))
-    }
-}
-
-impl<T> Stream for Connection<T>
-where
-    T: AsyncRead + AsyncWrite + Send + Unpin + 'static,
-{
-    type Item = io::Result<IncomingData>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        let item = ready!(self.receiver.poll_next_unpin(cx));
-        let item = item.map(|result| result.map_err(|e| io::Error::new(io::ErrorKind::Other, e)));
-        Poll::Ready(item)
-    }
-}
-
-impl<T> Sink<OutgoingData> for Connection<T>
-where
-    T: AsyncRead + AsyncWrite + Send + Unpin + 'static,
-{
-    type Error = io::Error;
-
-    fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.sender)
-            .poll_ready(cx)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-    }
-
-    fn start_send(mut self: Pin<&mut Self>, item: OutgoingData) -> io::Result<()> {
-        Pin::new(&mut self.sender)
-            .start_send(item)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-    }
-
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.sender)
-            .poll_flush(cx)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-    }
-
-    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.sender)
-            .poll_close(cx)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 }
 
 #[async_trait]
 impl<T> ReadEx for Connection<T>
 where
-    T: AsyncRead + AsyncWrite + Send + Unpin + 'static,
+    T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
-    async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
-        // return the buffer first
-        let n = buf.len();
-        if !self.buf.is_empty() {
-            buf.copy_from_slice(&self.buf[0..n]);
-            self.buf.drain(0..n);
-            trace!("read buf : {:?}", buf);
-            return Ok(n);
-        }
-        debug_assert!(self.buf.is_empty());
-
-        let item = self.receiver.next().await;
-        let item = item.map(|result| result.map_err(|e| io::Error::new(io::ErrorKind::Other, e)));
-        match item {
-            Some(Ok(IncomingData::Binary(bytes))) => {
-                trace!("recv IncomingData::Binary = {:?}", bytes);
-                self.buf.resize_with(bytes.len(), Default::default);
-                self.buf.copy_from_slice(&bytes[..]);
-                buf.copy_from_slice(&self.buf[0..n]);
-                self.buf.drain(0..n);
-                Ok(n)
-            }
-            Some(Err(e)) => Err(e),
-            //todo: other IncomingData
-            _ => Ok(0),
-        }
+    async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
+        log::debug!("read from connection, buf len {}", buf.len());
+        self.reader.read2(buf).await
     }
 }
 
 #[async_trait]
 impl<T> WriteEx for Connection<T>
 where
-    T: AsyncRead + AsyncWrite + Send + Unpin + 'static,
+    T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
-    async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
-        trace!("write buf : {:?}", buf);
-        let _ = self.send_data(buf.to_vec()).await;
-        Ok(buf.len())
+    async fn write2(&mut self, buf: &[u8]) -> Result<usize, Error> {
+        self.writer.write2(buf).await
     }
 
-    async fn flush2(&mut self) -> Result<(), io::Error> {
-        //todo: call ws connection Sender flush
-        self.inner.flush2().await
+    async fn flush2(&mut self) -> Result<(), Error> {
+        self.writer.flush2().await
     }
 
-    async fn close2(&mut self) -> Result<(), io::Error> {
-        //todo: call ws connection Sender close
-        self.inner.close2().await
+    async fn close2(&mut self) -> Result<(), Error> {
+        self.writer.close2().await
+    }
+}
+
+impl<T> SplitEx for Connection<T>
+where
+    T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    type Reader = ConnectionReader<T>;
+    type Writer = ConnectionWriter<T>;
+
+    fn split(self) -> (Self::Reader, Self::Writer) {
+        (self.reader, self.writer)
+    }
+}
+
+impl<T> ConnectionInfo for Connection<T>
+where
+    T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    fn local_multiaddr(&self) -> Multiaddr {
+        self.local_addr.clone()
+    }
+
+    fn remote_multiaddr(&self) -> Multiaddr {
+        self.remote_addr.clone()
+    }
+}
+
+pub struct TlsClientStream<T>(pub(crate) async_tls::client::TlsStream<T>);
+
+impl<T> AsyncRead for TlsClientStream<T>
+where
+    T: AsyncRead + AsyncWrite + Unpin,
+{
+    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.0).poll_read(cx, buf)
+    }
+}
+
+impl<T> AsyncWrite for TlsClientStream<T>
+where
+    T: AsyncRead + AsyncWrite + Unpin,
+{
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.0).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.0).poll_flush(cx)
+    }
+
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.0).poll_close(cx)
+    }
+}
+
+pub struct TlsServerStream<T>(pub(crate) async_tls::server::TlsStream<T>);
+
+impl<T> AsyncRead for TlsServerStream<T>
+where
+    T: AsyncRead + AsyncWrite + Unpin,
+{
+    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.0).poll_read(cx, buf)
+    }
+}
+
+impl<T> AsyncWrite for TlsServerStream<T>
+where
+    T: AsyncRead + AsyncWrite + Unpin,
+{
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.0).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.0).poll_flush(cx)
+    }
+
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.0).poll_close(cx)
     }
 }

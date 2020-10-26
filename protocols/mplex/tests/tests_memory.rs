@@ -20,15 +20,13 @@
 
 use async_std::task;
 use futures::channel::oneshot;
-use futures::{channel::mpsc, prelude::*,};
+use futures::{channel::mpsc, prelude::*};
 use libp2prs_mplex::connection::{stream::Stream as mplex_stream, Connection};
-use libp2prs_traits::{ReadEx, WriteEx, SplitEx};
+use libp2prs_traits::{ReadEx, SplitEx, WriteEx};
 use quickcheck::{QuickCheck, TestResult};
 use std::collections::VecDeque;
+use std::io::{self, Error};
 use std::time::Duration;
-use std::{
-    io::{self, Error},
-};
 
 const TEST_COUNT: u64 = 200;
 
@@ -832,8 +830,11 @@ impl ReadEx for EndpointReader {
             log::debug!("drain recv buffer data size: {:?}", copied);
             return Ok(copied);
         }
-        let t = self.incoming.next().await
-            .ok_or(io::Error::new(io::ErrorKind::UnexpectedEof, "channel closed"))?;
+        let t = self
+            .incoming
+            .next()
+            .await
+            .ok_or_else(|| io::Error::new(io::ErrorKind::UnexpectedEof, "channel closed"))?;
 
         let n = t.len();
         if buf.len() >= n {
@@ -856,7 +857,7 @@ struct EndpointWriter {
 
 impl EndpointWriter {
     fn new(outgoing: mpsc::UnboundedSender<Vec<u8>>) -> Self {
-        EndpointWriter{ outgoing }
+        EndpointWriter { outgoing }
     }
 }
 
@@ -864,8 +865,10 @@ impl EndpointWriter {
 impl WriteEx for EndpointWriter {
     async fn write2(&mut self, buf: &[u8]) -> Result<usize, Error> {
         let n = buf.len();
-        self.outgoing.send(Vec::from(buf)).await
-            .or(Err(io::Error::new(io::ErrorKind::BrokenPipe.into(), "send failure")))?;
+        self.outgoing
+            .send(Vec::from(buf))
+            .await
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "send failure"))?;
         Ok(n)
     }
 
@@ -878,7 +881,6 @@ impl WriteEx for EndpointWriter {
         Ok(())
     }
 }
-
 
 impl Endpoint {
     fn new() -> (Self, Self) {

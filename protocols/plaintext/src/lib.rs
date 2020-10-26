@@ -30,7 +30,7 @@ use libp2prs_core::secure_io::SecureInfo;
 use libp2prs_core::transport::{ConnectionInfo, TransportError};
 use libp2prs_core::upgrade::{UpgradeInfo, Upgrader};
 use libp2prs_core::{Multiaddr, PeerId, PublicKey};
-use libp2prs_traits::{ReadEx, WriteEx, SplitEx, SplittableReadWrite};
+use libp2prs_traits::{ReadEx, SplitEx, SplittableReadWrite, WriteEx};
 use std::io;
 
 use async_trait::async_trait;

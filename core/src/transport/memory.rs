@@ -18,12 +18,12 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use std::{collections::hash_map::Entry, fmt, io, num::NonZeroU64, pin::Pin};
 use async_trait::async_trait;
 use fnv::FnvHashMap;
 use futures::{channel::mpsc, prelude::*, task::Context, task::Poll};
 use futures::{SinkExt, StreamExt};
 use pin_project::pin_project;
+use std::{collections::hash_map::Entry, fmt, io, num::NonZeroU64, pin::Pin};
 
 use lazy_static::lazy_static;
 use libp2prs_multiaddr::{protocol, protocol::Protocol, Multiaddr};
@@ -312,8 +312,8 @@ impl ReadWriteEx for Channel {
 
 #[cfg(test)]
 mod tests {
-    use libp2prs_traits::{ReadEx as _ReadEx, WriteEx as _WriteEx};
     use super::*;
+    use libp2prs_traits::{ReadEx as _ReadEx, WriteEx as _WriteEx};
 
     #[test]
     fn parse_memory_addr_works() {
