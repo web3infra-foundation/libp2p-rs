@@ -22,7 +22,7 @@ use async_std::task;
 use futures::channel::oneshot;
 use futures::io::Error;
 use futures::{channel::mpsc, SinkExt, StreamExt};
-use libp2prs_traits::{ReadEx, SplitEx, WriteEx};
+use libp2prs_traits::{copy, ReadEx, SplitEx, WriteEx};
 use libp2prs_yamux::{
     connection::{stream::Stream as yamux_stream, Connection, Mode},
     Config,
@@ -141,22 +141,28 @@ fn prop_send_data_large() {
 
 #[test]
 fn prop_p2p() {
-    async fn echo(mut s: yamux_stream) {
-        let mut buf = vec![0; 64];
-        let n = s.read2(&mut buf).await.expect("read exact");
-        s.write_all2(&buf[..n]).await.expect("write all");
-        s.close2().await.expect("close stream");
+    async fn echo(s: yamux_stream) -> io::Result<()> {
+        let r = s.clone();
+        let w = s;
+        if let Err(e) = copy(r, w).await {
+            if e.kind() != io::ErrorKind::UnexpectedEof {
+                return Err(e);
+            }
+        }
+        Ok(())
     }
-    async fn send_recv(mut s: yamux_stream) {
+    async fn send_recv(mut s: yamux_stream) -> io::Result<()> {
         // A send and recv
         let msg = b"Hello World";
-        s.write_all2(msg).await.expect("write all");
+        s.write_all2(msg).await?;
 
         let mut buf = vec![0; msg.len()];
-        s.read_exact2(&mut buf).await.expect("read exact");
+        s.read_exact2(&mut buf).await?;
         assert_eq!(msg, buf.as_slice());
 
-        s.close2().await.expect("close stream");
+        s.close2().await?;
+
+        Ok(())
     }
     fn prop() -> TestResult {
         task::block_on(async {
@@ -181,27 +187,27 @@ fn prop_p2p() {
             });
 
             let mut mpb_ctrl1 = mpb_ctrl.clone();
-            let handle_a = task::spawn(async move {
+            let handle_b = task::spawn(async move {
                 let mut mpb_ctrl2 = mpb_ctrl1.clone();
                 let handle = task::spawn(async move {
                     let sb = mpb_ctrl2.accept_stream().await.expect("B accept stream");
-                    echo(sb).await;
+                    echo(sb).await.expect("B echo");
                 });
                 let sb = mpb_ctrl1.open_stream().await.expect("B accept stream");
-                send_recv(sb).await;
+                send_recv(sb).await.expect("B send recv");
                 handle.await;
             });
 
             let mut mpa_ctrl1 = mpa_ctrl.clone();
-            let handle_b = task::spawn(async move {
+            let handle_a = task::spawn(async move {
                 let mut mpa_ctrl2 = mpa_ctrl1.clone();
                 let handle = task::spawn(async move {
                     let sa = mpa_ctrl2.accept_stream().await.expect("accept stream");
-                    echo(sa).await;
+                    echo(sa).await.expect("A echo");
                 });
 
                 let sa = mpa_ctrl1.open_stream().await.expect("open stream");
-                send_recv(sa).await;
+                send_recv(sa).await.expect("A send recv");
                 handle.await;
             });
 
@@ -295,22 +301,28 @@ fn prop_accept() {
 
 #[test]
 fn prop_echo() {
-    async fn echo(mut s: yamux_stream) {
-        let mut buf = vec![0; 64];
-        let n = s.read2(&mut buf).await.expect("read exact");
-        s.write_all2(&buf[..n]).await.expect("write all");
-        s.close2().await.expect("close stream");
+    async fn echo(s: yamux_stream) -> io::Result<()> {
+        let r = s.clone();
+        let w = s;
+        if let Err(e) = copy(r, w).await {
+            if e.kind() != io::ErrorKind::UnexpectedEof {
+                return Err(e);
+            }
+        }
+        Ok(())
     }
-    async fn send_recv(mut s: yamux_stream) {
+    async fn send_recv(mut s: yamux_stream) -> io::Result<()> {
         // A send and recv
         let msg = b"Hello World";
-        s.write_all2(msg).await.expect("write all");
+        s.write_all2(msg).await?;
 
         let mut buf = vec![0; msg.len()];
-        s.read_exact2(&mut buf).await.expect("read exact");
+        s.read_exact2(&mut buf).await?;
         assert_eq!(msg, buf.as_slice());
 
-        s.close2().await.expect("close stream");
+        s.close2().await?;
+
+        Ok(())
     }
     fn prop() -> TestResult {
         task::block_on(async {
@@ -338,14 +350,14 @@ fn prop_echo() {
             let mut mpb_ctrl1 = mpb_ctrl.clone();
             let handle_b = task::spawn(async move {
                 let sb = mpb_ctrl1.accept_stream().await.expect("B accept stream");
-                echo(sb).await;
+                echo(sb).await.expect("B echo");
             });
 
             // A act as client
             let sa = mpa_ctrl.clone().open_stream().await.expect("client open stream");
 
             // A send and recv
-            send_recv(sa).await;
+            send_recv(sa).await.expect("A send recv");
 
             // close connection A and B
             handle_b.await;
@@ -579,22 +591,28 @@ fn prop_half_close2() {
 
 #[test]
 fn prop_lazy_open() {
-    async fn echo(mut s: yamux_stream) {
-        let mut buf = vec![0; 64];
-        let n = s.read2(&mut buf).await.expect("read exact");
-        s.write_all2(&buf[..n]).await.expect("write all");
-        s.close2().await.expect("close stream");
+    async fn echo(s: yamux_stream) -> io::Result<()> {
+        let r = s.clone();
+        let w = s;
+        if let Err(e) = copy(r, w).await {
+            if e.kind() != io::ErrorKind::UnexpectedEof {
+                return Err(e);
+            }
+        }
+        Ok(())
     }
-    async fn send_recv(mut s: yamux_stream) {
+    async fn send_recv(mut s: yamux_stream) -> io::Result<()> {
         // A send and recv
         let msg = b"Hello World";
-        s.write_all2(msg).await.expect("write all");
+        s.write_all2(msg).await?;
 
         let mut buf = vec![0; msg.len()];
-        s.read_exact2(&mut buf).await.expect("read exact");
+        s.read_exact2(&mut buf).await?;
         assert_eq!(msg, buf.as_slice());
 
-        s.close2().await.expect("close stream");
+        s.close2().await?;
+
+        Ok(())
     }
     fn prop() -> TestResult {
         task::block_on(async {
@@ -624,14 +642,14 @@ fn prop_lazy_open() {
             let mut mpb_ctrl1 = mpb_ctrl.clone();
             let stream_handle_b = task::spawn(async move {
                 let sb = mpb_ctrl1.accept_stream().await.expect("B accept stream");
-                echo(sb).await;
+                echo(sb).await.expect("B echo");
             });
 
             // A act as client
             let sa = mpa_ctrl.clone().open_stream().await.expect("client open stream");
 
             // A send and recv
-            send_recv(sa).await;
+            send_recv(sa).await.expect("A send recv");
 
             // close connection A and B
             stream_handle_b.await;
@@ -648,11 +666,15 @@ fn prop_lazy_open() {
 
 #[test]
 fn prop_cannot_read_after_close() {
-    async fn echo(mut s: yamux_stream) {
-        let mut buf = vec![0; 64];
-        let n = s.read2(&mut buf).await.expect("read exact");
-        s.write_all2(&buf[..n]).await.expect("write all");
-        s.close2().await.expect("close stream");
+    async fn echo(s: yamux_stream) -> io::Result<()> {
+        let r = s.clone();
+        let w = s;
+        if let Err(e) = copy(r, w).await {
+            if e.kind() != io::ErrorKind::UnexpectedEof {
+                return Err(e);
+            }
+        }
+        Ok(())
     }
     fn prop() -> TestResult {
         task::block_on(async {
@@ -683,7 +705,7 @@ fn prop_cannot_read_after_close() {
             let mut mpb_ctrl1 = mpb_ctrl.clone();
             let stream_handle_b = task::spawn(async move {
                 let sb = mpb_ctrl1.accept_stream().await.expect("B accept stream");
-                echo(sb).await;
+                echo(sb).await.expect("B echo");
             });
 
             // A act as client

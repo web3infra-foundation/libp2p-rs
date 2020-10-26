@@ -23,8 +23,8 @@ use async_std::{
     task,
 };
 use libp2prs_mplex::connection::Connection;
-use libp2prs_traits::{ReadEx, WriteEx};
-use log::{error, info};
+use libp2prs_traits::{copy, ReadEx, WriteEx};
+use log::info;
 use std::collections::VecDeque;
 
 fn main() {
@@ -52,28 +52,12 @@ fn run_server() {
                     info!("connection is closed");
                 });
 
-                while let Ok(mut stream) = ctrl.accept_stream().await {
+                while let Ok(stream) = ctrl.accept_stream().await {
                     info!("accepted new stream: {:?}", stream);
                     task::spawn(async move {
-                        let mut buf = [0; 4096];
-
-                        loop {
-                            let n = match stream.read2(&mut buf).await {
-                                Ok(num) => num,
-                                Err(e) => {
-                                    error!("read failed: {:?}", e);
-                                    return;
-                                }
-                            };
-                            info!("read {:?}", &buf[..n]);
-                            if n == 0 {
-                                break;
-                            }
-                            if let Err(e) = stream.write_all2(buf[..n].as_ref()).await {
-                                error!("write failed: {:?}", e);
-                                return;
-                            };
-                        }
+                        let r = stream.clone();
+                        let w = stream.clone();
+                        let _ = copy(r, w).await;
                     });
                 }
             });

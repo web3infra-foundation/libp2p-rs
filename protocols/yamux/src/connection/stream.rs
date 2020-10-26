@@ -242,8 +242,11 @@ impl Stream {
             return Ok(());
         }
 
-        let cmd = StreamCommand::ResetStream(self.id);
+        let (tx, rx) = oneshot::channel();
+        let cmd = StreamCommand::ResetStream(self.id, tx);
         self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
+        rx.await.map_err(|_| self.closed_err())?;
+
         self.sender.close().await.expect("close err");
 
         Ok(())

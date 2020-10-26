@@ -36,16 +36,18 @@ use libp2prs_swarm::protocol_handler::{IProtocolHandler, ProtocolHandler};
 use libp2prs_swarm::substream::Substream;
 use libp2prs_swarm::{DummyProtocolHandler, Swarm, SwarmError};
 use libp2prs_tcp::TcpConfig;
-use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{copy, ReadEx, WriteEx};
 use libp2prs_yamux as yamux;
 
-//#[test]
-#[allow(dead_code)]
-fn concurrent_stream() {
-    // env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    task::spawn(async { run_server() });
-
-    task::block_on(async { run_client() });
+fn main() {
+    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    if std::env::args().nth(1) == Some("server".to_string()) {
+        log::info!("Starting server ......");
+        run_server();
+    } else {
+        log::info!("Starting client ......");
+        run_client();
+    }
 }
 
 lazy_static! {
@@ -75,16 +77,13 @@ fn run_server() {
     #[async_trait]
     impl ProtocolHandler for MyProtocolHandler {
         async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
-            let mut stream = stream;
-            log::trace!("MyProtocolHandler handling inbound {:?}", stream);
-            let mut msg = vec![0; 4096];
-            loop {
-                let n = stream.read2(&mut msg).await?;
-                if n == 0 {
-                    break;
+            log::info!("MyProtocolHandler handling inbound {:?}", stream);
+            let r = stream.clone();
+            let w = stream.clone();
+            if let Err(e) = copy(r, w).await {
+                if e.kind() != std::io::ErrorKind::UnexpectedEof {
+                    return Err(SwarmError::from(e));
                 }
-                log::info!("received: {:?}", &msg[..n]);
-                stream.write2(&msg[..n]).await?;
             }
             Ok(())
         }
@@ -140,23 +139,23 @@ fn run_client() {
     task::block_on(async move {
         control.new_connection(remote_peer_id.clone()).await.unwrap();
         let mut handles = VecDeque::default();
-        for _ in 0..1 {
+        for _ in 0..100 {
             let mut stream = control.new_stream(remote_peer_id.clone(), vec![b"/my/1.0.0"]).await.unwrap();
             log::info!("stream {:?} opened, writing something...", stream);
 
             let handle = task::spawn(async move {
                 let msg = b"hello";
 
-                loop {
+                for _ in 0..100 {
                     stream.write_all2(msg).await.expect("C write");
 
                     let mut buf = vec![0; msg.len()];
                     stream.read_exact2(&mut buf).await.expect("C read");
                     assert_eq!(buf, msg);
 
-                    task::sleep(Duration::from_secs(1)).await;
+                    // task::sleep(Duration::from_secs(1)).await;
                 }
-                //stream.close2().await;
+                stream.close2().await.expect("close stream");
             });
             handles.push_back(handle);
         }

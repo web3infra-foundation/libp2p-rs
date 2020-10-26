@@ -41,8 +41,8 @@ impl Frame {
         self.header.stream_id()
     }
 
-    pub fn body(&self) -> &[u8] {
-        &self.body
+    pub fn body(self) -> Vec<u8> {
+        self.body
     }
 
     // new stream frame

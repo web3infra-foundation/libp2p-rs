@@ -19,7 +19,6 @@
 // DEALINGS IN THE SOFTWARE.
 
 mod copy;
-pub mod ext;
 
 use std::io;
 use std::io::ErrorKind;
@@ -30,7 +29,6 @@ use futures::prelude::*;
 use futures::{AsyncReadExt, AsyncWriteExt};
 
 pub use copy::copy;
-pub use ext::ReadExt2;
 
 /// Read Trait for async/await
 ///

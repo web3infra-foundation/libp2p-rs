@@ -97,12 +97,7 @@ where
     pub async fn write_body(&mut self, data: &[u8]) -> io::Result<()> {
         self.inner.write_all2(data).await
     }
-}
 
-impl<T> LengthDelimited<T>
-where
-    T: WriteEx + Send,
-{
     pub(crate) async fn flush(&mut self) -> io::Result<()> {
         self.inner.flush2().await
     }
