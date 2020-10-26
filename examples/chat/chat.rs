@@ -40,7 +40,6 @@ use libp2prs_swarm::{Swarm, SwarmError};
 use libp2prs_tcp::TcpConfig;
 use libp2prs_traits::{ReadEx, WriteEx};
 use libp2prs_yamux as yamux;
-//use libp2prs_mplex as mplex;
 use std::str::FromStr;
 use structopt::StructOpt;
 
@@ -172,7 +171,6 @@ fn run_client() {
         Protocol::P2p(data) => PeerId::from_multihash(data).unwrap(),
         _ => panic!("expect p2p protocol"),
     };
-    //let _addr: Multiaddr = "/ip4/127.0.0.1/tcp/8086".parse().unwrap();
     let sec = secio::Config::new(keys.clone());
     let mux = yamux::Config::new();
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
@@ -180,8 +178,6 @@ fn run_client() {
     let mut swarm = Swarm::new(keys.public()).with_transport(Box::new(tu));
 
     let mut control = swarm.control();
-
-    //let remote_peer_id = PeerId::from_public_key(SERVER_KEY.public());
 
     log::info!("about to connect to {:?}", remote_peer_id);
 

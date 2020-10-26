@@ -1802,7 +1802,7 @@ impl ReadEx for EndpointReader {
             .incoming
             .next()
             .await
-            .ok_or(io::Error::new(io::ErrorKind::UnexpectedEof, "channel closed"))?;
+            .ok_or_else(|| io::Error::new(io::ErrorKind::UnexpectedEof, "channel closed"))?;
 
         let n = t.len();
         if buf.len() >= n {
@@ -1836,7 +1836,7 @@ impl WriteEx for EndpointWriter {
         self.outgoing
             .send(Vec::from(buf))
             .await
-            .or(Err(io::Error::new(io::ErrorKind::BrokenPipe.into(), "send failure")))?;
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "send failure"))?;
         Ok(n)
     }
 

@@ -28,7 +28,7 @@ jobs:
     - name: fmt
       run: cargo fmt --all -- --check
       
-    - name: Docs
+    - name: docs
       run: cargo doc
   
   build_and_test:

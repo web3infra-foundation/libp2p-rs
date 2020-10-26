@@ -20,7 +20,7 @@
 
 use async_std::task;
 use futures::channel::oneshot;
-use futures::{channel::mpsc, prelude::*};
+use futures::{channel::mpsc, prelude::*, SinkExt, StreamExt};
 use libp2prs_mplex::connection::{stream::Stream as mplex_stream, Connection};
 use libp2prs_traits::{copy, ReadEx, SplitEx, WriteEx};
 use quickcheck::{QuickCheck, TestResult};
@@ -247,27 +247,27 @@ fn prop_p2p() {
             });
 
             let mut mpb_ctrl1 = mpb_ctrl.clone();
-            let handle_b = task::spawn(async move {
+            let handle_a = task::spawn(async move {
                 let mut mpb_ctrl2 = mpb_ctrl1.clone();
                 let handle = task::spawn(async move {
                     let sb = mpb_ctrl2.accept_stream().await.expect("B accept stream");
-                    echo(sb).await.expect("B echo");
+                    echo(sb).await;
                 });
                 let sb = mpb_ctrl1.open_stream().await.expect("B accept stream");
-                send_recv(sb).await.expect("B send and recv");
+                send_recv(sb).await;
                 handle.await;
             });
 
             let mut mpa_ctrl1 = mpa_ctrl.clone();
-            let handle_a = task::spawn(async move {
+            let handle_b = task::spawn(async move {
                 let mut mpa_ctrl2 = mpa_ctrl1.clone();
                 let handle = task::spawn(async move {
                     let sa = mpa_ctrl2.accept_stream().await.expect("accept stream");
-                    echo(sa).await.expect("A echo");
+                    echo(sa).await;
                 });
 
                 let sa = mpa_ctrl1.open_stream().await.expect("open stream");
-                send_recv(sa).await.expect("A send and recv");
+                send_recv(sa).await;
                 handle.await;
             });
 
@@ -288,28 +288,22 @@ fn prop_p2p() {
 
 #[test]
 fn prop_echo() {
-    async fn echo(s: mplex_stream) -> io::Result<()> {
-        let r = s.clone();
-        let w = s;
-        if let Err(e) = copy(r, w).await {
-            if e.kind() != io::ErrorKind::UnexpectedEof {
-                return Err(e);
-            }
-        }
-        Ok(())
+    async fn echo(mut s: mplex_stream) {
+        let mut buf = vec![0; 64];
+        let n = s.read2(&mut buf).await.expect("read exact");
+        s.write_all2(&buf[..n]).await.expect("write all");
+        s.close2().await.expect("close stream");
     }
-    async fn send_recv(mut s: mplex_stream) -> io::Result<()> {
+    async fn send_recv(mut s: mplex_stream) {
         // A send and recv
         let msg = b"Hello World";
-        s.write_all2(msg).await?;
+        s.write_all2(msg).await.expect("write all");
 
         let mut buf = vec![0; msg.len()];
-        s.read_exact2(&mut buf).await?;
+        s.read_exact2(&mut buf).await.expect("read exact");
         assert_eq!(msg, buf.as_slice());
 
-        s.close2().await?;
-
-        Ok(())
+        s.close2().await.expect("close stream");
     }
     fn prop() -> TestResult {
         task::block_on(async {
@@ -337,12 +331,12 @@ fn prop_echo() {
             let mut mpb_ctrl1 = mpb_ctrl.clone();
             let stream_handle_b = task::spawn(async move {
                 let sb = mpb_ctrl1.accept_stream().await.expect("B accept stream");
-                echo(sb).await.expect("echo");
+                echo(sb).await;
             });
 
             // A act as client
             let sa = mpa_ctrl.clone().open_stream().await.expect("client open stream");
-            send_recv(sa).await.expect("send and recv");
+            send_recv(sa).await;
 
             // close connection A and B
             stream_handle_b.await;
@@ -846,7 +840,7 @@ impl ReadEx for EndpointReader {
             .incoming
             .next()
             .await
-            .ok_or(io::Error::new(io::ErrorKind::UnexpectedEof, "channel closed"))?;
+            .ok_or_else(|| io::Error::new(io::ErrorKind::UnexpectedEof, "channel closed"))?;
 
         let n = t.len();
         if buf.len() >= n {
@@ -869,7 +863,7 @@ struct EndpointWriter {
 
 impl EndpointWriter {
     fn new(outgoing: mpsc::UnboundedSender<Vec<u8>>) -> Self {
-        EndpointWriter { outgoing }
+        EndpointWriter{ outgoing }
     }
 }
 
@@ -880,7 +874,7 @@ impl WriteEx for EndpointWriter {
         self.outgoing
             .send(Vec::from(buf))
             .await
-            .or(Err(io::Error::new(io::ErrorKind::BrokenPipe.into(), "send failure")))?;
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "send failure"))?;
         Ok(n)
     }
 

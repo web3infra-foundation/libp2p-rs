@@ -20,17 +20,17 @@
 
 //! Implementation of the libp2p `Transport` trait for Websockets.
 // pub mod connection;
-pub mod connection2;
+pub mod connection;
 pub mod error;
 pub mod framed;
 pub mod tls;
 
+use crate::connection::TlsOrPlain;
 use async_trait::async_trait;
 use libp2prs_core::transport::{IListener, ITransport};
 use libp2prs_core::{multiaddr::Multiaddr, transport::TransportError, Transport};
 use libp2prs_dns::DnsConfig;
 use libp2prs_tcp::{TcpConfig, TcpTransStream};
-use crate::connection2::TlsOrPlain;
 
 /// A Websocket transport.
 #[derive(Clone)]
@@ -39,12 +39,12 @@ pub struct WsConfig {
 }
 
 impl WsConfig {
-    /// Create a new websocket transport based on the given transport.
+    /// Create a new websocket transport based on the tcp transport.
     pub fn new() -> Self {
         framed::WsConfig::new(TcpConfig::default().box_clone()).into()
     }
 
-    /// Create a new websocket transport based on the given transport.
+    /// Create a new websocket transport based on the dns transport.
     pub fn new_with_dns() -> Self {
         framed::WsConfig::new(DnsConfig::new(TcpConfig::default()).box_clone()).into()
     }
@@ -98,7 +98,7 @@ impl From<framed::WsConfig> for WsConfig {
 
 #[async_trait]
 impl Transport for WsConfig {
-    type Output = connection2::Connection<TlsOrPlain<TcpTransStream>>;
+    type Output = connection::Connection<TlsOrPlain<TcpTransStream>>;
     fn listen_on(&mut self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         self.inner.listen_on(addr)
     }
@@ -126,7 +126,7 @@ mod tests {
 
     #[test]
     fn dialer_connects_to_listener_ipv4() {
-        env_logger::from_env(env_logger::Env::default().default_filter_or("libp2prs_websocket=trace")).init();
+        //env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();
         let listen_addr = "/ip4/127.0.0.1/tcp/38099/ws".parse().unwrap();
         let dial_addr = "/ip4/127.0.0.1/tcp/38099/ws".parse().unwrap();
         let s = task::spawn(async {
@@ -136,7 +136,6 @@ mod tests {
             client(dial_addr, false).await;
         });
         futures::executor::block_on(async {
-            //futures::join!(s, c);
             s.await;
             c.await;
         });

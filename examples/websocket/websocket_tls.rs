@@ -164,7 +164,7 @@ impl ProtocolHandler for MyProtocolHandler {
 }
 
 fn main() -> io::Result<()> {
-    env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();
+    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
     if std::env::args().nth(1) == Some("server".to_string()) {
         log::info!("Starting server ......");
         run_server()
@@ -182,7 +182,7 @@ lazy_static! {
 fn run_server() -> io::Result<()> {
     let options = ServerTlsConfig::from_args();
     let addr = format!("/ip4/{}/tcp/{}/wss", &options.host, &options.port);
-    log::info!("server addr1 {}", &addr);
+    log::info!("server addr {}", &addr);
     let keys = SERVER_KEY.clone();
 
     let listen_addr: Multiaddr = addr.parse().unwrap();

@@ -23,7 +23,7 @@ use log::debug;
 use std::io;
 
 use async_trait::async_trait;
-use libp2prs_traits::{ReadEx, WriteEx, SplitEx};
+use libp2prs_traits::{ReadEx, SplitEx, WriteEx};
 
 /// SecureStreamReader
 pub struct SecureStreamReader<R> {
@@ -111,7 +111,7 @@ where
     W: WriteEx + 'static,
 {
     fn new(socket: W) -> Self {
-        SecureStreamWriter {socket}
+        SecureStreamWriter { socket }
     }
 }
 
@@ -142,9 +142,9 @@ pub struct SecureStream<R, W> {
 }
 
 impl<R, W> SecureStream<R, W>
-    where
-        R: ReadEx + 'static,
-        W: WriteEx + 'static,
+where
+    R: ReadEx + 'static,
+    W: WriteEx + 'static,
 {
     /// New a secure stream
     pub(crate) fn new(reader: R, writer: W, max_frame_len: usize) -> Self {
@@ -157,9 +157,9 @@ impl<R, W> SecureStream<R, W>
 
 #[async_trait]
 impl<R, W> ReadEx for SecureStream<R, W>
-    where
-        R: ReadEx + 'static,
-        W: WriteEx + 'static,
+where
+    R: ReadEx + 'static,
+    W: WriteEx + 'static,
 {
     async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
         self.reader.read2(buf).await
@@ -168,9 +168,9 @@ impl<R, W> ReadEx for SecureStream<R, W>
 
 #[async_trait]
 impl<R, W> WriteEx for SecureStream<R, W>
-    where
-        R: ReadEx + 'static,
-        W: WriteEx + 'static,
+where
+    R: ReadEx + 'static,
+    W: WriteEx + 'static,
 {
     async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
         self.writer.write2(buf).await
@@ -186,9 +186,9 @@ impl<R, W> WriteEx for SecureStream<R, W>
 }
 
 impl<R, W> SplitEx for SecureStream<R, W>
-    where
-        R: ReadEx + Unpin + 'static,
-        W: WriteEx + Unpin + 'static,
+where
+    R: ReadEx + Unpin + 'static,
+    W: WriteEx + Unpin + 'static,
 {
     type Reader = SecureStreamReader<R>;
     type Writer = SecureStreamWriter<W>;
