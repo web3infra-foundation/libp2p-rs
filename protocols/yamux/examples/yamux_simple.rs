@@ -24,7 +24,7 @@ use async_std::{
 };
 use log::info;
 
-use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{copy, ReadEx, WriteEx};
 use libp2prs_yamux::{connection::Connection, connection::Mode, Config};
 
 fn main() {
@@ -55,17 +55,12 @@ fn run_server() {
                     info!("connection is closed");
                 });
 
-                while let Ok(mut stream) = ctrl.accept_stream().await {
+                while let Ok(stream) = ctrl.accept_stream().await {
                     info!("accepted new stream: {}", stream.id());
                     task::spawn(async move {
-                        let mut buf = [0; 4096];
-                        loop {
-                            let n = stream.read2(&mut buf).await.unwrap();
-                            if n == 0 {
-                                return;
-                            }
-                            stream.write_all2(buf[..n].as_ref()).await.unwrap();
-                        }
+                        let r = stream.clone();
+                        let w = stream.clone();
+                        let _ = copy(r, w).await;
                     });
                 }
             });

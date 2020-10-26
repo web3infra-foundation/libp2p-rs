@@ -33,16 +33,16 @@ impl StreamID {
         StreamID { id, initiator }
     }
 
-    /// used by mplex protocol
+    /// identify by u32, only used by swarm
     pub fn val(self) -> u32 {
+        if self.initiator {
+            return self.id + 10000000;
+        }
         self.id
     }
 
-    /// identify by u32, only used by swarm
+    /// used by mplex protocol
     pub fn id(self) -> u32 {
-        if self.initiator {
-            return self.id + 1000000;
-        }
         self.id
     }
 }

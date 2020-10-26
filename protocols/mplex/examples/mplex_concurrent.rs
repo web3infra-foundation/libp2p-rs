@@ -22,16 +22,14 @@ use async_std::{
     net::{TcpListener, TcpStream},
     task,
 };
-use log::{error, info};
-
-use libp2prs_core::identity::Keypair;
-use libp2prs_secio::Config as SecioConfig;
-
-use libp2prs_mplex::connection::Connection;
+use libp2prs_mplex::{connection::Connection, error::ConnectionError};
 use libp2prs_traits::{ReadEx, WriteEx};
+use log::info;
+use std::collections::VecDeque;
+use std::sync::Arc;
 
 fn main() {
-    env_logger::init();
+    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
     if std::env::args().nth(1) == Some("server".to_string()) {
         info!("Starting server ......");
         run_server();
@@ -42,43 +40,29 @@ fn main() {
 }
 
 fn run_server() {
-    let key = Keypair::generate_ed25519();
-    let config = SecioConfig::new(key);
-
     task::block_on(async {
-        let listener = TcpListener::bind("127.0.0.1:16789").await.unwrap();
+        let listener = TcpListener::bind("127.0.0.1:8088").await.unwrap();
         while let Ok((socket, _)) = listener.accept().await {
-            let config = config.clone();
             task::spawn(async move {
-                let (sconn, _, _) = config.handshake(socket).await.unwrap();
-                let muxer_conn = Connection::new(sconn);
+                let muxer_conn = Connection::new(socket);
                 let mut ctrl = muxer_conn.control();
 
                 task::spawn(async {
                     let mut muxer_conn = muxer_conn;
-                    while muxer_conn.next_stream().await.is_ok() {}
+                    let _ = muxer_conn.next_stream().await;
                     info!("connection is closed");
                 });
 
                 while let Ok(mut stream) = ctrl.accept_stream().await {
+                    info!("accepted new stream: {:?}", stream);
                     task::spawn(async move {
-                        info!("accepted new stream: {:?}", stream);
-                        let mut buf = [0; 4096];
-
-                        loop {
-                            let n = match stream.read2(&mut buf).await {
-                                Ok(num) => num,
-                                Err(e) => {
-                                    error!("S {} read failed: {:?}", stream.id(), e);
-                                    break;
-                                }
-                            };
-                            info!("S {} read {:?}", stream.id(), &buf[..n]);
-                            if let Err(e) = stream.write_all2(buf[..n].as_ref()).await {
-                                error!("S {} write failed: {:?}", stream.id(), e);
-                                break;
-                            };
-                        }
+                        let mut len = [0; 4];
+                        stream.read_exact2(&mut len).await?;
+                        let mut buf = vec![0; u32::from_be_bytes(len) as usize];
+                        let _ = stream.read_exact2(&mut buf).await;
+                        stream.write_all2(&buf).await?;
+                        stream.close2().await?;
+                        Ok::<(), ConnectionError>(())
                     });
                 }
             });
@@ -87,50 +71,37 @@ fn run_server() {
 }
 
 fn run_client() {
-    let key = Keypair::generate_ed25519();
-    let config = SecioConfig::new(key);
-
     task::block_on(async {
-        let socket = TcpStream::connect("127.0.0.1:16789").await.unwrap();
-        let (sconn, _, _) = config.handshake(socket).await.unwrap();
-        let muxer_conn = Connection::new(sconn);
+        let socket = TcpStream::connect("127.0.0.1:8088").await.unwrap();
+        let muxer_conn = Connection::new(socket);
 
         let mut ctrl = muxer_conn.control();
 
         let loop_handle = task::spawn(async {
             let mut muxer_conn = muxer_conn;
-            while muxer_conn.next_stream().await.is_ok() {}
+            let _ = muxer_conn.next_stream().await;
             info!("connection is closed");
         });
 
-        let mut handles = Vec::new();
-        for _ in 0_u32..3 {
+        let mut handles = VecDeque::new();
+        let data = Arc::new(vec![0x42; 100 * 1024]);
+        for _ in 0..100 {
             let mut stream = ctrl.clone().open_stream().await.unwrap();
+            let data = data.clone();
+            info!("C: opened new stream {}", stream.id());
             let handle = task::spawn(async move {
-                info!("C: opened new stream {}", stream.id());
+                stream.write_all2(&(data.len() as u32).to_be_bytes()[..]).await.unwrap();
 
-                let data = b"hello world";
-
-                if let Err(e) = stream.write_all2(data.as_ref()).await {
-                    error!("C: {} write failed: {:?}", stream.id(), e);
-                    return;
-                }
+                stream.write_all2(data.as_ref()).await.unwrap();
                 info!("C: {}: wrote {} bytes", stream.id(), data.len());
 
                 let mut frame = vec![0; data.len()];
-                if let Err(e) = stream.read_exact2(&mut frame).await {
-                    error!("C: {} read failed: {:?}", stream.id(), e);
-                    return;
-                }
-                info!("C: {} read {:?}", stream.id(), &frame);
-                // assert_eq!(&data[..], &frame[..]);
+                stream.read_exact2(&mut frame).await.unwrap();
+                assert_eq!(&data[..], &frame[..]);
 
                 stream.close2().await.expect("close stream");
-
-                // wait for stream to send and recv close frame
-                // task::sleep(Duration::from_secs(1)).await;
             });
-            handles.push(handle);
+            handles.push_back(handle);
         }
 
         for handle in handles {

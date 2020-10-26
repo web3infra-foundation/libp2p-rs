@@ -105,7 +105,7 @@ use crate::{
     pause::Pausable,
 };
 use control::Control;
-use libp2prs_traits::{SplittableReadWrite, SplitEx};
+use libp2prs_traits::{SplitEx, SplittableReadWrite};
 use nohash_hasher::IntMap;
 use std::collections::VecDeque;
 use std::fmt;
@@ -132,7 +132,7 @@ pub(crate) enum StreamCommand {
     /// Close a stream.
     CloseStream(Frame, oneshot::Sender<()>),
     /// Reset a stream.
-    ResetStream(Frame),
+    ResetStream(Frame, oneshot::Sender<()>),
 }
 
 /// The connection identifier.
@@ -310,7 +310,9 @@ impl<T: SplittableReadWrite> Connection<T> {
                         StreamCommand::CloseStream(_, reply) => {
                             let _ = reply.send(());
                         }
-                        _ => {}
+                        StreamCommand::ResetStream(_, reply) => {
+                            let _ = reply.send(());
+                        }
                     }
                     // drop it
                     log::debug!("drop stream receiver frame");
@@ -480,7 +482,7 @@ impl<T: SplittableReadWrite> Connection<T> {
                 }
                 let _ = reply.send(());
             }
-            Some(StreamCommand::ResetStream(frame)) => {
+            Some(StreamCommand::ResetStream(frame, reply)) => {
                 let stream_id = frame.stream_id();
                 log::debug!("{}: reset stream {} of {}", self.id, stream_id, self);
                 if self.streams_stat.contains_key(&stream_id) {
@@ -491,6 +493,7 @@ impl<T: SplittableReadWrite> Connection<T> {
                     self.streams_stat.remove(&stream_id);
                     self.streams.remove(&stream_id);
                 }
+                let _ = reply.send(());
             }
             None => {
                 // We only get to this point when `self.stream_receiver`

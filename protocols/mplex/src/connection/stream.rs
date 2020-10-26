@@ -98,6 +98,10 @@ impl Stream {
         }
     }
 
+    pub fn val(&self) -> u32 {
+        self.id.val()
+    }
+
     /// Get this stream's identifier.
     pub fn id(&self) -> u32 {
         self.id.id()
@@ -173,9 +177,11 @@ impl Stream {
             return Ok(());
         }
 
+        let (tx, rx) = oneshot::channel();
         let frame = Frame::reset_frame(self.id);
-        let cmd = StreamCommand::ResetStream(frame);
+        let cmd = StreamCommand::ResetStream(frame, tx);
         self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
+        rx.await.map_err(|_| self.closed_err())?;
 
         self.sender.close().await.map_err(|_| self.write_zero_err())?;
 

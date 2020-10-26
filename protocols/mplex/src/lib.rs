@@ -167,7 +167,7 @@ impl<C: SplitEx> SecureInfo for Mplex<C> {
 /// StreamInfo for Mplex::Stream
 impl StreamInfo for Stream {
     fn id(&self) -> usize {
-        self.id() as usize
+        self.val() as usize
     }
 }
 
