@@ -22,10 +22,11 @@ use async_std::{
     net::{TcpListener, TcpStream},
     task,
 };
-use libp2prs_mplex::connection::Connection;
 use libp2prs_traits::{ReadEx, WriteEx};
-use log::{error, info};
+use libp2prs_yamux::{connection::Connection, connection::Mode, error::ConnectionError, Config};
+use log::info;
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 fn main() {
     env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -43,37 +44,25 @@ fn run_server() {
         let listener = TcpListener::bind("127.0.0.1:8088").await.unwrap();
         while let Ok((socket, _)) = listener.accept().await {
             task::spawn(async move {
-                let muxer_conn = Connection::new(socket);
+                let muxer_conn = Connection::new(socket, Config::default(), Mode::Server);
                 let mut ctrl = muxer_conn.control();
 
                 task::spawn(async {
                     let mut muxer_conn = muxer_conn;
-                    while muxer_conn.next_stream().await.is_ok() {}
+                    let _ = muxer_conn.next_stream().await;
                     info!("connection is closed");
                 });
 
                 while let Ok(mut stream) = ctrl.accept_stream().await {
                     info!("accepted new stream: {:?}", stream);
                     task::spawn(async move {
-                        let mut buf = [0; 4096];
-
-                        loop {
-                            let n = match stream.read2(&mut buf).await {
-                                Ok(num) => num,
-                                Err(e) => {
-                                    error!("read failed: {:?}", e);
-                                    return;
-                                }
-                            };
-                            info!("read {:?}", &buf[..n]);
-                            if n == 0 {
-                                break;
-                            }
-                            if let Err(e) = stream.write_all2(buf[..n].as_ref()).await {
-                                error!("write failed: {:?}", e);
-                                return;
-                            };
-                        }
+                        let mut len = [0; 4];
+                        stream.read_exact2(&mut len).await?;
+                        let mut buf = vec![0; u32::from_be_bytes(len) as usize];
+                        let _ = stream.read_exact2(&mut buf).await;
+                        stream.write_all2(&buf).await?;
+                        stream.close2().await?;
+                        Ok::<(), ConnectionError>(())
                     });
                 }
             });
@@ -84,41 +73,38 @@ fn run_server() {
 fn run_client() {
     task::block_on(async {
         let socket = TcpStream::connect("127.0.0.1:8088").await.unwrap();
-        let muxer_conn = Connection::new(socket);
+        let muxer_conn = Connection::new(socket, Config::default(), Mode::Client);
 
         let mut ctrl = muxer_conn.control();
 
         let loop_handle = task::spawn(async {
             let mut muxer_conn = muxer_conn;
-            while muxer_conn.next_stream().await.is_ok() {}
+            let _ = muxer_conn.next_stream().await;
             info!("connection is closed");
         });
 
         let mut handles = VecDeque::new();
-        for _ in 0..2 {
-            let stream = ctrl.clone().open_stream().await.unwrap();
+        let data = Arc::new(vec![0x42; 100 * 1024]);
+        for _ in 0..100 {
+            let mut stream = ctrl.clone().open_stream().await.unwrap();
+            let data = data.clone();
             info!("C: opened new stream {}", stream.id());
+            let handle = task::spawn(async move {
+                stream.write_all2(&(data.len() as u32).to_be_bytes()[..]).await.unwrap();
 
-            for j in 0..2 {
-                let mut stream = stream.clone();
-                let handle = task::spawn(async move {
-                    let data = b"hello world";
+                stream.write_all2(data.as_ref()).await.unwrap();
+                info!("C: {}: wrote {} bytes", stream.id(), data.len());
 
-                    stream.write_all2(data.as_ref()).await.unwrap();
-                    info!("C: {}/{}: wrote {} bytes", stream.id(), j, data.len());
+                let mut frame = vec![0; data.len()];
+                stream.read_exact2(&mut frame).await.unwrap();
+                assert_eq!(&data[..], &frame[..]);
 
-                    let mut frame = vec![0; data.len()];
-                    stream.read_exact2(&mut frame).await.unwrap();
-                    info!("C: {}/{}: read {:?}", stream.id(), j, &frame);
-                    // assert_eq!(&data[..], &frame[..]);
-
-                    stream.close2().await.expect("close stream");
-                });
-                handles.push_back(handle);
-            }
+                stream.close2().await.expect("close stream");
+            });
+            handles.push_back(handle);
         }
 
-        while let Some(handle) = handles.pop_front() {
+        for handle in handles {
             handle.await;
         }
 
