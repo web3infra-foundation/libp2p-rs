@@ -21,7 +21,7 @@
 use async_std::task;
 use futures::channel::oneshot;
 use futures::{channel::mpsc, StreamExt, SinkExt};
-use libp2prs_traits::{ReadEx, WriteEx, Split};
+use libp2prs_traits::{ReadEx, WriteEx, SplitEx};
 use libp2prs_yamux::{
     connection::{stream::Stream as yamux_stream, Connection, Mode},
     Config,
@@ -1865,7 +1865,7 @@ impl WriteEx for Endpoint {
     }
 }
 
-impl Split for Endpoint {
+impl SplitEx for Endpoint {
     type Reader = EndpointReader;
     type Writer = EndpointWriter;
 

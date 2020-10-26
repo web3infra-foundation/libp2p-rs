@@ -106,7 +106,7 @@ use crate::{
     Config, WindowUpdateMode, DEFAULT_CREDIT,
 };
 use control::Control;
-use libp2prs_traits::{Split, SplittableReadWrite};
+use libp2prs_traits::{SplitEx, SplittableReadWrite};
 use nohash_hasher::IntMap;
 use std::collections::VecDeque;
 use std::fmt;
@@ -215,7 +215,7 @@ impl Shutdown {
 
 type Result<T> = std::result::Result<T, ConnectionError>;
 
-pub struct Connection<T: Split> {
+pub struct Connection<T: SplitEx> {
     id: Id,
     mode: Mode,
     config: Arc<Config>,
@@ -866,13 +866,13 @@ fn send_flag(stat: &mut StreamStat, frame: &mut Frame<Data>) {
     }
 }
 
-impl<T: Split> fmt::Display for Connection<T> {
+impl<T: SplitEx> fmt::Display for Connection<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "(Connection {} (streams {}))", self.id, self.streams.len())
     }
 }
 
-impl<T: Split> Connection<T> {
+impl<T: SplitEx> Connection<T> {
     // next_stream_id is only used to get stream id when open stream
     fn next_stream_id(&mut self) -> Result<StreamId> {
         let proposed = StreamId::new(self.next_stream_id);

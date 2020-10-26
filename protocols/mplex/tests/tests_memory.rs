@@ -22,7 +22,7 @@ use async_std::task;
 use futures::channel::oneshot;
 use futures::{channel::mpsc, prelude::*,};
 use libp2prs_mplex::connection::{stream::Stream as mplex_stream, Connection};
-use libp2prs_traits::{ReadEx, WriteEx, Split};
+use libp2prs_traits::{ReadEx, WriteEx, SplitEx};
 use quickcheck::{QuickCheck, TestResult};
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -921,7 +921,7 @@ impl WriteEx for Endpoint {
     }
 }
 
-impl Split for Endpoint {
+impl SplitEx for Endpoint {
     type Reader = EndpointReader;
     type Writer = EndpointWriter;
 

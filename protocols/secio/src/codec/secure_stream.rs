@@ -5,7 +5,7 @@ use std::{cmp::min, io};
 use crate::{codec::Hmac, crypto::BoxStreamCipher, error::SecioError};
 
 use async_trait::async_trait;
-use libp2prs_traits::{ReadEx, WriteEx, Split};
+use libp2prs_traits::{ReadEx, WriteEx, SplitEx};
 use futures::io::Error;
 
 /// SecureStreamReader
@@ -271,7 +271,7 @@ where
     }
 }
 
-impl<R, W> Split for SecureStream<R, W>
+impl<R, W> SplitEx for SecureStream<R, W>
 where
     R: ReadEx + Unpin + 'static,
     W: WriteEx + Unpin + 'static,
@@ -292,7 +292,7 @@ mod tests {
     use async_std::task;
     use bytes::BytesMut;
     use futures::channel;
-    use libp2prs_traits::{ReadEx, WriteEx, Split};
+    use libp2prs_traits::{ReadEx, WriteEx, SplitEx};
 
     fn test_decode_encode(cipher: CipherType) {
         let cipher_key = (0..cipher.key_size()).map(|_| rand::random::<u8>()).collect::<Vec<_>>();

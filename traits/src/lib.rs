@@ -293,9 +293,9 @@ impl<T: AsyncWrite + Unpin + Send> WriteEx for T {
 }
 
 ///
-/// Split Trait for read and write separation
+/// SplitEx Trait for read and write separation
 ///
-pub trait Split {
+pub trait SplitEx {
     /// read half
     type Reader: ReadEx + Unpin;
     /// write half
@@ -305,8 +305,8 @@ pub trait Split {
     fn split(self) -> (Self::Reader, Self::Writer);
 }
 
-// a common way to support Split for T, requires T: AsyncRead+AsyncWrite
-impl<T: AsyncRead + AsyncWrite + Send + Unpin> Split for T {
+// a common way to support SplitEx for T, requires T: AsyncRead+AsyncWrite
+impl<T: AsyncRead + AsyncWrite + Send + Unpin> SplitEx for T {
     type Reader = ReadHalf<T>;
     type Writer = WriteHalf<T>;
 
@@ -315,10 +315,10 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin> Split for T {
     }
 }
 
-// the other way around to implement Split for T, requires T supports Clone
+// the other way around to implement SplitEx for T, requires T supports Clone
 // which async-std::TcpStream does
 /*
-impl<T: ReadEx + WriteEx + Unpin + Clone> Split for T {
+impl<T: ReadEx + WriteEx + Unpin + Clone> SplitEx for T {
     type Reader = T;
     type Writer = T;
 
@@ -331,9 +331,9 @@ impl<T: ReadEx + WriteEx + Unpin + Clone> Split for T {
 */
 
 /// SplittableReadWrite trait for simplifying generic type constraints
-pub trait SplittableReadWrite: ReadEx + WriteEx + Split + Unpin + 'static {}
+pub trait SplittableReadWrite: ReadEx + WriteEx + SplitEx + Unpin + 'static {}
 
-impl<T: ReadEx + WriteEx + Split + Unpin + 'static> SplittableReadWrite for T {}
+impl<T: ReadEx + WriteEx + SplitEx + Unpin + 'static> SplittableReadWrite for T {}
 
 
 #[cfg(test)]
