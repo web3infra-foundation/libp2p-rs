@@ -26,7 +26,7 @@ use libp2prs_plaintext::PlainTextConfig;
 use libp2prs_traits::{ReadEx, WriteEx};
 
 fn main() {
-    env_logger::builder().filter_level(LevelFilter::Trace).init();
+    env_logger::builder().filter_level(LevelFilter::Info).init();
 
     if std::env::args().nth(1) == Some("server".to_string()) {
         info!("Starting server ......");

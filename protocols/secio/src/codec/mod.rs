@@ -4,7 +4,6 @@
 pub mod secure_stream;
 
 /// length prefix codec for underlying socket
-pub mod len_prefix;
 
 use crate::Digest;
 
