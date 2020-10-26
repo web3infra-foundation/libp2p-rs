@@ -68,6 +68,9 @@ Three security stream implementations are provided:
 
 Private network offers to setup a PSK based private network using `libp2p-rs`. The node configured with Private network enabled can only communicate with the other node with the same PSK. Basically Private network is implemented as a wrapper transport by adding an encryption/decryption layer on top of the inner tranport. Currently XSalsa20 is used by the private network to provide encryption/decryption capability.
 
+## Upgrader
+
+Upgrader is used to upgrade a connection to use a specific protocol, e.g., from a Tcp stream to a secure stream with SecIo. 
 
 ## Multistream Select
 
@@ -75,7 +78,7 @@ Multistream Select is a friendly protocol negotiation. It enables a multicodec t
 
 ## Transport Upgrade
 
-A special transport can be used to upgrade a regular transport to a upgraded one, which is using a upgraded connection with Security Stream and Stream muxing. As a result, Transport Upgrade will estanblish incoming/outgoing connections as secured and multiplxiable stream muxers，on which the logical sub-streams can be build.
+A special transport can be used to upgrade a regular transport to a new one, which is using a upgraded connection with Security Stream and Stream muxing. As a result, Transport Upgrade will estanblish incoming/outgoing connections as secured and multiplxiable stream muxers，on which the logical sub-streams can be build.
 
 It is the essential compoenent of libp2p network layer, and used by Swarm directly. In our implemetation, TransportUpgrade will generate IStreamMuxer as the output, which is the trait object of StreamMuxer. Also TransportUpgrade can be made into trait object as well, so that in Swarm, we can use transport trait object to construct tranports. By using trait object, we remove the generic type, which makes the code quite concise and straitforward. 
 
