@@ -1814,7 +1814,7 @@ impl WriteEx for EndpointWriter {
         self.outgoing
             .send(Vec::from(buf))
             .await
-            .or_else(|_| Err(io::Error::new(io::ErrorKind::BrokenPipe, "send failure")))?;
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "send failure"))?;
         Ok(n)
     }
 
