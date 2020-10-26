@@ -50,7 +50,6 @@ pub struct NoiseOutput<T> {
 }
 
 impl<S: ConnectionInfo> ConnectionInfo for NoiseOutput<S> {
-    // TODO: Now la&ra is not none in xx, but ought to find a method to fix it
     fn local_multiaddr(&self) -> Multiaddr {
         self.la.clone()
     }
