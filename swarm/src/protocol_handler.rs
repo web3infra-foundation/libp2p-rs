@@ -30,23 +30,23 @@
 //! that are supported, e.g. '/foo/1.0.0' and '/foo/2.0.0'.
 //!
 //! ## Handling a protocol
-//! 
+//!
 //! Communication with a remote over a set of protocols is initiated in one of two ways:
-//! 
+//!
 //! - Dialing by initiating a new outbound substream. In order to do so, `Swarm::control::new_stream()`
 //! must be invoked with the specified protocols to create a sub-stream. A protocol negotiation procedure
 //! will done for the protocols, in which one might be finally selected. Upon success, a `Swarm::Substream`
 //! will be returned by `Swarm::control::new_stream()`, and the protocol will be then handled by the owner
 //! of the Substream.
-//! 
+//!
 //! - Listening by accepting a new inbound substream. When a new inbound substream is created on a connection,
 //! `Swarm::muxer` is called to negotiate the protocol(s). Upon success, `ProtocolHandler::handle` is called
 //! with the final output of the upgrade.
-//! 
+//!
 //! ## Adding protocol handlers to Swarm
-//! 
+//!
 //! In general, multiple protocol handlers should be made into trait objects and then added to `Swarm::muxer`.
-//! 
+//!
 
 use crate::substream::Substream;
 use crate::{ProtocolId, SwarmError};

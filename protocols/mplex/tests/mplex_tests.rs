@@ -869,7 +869,7 @@ struct EndpointWriter {
 
 impl EndpointWriter {
     fn new(outgoing: mpsc::UnboundedSender<Vec<u8>>) -> Self {
-        EndpointWriter{ outgoing }
+        EndpointWriter { outgoing }
     }
 }
 
