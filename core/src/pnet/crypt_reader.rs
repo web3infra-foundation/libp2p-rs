@@ -19,9 +19,9 @@
 // DEALINGS IN THE SOFTWARE.
 
 use async_trait::async_trait;
-use libp2prs_traits::{ReadEx};
-use salsa20::{stream_cipher::SyncStreamCipher, XSalsa20};
 use futures::io::Error;
+use libp2prs_traits::ReadEx;
+use salsa20::{stream_cipher::SyncStreamCipher, XSalsa20};
 
 pub struct CryptReader<R> {
     inner: R,
@@ -34,10 +34,7 @@ where
 {
     /// Creates a new `CryptReader`.
     pub fn new(inner: R, cipher: XSalsa20) -> Self {
-        CryptReader {
-            inner,
-            cipher,
-        }
+        CryptReader { inner, cipher }
     }
 }
 

@@ -22,7 +22,7 @@ use crate::transport::ConnectionInfo;
 use crate::Multiaddr;
 use async_trait::async_trait;
 use futures::io;
-use libp2prs_traits::{WriteEx};
+use libp2prs_traits::WriteEx;
 use log::trace;
 use salsa20::{stream_cipher::SyncStreamCipher, XSalsa20};
 use std::fmt;

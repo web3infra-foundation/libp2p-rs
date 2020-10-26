@@ -25,9 +25,9 @@ use std::io;
 use std::io::ErrorKind;
 
 use async_trait::async_trait;
+use futures::io::{ReadHalf, WriteHalf};
 use futures::prelude::*;
 use futures::{AsyncReadExt, AsyncWriteExt};
-use futures::io::{ReadHalf, WriteHalf};
 
 pub use copy::copy;
 pub use ext::ReadExt2;
@@ -326,7 +326,6 @@ impl<T: ReadEx + WriteEx + Unpin + Clone> Split for T {
 pub trait SplittableReadWrite: ReadEx + WriteEx + Split + Unpin + 'static {}
 
 impl<T: ReadEx + WriteEx + Split + Unpin + 'static> SplittableReadWrite for T {}
-
 
 #[cfg(test)]
 mod tests {

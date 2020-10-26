@@ -5,12 +5,11 @@ use std::{cmp::min, io};
 use crate::{codec::Hmac, crypto::BoxStreamCipher, error::SecioError};
 
 use async_trait::async_trait;
-use libp2prs_traits::{ReadEx, WriteEx, Split};
 use futures::io::Error;
+use libp2prs_traits::{ReadEx, Split, WriteEx};
 
 /// SecureStreamReader
 pub struct SecureStreamReader<R> {
-
     socket: R,
 
     max_frame_len: usize,
@@ -32,12 +31,7 @@ impl<R> SecureStreamReader<R>
 where
     R: ReadEx + 'static,
 {
-    fn new(
-        reader: R,
-        max_frame_len: usize,
-        decode_cipher: BoxStreamCipher,
-        decode_hmac: Option<Hmac>,
-    ) -> Self {
+    fn new(reader: R, max_frame_len: usize, decode_cipher: BoxStreamCipher, decode_hmac: Option<Hmac>) -> Self {
         SecureStreamReader {
             socket: reader,
             max_frame_len,
@@ -93,7 +87,6 @@ where
 
         Ok(out)
     }
-
 }
 
 #[async_trait]
@@ -142,11 +135,7 @@ impl<W> SecureStreamWriter<W>
 where
     W: WriteEx + 'static,
 {
-    fn new(
-        writer: W,
-        encode_cipher: BoxStreamCipher,
-        encode_hmac: Option<Hmac>,
-    ) -> Self {
+    fn new(writer: W, encode_cipher: BoxStreamCipher, encode_hmac: Option<Hmac>) -> Self {
         SecureStreamWriter {
             socket: writer,
             encode_cipher,
@@ -188,7 +177,6 @@ where
     }
 }
 
-
 /// Encrypted stream
 pub struct SecureStream<R, W> {
     reader: SecureStreamReader<R>,
@@ -198,6 +186,7 @@ pub struct SecureStream<R, W> {
     nonce: Vec<u8>,
 }
 
+#[allow(clippy::too_many_arguments)]
 impl<R, W> SecureStream<R, W>
 where
     R: ReadEx + 'static,
@@ -239,7 +228,6 @@ where
 
         Ok(())
     }
-
 }
 
 #[async_trait]
@@ -292,7 +280,7 @@ mod tests {
     use async_std::task;
     use bytes::BytesMut;
     use futures::channel;
-    use libp2prs_traits::{ReadEx, WriteEx, Split};
+    use libp2prs_traits::{ReadEx, Split, WriteEx};
 
     fn test_decode_encode(cipher: CipherType) {
         let cipher_key = (0..cipher.key_size()).map(|_| rand::random::<u8>()).collect::<Vec<_>>();

@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 // use crate::connection::{Connection, TlsOrPlain};
-use crate::connection2::{Connection as Connection2, TlsOrPlain, TlsClientStream, TlsServerStream};
+use crate::connection::{Connection, TlsClientStream, TlsOrPlain, TlsServerStream};
 use crate::{error::WsError, tls};
 use async_trait::async_trait;
 use either::Either;
@@ -148,7 +148,7 @@ impl WsTransListener {
 
 #[async_trait]
 impl TransportListener for WsTransListener {
-    type Output = Connection2<TlsOrPlain<TcpTransStream>>;
+    type Output = Connection<TlsOrPlain<TcpTransStream>>;
     async fn accept(&mut self) -> Result<Self::Output, TransportError> {
         let raw_stream = self.inner.accept().await?;
         let local_addr = raw_stream.local_multiaddr();
@@ -161,13 +161,10 @@ impl TransportListener for WsTransListener {
             // begin TLS session
             let server = tls_config.server.expect("for use_tls we checked server is not none");
             trace!("[Server] awaiting TLS handshake with {}", remote1);
-            let stream = server
-                .accept(raw_stream)
-                .await
-                .map_err(move |e| {
-                    debug!("[Server] TLS handshake with {} failed: {}", remote1, e);
-                    WsError::Tls(tls::Error::from(e))
-                })?;
+            let stream = server.accept(raw_stream).await.map_err(move |e| {
+                debug!("[Server] TLS handshake with {} failed: {}", remote1, e);
+                WsError::Tls(tls::Error::from(e))
+            })?;
 
             let stream = TlsServerStream(stream);
 
@@ -203,7 +200,7 @@ impl TransportListener for WsTransListener {
             let mut builder = server.into_builder();
             builder.set_max_message_size(self.inner_config.max_data_size);
             builder.set_max_frame_size(self.inner_config.max_data_size);
-            Connection2::new(builder, local_addr, remote_addr)
+            Connection::new(builder, local_addr, remote_addr)
         };
         Ok(conn)
     }
@@ -215,7 +212,7 @@ impl TransportListener for WsTransListener {
 
 #[async_trait]
 impl Transport for WsConfig {
-    type Output = Connection2<TlsOrPlain<TcpTransStream>>;
+    type Output = Connection<TlsOrPlain<TcpTransStream>>;
     fn listen_on(&mut self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         log::debug!("WebSocket listen on addr: {}", addr);
         let mut inner_addr = addr.clone();
@@ -282,7 +279,7 @@ impl Transport for WsConfig {
 
 impl WsConfig {
     /// Attempty to dial the given address and perform a websocket handshake.
-    async fn dial_once(&mut self, address: Multiaddr) -> Result<Either<String, Connection2<TlsOrPlain<TcpTransStream>>>, WsError> {
+    async fn dial_once(&mut self, address: Multiaddr) -> Result<Either<String, Connection<TlsOrPlain<TcpTransStream>>>, WsError> {
         trace!("[Client] dial address: {}", address);
         let (host_port, dns_name) = host_and_dnsname(&address)?;
         if dns_name.is_some() {
@@ -342,10 +339,14 @@ impl WsConfig {
             client.add_extension(Box::new(Deflate::new(connection::Mode::Client)));
         }
 
-        match client.handshake().map_err(|e| {
-            error!("[Client] {:?}", e);
-            WsError::Handshake(Box::new(e))
-        }).await? {
+        match client
+            .handshake()
+            .map_err(|e| {
+                error!("[Client] {:?}", e);
+                WsError::Handshake(Box::new(e))
+            })
+            .await?
+        {
             handshake::ServerResponse::Redirect { status_code, location } => {
                 debug!("[Client] received redirect ({}); location: {}", status_code, location);
                 Ok(Either::Left(location))
@@ -364,7 +365,7 @@ impl WsConfig {
                     remote_addr,
                 )))
                  */
-                Ok(Either::Right(Connection2::new(client.into_builder(), local_addr, remote_addr)))
+                Ok(Either::Right(Connection::new(client.into_builder(), local_addr, remote_addr)))
             }
         }
     }

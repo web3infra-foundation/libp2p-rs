@@ -23,7 +23,7 @@ use crate::secure_stream::SecureStream;
 use crate::structs_proto::Exchange;
 use crate::PlainTextConfig;
 use libp2prs_core::{PeerId, PublicKey};
-use libp2prs_traits::{ReadEx, WriteEx, SplittableReadWrite};
+use libp2prs_traits::{ReadEx, SplittableReadWrite, WriteEx};
 use log::error;
 use prost::Message;
 use std::io;
@@ -51,7 +51,10 @@ pub struct Remote {
 ///
 /// If remote peer_id is the same as local, it means connected to self, throws error.
 /// Otherwise, returns an object that implements the `WriteEx` and `ReadEx` trait.
-pub(crate) async fn handshake<T>(socket: T, config: PlainTextConfig) -> Result<(SecureStream<T::Reader, T::Writer>, Remote), PlaintextError>
+pub(crate) async fn handshake<T>(
+    socket: T,
+    config: PlainTextConfig,
+) -> Result<(SecureStream<T::Reader, T::Writer>, Remote), PlaintextError>
 where
     T: SplittableReadWrite,
 {

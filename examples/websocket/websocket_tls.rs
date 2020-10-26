@@ -164,7 +164,7 @@ impl ProtocolHandler for MyProtocolHandler {
 }
 
 fn main() -> io::Result<()> {
-    env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();
+    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
     if std::env::args().nth(1) == Some("server".to_string()) {
         log::info!("Starting server ......");
         run_server()

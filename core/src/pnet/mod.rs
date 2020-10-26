@@ -21,8 +21,8 @@
 //! Libp2p nodes configured with a pre-shared key can only communicate with other nodes with
 //! the same key.
 
-mod crypt_writer;
 mod crypt_reader;
+mod crypt_writer;
 
 use crypt_writer::CryptWriter;
 use log::trace;
@@ -41,11 +41,11 @@ use std::{
     str::FromStr,
 };
 
+use crate::pnet::crypt_reader::CryptReader;
 use crate::transport::ConnectionInfo;
 use crate::Multiaddr;
 use async_trait::async_trait;
-use libp2prs_traits::{ReadEx, WriteEx, Split, SplittableReadWrite};
-use crate::pnet::crypt_reader::CryptReader;
+use libp2prs_traits::{ReadEx, Split, SplittableReadWrite, WriteEx};
 
 const KEY_SIZE: usize = 32;
 const NONCE_SIZE: usize = 24;
@@ -277,7 +277,6 @@ pub struct PnetOutput<S: Split> {
 
 impl<S: ConnectionInfo + SplittableReadWrite> PnetOutput<S> {
     fn new(inner: S, write_cipher: XSalsa20, read_cipher: XSalsa20) -> Self {
-
         let local_addr = inner.local_multiaddr();
         let remote_addr = inner.remote_multiaddr();
 

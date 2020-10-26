@@ -31,7 +31,7 @@ use crate::{
     Multiaddr, Transport,
 };
 use async_trait::async_trait;
-use libp2prs_traits::{SplittableReadWrite};
+use libp2prs_traits::SplittableReadWrite;
 
 /// ProtecotrTransport wraps an inner transport, adds the `pnet` support onto of it.
 #[derive(Debug, Clone)]
