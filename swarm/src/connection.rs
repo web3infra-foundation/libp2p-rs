@@ -294,6 +294,11 @@ impl Connection {
                 // sleep for the interval
                 task::sleep(interval).await;
 
+                //recheck, in case ping service has been terminated already
+                if !flag.load(Ordering::Relaxed) {
+                    break;
+                }
+
                 let stream_muxer = stream_muxer.clone();
                 let pids = pids.clone();
 

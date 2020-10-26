@@ -19,7 +19,8 @@
 // DEALINGS IN THE SOFTWARE.
 
 //! Implementation of the libp2p `Transport` trait for Websockets.
-pub mod connection;
+// pub mod connection;
+pub mod connection2;
 pub mod error;
 pub mod framed;
 pub mod tls;
@@ -29,6 +30,7 @@ use libp2prs_core::transport::{IListener, ITransport};
 use libp2prs_core::{multiaddr::Multiaddr, transport::TransportError, Transport};
 use libp2prs_dns::DnsConfig;
 use libp2prs_tcp::{TcpConfig, TcpTransStream};
+use crate::connection2::TlsOrPlain;
 
 /// A Websocket transport.
 #[derive(Clone)]
@@ -96,7 +98,7 @@ impl From<framed::WsConfig> for WsConfig {
 
 #[async_trait]
 impl Transport for WsConfig {
-    type Output = connection::Connection<TcpTransStream>;
+    type Output = connection2::Connection<TlsOrPlain<TcpTransStream>>;
     fn listen_on(&mut self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         self.inner.listen_on(addr)
     }
@@ -116,15 +118,15 @@ impl Transport for WsConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::connection::IncomingData;
     use super::WsConfig;
     use async_std::task;
-    use futures::prelude::*;
     use libp2prs_core::Multiaddr;
     use libp2prs_core::Transport;
+    use libp2prs_traits::{ReadEx, WriteEx};
+
     #[test]
     fn dialer_connects_to_listener_ipv4() {
-        //env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();
+        env_logger::from_env(env_logger::Env::default().default_filter_or("libp2prs_websocket=trace")).init();
         let listen_addr = "/ip4/127.0.0.1/tcp/38099/ws".parse().unwrap();
         let dial_addr = "/ip4/127.0.0.1/tcp/38099/ws".parse().unwrap();
         let s = task::spawn(async {
@@ -134,7 +136,9 @@ mod tests {
             client(dial_addr, false).await;
         });
         futures::executor::block_on(async {
-            futures::join!(s, c);
+            //futures::join!(s, c);
+            s.await;
+            c.await;
         });
     }
 
@@ -150,7 +154,8 @@ mod tests {
             client(dial_addr, true).await;
         });
         futures::executor::block_on(async {
-            futures::join!(s, c);
+            s.await;
+            c.await;
         });
     }
 
@@ -166,7 +171,8 @@ mod tests {
             client(dial_addr, false).await;
         });
         futures::executor::block_on(async {
-            futures::join!(s, c);
+            s.await;
+            c.await;
         });
     }
 
@@ -174,9 +180,9 @@ mod tests {
         let ws_config: WsConfig = WsConfig::new();
         let mut listener = ws_config.clone().listen_on(listen_addr.clone()).expect("listener");
         let mut stream = listener.accept().await.expect("no error");
-        while let Some(data) = stream.next().await {
-            assert_eq!(IncomingData::Binary(vec![1, 23, 5]), data.unwrap());
-        }
+        let mut buf = vec![0_u8; 3];
+        stream.read_exact2(&mut buf).await.expect("read_exact");
+        assert_eq!(vec![1, 23, 5], buf);
     }
 
     async fn client(dial_addr: Multiaddr, dns: bool) {
@@ -191,7 +197,10 @@ mod tests {
             .dial(dial_addr.clone())
             .await;
         assert_eq!(true, conn.is_ok());
-        let r = conn.unwrap().send_data(vec![1, 23, 5]).await;
+        let mut conn = conn.expect("");
+        let data = vec![1_u8, 23, 5];
+        log::debug!("[Client] write data {:?}", data);
+        let r = conn.write_all2(&data).await;
         assert_eq!(true, r.is_ok());
     }
 }

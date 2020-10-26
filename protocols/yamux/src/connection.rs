@@ -106,7 +106,7 @@ use crate::{
     Config, WindowUpdateMode, DEFAULT_CREDIT,
 };
 use control::Control;
-use libp2prs_traits::{ext::split::WriteHalf, ReadEx, ReadExt2, WriteEx};
+use libp2prs_traits::{SplitEx, SplittableReadWrite};
 use nohash_hasher::IntMap;
 use std::collections::VecDeque;
 use std::fmt;
@@ -215,12 +215,13 @@ impl Shutdown {
 
 type Result<T> = std::result::Result<T, ConnectionError>;
 
-pub struct Connection<T> {
+pub struct Connection<T: SplitEx> {
     id: Id,
     mode: Mode,
     config: Arc<Config>,
     reader: Pin<Box<dyn FusedStream<Item = std::result::Result<Frame<()>, FrameDecodeError>> + Send>>,
-    writer: io::Io<WriteHalf<T>>,
+    // writer: io::Io<WriteHalf<T>>,
+    writer: io::Io<T::Writer>,
     is_closed: bool,
     shutdown: Shutdown,
     next_stream_id: u32,
@@ -235,13 +236,14 @@ pub struct Connection<T> {
     pending_frames: IntMap<StreamId, (Frame<Data>, oneshot::Sender<usize>)>,
 }
 
-impl<T: ReadEx + WriteEx + Unpin + Send + 'static> Connection<T> {
+impl<T: SplittableReadWrite> Connection<T> {
     /// Create a new `Connection` from the given I/O resource.
     pub fn new(socket: T, cfg: Config, mode: Mode) -> Self {
         let id = Id::random(mode);
         log::debug!("new connection: {}", id);
 
-        let (reader, writer) = socket.split2();
+        let (reader, writer) = socket.split();
+        // let (reader, writer) = socket.split2();
         let reader = io::Io::new(id, reader, cfg.max_buffer_size);
         let reader = futures::stream::unfold(reader, |mut io| async { Some((io.recv_frame().await, io)) });
         let reader = Box::pin(reader);
@@ -864,13 +866,13 @@ fn send_flag(stat: &mut StreamStat, frame: &mut Frame<Data>) {
     }
 }
 
-impl<T> fmt::Display for Connection<T> {
+impl<T: SplitEx> fmt::Display for Connection<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "(Connection {} (streams {}))", self.id, self.streams.len())
     }
 }
 
-impl<T> Connection<T> {
+impl<T: SplitEx> Connection<T> {
     // next_stream_id is only used to get stream id when open stream
     fn next_stream_id(&mut self) -> Result<StreamId> {
         let proposed = StreamId::new(self.next_stream_id);

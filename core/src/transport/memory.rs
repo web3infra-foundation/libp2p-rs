@@ -18,20 +18,23 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+use std::{collections::hash_map::Entry, fmt, io, num::NonZeroU64, pin::Pin};
+use async_trait::async_trait;
+use fnv::FnvHashMap;
+use futures::{channel::mpsc, prelude::*, task::Context, task::Poll};
+use futures::{SinkExt, StreamExt};
+use pin_project::pin_project;
+
+use lazy_static::lazy_static;
+use libp2prs_multiaddr::{protocol, protocol::Protocol, Multiaddr};
+use parking_lot::Mutex;
+use rw_stream_sink::RwStreamSink;
+
 use crate::muxing::{IReadWrite, ReadWriteEx, StreamInfo};
 use crate::transport::{ConnectionInfo, IListener, ITransport, TransportListener};
 use crate::{transport::TransportError, Transport};
-use async_trait::async_trait;
-use fnv::FnvHashMap;
-use futures::io::Error;
-use futures::{channel::mpsc, prelude::*, task::Context, task::Poll, AsyncReadExt, AsyncWriteExt};
-use futures::{SinkExt, StreamExt};
-use lazy_static::lazy_static;
-use libp2prs_multiaddr::{protocol, protocol::Protocol, Multiaddr};
-use libp2prs_traits::{ReadEx, WriteEx};
-use parking_lot::Mutex;
-use rw_stream_sink::RwStreamSink;
-use std::{collections::hash_map::Entry, fmt, io, num::NonZeroU64, pin::Pin};
+// use libp2prs_traits::SplitEx;
+// use futures::io::{ReadHalf, WriteHalf};
 
 lazy_static! {
     static ref HUB: Mutex<FnvHashMap<NonZeroU64, mpsc::Sender<Channel>>> = Mutex::new(FnvHashMap::default());
@@ -191,7 +194,9 @@ fn parse_memory_addr(a: &Multiaddr) -> Result<u64, ()> {
 /// A channel represents an established, in-memory, logical connection between two endpoints.
 ///
 /// Implements `ReadEx` and `WriteEx`.
+#[pin_project]
 pub struct Channel {
+    #[pin]
     io: RwStreamSink<Chan<Vec<u8>>>,
     la: Multiaddr,
     ra: Multiaddr,
@@ -203,26 +208,41 @@ impl fmt::Debug for Channel {
     }
 }
 
-#[async_trait]
-impl ReadEx for Channel {
-    async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
-        self.io.read(buf).await
+// Implements AsyncRead & AsyncWrite
+impl AsyncRead for Channel {
+    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<io::Result<usize>> {
+        let this = self.project();
+        this.io.poll_read(cx, buf)
     }
 }
-#[async_trait]
-impl WriteEx for Channel {
-    async fn write2(&mut self, buf: &[u8]) -> Result<usize, Error> {
-        self.io.write(buf).await
+impl AsyncWrite for Channel {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
+        let this = self.project();
+        this.io.poll_write(cx, buf)
     }
 
-    async fn flush2(&mut self) -> Result<(), Error> {
-        self.io.flush().await
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let this = self.project();
+        this.io.poll_flush(cx)
     }
 
-    async fn close2(&mut self) -> Result<(), Error> {
-        self.io.close().await
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let this = self.project();
+        this.io.poll_close(cx)
     }
 }
+
+/*
+impl SplitEx for Channel {
+    type Reader = ReadHalf<RwStreamSink<Chan>>;
+    type Writer = WriteHalf<RwStreamSink<Chan>>;
+
+    fn split(self) -> (Self::Reader, Self::Writer) {
+        let (r, w) = AsyncReadExt::split(self.io);
+        (r, w)
+    }
+}
+ */
 
 /// A channel represents an established, in-memory, logical connection between two endpoints.
 ///
@@ -292,6 +312,7 @@ impl ReadWriteEx for Channel {
 
 #[cfg(test)]
 mod tests {
+    use libp2prs_traits::{ReadEx as _ReadEx, WriteEx as _WriteEx};
     use super::*;
 
     #[test]

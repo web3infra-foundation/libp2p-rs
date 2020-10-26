@@ -20,7 +20,10 @@
 
 //! Libp2p nodes configured with a pre-shared key can only communicate with other nodes with
 //! the same key.
+
 mod crypt_writer;
+mod crypt_reader;
+
 use crypt_writer::CryptWriter;
 use log::trace;
 use rand::RngCore;
@@ -41,7 +44,8 @@ use std::{
 use crate::transport::ConnectionInfo;
 use crate::Multiaddr;
 use async_trait::async_trait;
-use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx, SplitEx, SplittableReadWrite};
+use crate::pnet::crypt_reader::CryptReader;
 
 const KEY_SIZE: usize = 32;
 const NONCE_SIZE: usize = 24;
@@ -240,7 +244,7 @@ impl fmt::Display for PnetError {
 #[async_trait]
 impl<TSocket> Pnet<TSocket> for PnetConfig
 where
-    TSocket: ConnectionInfo + ReadEx + WriteEx + Unpin + 'static,
+    TSocket: ConnectionInfo + SplittableReadWrite,
 {
     type Output = PnetOutput<TSocket>;
     /// upgrade a connection to use pre shared key encryption.
@@ -263,16 +267,26 @@ where
 
 /// The result of a handshake. This implements AsyncRead and AsyncWrite and can therefore
 /// be used as base for additional upgrades.
-pub struct PnetOutput<S> {
-    inner: CryptWriter<S>,
-    read_cipher: XSalsa20,
+pub struct PnetOutput<S: SplitEx> {
+    reader: CryptReader<S::Reader>,
+    writer: CryptWriter<S::Writer>,
+
+    local_addr: Multiaddr,
+    remote_addr: Multiaddr,
 }
 
-impl<S: ReadEx + WriteEx + 'static> PnetOutput<S> {
+impl<S: ConnectionInfo + SplittableReadWrite> PnetOutput<S> {
     fn new(inner: S, write_cipher: XSalsa20, read_cipher: XSalsa20) -> Self {
+
+        let local_addr = inner.local_multiaddr();
+        let remote_addr = inner.remote_multiaddr();
+
+        let (r, w) = inner.split();
         Self {
-            inner: CryptWriter::with_capacity(WRITE_BUFFER_SIZE, inner, write_cipher),
-            read_cipher,
+            reader: CryptReader::new(r, read_cipher),
+            writer: CryptWriter::with_capacity(WRITE_BUFFER_SIZE, w, write_cipher),
+            local_addr,
+            remote_addr,
         }
     }
 }
@@ -280,46 +294,45 @@ impl<S: ReadEx + WriteEx + 'static> PnetOutput<S> {
 #[async_trait]
 impl<S> ReadEx for PnetOutput<S>
 where
-    S: ReadEx + WriteEx + 'static,
+    S: SplittableReadWrite,
 {
     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let result = self.inner.read2(buf).await;
-        if let Ok(size) = &result {
-            trace!("read {} bytes", size);
-            self.read_cipher.apply_keystream(&mut buf[..*size]);
-            trace!("decrypted {} bytes", size);
-        }
-        result
+        self.reader.read2(buf).await
     }
 }
 
 #[async_trait]
 impl<S> WriteEx for PnetOutput<S>
 where
-    S: ReadEx + WriteEx + 'static,
+    S: SplittableReadWrite,
 {
-    async fn write_all2(&mut self, buf: &[u8]) -> io::Result<()> {
-        self.inner.write_all2(buf).await
-    }
-
     async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.inner.write2(buf).await
+        self.writer.write2(buf).await
     }
 
     async fn flush2(&mut self) -> io::Result<()> {
-        self.inner.flush2().await
+        self.writer.flush2().await
     }
     async fn close2(&mut self) -> io::Result<()> {
-        self.inner.close2().await
+        self.writer.close2().await
     }
 }
 
-impl<S: ConnectionInfo> ConnectionInfo for PnetOutput<S> {
+impl<S: SplittableReadWrite> SplitEx for PnetOutput<S> {
+    type Reader = CryptReader<S::Reader>;
+    type Writer = CryptWriter<S::Writer>;
+
+    fn split(self) -> (Self::Reader, Self::Writer) {
+        (self.reader, self.writer)
+    }
+}
+
+impl<S: ConnectionInfo + SplitEx> ConnectionInfo for PnetOutput<S> {
     fn local_multiaddr(&self) -> Multiaddr {
-        self.inner.local_multiaddr()
+        self.local_addr.clone()
     }
     fn remote_multiaddr(&self) -> Multiaddr {
-        self.inner.remote_multiaddr()
+        self.remote_addr.clone()
     }
 }
 

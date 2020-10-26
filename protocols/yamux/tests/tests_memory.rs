@@ -20,9 +20,8 @@
 
 use async_std::task;
 use futures::channel::oneshot;
-use futures::stream::FusedStream;
-use futures::{channel::mpsc, prelude::*, ready};
-use libp2prs_traits::{ReadEx, WriteEx};
+use futures::{channel::mpsc, StreamExt, SinkExt};
+use libp2prs_traits::{ReadEx, WriteEx, SplitEx};
 use libp2prs_yamux::{
     connection::{stream::Stream as yamux_stream, Connection, Mode},
     Config,
@@ -30,11 +29,8 @@ use libp2prs_yamux::{
 use quickcheck::{QuickCheck, TestResult};
 use std::collections::VecDeque;
 use std::time::Duration;
-use std::{
-    io,
-    pin::Pin,
-    task::{Context, Poll},
-};
+use std::io;
+use futures::io::Error;
 
 const TEST_COUNT: u64 = 200;
 
@@ -43,8 +39,6 @@ fn prop_send_data_small() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             let mpa = Connection::new(a, Config::default(), Mode::Server);
             let mut mpa_ctrl = mpa.control();
@@ -96,8 +90,6 @@ fn prop_send_data_large() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             let mpa = Connection::new(a, Config::default(), Mode::Server);
             let mut mpa_ctrl = mpa.control();
@@ -169,8 +161,6 @@ fn prop_p2p() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             // create connection A
             let mpa = Connection::new(a, Config::default(), Mode::Server);
@@ -235,8 +225,6 @@ fn prop_accept() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             // create connection A
             let mpa = Connection::new(a, Config::default(), Mode::Server);
@@ -327,8 +315,6 @@ fn prop_echo() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             // create connection A
             let mpa = Connection::new(a, Config::default(), Mode::Server);
@@ -379,8 +365,6 @@ fn prop_concurrent() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             // create connection A
             let mpa = Connection::new(a, Config::default(), Mode::Server);
@@ -461,8 +445,6 @@ fn prop_half_close() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
             let (tx, rx) = oneshot::channel();
             let msg = vec![0x42; 40960];
 
@@ -529,8 +511,6 @@ fn prop_half_close2() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
             let msg = vec![0x42; 40960];
 
             // create connection A
@@ -619,8 +599,6 @@ fn prop_lazy_open() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
             let mut config = Config::default();
             config.set_lazy_open(true);
 
@@ -679,8 +657,6 @@ fn prop_cannot_read_after_close() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
             let mut config = Config::default();
             config.set_read_after_close(false);
             let config_b = config.clone();
@@ -742,8 +718,6 @@ fn prop_client_client() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             // create connection A
             let mpa = Connection::new(a, Config::default(), Mode::Client);
@@ -786,8 +760,6 @@ fn prop_server_server() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             // create connection A
             let mpa = Connection::new(a, Config::default(), Mode::Server);
@@ -830,8 +802,6 @@ fn prop_close_before_ack() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             let mpa = Connection::new(a, Config::default(), Mode::Server);
             let mut mpa_ctrl = mpa.control();
@@ -880,8 +850,6 @@ fn prop_stream_reset_after_conn_close() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             // create connection A
             let mpa = Connection::new(a, Config::default(), Mode::Server);
@@ -927,8 +895,6 @@ fn prop_stream_close_after_conn_close() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             // create connection A
             let mpa = Connection::new(a, Config::default(), Mode::Server);
@@ -975,8 +941,6 @@ fn prop_stream_write_after_conn_close() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             // create connection A
             let mpa = Connection::new(a, Config::default(), Mode::Server);
@@ -1023,8 +987,6 @@ fn prop_stream_read_after_conn_close() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             // create connection A
             let mpa = Connection::new(a, Config::default(), Mode::Server);
@@ -1072,8 +1034,6 @@ fn prop_goaway() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             // create connection A
             let mpa = Connection::new(a, Config::default(), Mode::Server);
@@ -1127,8 +1087,6 @@ fn prop_max_streams() {
     fn prop(n: usize) -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             let max_streams = n % 100;
             let mut cfg = Config::default();
@@ -1185,8 +1143,6 @@ fn prop_stream_reset_write() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             // create connection A
             let mpa = Connection::new(a, Config::default(), Mode::Server);
@@ -1234,8 +1190,6 @@ fn prop_stream_reset_read() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             // create connection A
             let mpa = Connection::new(a, Config::default(), Mode::Server);
@@ -1302,8 +1256,6 @@ fn prop_accept_stream_after_close_conn() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             // create connection A
             let mpa = Connection::new(a, Config::default(), Mode::Server);
@@ -1351,8 +1303,6 @@ fn prop_fuzz_close_connection() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             // create connection A
             let mpa = Connection::new(a, Config::default(), Mode::Server);
@@ -1395,8 +1345,6 @@ fn prop_closing() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             // create connection A
             let mpa = Connection::new(a, Config::default(), Mode::Server);
@@ -1439,8 +1387,6 @@ fn prop_reset() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             // create connection A
             let mpa = Connection::new(a, Config::default(), Mode::Server);
@@ -1501,8 +1447,6 @@ fn prop_reset_after_eof() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             // create connection A
             let mpa = Connection::new(a, Config::default(), Mode::Server);
@@ -1557,8 +1501,6 @@ fn prop_open_after_close() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             // create connection A
             let mpa = Connection::new(a, Config::default(), Mode::Server);
@@ -1610,8 +1552,6 @@ fn prop_read_after_close() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             // create connection A
             let mpa = Connection::new(a, Config::default(), Mode::Server);
@@ -1659,8 +1599,6 @@ fn prop_read_after_close2() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
 
             let mpa = Connection::new(a, Config::default(), Mode::Server);
             let mut mpa_ctrl = mpa.control();
@@ -1720,8 +1658,6 @@ fn prop_fuzz_close_stream() {
     fn prop() -> TestResult {
         task::block_on(async {
             let (a, b) = Endpoint::new();
-            let a = a.into_async_read();
-            let b = b.into_async_read();
             let (tx, rx) = oneshot::channel();
 
             // create connection A
@@ -1794,9 +1730,99 @@ fn prop_fuzz_close_stream() {
 
 #[derive(Debug)]
 struct Endpoint {
+    incoming: EndpointReader,
+    outgoing: EndpointWriter,
+}
+
+#[derive(Debug)]
+struct EndpointReader {
     incoming: mpsc::UnboundedReceiver<Vec<u8>>,
+    recv_buf: Vec<u8>,
+}
+
+impl EndpointReader {
+    fn new(incoming: mpsc::UnboundedReceiver<Vec<u8>>) -> Self {
+        EndpointReader {
+            incoming,
+            recv_buf: Vec::default(),
+        }
+    }
+
+    #[inline]
+    fn drain(&mut self, buf: &mut [u8]) -> usize {
+        // Return zero if there is no data remaining in the internal buffer.
+        if self.recv_buf.is_empty() {
+            return 0;
+        }
+
+        // calculate number of bytes that we can copy
+        let n = ::std::cmp::min(buf.len(), self.recv_buf.len());
+
+        // Copy data to the output buffer
+        buf[..n].copy_from_slice(self.recv_buf[..n].as_ref());
+
+        // drain n bytes of recv_buf
+        self.recv_buf = self.recv_buf.split_off(n);
+
+        n
+    }
+}
+
+#[async_trait]
+impl ReadEx for EndpointReader {
+    async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
+        let copied = self.drain(buf);
+        if copied > 0 {
+            log::debug!("drain recv buffer data size: {:?}", copied);
+            return Ok(copied);
+        }
+        let t = self.incoming.next().await
+            .ok_or(io::Error::new(io::ErrorKind::UnexpectedEof, "channel closed"))?;
+
+        let n = t.len();
+        if buf.len() >= n {
+            buf[..n].copy_from_slice(t.as_ref());
+            Ok(n)
+        } else {
+            // fill internal recv buffer
+            self.recv_buf = t;
+            // drain for input buffer
+            let copied = self.drain(buf);
+            Ok(copied)
+        }
+    }
+}
+
+#[derive(Debug)]
+struct EndpointWriter {
     outgoing: mpsc::UnboundedSender<Vec<u8>>,
 }
+
+impl EndpointWriter {
+    fn new(outgoing: mpsc::UnboundedSender<Vec<u8>>) -> Self {
+        EndpointWriter{ outgoing }
+    }
+}
+
+#[async_trait]
+impl WriteEx for EndpointWriter {
+    async fn write2(&mut self, buf: &[u8]) -> Result<usize, Error> {
+        let n = buf.len();
+        self.outgoing.send(Vec::from(buf)).await
+            .or(Err(io::Error::new(io::ErrorKind::BrokenPipe.into(), "send failure")))?;
+        Ok(n)
+    }
+
+    async fn flush2(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+
+    async fn close2(&mut self) -> Result<(), Error> {
+        self.outgoing.close_channel();
+        Ok(())
+    }
+}
+
 
 impl Endpoint {
     fn new() -> (Self, Self) {
@@ -1804,26 +1830,61 @@ impl Endpoint {
         let (tx_b, rx_b) = mpsc::unbounded();
 
         let a = Endpoint {
-            incoming: rx_a,
-            outgoing: tx_b,
+            incoming: EndpointReader::new(rx_a),
+            outgoing: EndpointWriter::new(tx_b),
         };
         let b = Endpoint {
-            incoming: rx_b,
-            outgoing: tx_a,
+            incoming: EndpointReader::new(rx_b),
+            outgoing: EndpointWriter::new(tx_a),
         };
-
         (a, b)
     }
 }
 
+use async_trait::async_trait;
+
+#[async_trait]
+impl ReadEx for Endpoint {
+    async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
+        self.incoming.read2(buf).await
+    }
+}
+
+#[async_trait]
+impl WriteEx for Endpoint {
+    async fn write2(&mut self, buf: &[u8]) -> Result<usize, Error> {
+        self.outgoing.write2(buf).await
+    }
+
+    async fn flush2(&mut self) -> Result<(), Error> {
+        self.outgoing.flush2().await
+    }
+
+    async fn close2(&mut self) -> Result<(), Error> {
+        self.outgoing.flush2().await
+    }
+}
+
+impl SplitEx for Endpoint {
+    type Reader = EndpointReader;
+    type Writer = EndpointWriter;
+
+    fn split(self) -> (Self::Reader, Self::Writer) {
+        (self.incoming, self.outgoing)
+    }
+}
+
+
+/*
 impl Stream for Endpoint {
     type Item = Result<Vec<u8>, io::Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        if self.incoming.is_terminated() {
+        let mut recver = futures::ready!(self.incoming.lock().poll_unpin(cx));
+        if recver.is_terminated() {
             return Poll::Ready(None);
         }
-        if let Some(b) = ready!(Pin::new(&mut self.incoming).poll_next(cx)) {
+        if let Some(b) = ready!(Pin::new(&mut recver).poll_next(cx)) {
             return Poll::Ready(Some(Ok(b)));
         }
         Poll::Pending
@@ -1854,3 +1915,4 @@ impl AsyncWrite for Endpoint {
             .map_err(|_| io::ErrorKind::ConnectionAborted.into())
     }
 }
+ */

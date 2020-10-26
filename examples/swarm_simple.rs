@@ -38,6 +38,7 @@ use libp2prs_swarm::{DummyProtocolHandler, Swarm, SwarmError};
 use libp2prs_tcp::TcpConfig;
 use libp2prs_traits::{ReadEx, WriteEx};
 use libp2prs_yamux as yamux;
+use libp2prs_mplex as mplex;
 
 //use libp2prs_swarm::Swarm::network::NetworkConfig;
 
@@ -113,7 +114,9 @@ fn run_server() {
 
     swarm.start();
 
-    loop {}
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(5));
+    }
 }
 
 fn run_client() {
@@ -121,8 +124,8 @@ fn run_client() {
 
     let _addr: Multiaddr = "/ip4/127.0.0.1/tcp/8086".parse().unwrap();
     let sec = secio::Config::new(keys.clone());
-    let mux = yamux::Config::new();
-    //let mux = mplex::Config::new();
+    //let mux = yamux::Config::new();
+    let mux = mplex::Config::new();
     //let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
 
@@ -149,9 +152,9 @@ fn run_client() {
 
         let _ = stream.write_all2(b"hello").await;
 
-        task::sleep(Duration::from_secs(40)).await;
+        task::sleep(Duration::from_secs(10)).await;
 
-        //stream.close2().await;
+        let _ = stream.close2().await;
 
         log::info!("shutdown is completed");
     });

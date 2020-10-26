@@ -18,7 +18,8 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use crate::connection::{Connection, TlsOrPlain};
+// use crate::connection::{Connection, TlsOrPlain};
+use crate::connection2::{Connection as Connection2, TlsOrPlain, TlsClientStream, TlsServerStream};
 use crate::{error::WsError, tls};
 use async_trait::async_trait;
 use either::Either;
@@ -147,27 +148,28 @@ impl WsTransListener {
 
 #[async_trait]
 impl TransportListener for WsTransListener {
-    type Output = Connection<TcpTransStream>;
+    type Output = Connection2<TlsOrPlain<TcpTransStream>>;
     async fn accept(&mut self) -> Result<Self::Output, TransportError> {
         let raw_stream = self.inner.accept().await?;
-        let inner_raw_stream = raw_stream.clone();
         let local_addr = raw_stream.local_multiaddr();
         let remote_addr = raw_stream.remote_multiaddr();
         let remote1 = remote_addr.clone(); // used for logging
         let remote2 = remote_addr.clone(); // used for logging
         let tls_config = self.inner_config.tls_config.clone();
-        trace!("incoming connection from {}", remote1);
+        trace!("[Server] incoming connection from {}", remote1);
         let stream = if self.use_tls {
             // begin TLS session
             let server = tls_config.server.expect("for use_tls we checked server is not none");
-            trace!("awaiting TLS handshake with {}", remote1);
+            trace!("[Server] awaiting TLS handshake with {}", remote1);
             let stream = server
                 .accept(raw_stream)
+                .await
                 .map_err(move |e| {
-                    debug!("TLS handshake with {} failed: {}", remote1, e);
+                    debug!("[Server] TLS handshake with {} failed: {}", remote1, e);
                     WsError::Tls(tls::Error::from(e))
-                })
-                .await?;
+                })?;
+
+            let stream = TlsServerStream(stream);
 
             let stream: TlsOrPlain<_> = AsyncEitherOutput::A(AsyncEitherOutput::B(stream));
             stream
@@ -176,7 +178,7 @@ impl TransportListener for WsTransListener {
             AsyncEitherOutput::B(raw_stream)
         };
 
-        trace!("receiving websocket handshake request from {}", remote2);
+        trace!("[Server] receiving websocket handshake request from {}", remote2);
         let mut server = handshake::Server::new(stream);
 
         if self.inner_config.use_deflate {
@@ -184,24 +186,24 @@ impl TransportListener for WsTransListener {
         }
 
         let ws_key = {
-            let request = server.receive_request().map_err(|e| WsError::Handshake(Box::new(e))).await?;
+            let request = server.receive_request().await.map_err(|e| WsError::Handshake(Box::new(e)))?;
             request.into_key()
         };
 
-        debug!("accepting websocket handshake request from {}", remote2);
+        debug!("[Server] accepting websocket handshake request from {}", remote2);
 
         let response = handshake::server::Response::Accept {
             key: &ws_key,
             protocol: None,
         };
 
-        server.send_response(&response).map_err(|e| WsError::Handshake(Box::new(e))).await?;
+        server.send_response(&response).await.map_err(|e| WsError::Handshake(Box::new(e)))?;
 
         let conn = {
             let mut builder = server.into_builder();
             builder.set_max_message_size(self.inner_config.max_data_size);
             builder.set_max_frame_size(self.inner_config.max_data_size);
-            Connection::new(inner_raw_stream, builder, local_addr, remote_addr)
+            Connection2::new(builder, local_addr, remote_addr)
         };
         Ok(conn)
     }
@@ -213,8 +215,9 @@ impl TransportListener for WsTransListener {
 
 #[async_trait]
 impl Transport for WsConfig {
-    type Output = Connection<TcpTransStream>;
+    type Output = Connection2<TlsOrPlain<TcpTransStream>>;
     fn listen_on(&mut self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
+        log::debug!("WebSocket listen on addr: {}", addr);
         let mut inner_addr = addr.clone();
 
         let (use_tls, _proto) = match inner_addr.pop() {
@@ -279,11 +282,11 @@ impl Transport for WsConfig {
 
 impl WsConfig {
     /// Attempty to dial the given address and perform a websocket handshake.
-    async fn dial_once(&mut self, address: Multiaddr) -> Result<Either<String, Connection<TcpTransStream>>, WsError> {
-        trace!("dial address: {}", address);
+    async fn dial_once(&mut self, address: Multiaddr) -> Result<Either<String, Connection2<TlsOrPlain<TcpTransStream>>>, WsError> {
+        trace!("[Client] dial address: {}", address);
         let (host_port, dns_name) = host_and_dnsname(&address)?;
         if dns_name.is_some() {
-            trace!("host_port: {:?}  dns_name:{:?}", host_port, dns_name.clone().unwrap());
+            trace!("[Client] host_port: {:?}  dns_name:{:?}", host_port, dns_name.clone().unwrap());
         }
         let mut inner_addr = address.clone();
 
@@ -291,36 +294,38 @@ impl WsConfig {
             Some(Protocol::Ws(path)) => (false, path),
             Some(Protocol::Wss(path)) => {
                 if dns_name.is_none() {
-                    debug!("no DNS name in {}", address);
+                    debug!("[Client] no DNS name in {}", address);
                     return Err(WsError::InvalidMultiaddr(address));
                 }
                 (true, path)
             }
             _ => {
-                debug!("{} is not a websocket multiaddr", address);
+                debug!("[Client] {} is not a websocket multiaddr", address);
                 return Err(WsError::InvalidMultiaddr(address));
             }
         };
 
-        let raw_stream = self.transport.dial(inner_addr).map_err(WsError::Transport).await?;
-        let inner_raw_stream = raw_stream.clone();
-        trace!("connected to {}", address);
+        let raw_stream = self.transport.dial(inner_addr).await.map_err(WsError::Transport)?;
+        // let inner_raw_stream = raw_stream.clone();
+        trace!("[Client] connected to {}", address);
         let local_addr = raw_stream.local_multiaddr();
         let remote_addr = raw_stream.remote_multiaddr();
         let stream = if use_tls {
             // begin TLS session
             let dns_name = dns_name.expect("for use_tls we have checked that dns_name is some");
-            trace!("starting TLS handshake with {}", address);
+            trace!("[Client] starting TLS handshake with {}", address);
             let stream = self
                 .inner_config
                 .tls_config
                 .client
                 .connect(&dns_name, raw_stream)
+                .await
                 .map_err(|e| {
-                    debug!("TLS handshake with {} failed: {}", address, e);
+                    debug!("[Client] TLS handshake with {} failed: {}", address, e);
                     WsError::Tls(tls::Error::from(e))
-                })
-                .await?;
+                })?;
+
+            let stream = TlsClientStream(stream);
 
             let stream: TlsOrPlain<_> = AsyncEitherOutput::A(AsyncEitherOutput::A(stream));
             stream
@@ -329,7 +334,7 @@ impl WsConfig {
             AsyncEitherOutput::B(raw_stream)
         };
 
-        trace!("sending websocket handshake request to {}", address);
+        trace!("[Client] sending websocket handshake request to {}", address);
 
         let mut client = handshake::Client::new(stream, &host_port, path.as_ref());
 
@@ -337,23 +342,29 @@ impl WsConfig {
             client.add_extension(Box::new(Deflate::new(connection::Mode::Client)));
         }
 
-        match client.handshake().map_err(|e| WsError::Handshake(Box::new(e))).await? {
+        match client.handshake().map_err(|e| {
+            error!("[Client] {:?}", e);
+            WsError::Handshake(Box::new(e))
+        }).await? {
             handshake::ServerResponse::Redirect { status_code, location } => {
-                debug!("received redirect ({}); location: {}", status_code, location);
+                debug!("[Client] received redirect ({}); location: {}", status_code, location);
                 Ok(Either::Left(location))
             }
             handshake::ServerResponse::Rejected { status_code } => {
-                let msg = format!("server rejected handshake; status code = {}", status_code);
+                let msg = format!("[Client] server rejected handshake; status code = {}", status_code);
                 Err(WsError::Handshake(msg.into()))
             }
             handshake::ServerResponse::Accepted { .. } => {
-                debug!("websocket handshake with {} successful", address);
+                debug!("[Client] websocket handshake with {} successful", address);
+                /*
                 Ok(Either::Right(Connection::new(
                     inner_raw_stream,
                     client.into_builder(),
                     local_addr,
                     remote_addr,
                 )))
+                 */
+                Ok(Either::Right(Connection2::new(client.into_builder(), local_addr, remote_addr)))
             }
         }
     }

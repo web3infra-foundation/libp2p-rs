@@ -9,11 +9,11 @@ use crate::{crypto::cipher::CipherType, error::SecioError, exchange::KeyAgreemen
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::{Multiaddr, PeerId, PublicKey};
 
-use crate::codec::secure_stream::SecureStream;
+use crate::codec::secure_stream::{SecureStream, SecureStreamReader, SecureStreamWriter};
 use libp2prs_core::secure_io::SecureInfo;
 use libp2prs_core::transport::{ConnectionInfo, TransportError};
 use libp2prs_core::upgrade::{UpgradeInfo, Upgrader};
-use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx, SplitEx, SplittableReadWrite};
 use std::io;
 
 /// Encrypted and decrypted codec implementation, and stream handle
@@ -118,9 +118,9 @@ impl Config {
     ///
     /// On success, produces a `SecureStream` that can then be used to encode/decode
     /// communications, plus the public key of the remote, plus the ephemeral public key.
-    pub async fn handshake<T>(self, socket: T) -> Result<(SecureStream<T>, PublicKey, EphemeralPublicKey), SecioError>
+    pub async fn handshake<T>(self, socket: T) -> Result<(SecureStream<T::Reader, T::Writer>, PublicKey, EphemeralPublicKey), SecioError>
     where
-        T: ReadEx + WriteEx + Send + 'static,
+        T: SplittableReadWrite,
     {
         handshake(socket, self).await
     }
@@ -136,7 +136,7 @@ impl UpgradeInfo for Config {
 
 async fn make_secure_output<T>(config: Config, socket: T) -> Result<SecioOutput<T>, TransportError>
 where
-    T: ConnectionInfo + ReadEx + WriteEx + Send + Unpin + 'static,
+    T: ConnectionInfo + SplittableReadWrite,
 {
     // TODO: to be more elegant, local private key could be returned by handshake()
     let pri_key = config.key.clone();
@@ -159,7 +159,7 @@ where
 #[async_trait]
 impl<T> Upgrader<T> for Config
 where
-    T: ConnectionInfo + ReadEx + WriteEx + Send + Unpin + 'static,
+    T: ConnectionInfo + SplittableReadWrite,
 {
     type Output = SecioOutput<T>;
 
@@ -173,9 +173,9 @@ where
 }
 
 /// Output of the secio protocol. It implements the SecureStream trait
-pub struct SecioOutput<S> {
+pub struct SecioOutput<S: SplitEx> {
     /// The encrypted stream.
-    pub stream: SecureStream<S>,
+    pub stream: SecureStream<S::Reader, S::Writer>,
     /// The local multiaddr of the connection
     la: Multiaddr,
     /// The remote multiaddr of the connection
@@ -190,7 +190,7 @@ pub struct SecioOutput<S> {
     pub remote_peer_id: PeerId,
 }
 
-impl<S: ConnectionInfo> ConnectionInfo for SecioOutput<S> {
+impl<S: ConnectionInfo + SplitEx> ConnectionInfo for SecioOutput<S> {
     fn local_multiaddr(&self) -> Multiaddr {
         self.la.clone()
     }
@@ -200,7 +200,7 @@ impl<S: ConnectionInfo> ConnectionInfo for SecioOutput<S> {
     }
 }
 
-impl<S> SecureInfo for SecioOutput<S> {
+impl<S: SplitEx> SecureInfo for SecioOutput<S> {
     fn local_peer(&self) -> PeerId {
         self.local_peer_id.clone()
     }
@@ -219,14 +219,14 @@ impl<S> SecureInfo for SecioOutput<S> {
 }
 
 #[async_trait]
-impl<S: ReadEx + WriteEx + Unpin + Send + 'static> ReadEx for SecioOutput<S> {
+impl<S: SplittableReadWrite> ReadEx for SecioOutput<S> {
     async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
         self.stream.read2(buf).await
     }
 }
 
 #[async_trait]
-impl<S: ReadEx + WriteEx + Unpin + Send + 'static> WriteEx for SecioOutput<S> {
+impl<S: SplittableReadWrite> WriteEx for SecioOutput<S> {
     async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
         self.stream.write2(buf).await
     }
@@ -237,6 +237,16 @@ impl<S: ReadEx + WriteEx + Unpin + Send + 'static> WriteEx for SecioOutput<S> {
 
     async fn close2(&mut self) -> Result<(), io::Error> {
         self.stream.close2().await
+    }
+}
+
+impl<S: SplittableReadWrite> SplitEx for SecioOutput<S> {
+    type Reader = SecureStreamReader<S::Reader>;
+    type Writer = SecureStreamWriter<S::Writer>;
+
+    fn split(self) -> (Self::Reader, Self::Writer) {
+        let (r, w) = self.stream.split();
+        (r, w)
     }
 }
 
