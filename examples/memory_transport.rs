@@ -61,7 +61,6 @@ fn main() {
                 loop {
                     if let Ok(stream) = stream_muxer.accept_stream().await {
                         log::info!("server accepted a new substream {:?}", stream);
-                        //let stream_cc=stream.box_clone();
                         let mut stream_r = stream.clone();
                         let mut stream_w = stream.clone();
                         task::spawn(async move {

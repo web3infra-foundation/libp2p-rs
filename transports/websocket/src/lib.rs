@@ -39,12 +39,12 @@ pub struct WsConfig {
 }
 
 impl WsConfig {
-    /// Create a new websocket transport based on the given transport.
+    /// Create a new websocket transport based on the tcp transport.
     pub fn new() -> Self {
         framed::WsConfig::new(TcpConfig::default().box_clone()).into()
     }
 
-    /// Create a new websocket transport based on the given transport.
+    /// Create a new websocket transport based on the dns transport.
     pub fn new_with_dns() -> Self {
         framed::WsConfig::new(DnsConfig::new(TcpConfig::default()).box_clone()).into()
     }

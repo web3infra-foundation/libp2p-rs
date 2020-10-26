@@ -182,7 +182,7 @@ lazy_static! {
 fn run_server() -> io::Result<()> {
     let options = ServerTlsConfig::from_args();
     let addr = format!("/ip4/{}/tcp/{}/wss", &options.host, &options.port);
-    log::info!("server addr1 {}", &addr);
+    log::info!("server addr {}", &addr);
     let keys = SERVER_KEY.clone();
 
     let listen_addr: Multiaddr = addr.parse().unwrap();
