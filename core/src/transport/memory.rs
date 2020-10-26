@@ -33,7 +33,7 @@ use rw_stream_sink::RwStreamSink;
 use crate::muxing::{IReadWrite, ReadWriteEx, StreamInfo};
 use crate::transport::{ConnectionInfo, IListener, ITransport, TransportListener};
 use crate::{transport::TransportError, Transport};
-// use libp2prs_traits::Split;
+// use libp2prs_traits::SplitEx;
 // use futures::io::{ReadHalf, WriteHalf};
 
 lazy_static! {
@@ -233,7 +233,7 @@ impl AsyncWrite for Channel {
 }
 
 /*
-impl Split for Channel {
+impl SplitEx for Channel {
     type Reader = ReadHalf<RwStreamSink<Chan>>;
     type Writer = WriteHalf<RwStreamSink<Chan>>;
 

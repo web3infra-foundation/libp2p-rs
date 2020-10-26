@@ -13,7 +13,7 @@ use crate::codec::secure_stream::{SecureStream, SecureStreamReader, SecureStream
 use libp2prs_core::secure_io::SecureInfo;
 use libp2prs_core::transport::{ConnectionInfo, TransportError};
 use libp2prs_core::upgrade::{UpgradeInfo, Upgrader};
-use libp2prs_traits::{ReadEx, Split, SplittableReadWrite, WriteEx};
+use libp2prs_traits::{ReadEx, SplitEx, SplittableReadWrite, WriteEx};
 use std::io;
 
 /// Encrypted and decrypted codec implementation, and stream handle
@@ -176,7 +176,7 @@ where
 }
 
 /// Output of the secio protocol. It implements the SecureStream trait
-pub struct SecioOutput<S: Split> {
+pub struct SecioOutput<S: SplitEx> {
     /// The encrypted stream.
     pub stream: SecureStream<S::Reader, S::Writer>,
     /// The local multiaddr of the connection
@@ -193,7 +193,7 @@ pub struct SecioOutput<S: Split> {
     pub remote_peer_id: PeerId,
 }
 
-impl<S: ConnectionInfo + Split> ConnectionInfo for SecioOutput<S> {
+impl<S: ConnectionInfo + SplitEx> ConnectionInfo for SecioOutput<S> {
     fn local_multiaddr(&self) -> Multiaddr {
         self.la.clone()
     }
@@ -203,7 +203,7 @@ impl<S: ConnectionInfo + Split> ConnectionInfo for SecioOutput<S> {
     }
 }
 
-impl<S: Split> SecureInfo for SecioOutput<S> {
+impl<S: SplitEx> SecureInfo for SecioOutput<S> {
     fn local_peer(&self) -> PeerId {
         self.local_peer_id.clone()
     }
@@ -243,7 +243,7 @@ impl<S: SplittableReadWrite> WriteEx for SecioOutput<S> {
     }
 }
 
-impl<S: SplittableReadWrite> Split for SecioOutput<S> {
+impl<S: SplittableReadWrite> SplitEx for SecioOutput<S> {
     type Reader = SecureStreamReader<S::Reader>;
     type Writer = SecureStreamWriter<S::Writer>;
 

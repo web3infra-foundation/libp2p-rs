@@ -105,7 +105,7 @@ use crate::{
     pause::Pausable,
 };
 use control::Control;
-use libp2prs_traits::{Split, SplittableReadWrite};
+use libp2prs_traits::{SplitEx, SplittableReadWrite};
 use nohash_hasher::IntMap;
 use std::collections::VecDeque;
 use std::fmt;
@@ -195,7 +195,7 @@ const RECEIVE_TIMEOUT: Duration = Duration::from_secs(5);
 
 type Result<T> = std::result::Result<T, ConnectionError>;
 
-pub struct Connection<T: Split> {
+pub struct Connection<T: SplitEx> {
     id: Id,
     reader: Pin<Box<dyn FusedStream<Item = std::result::Result<Frame, FrameDecodeError>> + Send>>,
     writer: io::IO<T::Writer>,
@@ -590,13 +590,13 @@ where
     }
 }
 
-impl<T: Split> fmt::Display for Connection<T> {
+impl<T: SplitEx> fmt::Display for Connection<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "(Connection {} (streams {}))", self.id, self.streams.len())
     }
 }
 
-impl<T: Split> Connection<T> {
+impl<T: SplitEx> Connection<T> {
     // next_stream_id is only used to get stream id when open stream
     fn next_stream_id(&mut self) -> Result<StreamID> {
         let proposed = StreamID::new(self.next_stream_id, true);

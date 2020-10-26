@@ -31,7 +31,7 @@ use std::fmt;
 use libp2prs_core::muxing::{IReadWrite, IStreamMuxer, ReadWriteEx, StreamInfo, StreamMuxer, StreamMuxerEx};
 use libp2prs_core::transport::{ConnectionInfo, TransportError};
 use libp2prs_core::upgrade::{UpgradeInfo, Upgrader};
-use libp2prs_traits::{Split, SplittableReadWrite};
+use libp2prs_traits::{SplitEx, SplittableReadWrite};
 
 use crate::connection::Connection;
 use connection::{control::Control, stream::Stream, Id};
@@ -60,7 +60,7 @@ impl Default for Config {
 ///
 /// This implementation isn't capable of detecting when the underlying socket changes its address,
 /// and no [`StreamMuxerEvent::AddressChange`] event is ever emitted.
-pub struct Mplex<C: Split> {
+pub struct Mplex<C: SplitEx> {
     /// The [`futures::stream::Stream`] of incoming substreams.
     conn: Option<Connection<C>>,
     /// Handle to control the connection.
@@ -84,7 +84,7 @@ pub struct Mplex<C: Split> {
     pub remote_peer_id: PeerId,
 }
 
-impl<C: Split> Clone for Mplex<C> {
+impl<C: SplitEx> Clone for Mplex<C> {
     fn clone(&self) -> Self {
         Mplex {
             conn: None,
@@ -100,7 +100,7 @@ impl<C: Split> Clone for Mplex<C> {
     }
 }
 
-impl<C: Split> fmt::Debug for Mplex<C> {
+impl<C: SplitEx> fmt::Debug for Mplex<C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Mplex")
             .field("Id", &self.id)
@@ -137,7 +137,7 @@ impl<C: ConnectionInfo + SecureInfo + SplittableReadWrite> Mplex<C> {
     }
 }
 
-impl<C: Split + Send> ConnectionInfo for Mplex<C> {
+impl<C: SplitEx> ConnectionInfo for Mplex<C> {
     fn local_multiaddr(&self) -> Multiaddr {
         self.la.clone()
     }
@@ -146,7 +146,7 @@ impl<C: Split + Send> ConnectionInfo for Mplex<C> {
     }
 }
 
-impl<C: Split> SecureInfo for Mplex<C> {
+impl<C: SplitEx> SecureInfo for Mplex<C> {
     fn local_peer(&self) -> PeerId {
         self.local_peer_id.clone()
     }

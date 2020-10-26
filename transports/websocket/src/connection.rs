@@ -3,7 +3,7 @@ use futures::prelude::*;
 use libp2prs_core::either::AsyncEitherOutput;
 use libp2prs_core::multiaddr::Multiaddr;
 use libp2prs_core::transport::ConnectionInfo;
-use libp2prs_traits::{ReadEx, Split, WriteEx};
+use libp2prs_traits::{ReadEx, SplitEx, WriteEx};
 use soketto::connection;
 use std::{
     io::{self, Error},
@@ -156,7 +156,7 @@ where
     }
 }
 
-impl<T> Split for Connection<T>
+impl<T> SplitEx for Connection<T>
 where
     T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {

@@ -32,7 +32,7 @@ matrix:
     - stage: Check
       name: Clippy
       script:
-        -  RUSTFLAGS='-F warnings' cargo clippy --all
+        -  RUSTFLAGS='-F warnings' cargo clippy --all  --examples --tests
     - stage: Test
       name: unit test and bench test
       os: linux

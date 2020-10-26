@@ -31,7 +31,7 @@ use libp2prs_core::secure_io::SecureInfo;
 use libp2prs_core::transport::{ConnectionInfo, TransportError};
 use libp2prs_core::upgrade::{UpgradeInfo, Upgrader};
 use libp2prs_core::{Multiaddr, PeerId, PublicKey};
-use libp2prs_traits::{ReadEx, Split, SplittableReadWrite, WriteEx};
+use libp2prs_traits::{ReadEx, SplitEx, SplittableReadWrite, WriteEx};
 use std::io;
 
 use async_trait::async_trait;
@@ -115,7 +115,7 @@ where
 }
 
 /// Output of the plaintext protocol. It implements the SecureStream trait
-pub struct PlainTextOutput<T: Split> {
+pub struct PlainTextOutput<T: SplitEx> {
     /// The encrypted stream, actually not any encrypt action.
     pub stream: SecureStream<T::Reader, T::Writer>,
     /// The private key of the local
@@ -132,7 +132,7 @@ pub struct PlainTextOutput<T: Split> {
     ra: Multiaddr,
 }
 
-impl<T: Split> SecureInfo for PlainTextOutput<T> {
+impl<T: SplitEx> SecureInfo for PlainTextOutput<T> {
     fn local_peer(&self) -> PeerId {
         self.local_peer_id.clone()
     }
@@ -150,7 +150,7 @@ impl<T: Split> SecureInfo for PlainTextOutput<T> {
     }
 }
 
-impl<T: Split + Send> ConnectionInfo for PlainTextOutput<T> {
+impl<T: SplitEx> ConnectionInfo for PlainTextOutput<T> {
     fn local_multiaddr(&self) -> Multiaddr {
         self.la.clone()
     }
@@ -181,7 +181,7 @@ impl<S: SplittableReadWrite> WriteEx for PlainTextOutput<S> {
     }
 }
 
-impl<S: SplittableReadWrite> Split for PlainTextOutput<S> {
+impl<S: SplittableReadWrite> SplitEx for PlainTextOutput<S> {
     type Reader = SecureStreamReader<S::Reader>;
     type Writer = SecureStreamWriter<S::Writer>;
 

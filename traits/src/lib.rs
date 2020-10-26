@@ -52,14 +52,14 @@ pub trait ReadEx: Send {
     ///
     /// Attempt to read bytes from underlying stream object.
     ///
-    /// On success, returns `Ok(Vec<u8>)`.
-    /// Otherwise, returns io::Error
+    /// On success, returns `Ok(n)`.
+    /// Otherwise, returns `Err(io:Error)`
     async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error>;
 
     /// Reads the exact number of bytes requested.
     ///
-    /// On success, returns Ok(()).
-    /// Otherwise, returns io:Error.
+    /// On success, returns `Ok(())`.
+    /// Otherwise, returns `Err(io:Error)`.
     async fn read_exact2<'a>(&'a mut self, buf: &'a mut [u8]) -> Result<(), io::Error> {
         let mut buf_piece = buf;
         while !buf_piece.is_empty() {
@@ -76,7 +76,8 @@ pub trait ReadEx: Send {
 
     /// Reads a fixed-length integer from the underlying IO.
     ///
-    /// On success, return Ok(n).
+    /// On success, return `Ok(n)`.
+    /// Otherwise, returns `Err(io:Error)`.
     async fn read_fixed_u32(&mut self) -> Result<usize, io::Error> {
         let mut len = [0; 4];
         self.read_exact2(&mut len).await?;
@@ -89,6 +90,9 @@ pub trait ReadEx: Send {
     ///
     /// As a special exception, if the `IO` is empty and EOFs right at the beginning, then we
     /// return `Ok(0)`.
+    ///
+    /// On success, return `Ok(n)`.
+    /// Otherwise, returns `Err(io:Error)`.
     ///
     /// > **Note**: This function reads bytes one by one from the underlying IO. It is therefore encouraged
     /// >           to use some sort of buffering mechanism.
@@ -153,6 +157,9 @@ pub trait ReadEx: Send {
     /// necessary in order to avoid DoS attacks where the remote sends us a message of several
     /// gigabytes.
     ///
+    /// On success, returns `Ok(Vec<u8>)`.
+    /// Otherwise, returns `Err(io:Error)`.
+    ///
     /// > **Note**: Assumes that a variable-length prefix indicates the length of the message. This is
     /// >           compatible with what `write_one` does.
     async fn read_one(&mut self, max_size: usize) -> Result<Vec<u8>, io::Error> {
@@ -177,12 +184,14 @@ pub trait WriteEx: Send {
     /// Attempt to write bytes from `buf` into the object.
     ///
     /// On success, returns `Ok(num_bytes_written)`.
-    /// Otherwise, returns io::Error
+    /// Otherwise, returns `Err(io:Error)`
     async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error>;
     /// Attempt to write the entire contents of data into object.
     ///
     /// The operation will not complete until all the data has been written.
     ///
+    /// On success, returns `Ok(())`.
+    /// Otherwise, returns `Err(io:Error)`
     async fn write_all2(&mut self, buf: &[u8]) -> Result<(), io::Error> {
         let mut buf_piece = buf;
         while !buf_piece.is_empty() {
@@ -199,6 +208,9 @@ pub trait WriteEx: Send {
 
     /// Writes a variable-length integer to the underlying IO.
     ///
+    /// On success, returns `Ok(())`.
+    /// Otherwise, returns `Err(io:Error)`
+    ///
     /// > **Note**: Does **NOT** flush the IO.
     async fn write_varint(&mut self, len: usize) -> Result<(), io::Error> {
         let mut len_data = unsigned_varint::encode::usize_buffer();
@@ -208,6 +220,9 @@ pub trait WriteEx: Send {
     }
 
     /// Writes a fixed-length integer to the underlying IO.
+    ///
+    /// On success, returns `Ok(())`.
+    /// Otherwise, returns `Err(io:Error)`
     ///
     /// > **Note**: Does **NOT** flush the IO.
     async fn write_fixed_u32(&mut self, len: usize) -> Result<(), io::Error> {
@@ -228,6 +243,9 @@ pub trait WriteEx: Send {
 
     /// Send a variable length message to the underlying IO, then flushes the writing side.
     ///
+    /// On success, returns `Ok(())`.
+    /// Otherwise, returns `Err(io:Error)`
+    ///
     /// > **Note**: Prepends a variable-length prefix indicate the length of the message. This is
     /// >           compatible with what `read_one` expects.
     async fn write_one(&mut self, buf: &[u8]) -> Result<(), io::Error> {
@@ -241,23 +259,13 @@ pub trait WriteEx: Send {
     /// their destination.
     ///
     /// On success, returns `Ok(())`.
+    /// Otherwise, returns `Err(io:Error)`
     async fn flush2(&mut self) -> Result<(), io::Error>;
 
     /// Attempt to close the object.
     ///
-    /// On success, returns `Poll::Ready(Ok(()))`.
-    ///
-    /// If closing cannot immediately complete, this function returns
-    /// `Poll::Pending` and arranges for the current task (via
-    /// `cx.waker().wake_by_ref()`) to receive a notification when the object can make
-    /// progress towards closing.
-    ///
-    /// # Implementation
-    ///
-    /// This function may not return errors of kind `WouldBlock` or
-    /// `Interrupted`.  Implementations must convert `WouldBlock` into
-    /// `Poll::Pending` and either internally retry or convert
-    /// `Interrupted` into another error kind.
+    /// On success, returns `Ok(())`.
+    /// Otherwise, returns `Err(io:Error)`
     async fn close2(&mut self) -> Result<(), io::Error>;
 }
 
@@ -285,9 +293,9 @@ impl<T: AsyncWrite + Unpin + Send> WriteEx for T {
 }
 
 ///
-/// Split Trait for read and write separation
+/// SplitEx Trait for read and write separation
 ///
-pub trait Split {
+pub trait SplitEx {
     /// read half
     type Reader: ReadEx + Unpin;
     /// write half
@@ -297,8 +305,8 @@ pub trait Split {
     fn split(self) -> (Self::Reader, Self::Writer);
 }
 
-// a common way to support Split for T, requires T: AsyncRead+AsyncWrite
-impl<T: AsyncRead + AsyncWrite + Send + Unpin> Split for T {
+// a common way to support SplitEx for T, requires T: AsyncRead+AsyncWrite
+impl<T: AsyncRead + AsyncWrite + Send + Unpin> SplitEx for T {
     type Reader = ReadHalf<T>;
     type Writer = WriteHalf<T>;
 
@@ -307,10 +315,10 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin> Split for T {
     }
 }
 
-// the other way around to implement Split for T, requires T supports Clone
+// the other way around to implement SplitEx for T, requires T supports Clone
 // which async-std::TcpStream does
 /*
-impl<T: ReadEx + WriteEx + Unpin + Clone> Split for T {
+impl<T: ReadEx + WriteEx + Unpin + Clone> SplitEx for T {
     type Reader = T;
     type Writer = T;
 
@@ -323,9 +331,9 @@ impl<T: ReadEx + WriteEx + Unpin + Clone> Split for T {
 */
 
 /// SplittableReadWrite trait for simplifying generic type constraints
-pub trait SplittableReadWrite: ReadEx + WriteEx + Split + Unpin + 'static {}
+pub trait SplittableReadWrite: ReadEx + WriteEx + SplitEx + Unpin + 'static {}
 
-impl<T: ReadEx + WriteEx + Split + Unpin + 'static> SplittableReadWrite for T {}
+impl<T: ReadEx + WriteEx + SplitEx + Unpin + 'static> SplittableReadWrite for T {}
 
 #[cfg(test)]
 mod tests {

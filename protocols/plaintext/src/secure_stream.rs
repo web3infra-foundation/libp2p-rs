@@ -23,7 +23,7 @@ use log::debug;
 use std::io;
 
 use async_trait::async_trait;
-use libp2prs_traits::{ReadEx, Split, WriteEx};
+use libp2prs_traits::{ReadEx, SplitEx, WriteEx};
 
 /// SecureStreamReader
 pub struct SecureStreamReader<R> {
@@ -185,7 +185,7 @@ where
     }
 }
 
-impl<R, W> Split for SecureStream<R, W>
+impl<R, W> SplitEx for SecureStream<R, W>
 where
     R: ReadEx + Unpin + 'static,
     W: WriteEx + Unpin + 'static,

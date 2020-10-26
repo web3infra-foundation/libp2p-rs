@@ -45,7 +45,7 @@ use crate::pnet::crypt_reader::CryptReader;
 use crate::transport::ConnectionInfo;
 use crate::Multiaddr;
 use async_trait::async_trait;
-use libp2prs_traits::{ReadEx, Split, SplittableReadWrite, WriteEx};
+use libp2prs_traits::{ReadEx, SplitEx, SplittableReadWrite, WriteEx};
 
 const KEY_SIZE: usize = 32;
 const NONCE_SIZE: usize = 24;
@@ -267,7 +267,7 @@ where
 
 /// The result of a handshake. This implements AsyncRead and AsyncWrite and can therefore
 /// be used as base for additional upgrades.
-pub struct PnetOutput<S: Split> {
+pub struct PnetOutput<S: SplitEx> {
     reader: CryptReader<S::Reader>,
     writer: CryptWriter<S::Writer>,
 
@@ -317,7 +317,7 @@ where
     }
 }
 
-impl<S: SplittableReadWrite> Split for PnetOutput<S> {
+impl<S: SplittableReadWrite> SplitEx for PnetOutput<S> {
     type Reader = CryptReader<S::Reader>;
     type Writer = CryptWriter<S::Writer>;
 
@@ -326,7 +326,7 @@ impl<S: SplittableReadWrite> Split for PnetOutput<S> {
     }
 }
 
-impl<S: ConnectionInfo + Split> ConnectionInfo for PnetOutput<S> {
+impl<S: ConnectionInfo + SplitEx> ConnectionInfo for PnetOutput<S> {
     fn local_multiaddr(&self) -> Multiaddr {
         self.local_addr.clone()
     }
