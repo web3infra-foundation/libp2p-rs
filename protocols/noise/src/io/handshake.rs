@@ -29,7 +29,7 @@ use crate::io::{framed::NoiseFramed, NoiseOutput};
 use crate::protocol::{KeypairIdentity, Protocol, PublicKey};
 use bytes::Bytes;
 use libp2prs_core::identity;
-use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_traits::SplittableReadWrite;
 use log::info;
 use prost::Message;
 use std::io;
@@ -115,7 +115,7 @@ pub async fn initiator<T, C>(
     priv_key: identity::Keypair,
 ) -> Result<(RemoteIdentity<C>, NoiseOutput<T>), NoiseError>
 where
-    T: WriteEx + ReadEx + Unpin + Send + 'static,
+    T: SplittableReadWrite,
     C: Protocol<C> + AsRef<[u8]>,
 {
     let mut state = State::new(io, session, identity, identity_x)?;
@@ -153,7 +153,7 @@ pub async fn responder<T, C>(
     keypair: identity::Keypair,
 ) -> Result<(RemoteIdentity<C>, NoiseOutput<T>), NoiseError>
 where
-    T: WriteEx + ReadEx + Unpin + Send + 'static,
+    T: SplittableReadWrite,
     C: Protocol<C> + AsRef<[u8]>,
 {
     let mut state = State::new(io, session, identity, identity_x)?;
@@ -167,7 +167,7 @@ where
 /// Handshake state.
 struct State<T> {
     /// The underlying I/O resource.
-    io: NoiseFramed<T, snow::HandshakeState>,
+    io: NoiseFramed<T>,
     /// The associated public identity of the local node's static DH keypair,
     /// which can be sent to the remote as part of an authenticated handshake.
     identity: KeypairIdentity,
@@ -179,7 +179,7 @@ struct State<T> {
     send_identity: bool,
 }
 
-impl<T> State<T> {
+impl<T: SplittableReadWrite> State<T> {
     /// Initializes the state for a new Noise handshake, using the given local
     /// identity keypair and local DH static public key. The handshake messages
     /// will be sent and received on the given I/O resource and using the
@@ -205,9 +205,7 @@ impl<T> State<T> {
             send_identity,
         })
     }
-}
 
-impl<T> State<T> {
     /// Finish a handshake, yielding the established remote identity and the
     /// [`NoiseOutput`] for communicating on the encrypted channel.
     fn finish<C>(self, keypair: identity::Keypair) -> Result<(RemoteIdentity<C>, NoiseOutput<T>), NoiseError>
@@ -228,6 +226,7 @@ impl<T> State<T> {
                 }
             }
         };
+
         Ok((remote, io))
     }
 }
@@ -238,7 +237,7 @@ impl<T> State<T> {
 /// Using async/await to receive a Noise handshake message.
 async fn recv<T>(state: &mut State<T>) -> Result<Bytes, NoiseError>
 where
-    T: ReadEx + WriteEx + Unpin + Send,
+    T: SplittableReadWrite,
 {
     match state.io.next().await {
         None => Err(io::Error::new(io::ErrorKind::UnexpectedEof, "eof").into()),
@@ -250,7 +249,7 @@ where
 /// Using async/await to receive a Noise handshake message with an empty payload.
 async fn recv_empty<T>(state: &mut State<T>) -> Result<(), NoiseError>
 where
-    T: ReadEx + WriteEx + Unpin + Send,
+    T: SplittableReadWrite,
 {
     let msg = recv(state).await?;
     if !msg.is_empty() {
@@ -262,7 +261,7 @@ where
 /// Using async/await to send a Noise handshake message with an empty payload.
 async fn send_empty<T>(state: &mut State<T>) -> Result<(), NoiseError>
 where
-    T: WriteEx + ReadEx + Unpin + Send,
+    T: SplittableReadWrite,
 {
     let u = Vec::<u8>::new();
     state.io.send2(&u).await?;
@@ -274,7 +273,7 @@ where
 /// Using async/await to receive a Noise handshake message with a payload.
 async fn recv_identity<T>(state: &mut State<T>) -> Result<(), NoiseError>
 where
-    T: ReadEx + WriteEx + Unpin + Send,
+    T: SplittableReadWrite,
 {
     let msg = recv(state).await?;
 
@@ -335,7 +334,7 @@ where
 /// Send a Noise handshake message with a payload identifying the local node to the remote.
 async fn send_identity<T>(state: &mut State<T>) -> Result<(), NoiseError>
 where
-    T: WriteEx + ReadEx + Unpin + Send,
+    T: SplittableReadWrite,
 {
     let mut pb = payload_proto::NoiseHandshakePayload::default();
     if state.send_identity {
