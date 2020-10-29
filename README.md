@@ -25,4 +25,4 @@ As for the first stage, we'd like to limit our development scope to deliver the 
 
 ## Releases
 
-NOTE: The master branch is now an active development branch (starting with v0.1.0), which means breaking changes could be made at any time.  
+NOTE: The master branch is now an active development branch (starting with v0.1.0), which means breaking changes could be made at any time.
