@@ -31,16 +31,16 @@ use libp2prs_traits::{ReadEx, SplittableReadWrite, WriteEx};
 use log::{debug, trace};
 use std::{fmt, io};
 
-/// Max. size of a noise message.
-const MAX_NOISE_MSG_LEN: usize = 65535;
+// /// Max. size of a noise message.
+// const MAX_NOISE_MSG_LEN: usize = 65535;
 /// Space given to the encryption buffer to hold key material.
 const EXTRA_ENCRYPT_SPACE: usize = 1024;
-/// Max. length for Noise protocol message payloads.
-pub const MAX_FRAME_LEN: usize = MAX_NOISE_MSG_LEN - EXTRA_ENCRYPT_SPACE;
+// /// Max. length for Noise protocol message payloads.
+// pub const MAX_FRAME_LEN: usize = MAX_NOISE_MSG_LEN - EXTRA_ENCRYPT_SPACE;
 
-static_assertions::const_assert! {
-    MAX_FRAME_LEN + EXTRA_ENCRYPT_SPACE <= MAX_NOISE_MSG_LEN
-}
+// static_assertions::const_assert! {
+//     MAX_FRAME_LEN + EXTRA_ENCRYPT_SPACE <= MAX_NOISE_MSG_LEN
+// }
 
 /// A `NoiseFramed` is a `ReadEx` and `WriteEx` for length-delimited
 /// Noise protocol messages.
