@@ -8,7 +8,7 @@ on:
 jobs:
   fmt_clippy_docs:
     name: Checking fmt, clippy, and docs
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     steps:
     - uses: actions/checkout@v2
 
@@ -21,7 +21,7 @@ jobs:
       run: |
         rustup component add clippy rustfmt
         rustc --version
-
+        
     - name: clippy
       run: RUSTFLAGS='-F warnings' cargo clippy --all --examples --tests
    
@@ -34,10 +34,9 @@ jobs:
   build_and_test:
     name: Build and test
     needs: [fmt_clippy_docs]
-    runs-on: ${{ matrix.os }}
+    runs-on: [self-hosted, Linux, X64]
     strategy:
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-18.04]
         rust: [1.47.0]
 
     steps:
