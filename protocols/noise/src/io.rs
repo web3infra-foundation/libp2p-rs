@@ -22,34 +22,29 @@
 
 mod framed;
 pub mod handshake;
+mod secure_stream;
 
+use crate::io::secure_stream::{NoiseSecureStream, NoiseSecureStreamReader, NoiseSecureStreamWriter};
 use async_trait::async_trait;
-use bytes::Bytes;
-use framed::{NoiseFramed, MAX_FRAME_LEN};
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::secure_io::SecureInfo;
 use libp2prs_core::transport::ConnectionInfo;
 use libp2prs_core::{Multiaddr, PeerId, PublicKey};
-use libp2prs_traits::{ReadEx, WriteEx};
-use log::trace;
-use std::{cmp::min, fmt, io};
+use libp2prs_traits::{ReadEx, SplitEx, SplittableReadWrite, WriteEx};
+use std::io;
 
 /// A noise session to a remote.
 ///
 /// `T` is the type of the underlying I/O resource.
-pub struct NoiseOutput<T> {
-    io: NoiseFramed<T, snow::TransportState>,
+pub struct NoiseOutput<T: SplitEx> {
+    pub io: NoiseSecureStream<T::Reader, T::Writer>,
     la: Multiaddr,
     ra: Multiaddr,
-    recv_buffer: Bytes,
-    recv_offset: usize,
-    send_buffer: Vec<u8>,
-    send_offset: usize,
     local_priv_key: Keypair,
     remote_pub_key: PublicKey,
 }
 
-impl<S: ConnectionInfo> ConnectionInfo for NoiseOutput<S> {
+impl<T: ConnectionInfo + SplitEx> ConnectionInfo for NoiseOutput<T> {
     fn local_multiaddr(&self) -> Multiaddr {
         self.la.clone()
     }
@@ -58,24 +53,20 @@ impl<S: ConnectionInfo> ConnectionInfo for NoiseOutput<S> {
         self.ra.clone()
     }
 }
+//
+// impl<T> fmt::Debug for NoiseOutput<T> {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         f.debug_struct("NoiseOutput").field("io", &self.io).finish()
+//     }
+// }
 
-impl<T> fmt::Debug for NoiseOutput<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("NoiseOutput").field("io", &self.io).finish()
-    }
-}
-
-impl<T> NoiseOutput<T> {
-    fn new(io: NoiseFramed<T, snow::TransportState>, keypair: Keypair) -> Self {
+impl<T: SplittableReadWrite> NoiseOutput<T> {
+    fn new(io: NoiseSecureStream<T::Reader, T::Writer>, keypair: Keypair) -> Self {
         let remote_pub_key = keypair.public();
         NoiseOutput {
             io,
             la: Multiaddr::empty(),
             ra: Multiaddr::empty(),
-            recv_buffer: Bytes::new(),
-            recv_offset: 0,
-            send_buffer: Vec::new(),
-            send_offset: 0,
             local_priv_key: keypair,
             remote_pub_key,
         }
@@ -87,7 +78,7 @@ impl<T> NoiseOutput<T> {
     }
 }
 
-impl<S> SecureInfo for NoiseOutput<S> {
+impl<T: SplitEx> SecureInfo for NoiseOutput<T> {
     fn local_peer(&self) -> PeerId {
         self.local_priv_key.clone().public().into_peer_id()
     }
@@ -106,90 +97,33 @@ impl<S> SecureInfo for NoiseOutput<S> {
 }
 
 #[async_trait]
-impl<T: ReadEx + WriteEx + Send + Unpin> ReadEx for NoiseOutput<T> {
+impl<T: SplittableReadWrite> ReadEx for NoiseOutput<T> {
     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        loop {
-            let len = self.recv_buffer.len();
-            let off = self.recv_offset;
-            if len > 0 {
-                let n = min(len - off, buf.len());
-                buf[..n].copy_from_slice(&self.recv_buffer[off..off + n]);
-                trace!("read: copied {}/{} bytes", off + n, len);
-                self.recv_offset += n;
-                if len == self.recv_offset {
-                    trace!("read: frame consumed");
-                    // Drop the existing view so `NoiseFramed` can reuse
-                    // the buffer when polling for the next frame below.
-                    self.recv_buffer = Bytes::new();
-                }
-                return Ok(n);
-            }
-
-            match self.io.next().await {
-                Some(Ok(frame)) => {
-                    self.recv_buffer = frame;
-                    self.recv_offset = 0;
-                }
-                None => return Ok(0),
-                Some(Err(e)) => return Err(e.into()),
-            }
-        }
+        self.io.read2(buf).await
     }
 }
 
 #[async_trait]
-impl<T: WriteEx + ReadEx + Send + Unpin> WriteEx for NoiseOutput<T> {
+impl<T: SplittableReadWrite> WriteEx for NoiseOutput<T> {
     async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let frame_buf = &mut self.send_buffer;
-
-        // The MAX_FRAME_LEN is the maximum buffer size before a frame must be sent.
-        if self.send_offset == MAX_FRAME_LEN {
-            trace!("write: sending {} bytes", MAX_FRAME_LEN);
-
-            match self.io.send2(&frame_buf).await {
-                Ok(()) => {}
-                Err(e) => return Err(e.into()),
-            }
-            self.send_offset = 0;
-        }
-
-        let off = self.send_offset;
-        let n = min(MAX_FRAME_LEN, off.saturating_add(buf.len()));
-        self.send_buffer.resize(n, 0u8);
-        let n = min(MAX_FRAME_LEN - off, buf.len());
-        self.send_buffer[off..off + n].copy_from_slice(&buf[..n]);
-        self.send_offset += n;
-        trace!("write: buffered {} bytes", self.send_offset);
-
-        match self.flush2().await {
-            Ok(()) => {}
-            Err(e) => return Err(e),
-        }
-
-        Ok(n)
+        self.io.write2(buf).await
     }
 
     async fn flush2(&mut self) -> io::Result<()> {
-        let frame_buf = &mut self.send_buffer;
-
-        // Check if there is still one more frame to send.
-        if self.send_offset > 0 {
-            match self.io.ready2().await {
-                Ok(()) => {}
-                Err(e) => return Err(e.into()),
-            }
-            trace!("flush: sending {} bytes", self.send_offset);
-            match self.io.send2(&frame_buf).await {
-                Ok(()) => {}
-                Err(e) => return Err(e.into()),
-            }
-            self.send_offset = 0;
-        }
-
-        self.io.flush2().await.map_err(|e| e.into())
+        self.io.flush2().await
     }
 
     async fn close2(&mut self) -> io::Result<()> {
-        self.io.close2().await.map_err(|e| e.into())
+        self.io.close2().await
+    }
+}
+
+impl<S: SplittableReadWrite> SplitEx for NoiseOutput<S> {
+    type Reader = NoiseSecureStreamReader<S::Reader>;
+    type Writer = NoiseSecureStreamWriter<S::Writer>;
+
+    fn split(self) -> (Self::Reader, Self::Writer) {
+        let (r, w) = self.io.split();
+        (r, w)
     }
 }

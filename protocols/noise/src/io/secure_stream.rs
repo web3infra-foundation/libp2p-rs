@@ -18,135 +18,78 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-//! This module uses `ReadEx` and `WriteEx` for length-delimited
-//! Noise protocol messages in form of [`NoiseFramed`].
-
 use crate::error::NoiseError::{Io, Noise};
-use crate::io::secure_stream::NoiseSecureStream;
-use crate::io::NoiseOutput;
-use crate::{NoiseError, Protocol, PublicKey};
+use crate::io::framed::{read_frame_len, write_frame_len, ReadState, SessionState, WriteState};
+use crate::NoiseError;
+use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
-use libp2prs_core::identity;
-use libp2prs_traits::{ReadEx, SplittableReadWrite, WriteEx};
+use futures::io::Error;
+use futures::lock::Mutex;
+use libp2prs_traits::{ReadEx, SplitEx, WriteEx};
 use log::{debug, trace};
-use std::{fmt, io};
+use std::cmp::min;
+use std::io;
+use std::sync::Arc;
 
-// /// Max. size of a noise message.
-// const MAX_NOISE_MSG_LEN: usize = 65535;
+/// Max. size of a noise message.
+const MAX_NOISE_MSG_LEN: usize = 65535;
 /// Space given to the encryption buffer to hold key material.
 const EXTRA_ENCRYPT_SPACE: usize = 1024;
-// /// Max. length for Noise protocol message payloads.
-// pub const MAX_FRAME_LEN: usize = MAX_NOISE_MSG_LEN - EXTRA_ENCRYPT_SPACE;
+/// Max. length for Noise protocol message payloads.
+pub const MAX_FRAME_LEN: usize = MAX_NOISE_MSG_LEN - EXTRA_ENCRYPT_SPACE;
 
-// static_assertions::const_assert! {
-//     MAX_FRAME_LEN + EXTRA_ENCRYPT_SPACE <= MAX_NOISE_MSG_LEN
-// }
+static_assertions::const_assert! {
+    MAX_FRAME_LEN + EXTRA_ENCRYPT_SPACE <= MAX_NOISE_MSG_LEN
+}
 
-/// A `NoiseFramed` is a `ReadEx` and `WriteEx` for length-delimited
-/// Noise protocol messages.
+/// A `NoiseSecureStream` is an encrypt stream that contains
+/// `NoiseSecureStreamReader` and `NoiseSecureStreamWriter`.
 ///
-/// `T` is the type of the underlying I/O resource.
-pub struct NoiseFramed<T> {
-    io: T,
-    session: snow::HandshakeState,
+/// `R` & `W` is the type of the underlying I/O resource.
+/// In this way, we use `snow::TransportState`.
+pub struct NoiseSecureStream<R, W> {
+    reader: NoiseSecureStreamReader<R>,
+    writer: NoiseSecureStreamWriter<W>,
+}
+
+/// SecureStreamReader, `R` means the underlying I/O that supports
+/// `ReadEx` + `Unpin` + `static`
+pub struct NoiseSecureStreamReader<R> {
+    io: R,
+    session: Arc<Mutex<snow::TransportState>>,
+    recv_offset: usize,
     read_state: ReadState,
-    write_state: WriteState,
     read_buffer: Vec<u8>,
-    write_buffer: Vec<u8>,
     decrypt_buffer: BytesMut,
 }
 
-impl<T> fmt::Debug for NoiseFramed<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("NoiseFramed")
-            .field("read_state", &self.read_state)
-            .field("write_state", &self.write_state)
-            .finish()
-    }
+/// SecureStreamWriter, `W` means the underlying I/O that supports
+/// `WriteEx` + `Unpin` + `static`
+pub struct NoiseSecureStreamWriter<W> {
+    io: W,
+    session: Arc<Mutex<snow::TransportState>>,
+    write_state: WriteState,
+    send_offset: usize,
+    plain_buffer: Vec<u8>,
+    write_buffer: Vec<u8>,
 }
 
-impl<T> NoiseFramed<T> {
-    /// Creates a new `NoiseFramed` for beginning a Noise protocol handshake.
-    pub fn new(io: T, state: snow::HandshakeState) -> Self {
-        NoiseFramed {
-            io,
+impl<R> NoiseSecureStreamReader<R>
+where
+    R: ReadEx + Unpin + 'static,
+{
+    /// new stream
+    pub(crate) fn new(reader: R, state: Arc<Mutex<snow::TransportState>>) -> Self {
+        NoiseSecureStreamReader {
+            io: reader,
             session: state,
+            recv_offset: 0,
             read_state: ReadState::Ready,
-            write_state: WriteState::Ready,
-            read_buffer: Vec::new(),
-            write_buffer: Vec::new(),
+            read_buffer: BytesMut::new().to_vec(),
             decrypt_buffer: BytesMut::new(),
         }
     }
 
-    /// Converts the `NoiseFramed` into a `NoiseOutput` encrypted data stream
-    /// once the handshake is complete, including the static DH [`PublicKey`]
-    /// of the remote, if received.
-    ///
-    /// If the underlying Noise protocol session state does not permit
-    /// transitioning to transport mode because the handshake is incomplete,
-    /// an error is returned. Similarly if the remote's static DH key, if
-    /// present, cannot be parsed.
-    pub fn into_transport<C>(self, keypair: identity::Keypair) -> Result<(Option<PublicKey<C>>, NoiseOutput<T>), NoiseError>
-    where
-        C: Protocol<C> + AsRef<[u8]>,
-        T: SplittableReadWrite,
-    {
-        let dh_remote_pubkey = match self.session.get_remote_static() {
-            None => None,
-            Some(k) => match C::public_from_bytes(k) {
-                Err(e) => return Err(e),
-                Ok(dh_pk) => Some(dh_pk),
-            },
-        };
-        match self.session.into_transport_mode() {
-            Err(e) => Err(e.into()),
-            Ok(s) => {
-                debug!("Ok TransportState");
-                let (reader, writer) = self.io.split();
-                let io = NoiseSecureStream::new(reader, writer, s);
-                Ok((dh_remote_pubkey, NoiseOutput::new(io, keypair)))
-            }
-        }
-    }
-}
-
-/// The states for reading Noise protocol frames.
-#[derive(Debug)]
-pub(crate) enum ReadState {
-    /// Ready to read another frame.
-    Ready,
-    /// Reading frame length.
-    ReadLen { buf: [u8; 2], off: usize },
-    /// Reading frame data.
-    ReadData { len: usize, off: usize },
-    /// EOF has been reached (terminal state).
-    ///
-    /// The associated result signals if the EOF was unexpected or not.
-    Eof(Result<(), ()>),
-    /// A decryption error occurred (terminal state).
-    DecErr,
-}
-
-/// The states for writing Noise protocol frames.
-#[derive(Debug)]
-pub(crate) enum WriteState {
-    /// Ready to write another frame.
-    Ready,
-    /// Writing the frame length.
-    WriteLen { len: usize, buf: [u8; 2], off: usize },
-    /// Writing the frame data.
-    WriteData { len: usize, off: usize },
-    /// EOF has been reached unexpectedly (terminal state).
-    Eof,
-    /// An encryption error occurred (terminal state).
-    EncErr,
-}
-
-impl<T> NoiseFramed<T>
-where
-    T: WriteEx + ReadEx + Unpin + Send,
-{
     /// Read data
     pub(crate) async fn next(&mut self) -> Option<Result<Bytes, NoiseError>> {
         loop {
@@ -174,7 +117,7 @@ where
                     self.read_state = ReadState::ReadData {
                         len: usize::from(n),
                         off: 0,
-                    }
+                    };
                 }
                 ReadState::ReadData { len, ref mut off } => {
                     let n = {
@@ -193,14 +136,14 @@ where
                     if len == *off {
                         trace!("read: decrypting {} bytes", len);
                         self.decrypt_buffer.resize(len, 0);
-                        match self.session.read_message(&self.read_buffer, &mut self.decrypt_buffer) {
+                        match self.session.lock().await.read_message(&self.read_buffer, &mut self.decrypt_buffer) {
                             Ok(n) => {
                                 self.decrypt_buffer.truncate(n);
                                 trace!("read: payload len = {} bytes", n);
                                 self.read_state = ReadState::Ready;
                                 // Return an immutable view into the current buffer.
                                 // If the view is dropped before the next frame is
-                                // read, the `BytesMut` will reuse the same buffer
+                                // read, the `Bytes` will reuse the same buffer
                                 // for the next frame.
                                 let view = self.decrypt_buffer.split().freeze();
                                 return Some(Ok(view));
@@ -215,7 +158,6 @@ where
                 }
                 ReadState::Eof(Ok(())) => {
                     trace!("read: eof");
-                    // return None;
                 }
                 ReadState::Eof(Err(())) => {
                     trace!("read: eof (unexpected)");
@@ -227,9 +169,61 @@ where
             }
         }
     }
+}
 
-    /// Ready to send data
-    pub(crate) async fn ready2(&mut self) -> Result<(), NoiseError> {
+#[async_trait]
+impl<R> ReadEx for NoiseSecureStreamReader<R>
+where
+    R: ReadEx + Unpin + 'static,
+{
+    async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
+        loop {
+            let len = self.read_buffer.len();
+            let off = self.recv_offset;
+            if len > 0 {
+                let n = min(len - off, buf.len());
+                buf[..n].copy_from_slice(&self.read_buffer[off..off + n]);
+                trace!("read: copied {}/{} bytes", off + n, len);
+                self.recv_offset += n;
+                if len == self.recv_offset {
+                    trace!("read: frame consumed");
+                    // Drop the existing view so `StreamReader` can reuse
+                    // the buffer when polling for the next frame below.
+                    self.read_buffer = Bytes::new().to_vec();
+                }
+                return Ok(n);
+            }
+
+            match self.next().await {
+                Some(Ok(frame)) => {
+                    self.read_buffer = frame.to_vec();
+                    self.recv_offset = 0;
+                }
+                None => return Ok(0),
+                Some(Err(e)) => return Err(e.into()),
+            }
+        }
+    }
+}
+
+impl<W> NoiseSecureStreamWriter<W>
+where
+    W: WriteEx + Unpin + 'static,
+{
+    /// new writer
+    pub(crate) fn new(writer: W, state: Arc<Mutex<snow::TransportState>>) -> Self {
+        NoiseSecureStreamWriter {
+            io: writer,
+            session: state,
+            send_offset: 0,
+            write_state: WriteState::Ready,
+            write_buffer: Vec::new(),
+            plain_buffer: Vec::new(),
+        }
+    }
+
+    /// Ready and send data
+    pub(crate) async fn ready_and_send(&mut self) -> Result<(), NoiseError> {
         loop {
             trace!("write state {:?}", self.write_state);
             match self.write_state {
@@ -281,9 +275,9 @@ where
     }
 
     /// Use noise protocol to cipher data
-    pub(crate) async fn send2(&mut self, frame: &[u8]) -> Result<(), NoiseError> {
+    pub(crate) async fn encrypt_data(&mut self, frame: &[u8]) -> Result<(), NoiseError> {
         self.write_buffer.resize(frame.len() + EXTRA_ENCRYPT_SPACE, 0u8);
-        match self.session.write_message(frame, &mut self.write_buffer[..]) {
+        match self.session.lock().await.write_message(frame, &mut self.write_buffer[..]) {
             Ok(n) => {
                 trace!("write: cipher text len = {} bytes", n);
                 self.write_buffer.truncate(n);
@@ -301,66 +295,131 @@ where
             }
         }
     }
+}
 
-    pub(crate) async fn flush2(&mut self) -> Result<(), NoiseError> {
-        match self.ready2().await {
-            Ok(()) => self.io.flush2().await.map_err(|e| e.into()),
-            Err(e) => Err(e),
+#[async_trait]
+impl<W> WriteEx for NoiseSecureStreamWriter<W>
+where
+    W: WriteEx + Unpin + 'static,
+{
+    async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
+        // The MAX_FRAME_LEN is the maximum buffer size before a buffer must be sent.
+        if self.send_offset == MAX_FRAME_LEN {
+            trace!("write: sending {} bytes", MAX_FRAME_LEN);
+
+            match self.encrypt_data(buf).await {
+                Ok(()) => {}
+                Err(e) => return Err(e.into()),
+            }
+            self.plain_buffer.clear();
+            self.send_offset = 0;
+        }
+
+        let off = self.send_offset;
+        let n = min(MAX_FRAME_LEN, off.saturating_add(buf.len()));
+        self.plain_buffer.resize(n, 0u8);
+        let n = min(MAX_FRAME_LEN - off, buf.len());
+        self.plain_buffer[off..off + n].copy_from_slice(&buf[..n]);
+        self.send_offset += n;
+        trace!("write: buffered {} bytes", self.send_offset);
+
+        let buf = self.plain_buffer.clone();
+
+        match self.encrypt_data(&buf).await {
+            Ok(()) => match self.flush2().await {
+                Ok(()) => Ok(n),
+                Err(e) => Err(e),
+            },
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    async fn flush2(&mut self) -> io::Result<()> {
+        // Check if there is still one more buffer to send.
+        if self.send_offset > 0 {
+            match self.ready_and_send().await {
+                Ok(()) => {}
+                Err(e) => return Err(e.into()),
+            }
+            trace!("flush: sending {} bytes", self.send_offset);
+            self.send_offset = 0;
+        }
+
+        Ok(())
+    }
+
+    async fn close2(&mut self) -> io::Result<()> {
+        match self.ready_and_send().await {
+            Ok(()) => self.io.close2().await,
+            Err(e) => Err(e.into()),
         }
     }
 }
 
-/// A stateful context in which Noise protocol messages can be read and written.
-pub trait SessionState {
-    fn read_message(&mut self, msg: &[u8], buf: &mut [u8]) -> Result<usize, snow::Error>;
-    fn write_message(&mut self, msg: &[u8], buf: &mut [u8]) -> Result<usize, snow::Error>;
+impl<R, W> NoiseSecureStream<R, W>
+where
+    R: ReadEx + Unpin + 'static,
+    W: WriteEx + Unpin + 'static,
+{
+    /// Creates a new `NoiseSecureStream` after Noise protocol handshake.
+    pub fn new(reader: R, writer: W, state: snow::TransportState) -> Self {
+        let session = Arc::new(Mutex::new(state));
+
+        NoiseSecureStream {
+            reader: NoiseSecureStreamReader::new(reader, session.clone()),
+            writer: NoiseSecureStreamWriter::new(writer, session),
+        }
+    }
 }
 
-impl SessionState for snow::HandshakeState {
+#[async_trait]
+impl<R, W> ReadEx for NoiseSecureStream<R, W>
+where
+    R: ReadEx + Unpin + 'static,
+    W: WriteEx + Unpin + 'static,
+{
+    async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
+        self.reader.read2(buf).await
+    }
+}
+
+#[async_trait]
+impl<R, W> WriteEx for NoiseSecureStream<R, W>
+where
+    R: ReadEx + Unpin + 'static,
+    W: WriteEx + Unpin + 'static,
+{
+    async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.writer.write2(buf).await
+    }
+
+    async fn flush2(&mut self) -> io::Result<()> {
+        self.writer.flush2().await
+    }
+    async fn close2(&mut self) -> io::Result<()> {
+        self.writer.close2().await
+    }
+}
+
+impl<R, W> SplitEx for NoiseSecureStream<R, W>
+where
+    R: ReadEx + Unpin + 'static,
+    W: WriteEx + Unpin + 'static,
+{
+    type Reader = NoiseSecureStreamReader<R>;
+    type Writer = NoiseSecureStreamWriter<W>;
+
+    fn split(self) -> (Self::Reader, Self::Writer) {
+        (self.reader, self.writer)
+    }
+}
+
+impl SessionState for snow::TransportState {
     fn read_message(&mut self, msg: &[u8], buf: &mut [u8]) -> Result<usize, snow::Error> {
         self.read_message(msg, buf)
     }
 
     fn write_message(&mut self, msg: &[u8], buf: &mut [u8]) -> Result<usize, snow::Error> {
         self.write_message(msg, buf)
-    }
-}
-
-/// Read 2 bytes as frame length from the given source into the given buffer.
-///
-/// Panics if `off >= 2`.
-/// buf is [u8; 2], so `read_exact2` will read 2 bytes
-pub(crate) async fn read_frame_len<R: ReadEx + Unpin + Send>(
-    io: &mut R,
-    buf: &mut [u8; 2],
-    off: &mut usize,
-) -> io::Result<Option<u16>> {
-    // match ready!(Pin::new(&mut io).poll_read(cx, &mut buf[*off ..])) {
-    match io.read_exact2(&mut buf[*off..]).await {
-        Ok(()) => Ok(Some(u16::from_be_bytes(*buf))),
-        Err(e) => Err(e),
-    }
-}
-
-/// Write 2 bytes as frame length from the given buffer into the io.
-///
-/// Panics if `off >= 2`.
-/// Returns `false` if EOF has been encountered.
-pub(crate) async fn write_frame_len<W: WriteEx + Unpin>(io: &mut W, buf: &[u8; 2], off: &mut usize) -> io::Result<bool> {
-    loop {
-        match io.write2(&buf[*off..]).await {
-            Ok(n) => {
-                if n == 0 {
-                    return Ok(false);
-                }
-                *off += n;
-                if *off == 2 {
-                    return Ok(true);
-                }
-            }
-            Err(e) => {
-                return Err(e);
-            }
-        }
     }
 }

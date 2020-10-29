@@ -20,7 +20,7 @@ use async_trait::async_trait;
 use libp2prs_core::identity;
 use libp2prs_core::transport::{ConnectionInfo, TransportError};
 use libp2prs_core::upgrade::{UpgradeInfo, Upgrader};
-use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_traits::SplittableReadWrite;
 use zeroize::Zeroize;
 
 /// The protocol upgrade configuration.
@@ -36,7 +36,7 @@ pub struct NoiseConfig<P, C: Zeroize> {
 impl<T, C> Upgrader<T> for NoiseConfig<XX, C>
 where
     NoiseConfig<XX, C>: UpgradeInfo,
-    T: ConnectionInfo + ReadEx + WriteEx + Send + Unpin + 'static,
+    T: ConnectionInfo + SplittableReadWrite,
     C: Protocol<C> + Zeroize + AsRef<[u8]> + Clone + Send,
 {
     type Output = NoiseOutput<T>;
@@ -58,7 +58,7 @@ async fn make_secure_output<T, C: Protocol<C> + Zeroize + AsRef<[u8]>>(
     initiator: bool,
 ) -> Result<NoiseOutput<T>, TransportError>
 where
-    T: ConnectionInfo + ReadEx + WriteEx + Send + Unpin + 'static,
+    T: ConnectionInfo + SplittableReadWrite,
 {
     let la = socket.local_multiaddr();
     let ra = socket.remote_multiaddr();
@@ -89,7 +89,7 @@ where
     /// On success, returns an object that implements the `WriteEx` and `ReadEx` trait.
     pub async fn handshake<T>(self, socket: T, initiator: bool) -> Result<(RemoteIdentity<C>, NoiseOutput<T>), NoiseError>
     where
-        T: ReadEx + WriteEx + Unpin + Send + 'static,
+        T: SplittableReadWrite,
     {
         if initiator {
             let session = self
