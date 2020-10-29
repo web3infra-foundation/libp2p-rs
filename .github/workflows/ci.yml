@@ -8,7 +8,7 @@ on:
 jobs:
   fmt_clippy_docs:
     name: Checking fmt, clippy, and docs
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, X64]
     steps:
     - uses: actions/checkout@v2
 
@@ -21,7 +21,7 @@ jobs:
       run: |
         rustup component add clippy rustfmt
         rustc --version
-
+        
     - name: clippy
       run: RUSTFLAGS='-F warnings' cargo clippy --all --examples --tests
    
@@ -34,11 +34,10 @@ jobs:
   build_and_test:
     name: Build and test
     needs: [fmt_clippy_docs]
-    runs-on: ${{ matrix.os }}
+    runs-on: [self-hosted, linux, X64]
     strategy:
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-18.04]
-        rust: [1.46.0,1.47.0]
+        rust: [1.47.0]
 
     steps:
     - uses: actions/checkout@v1
@@ -49,25 +48,9 @@ jobs:
         toolchain: ${{ matrix.rust }}
         override: true
     
-    - uses: actions/checkout@v1
-    - name: Cache cargo registry
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/registry
-        key: cargo-registry-${{ hashFiles('Cargo.toml') }}
-    - name: Cache cargo index
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/git
-        key: cargo-index-${{ hashFiles('Cargo.toml') }}
-    - name: Cache cargo build
-      uses: actions/cache@v1
-      with:
-        path: target
-        key: cargo-build-target-${{ hashFiles('Cargo.toml') }}
-    - name: build
-      run: cargo build --examples --all
+    - name: Build
+      run: cargo build --release --examples --all
     - name: Unit test
       run: cargo test --all
-    - name: bench test
+    - name: Bench test
       run: cargo bench --all

@@ -24,7 +24,6 @@ use std::time::Duration;
 #[macro_use]
 extern crate lazy_static;
 
-use futures_test::std_reexport::collections::VecDeque;
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::transport::upgrade::TransportUpgrade;
 use libp2prs_core::upgrade::UpgradeInfo;
@@ -38,6 +37,7 @@ use libp2prs_swarm::{DummyProtocolHandler, Swarm, SwarmError};
 use libp2prs_tcp::TcpConfig;
 use libp2prs_traits::{copy, ReadEx, WriteEx};
 use libp2prs_yamux as yamux;
+use std::collections::VecDeque;
 
 fn main() {
     env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -139,14 +139,14 @@ fn run_client() {
     task::block_on(async move {
         control.new_connection(remote_peer_id.clone()).await.unwrap();
         let mut handles = VecDeque::default();
-        for _ in 0..100 {
+        for _ in 0..100u32 {
             let mut stream = control.new_stream(remote_peer_id.clone(), vec![b"/my/1.0.0"]).await.unwrap();
             log::info!("stream {:?} opened, writing something...", stream);
 
             let handle = task::spawn(async move {
                 let msg = b"hello";
 
-                for _ in 0..100 {
+                for _ in 0..100u32 {
                     stream.write_all2(msg).await.expect("C write");
 
                     let mut buf = vec![0; msg.len()];
