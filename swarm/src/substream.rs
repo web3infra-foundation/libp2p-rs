@@ -34,7 +34,7 @@ use crate::control::SwarmControlCmd;
 use crate::ProtocolId;
 use libp2prs_core::muxing::IReadWrite;
 use libp2prs_core::upgrade::ProtocolName;
-use libp2prs_core::Multiaddr;
+use libp2prs_core::{Multiaddr, PeerId};
 use libp2prs_traits::{ReadEx, WriteEx};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -64,6 +64,14 @@ pub struct SubstreamInfo {
 }
 
 #[derive(Debug)]
+pub(crate) struct RemotePeerInfo {
+    /// Remote peer's multiaddr.
+    pub(crate) ra: Multiaddr,
+    /// Remote peer's peerid.
+    pub(crate) rpid: PeerId,
+}
+
+#[derive(Debug)]
 struct SubstreamMeta {
     /// The protocol of the sub stream.
     protocol: ProtocolId,
@@ -74,8 +82,8 @@ struct SubstreamMeta {
     cid: ConnectionId,
     /// The local multiaddr of the sub stream.
     la: Multiaddr,
-    /// The remote multiaddr of the sub stream.
-    ra: Multiaddr,
+    /// The remote peer's info.
+    ri: RemotePeerInfo,
 }
 
 /// Substream is the logical channel for the p2p connection.
@@ -111,7 +119,7 @@ impl Substream {
         protocol: ProtocolId,
         cid: ConnectionId,
         la: Multiaddr,
-        ra: Multiaddr,
+        ri: RemotePeerInfo,
         ctrl: mpsc::Sender<SwarmControlCmd>,
     ) -> Self {
         Self {
@@ -121,7 +129,7 @@ impl Substream {
                 dir,
                 cid,
                 la,
-                ra,
+                ri,
             }),
             ctrl,
             stats: Arc::new(SubstreamStats::default()),
@@ -134,7 +142,10 @@ impl Substream {
         let dir = Direction::Outbound;
         let cid = ConnectionId::default();
         let la = Multiaddr::empty();
-        let ra = Multiaddr::empty();
+        let ri = RemotePeerInfo {
+            ra: Multiaddr::empty(),
+            rpid: PeerId::random(),
+        };
         let (ctrl, _) = mpsc::channel(0);
         Self {
             inner,
@@ -143,7 +154,7 @@ impl Substream {
                 dir,
                 cid,
                 la,
-                ra,
+                ri,
             }),
             ctrl,
             stats: Arc::new(SubstreamStats::default()),
@@ -167,11 +178,15 @@ impl Substream {
     }
     /// Returns the remote multiaddr of the sub stream.
     pub fn remote_multiaddr(&self) -> Multiaddr {
-        self.info.ra.clone()
+        self.info.ri.ra.clone()
     }
     /// Returns the remote multiaddr of the sub stream.
     pub fn local_multiaddr(&self) -> Multiaddr {
         self.info.la.clone()
+    }
+    /// Returns the remote multiaddr of the sub stream.
+    pub fn remote_peer(&self) -> PeerId {
+        self.info.ri.rpid.clone()
     }
     /// Returns the statistics of the sub stream.
     pub fn stats(&self) -> &SubstreamStats {

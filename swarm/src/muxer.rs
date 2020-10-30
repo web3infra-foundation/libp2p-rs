@@ -34,7 +34,7 @@ use crate::ProtocolId;
 /// IProtocolHandler is the tait object of ProtocolHandler.
 ///
 pub(crate) struct Muxer {
-    protocol_handlers: FnvHashMap<ProtocolId, IProtocolHandler>,
+    pub(crate) protocol_handlers: FnvHashMap<ProtocolId, IProtocolHandler>,
 }
 
 impl Clone for Muxer {

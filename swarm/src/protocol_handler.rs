@@ -48,22 +48,32 @@
 //! In general, multiple protocol handlers should be made into trait objects and then added to `Swarm::muxer`.
 //!
 
+use crate::connection::Connection;
 use crate::substream::Substream;
-use crate::{ProtocolId, SwarmError};
+use crate::ProtocolId;
 use async_trait::async_trait;
 use libp2prs_core::upgrade::{ProtocolName, UpgradeInfo};
+use std::error::Error;
+
+/// Notifiee is an trait for an object wishing to receive notifications from swarm
+pub trait Notifiee {
+    /// called when a connection opened
+    fn connected(&mut self, _conn: &mut Connection) {}
+    /// called when a connection closed
+    fn disconnected(&mut self, _conn: &mut Connection) {}
+}
 
 /// Common trait for upgrades that can be applied on inbound substreams, outbound substreams,
 /// or both.
 /// Possible upgrade on a connection or substream.
 #[async_trait]
-pub trait ProtocolHandler: UpgradeInfo {
+pub trait ProtocolHandler: UpgradeInfo + Notifiee {
     /// After we have determined that the remote supports one of the protocols we support, this
     /// method is called to start handling the inbound. Swarm will start invoking this method
     /// in a newly spawned task.
     ///
     /// The `info` is the identifier of the protocol, as produced by `protocol_info`.
-    async fn handle(&mut self, stream: Substream, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError>;
+    async fn handle(&mut self, stream: Substream, info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn Error>>;
     /// This is to provide a clone method for the trait object.
     fn box_clone(&self) -> IProtocolHandler;
 }
@@ -95,9 +105,11 @@ impl UpgradeInfo for DummyProtocolHandler {
     }
 }
 
+impl Notifiee for DummyProtocolHandler {}
+
 #[async_trait]
 impl ProtocolHandler for DummyProtocolHandler {
-    async fn handle(&mut self, stream: Substream, info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+    async fn handle(&mut self, stream: Substream, info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn Error>> {
         log::trace!("Dummy Protocol handling inbound {:?} {:?}", stream, info.protocol_name_str());
         Ok(())
     }

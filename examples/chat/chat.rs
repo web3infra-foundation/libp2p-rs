@@ -26,7 +26,7 @@ use std::time::Duration;
 extern crate lazy_static;
 
 use async_std::io;
-use std::io::Write;
+use std::{error::Error, io::Write};
 
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::multiaddr::protocol::Protocol;
@@ -34,9 +34,9 @@ use libp2prs_core::transport::upgrade::TransportUpgrade;
 use libp2prs_core::upgrade::UpgradeInfo;
 use libp2prs_core::{Multiaddr, PeerId};
 use libp2prs_secio as secio;
-use libp2prs_swarm::protocol_handler::{IProtocolHandler, ProtocolHandler};
+use libp2prs_swarm::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandler};
 use libp2prs_swarm::substream::Substream;
-use libp2prs_swarm::{Swarm, SwarmError};
+use libp2prs_swarm::Swarm;
 use libp2prs_tcp::TcpConfig;
 use libp2prs_traits::{ReadEx, WriteEx};
 use libp2prs_yamux as yamux;
@@ -117,9 +117,11 @@ impl UpgradeInfo for ChatHandler {
     }
 }
 
+impl Notifiee for ChatHandler {}
+
 #[async_trait]
 impl ProtocolHandler for ChatHandler {
-    async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+    async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn Error>> {
         let stream = stream;
         log::trace!("ChatHandler handling inbound {:?}", stream);
         let s1 = stream.clone();

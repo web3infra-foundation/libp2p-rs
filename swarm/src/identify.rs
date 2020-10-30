@@ -42,17 +42,18 @@ use futures::channel::{mpsc, oneshot};
 use futures::SinkExt;
 use prost::Message;
 use std::convert::TryFrom;
-use std::io;
+use std::{error::Error, io};
 
 use libp2prs_core::transport::TransportError;
 use libp2prs_core::upgrade::UpgradeInfo;
 use libp2prs_core::{Multiaddr, PublicKey};
 use libp2prs_traits::{ReadEx, WriteEx};
 
+use crate::connection::Connection;
 use crate::control::SwarmControlCmd;
-use crate::protocol_handler::{IProtocolHandler, ProtocolHandler};
+use crate::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandler};
 use crate::substream::Substream;
-use crate::{SwarmError, SwarmEvent};
+use crate::SwarmEvent;
 
 mod structs_proto {
     include!(concat!(env!("OUT_DIR"), "/structs.rs"));
@@ -192,11 +193,18 @@ impl UpgradeInfo for IdentifyHandler {
     }
 }
 
+impl Notifiee for IdentifyHandler {
+    fn connected(&mut self, connection: &mut Connection) {
+        log::trace!("starting Identify service for {:?}", connection);
+        connection.start_identify();
+    }
+}
+
 #[async_trait]
 impl ProtocolHandler for IdentifyHandler {
     /// The IdentifyHandler's inbound protocol.
     /// Simply wait for any thing that coming in then send back
-    async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+    async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn Error>> {
         log::trace!("Identify Protocol handling on {:?}", stream);
 
         let (tx, rx) = oneshot::channel();
@@ -223,18 +231,22 @@ impl ProtocolHandler for IdentifyHandler {
 ///
 #[derive(Debug)]
 pub(crate) struct IdentifyPushHandler {
+    config: IdentifyConfig,
     tx: mpsc::UnboundedSender<SwarmEvent>,
 }
 
 impl Clone for IdentifyPushHandler {
     fn clone(&self) -> Self {
-        Self { tx: self.tx.clone() }
+        Self {
+            config: self.config.clone(),
+            tx: self.tx.clone(),
+        }
     }
 }
 
 impl IdentifyPushHandler {
-    pub(crate) fn new(tx: mpsc::UnboundedSender<SwarmEvent>) -> Self {
-        Self { tx }
+    pub(crate) fn new(config: IdentifyConfig, tx: mpsc::UnboundedSender<SwarmEvent>) -> Self {
+        Self { config, tx }
     }
 }
 
@@ -245,10 +257,19 @@ impl UpgradeInfo for IdentifyPushHandler {
     }
 }
 
+impl Notifiee for IdentifyPushHandler {
+    fn connected(&mut self, connection: &mut Connection) {
+        if self.config.push {
+            log::trace!("starting Identify Push service for {:?}", connection);
+            connection.start_identify_push();
+        }
+    }
+}
+
 #[async_trait]
 impl ProtocolHandler for IdentifyPushHandler {
     // receive the message and consume it
-    async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+    async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn Error>> {
         let cid = stream.cid();
         log::trace!("Identify Push Protocol handling on {:?}", stream);
 
@@ -268,7 +289,7 @@ impl ProtocolHandler for IdentifyPushHandler {
 mod tests {
     use super::IdentifyHandler;
     use crate::control::SwarmControlCmd;
-    use crate::identify::{IdentifyInfo, IdentifyPushHandler};
+    use crate::identify::{IdentifyConfig, IdentifyInfo, IdentifyPushHandler};
     use crate::protocol_handler::ProtocolHandler;
     use crate::substream::Substream;
     use crate::{identify, SwarmEvent};
@@ -355,7 +376,7 @@ mod tests {
             let socket = listener.accept().await.unwrap();
             let socket = Substream::new_with_default(Box::new(socket));
 
-            let mut handler = IdentifyPushHandler::new(tx);
+            let mut handler = IdentifyPushHandler::new(IdentifyConfig::default(), tx);
             let _ = handler.handle(socket, handler.protocol_info().first().unwrap()).await;
 
             let r = rx.next().await.unwrap();

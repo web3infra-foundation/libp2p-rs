@@ -44,7 +44,7 @@
 //! are supported, etc.
 //!
 
-mod connection;
+pub mod connection;
 mod control;
 mod muxer;
 mod network;
@@ -85,7 +85,7 @@ use crate::network::NetworkInfo;
 use crate::ping::{PingConfig, PingHandler};
 use crate::protocol_handler::IProtocolHandler;
 use crate::registry::Addresses;
-use crate::substream::{StreamId, Substream};
+use crate::substream::{RemotePeerInfo, StreamId, Substream};
 
 type Result<T> = std::result::Result<T, SwarmError>;
 
@@ -245,14 +245,6 @@ pub struct Swarm {
     /// There might be more than one connections for a remote peer
     connections_by_peer: FnvHashMap<PeerId, Vec<ConnectionId>>,
 
-    /// Swarm Ping service config, optional.
-    /// Ping service will be started as long as a new connection is established, if enabled.
-    /// The connection will be closed if Ping failure reaches the maxmium failure counts.
-    ping: Option<PingConfig>,
-    /// Swarm Identify service config, optional.
-    /// Identify service will be started as long as a new connection is established, if enabled.
-    identify: Option<IdentifyConfig>,
-
     //
     // /// Pending event to be delivered to connection handlers
     // /// (or dropped if the peer disconnected) before the `behaviour`
@@ -302,8 +294,6 @@ impl Swarm {
             banned_peers: Default::default(),
             connections_by_id: Default::default(),
             connections_by_peer: Default::default(),
-            ping: None,
-            identify: None,
             event_receiver: event_rx,
             event_sender: event_tx,
             ctrl_receiver: ctrl_rx,
@@ -353,16 +343,14 @@ impl Swarm {
     }
     /// Creates Swarm with Ping service.
     pub fn with_ping(mut self, ping: PingConfig) -> Self {
-        self.ping = Some(ping);
-        self.muxer.add_protocol_handler(Box::new(PingHandler));
+        self.muxer.add_protocol_handler(Box::new(PingHandler::new(ping)));
         self
     }
     /// Creates Swarm with Identify service.
-    pub fn with_identify(mut self, id: IdentifyConfig) -> Self {
-        self.identify = Some(id);
+    pub fn with_identify(mut self, config: IdentifyConfig) -> Self {
         let handler = IdentifyHandler::new(self.ctrl_sender.clone());
         self.muxer.add_protocol_handler(Box::new(handler));
-        let handler = IdentifyPushHandler::new(self.event_sender.clone());
+        let handler = IdentifyPushHandler::new(config, self.event_sender.clone());
         self.muxer.add_protocol_handler(Box::new(handler));
         self
     }
@@ -593,6 +581,7 @@ impl Swarm {
 
         let public_key = self.peers.keys.get_key(self.local_peer_id()).unwrap().clone();
 
+        // TODO: complete it with protocol_version and agent_version
         IdentifyInfo {
             public_key,
             protocol_version: "".to_string(),
@@ -1019,7 +1008,9 @@ impl Swarm {
                             Ok((mut handler, raw_stream, proto)) => {
                                 let la = stream_muxer.local_multiaddr();
                                 let ra = stream_muxer.remote_multiaddr();
-                                let stream = Substream::new(raw_stream, Direction::Inbound, proto, cid, la, ra, ctrl);
+                                let rpid = stream_muxer.remote_peer();
+                                let ri = RemotePeerInfo { ra, rpid };
+                                let stream = Substream::new(raw_stream, Direction::Inbound, proto, cid, la, ri, ctrl);
                                 let sub_stream = stream.clone();
                                 let _ = tx.send(SwarmEvent::StreamOpened { sub_stream }).await;
 
@@ -1056,28 +1047,9 @@ impl Swarm {
         // now we have the handle, move it into Connection
         connection.set_handle(handle);
 
-        // start Ping service if there is
-        if let Some(config) = self.ping.as_ref() {
-            if config.unsolicited() {
-                log::trace!("starting Ping service for {:?}", connection);
-                connection.start_ping(config.timeout(), config.interval());
-            }
-        };
-
-        // start Identify service if there is
-        if let Some(_config) = self.identify.as_ref() {
-            log::trace!("starting Identify service for {:?}", connection);
-            connection.start_identify();
-        };
-
-        // start Identify push service if there is
-        if let Some(config) = self.identify.as_ref() {
-            if config.push {
-                log::trace!("starting Identify Push service for {:?}", connection);
-                let pubkey = self.peers.keys.get_key(&connection.local_peer()).unwrap().clone();
-                connection.start_identify_push(pubkey);
-            }
-        };
+        for handler in self.muxer.protocol_handlers.values_mut() {
+            handler.connected(&mut connection);
+        }
 
         // insert to the hashmap of connections
         // there might be a race condition:
@@ -1123,6 +1095,10 @@ impl Swarm {
 
         // try to retrieve the Connection by looking up 'connections_by_id'
         if let Some(mut connection) = self.connections_by_id.remove(&cid) {
+            for handler in self.muxer.protocol_handlers.values_mut() {
+                handler.disconnected(&mut connection);
+            }
+
             let remote_peer_id = connection.remote_peer();
             if let Some(ids) = self.connections_by_peer.get_mut(&remote_peer_id) {
                 ids.retain(|id| id != &cid);
@@ -1159,14 +1135,10 @@ impl Swarm {
                     // update peer store with the TTL
                     let peer_id = connection.stream_muxer().remote_peer();
                     self.peers.addrs.update_addr(&peer_id, Duration::from_secs(1), ttl);
-
-                    connection.reset_failure();
                 }
-                Err(err) => {
-                    log::info!("ping failed {:?} for {:?}", err, connection);
-                    let allowed_max_failure = self.ping.as_ref().map_or(0, |config| config.max_failures());
-
-                    connection.handle_failure(allowed_max_failure);
+                Err(_) => {
+                    log::info!("reach the max ping failure count, closing {:?}", connection);
+                    connection.close();
                 }
             }
         }

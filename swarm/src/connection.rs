@@ -32,7 +32,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{error::Error, fmt};
 
-use futures::channel::mpsc;
+use futures::channel::{mpsc, oneshot};
 use futures::prelude::*;
 
 use async_std::task;
@@ -46,9 +46,9 @@ use libp2prs_core::upgrade::ProtocolName;
 use libp2prs_core::PublicKey;
 
 use crate::control::SwarmControlCmd;
-use crate::identify::{IdentifyInfo, IDENTIFY_PROTOCOL, IDENTIFY_PUSH_PROTOCOL};
+use crate::identify::{IDENTIFY_PROTOCOL, IDENTIFY_PUSH_PROTOCOL};
 use crate::ping::PING_PROTOCOL;
-use crate::substream::{StreamId, Substream};
+use crate::substream::{RemotePeerInfo, StreamId, Substream};
 use crate::{identify, ping, Multiaddr, PeerId, ProtocolId, SwarmError, SwarmEvent};
 
 /// The direction of a peer-to-peer communication channel.
@@ -224,7 +224,7 @@ impl Connection {
     }
 
     /// remote_peer is the Peer on the remote side.
-    pub(crate) fn remote_peer(&self) -> PeerId {
+    pub fn remote_peer(&self) -> PeerId {
         self.stream_muxer.remote_peer()
     }
 
@@ -254,28 +254,13 @@ impl Connection {
         self.substreams.len()
     }
 
-    /// Increases failure count, returns the increased count.
-    pub(crate) fn handle_failure(&mut self, allowed_max_failures: u32) {
-        self.ping_failures += 1;
-        if self.ping_failures >= allowed_max_failures {
-            // close the connection
-            log::info!("reach the max ping failure count, closing {:?}", self);
-            self.close();
-        }
-    }
-
-    /// Increases failure count, returns the increased count.
-    pub(crate) fn reset_failure(&mut self) {
-        self.ping_failures = 0;
-    }
-
     /// Starts the Ping service on this connection. The task handle will be tracked
     /// by the connection for later closing the Ping service
     ///
     /// Note that we don't generate StreamOpened/Closed event for Ping/Identify outbound
     /// simply because it doesn't make much sense doing so for a transient outgoing
     /// stream.
-    pub(crate) fn start_ping(&mut self, timeout: Duration, interval: Duration) {
+    pub(crate) fn start_ping(&mut self, timeout: Duration, interval: Duration, max_failures: u32) {
         self.ping_running.store(true, Ordering::Relaxed);
 
         let cid = self.id();
@@ -286,6 +271,7 @@ impl Connection {
         let ctrl = self.ctrl.clone();
 
         let handle = task::spawn(async move {
+            let mut fail_cnt: u32 = 0;
             loop {
                 if !flag.load(Ordering::Relaxed) {
                     break;
@@ -308,7 +294,13 @@ impl Connection {
                     Ok(stream) => {
                         let sub_stream = stream.clone();
                         let _ = tx.send(SwarmEvent::StreamOpened { sub_stream }).await;
-                        ping::ping(stream, timeout).await.map_err(|e| e)
+                        let res = ping::ping(stream, timeout).await;
+                        if res.is_ok() {
+                            fail_cnt = 0;
+                        } else {
+                            fail_cnt += 1;
+                        }
+                        res
                     }
                     Err(err) => {
                         // looks like the peer doesn't support the protocol
@@ -316,12 +308,17 @@ impl Connection {
                         Err(err)
                     }
                 };
-                let _ = tx
-                    .send(SwarmEvent::PingResult {
-                        cid,
-                        result: r.map_err(|e| e.into()),
-                    })
-                    .await;
+
+                if fail_cnt >= max_failures {
+                    let _ = tx
+                        .send(SwarmEvent::PingResult {
+                            cid,
+                            result: r.map_err(|e| e.into()),
+                        })
+                        .await;
+
+                    break;
+                }
             }
 
             log::trace!("ping task exiting...");
@@ -383,23 +380,19 @@ impl Connection {
     }
 
     /// Starts the Identify service on this connection.
-    pub(crate) fn start_identify_push(&mut self, k: PublicKey) {
+    pub(crate) fn start_identify_push(&mut self) {
         let cid = self.id();
         let stream_muxer = self.stream_muxer.clone();
         let pids = vec![IDENTIFY_PUSH_PROTOCOL];
-        let ctrl = self.ctrl.clone();
-
-        let info = IdentifyInfo {
-            public_key: k,
-            protocol_version: "".to_string(),
-            agent_version: "".to_string(),
-            listen_addrs: vec![],
-            protocols: vec!["/p1".to_string(), "/p1".to_string()],
-        };
+        let mut ctrl = self.ctrl.clone();
 
         let mut tx = self.tx.clone();
 
         let handle = task::spawn(async move {
+            let (swrm_tx, swrm_rx) = oneshot::channel();
+            ctrl.send(SwarmControlCmd::IdentifyInfo(swrm_tx)).await.expect("send");
+            let info = swrm_rx.await.expect("identify info").expect("get identify info");
+
             let r = open_stream_internal(cid, stream_muxer, pids, ctrl).await;
             match r {
                 Ok(stream) => {
@@ -456,6 +449,7 @@ async fn open_stream_internal(
     let raw_stream = stream_muxer.open_stream().await?;
     let la = stream_muxer.local_multiaddr();
     let ra = stream_muxer.remote_multiaddr();
+    let rpid = stream_muxer.remote_peer();
 
     // now it's time to do protocol multiplexing for sub stream
     let negotiator = Negotiator::new_with_protocols(pids);
@@ -464,7 +458,8 @@ async fn open_stream_internal(
     match result {
         Ok((proto, raw_stream)) => {
             log::debug!("selected outbound {:?} {:?}", cid, proto.protocol_name_str());
-            let stream = Substream::new(raw_stream, Direction::Outbound, proto, cid, la, ra, ctrl);
+            let ri = RemotePeerInfo { ra, rpid };
+            let stream = Substream::new(raw_stream, Direction::Outbound, proto, cid, la, ri, ctrl);
             Ok(stream)
         }
         Err(err) => {

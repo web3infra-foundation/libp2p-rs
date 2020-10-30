@@ -20,7 +20,7 @@
 
 use async_std::task;
 use async_trait::async_trait;
-use std::time::Duration;
+use std::{error::Error, time::Duration};
 #[macro_use]
 extern crate lazy_static;
 
@@ -31,9 +31,9 @@ use libp2prs_core::{Multiaddr, PeerId};
 use libp2prs_mplex as mplex;
 use libp2prs_secio as secio;
 use libp2prs_swarm::identify::IdentifyConfig;
-use libp2prs_swarm::protocol_handler::{IProtocolHandler, ProtocolHandler};
+use libp2prs_swarm::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandler};
 use libp2prs_swarm::substream::Substream;
-use libp2prs_swarm::{DummyProtocolHandler, Swarm, SwarmError};
+use libp2prs_swarm::{DummyProtocolHandler, Swarm};
 use libp2prs_traits::{ReadEx, WriteEx};
 use libp2prs_websocket::WsConfig;
 
@@ -72,9 +72,11 @@ fn run_server() {
         }
     }
 
+    impl Notifiee for MyProtocolHandler {}
+
     #[async_trait]
     impl ProtocolHandler for MyProtocolHandler {
-        async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+        async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn Error>> {
             let mut stream = stream;
             log::trace!("MyProtocolHandler handling inbound {:?}", stream);
             let mut msg = vec![0; 4096];
