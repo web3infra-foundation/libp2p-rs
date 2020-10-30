@@ -126,80 +126,63 @@ mod tests {
 
     #[test]
     fn dialer_connects_to_listener_ipv4() {
-        //env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();
         let listen_addr = "/ip4/127.0.0.1/tcp/38099/ws".parse().unwrap();
         let dial_addr = "/ip4/127.0.0.1/tcp/38099/ws".parse().unwrap();
-        let s = task::spawn(async {
-            server(listen_addr).await;
-        });
-        let c = task::spawn(async {
-            client(dial_addr, false).await;
-        });
-        futures::executor::block_on(async {
-            s.await;
-            c.await;
+        let s = task::spawn(async { server(listen_addr).await });
+        let c = task::spawn(async { client(dial_addr, false).await });
+        task::block_on(async {
+            assert_eq!(futures::join!(s, c), (true, true));
         });
     }
 
     #[test]
     fn dialer_connects_to_listener_dns() {
-        //env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();
         let listen_addr = "/ip4/127.0.0.1/tcp/38100/ws".parse().unwrap();
         let dial_addr = "/dns4/localhost/tcp/38100/ws".parse().unwrap();
-        let s = task::spawn(async {
-            server(listen_addr).await;
-        });
-        let c = task::spawn(async {
-            client(dial_addr, true).await;
-        });
-        futures::executor::block_on(async {
-            s.await;
-            c.await;
+        let s = task::spawn(async { server(listen_addr).await });
+        let c = task::spawn(async { client(dial_addr, true).await });
+        task::block_on(async {
+            assert_eq!(futures::join!(s, c), (true, true));
         });
     }
 
     #[test]
     fn dialer_connects_to_listener_ipv6() {
-        //env_logger::from_env(env_logger::Env::default().default_filter_or("debug")).init();
         let listen_addr = "/ip6/::1/tcp/38101/ws".parse().unwrap();
         let dial_addr = "/ip6/::1/tcp/38101/ws".parse().unwrap();
-        let s = task::spawn(async {
-            server(listen_addr).await;
-        });
-        let c = task::spawn(async {
-            client(dial_addr, false).await;
-        });
-        futures::executor::block_on(async {
-            s.await;
-            c.await;
+        let s = task::spawn(async { server(listen_addr).await });
+        let c = task::spawn(async { client(dial_addr, false).await });
+        task::block_on(async {
+            assert_eq!(futures::join!(s, c), (true, true));
         });
     }
 
-    async fn server(listen_addr: Multiaddr) {
+    async fn server(listen_addr: Multiaddr) -> bool {
         let ws_config: WsConfig = WsConfig::new();
-        let mut listener = ws_config.clone().listen_on(listen_addr.clone()).expect("listener");
+        let mut listener = ws_config
+            .clone()
+            .timeout(std::time::Duration::from_secs(5))
+            .listen_on(listen_addr.clone())
+            .expect("listener");
         let mut stream = listener.accept().await.expect("no error");
         let mut buf = vec![0_u8; 3];
         stream.read_exact2(&mut buf).await.expect("read_exact");
-        assert_eq!(vec![1, 23, 5], buf);
+        vec![1, 23, 5] == buf
     }
 
-    async fn client(dial_addr: Multiaddr, dns: bool) {
+    async fn client(dial_addr: Multiaddr, dns: bool) -> bool {
         let ws_config: WsConfig;
         if dns {
             ws_config = WsConfig::new_with_dns();
         } else {
             ws_config = WsConfig::new();
         }
-        let conn = ws_config
-            .outbound_timeout(std::time::Duration::new(5, 0))
-            .dial(dial_addr.clone())
-            .await;
-        assert_eq!(true, conn.is_ok());
+        task::sleep(std::time::Duration::from_millis(200)).await;
+        let conn = ws_config.timeout(std::time::Duration::from_secs(5)).dial(dial_addr.clone()).await;
         let mut conn = conn.expect("");
         let data = vec![1_u8, 23, 5];
         log::debug!("[Client] write data {:?}", data);
         let r = conn.write_all2(&data).await;
-        assert_eq!(true, r.is_ok());
+        r.is_ok()
     }
 }
