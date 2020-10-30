@@ -34,9 +34,10 @@ jobs:
   build_and_test:
     name: Build and test
     needs: [fmt_clippy_docs]
-    runs-on: [self-hosted, linux, X64]
+    runs-on: ${{ matrix.os }} 
     strategy:
       matrix:
+        os: [[self-hosted, linux, X64],[self-hosted, windows, X64]]
         rust: [1.47.0]
 
     steps:
