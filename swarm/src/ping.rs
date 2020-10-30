@@ -43,17 +43,17 @@
 
 use async_trait::async_trait;
 use rand::{distributions, prelude::*};
-use std::io;
 use std::num::NonZeroU32;
 use std::time::{Duration, Instant};
+use std::{error::Error, io};
 
 use libp2prs_core::transport::TransportError;
 use libp2prs_core::upgrade::UpgradeInfo;
 use libp2prs_traits::{ReadEx, WriteEx};
 
-use crate::protocol_handler::{IProtocolHandler, ProtocolHandler};
+use crate::connection::Connection;
+use crate::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandler};
 use crate::substream::Substream;
-use crate::SwarmError;
 
 /// The configuration for outbound pings.
 #[derive(Clone, Debug)]
@@ -195,7 +195,15 @@ pub async fn ping<T: ReadEx + WriteEx + Send + std::fmt::Debug>(mut stream: T, t
 /// and answering ping queries.
 ///
 #[derive(Debug, Clone)]
-pub(crate) struct PingHandler;
+pub(crate) struct PingHandler {
+    config: PingConfig,
+}
+
+impl PingHandler {
+    pub(crate) fn new(config: PingConfig) -> Self {
+        PingHandler { config }
+    }
+}
 
 /// Represents a prototype for an upgrade to handle the ping protocol.
 ///
@@ -224,11 +232,21 @@ impl UpgradeInfo for PingHandler {
     }
 }
 
+impl Notifiee for PingHandler {
+    fn connected(&mut self, connection: &mut Connection) {
+        let config = self.config.clone();
+        if config.unsolicited() {
+            log::trace!("starting Ping service for {:?}", connection);
+            connection.start_ping(config.timeout(), config.interval(), config.max_failures());
+        }
+    }
+}
+
 #[async_trait]
 impl ProtocolHandler for PingHandler {
     /// The Ping handler's inbound protocol.
     /// Simply wait for any thing that coming in then send back
-    async fn handle(&mut self, mut stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+    async fn handle(&mut self, mut stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn Error>> {
         log::trace!("Ping Protocol handling on {:?}", stream);
 
         let mut payload = [0u8; PING_SIZE];
@@ -247,7 +265,7 @@ impl ProtocolHandler for PingHandler {
 #[cfg(test)]
 mod tests {
     use super::PingHandler;
-    use crate::ping::ping;
+    use crate::ping::{ping, PingConfig};
     use crate::protocol_handler::ProtocolHandler;
     use crate::substream::Substream;
     use libp2prs_core::upgrade::UpgradeInfo;
@@ -268,7 +286,7 @@ mod tests {
             let socket = listener.accept().await.unwrap();
             let socket = Substream::new_with_default(Box::new(socket));
 
-            let mut handler = PingHandler;
+            let mut handler = PingHandler::new(PingConfig::new().with_unsolicited(true));
             let _ = handler.handle(socket, handler.protocol_info().first().unwrap()).await;
         });
 

@@ -31,13 +31,13 @@ use libp2prs_core::{Multiaddr, PeerId};
 use libp2prs_secio as secio;
 use libp2prs_swarm::identify::IdentifyConfig;
 use libp2prs_swarm::ping::PingConfig;
-use libp2prs_swarm::protocol_handler::{IProtocolHandler, ProtocolHandler};
+use libp2prs_swarm::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandler};
 use libp2prs_swarm::substream::Substream;
 use libp2prs_swarm::{DummyProtocolHandler, Swarm, SwarmError};
 use libp2prs_tcp::TcpConfig;
 use libp2prs_traits::{copy, ReadEx, WriteEx};
 use libp2prs_yamux as yamux;
-use std::collections::VecDeque;
+use std::{collections::VecDeque, error::Error};
 
 fn main() {
     env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -74,15 +74,17 @@ fn run_server() {
         }
     }
 
+    impl Notifiee for MyProtocolHandler {}
+
     #[async_trait]
     impl ProtocolHandler for MyProtocolHandler {
-        async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), SwarmError> {
+        async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn Error>> {
             log::info!("MyProtocolHandler handling inbound {:?}", stream);
             let r = stream.clone();
             let w = stream.clone();
             if let Err(e) = copy(r, w).await {
                 if e.kind() != std::io::ErrorKind::UnexpectedEof {
-                    return Err(SwarmError::from(e));
+                    return Err(Box::new(SwarmError::from(e)));
                 }
             }
             Ok(())
