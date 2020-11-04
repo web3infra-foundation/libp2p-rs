@@ -106,19 +106,20 @@ impl Control {
         self.metric.get_peer_in_and_out(peer_id)
     }
 
-    /// make a connection to the remote.
-    pub async fn new_connection(&mut self, peerd_id: PeerId) -> Result<()> {
-        let (tx, rx) = oneshot::channel();
-        self.sender.send(SwarmControlCmd::NewConnection(peerd_id.clone(), tx)).await?;
+    /// Make a new connection towards the remote peer.
+    pub async fn new_connection(&mut self, peer_id: PeerId) -> Result<()> {
+        let (tx, rx) = oneshot::channel::<Result<()>>();
+        let _ = self.sender.send(SwarmControlCmd::NewConnection(peer_id.clone(), tx)).await;
         rx.await?
     }
 
-    /// Open a new outbound stream towards the remote.
-    pub async fn new_stream(&mut self, peerd_id: PeerId, pids: Vec<ProtocolId>) -> Result<Substream> {
+    /// Open a new outbound stream towards the remote peer.
+    pub async fn new_stream(&mut self, peer_id: PeerId, pids: Vec<ProtocolId>) -> Result<Substream> {
         let (tx, rx) = oneshot::channel();
-        self.sender.send(SwarmControlCmd::NewStream(peerd_id.clone(), pids, tx)).await?;
+        self.sender.send(SwarmControlCmd::NewStream(peer_id, pids, tx)).await?;
         rx.await?
     }
+
     /// Retrieve network statistics from Swarm.
     pub async fn retrieve_networkinfo(&mut self) -> Result<NetworkInfo> {
         let (tx, rx) = oneshot::channel();

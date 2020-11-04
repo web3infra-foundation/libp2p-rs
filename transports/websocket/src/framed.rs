@@ -33,7 +33,7 @@ use libp2prs_core::{
     Transport,
 };
 use libp2prs_tcp::TcpTransStream;
-use log::{debug, error, trace};
+use log::{debug, info, trace};
 use soketto::{connection, extension::deflate::Deflate, handshake};
 use std::fmt;
 use url::Url;
@@ -261,7 +261,7 @@ impl Transport for WsConfig {
                 }
                 Ok(Either::Right(conn)) => return Ok(conn),
                 Err(e) => {
-                    error!("websocket transport dial error:{}", e);
+                    debug!("websocket transport dial error:{}", e);
                     return Err(e.into());
                 }
             }
@@ -341,7 +341,7 @@ impl WsConfig {
         match client
             .handshake()
             .map_err(|e| {
-                error!("[Client] {:?}", e);
+                info!("[Client] {:?}", e);
                 WsError::Handshake(Box::new(e))
             })
             .await?

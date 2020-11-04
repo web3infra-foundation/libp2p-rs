@@ -27,8 +27,9 @@ extern crate lazy_static;
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::transport::memory::MemoryTransport;
 use libp2prs_core::transport::upgrade::TransportUpgrade;
-use libp2prs_core::upgrade::UpgradeInfo;
+use libp2prs_core::upgrade::{Selector, UpgradeInfo};
 use libp2prs_core::{Multiaddr, PeerId};
+use libp2prs_mplex as mplex;
 use libp2prs_secio as secio;
 use libp2prs_swarm::identify::IdentifyConfig;
 use libp2prs_swarm::ping::PingConfig;
@@ -37,10 +38,8 @@ use libp2prs_swarm::substream::Substream;
 use libp2prs_swarm::{DummyProtocolHandler, Swarm};
 use libp2prs_tcp::TcpConfig;
 use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_websocket::WsConfig;
 use libp2prs_yamux as yamux;
-// use libp2prs_mplex as mplex;
-
-//use libp2prs_swarm::Swarm::network::NetworkConfig;
 
 fn main() {
     env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -61,13 +60,14 @@ lazy_static! {
 fn run_server() {
     let keys = SERVER_KEY.clone();
 
-    let listen_addr: Multiaddr = "/ip4/127.0.0.1/tcp/8086".parse().unwrap();
+    let listen_addr1: Multiaddr = "/ip4/0.0.0.0/tcp/8086".parse().unwrap();
+    let listen_addr2: Multiaddr = "/ip4/127.0.0.1/tcp/30199/ws".parse().unwrap();
+
     let sec = secio::Config::new(keys.clone());
-    let mux = yamux::Config::new();
-    //let mux = mplex::Config::new();
-    //let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
+    let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
     let tu = TransportUpgrade::new(TcpConfig::default(), mux.clone(), sec.clone());
-    let tu2 = TransportUpgrade::new(MemoryTransport::default(), mux, sec);
+    let tu2 = TransportUpgrade::new(MemoryTransport::default(), mux.clone(), sec.clone());
+    let tu3 = TransportUpgrade::new(WsConfig::new(), mux, sec);
 
     #[derive(Clone)]
     struct MyProtocolHandler;
@@ -103,6 +103,7 @@ fn run_server() {
     let mut swarm = Swarm::new(keys.public())
         .with_transport(Box::new(tu))
         .with_transport(Box::new(tu2))
+        .with_transport(Box::new(tu3))
         .with_protocol(Box::new(DummyProtocolHandler::new()))
         .with_protocol(Box::new(MyProtocolHandler))
         .with_ping(PingConfig::new().with_unsolicited(true).with_interval(Duration::from_secs(1)))
@@ -112,7 +113,7 @@ fn run_server() {
 
     let _control = swarm.control();
 
-    swarm.listen_on(vec![listen_addr]).unwrap();
+    swarm.listen_on(vec![listen_addr1, listen_addr2]).unwrap();
 
     swarm.start();
 
@@ -124,14 +125,14 @@ fn run_server() {
 fn run_client() {
     let keys = Keypair::generate_secp256k1();
 
-    let _addr: Multiaddr = "/ip4/127.0.0.1/tcp/8086".parse().unwrap();
     let sec = secio::Config::new(keys.clone());
-    let mux = yamux::Config::new();
-    //let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
-    let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
+    let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
+    let tu = TransportUpgrade::new(TcpConfig::default(), mux.clone(), sec.clone());
+    let tu2 = TransportUpgrade::new(WsConfig::new(), mux, sec);
 
     let mut swarm = Swarm::new(keys.public())
         .with_transport(Box::new(tu))
+        .with_transport(Box::new(tu2))
         .with_ping(PingConfig::new().with_unsolicited(false).with_interval(Duration::from_secs(1)))
         .with_identify(IdentifyConfig::new(false));
 
@@ -141,22 +142,36 @@ fn run_client() {
 
     log::info!("about to connect to {:?}", remote_peer_id);
 
+    swarm.peer_addrs_add(&remote_peer_id, "/ip4/127.0.0.1/tcp/30199/ws".parse().unwrap(), Duration::default());
     swarm.peer_addrs_add(&remote_peer_id, "/ip4/127.0.0.1/tcp/8086".parse().unwrap(), Duration::default());
 
     swarm.start();
 
     task::block_on(async move {
-        control.new_connection(remote_peer_id.clone()).await.unwrap();
-        let mut stream = control.new_stream(remote_peer_id, vec![b"/my/1.0.0"]).await.unwrap();
+        for _ in 0..2 {
+            // method 1
+            //let mut connection = control.new_connection(remote_peer_id.clone()).await.unwrap();
+            //let mut stream = connection.open_stream(vec![b"/my/1.0.0"], |r| r.unwrap()).await;
 
-        log::info!("stream {:?} opened, writing something...", stream);
+            // method 2
+            let mut stream = control.new_stream(remote_peer_id.clone(), vec![b"/my/1.0.0"]).await.unwrap();
+            log::info!("stream {:?} opened, writing something...", stream);
+            let _ = stream.write_all2(b"hello").await;
 
-        let _ = stream.write_all2(b"hello").await;
+            let mut buf = [0; 4096];
+            let n = stream.read2(&mut buf).await.unwrap();
+            let str = String::from_utf8_lossy(&buf[0..n]);
 
-        task::sleep(Duration::from_secs(10)).await;
+            log::info!("======================{}", str);
 
-        let _ = stream.close2().await;
+            task::sleep(Duration::from_secs(1)).await;
 
-        log::info!("shutdown is completed");
+            let _ = stream.close2().await;
+
+            log::info!("shutdown is completed");
+        }
+
+        // close the swarm explicitly
+        let _ = control.close().await;
     });
 }

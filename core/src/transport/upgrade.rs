@@ -145,6 +145,12 @@ pub type IListenerEx = IListener<IStreamMuxer>;
 /// Trait object for Transport which is actually TransportUpgrade
 pub type ITransportEx = ITransport<IStreamMuxer>;
 
+impl Clone for ITransportEx {
+    fn clone(&self) -> Self {
+        self.box_clone()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

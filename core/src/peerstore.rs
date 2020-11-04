@@ -90,12 +90,17 @@ pub struct AddrBook {
 /// Store address, time-to-server, and expired time
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AddrBookRecord {
-    pub addr: Multiaddr,
+    addr: Multiaddr,
     ttl: f64,
     expiry: Duration,
 }
 
 impl AddrBookRecord {
+    /// Set the route-trip-time
+    pub fn get_addr(&self) -> &Multiaddr {
+        &self.addr
+    }
+
     /// Set the route-trip-time
     pub fn set_ttl(&mut self, ttl: Duration) {
         self.ttl = ttl.as_secs_f64()
