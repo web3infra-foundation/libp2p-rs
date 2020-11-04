@@ -50,7 +50,7 @@ impl<R: AsyncRead + AsyncWrite + Unpin + Send> ReadEx for ConnectionReader<R> {
         }
         let mut v = Vec::with_capacity(buf.len());
         match self.recvier.receive_data(&mut v).await.map_err(|e| {
-            log::error!("{:?}", e);
+            log::info!("{:?}", e);
             std::io::Error::new(std::io::ErrorKind::Other, e)
         })? {
             soketto::Data::Binary(n) | soketto::Data::Text(n) => {

@@ -112,6 +112,48 @@ impl Multiaddr {
         Some(protocol)
     }
 
+    pub fn value_for_protocol(&self, code: u32) -> Option<String> {
+        let components = self.iter().collect::<Vec<_>>();
+        for comp in components.iter() {
+            if comp.get_key().is_ok() && comp.get_key().unwrap() == code {
+                return Some(comp.to_string());
+            }
+        }
+        None
+    }
+
+    pub fn is_private_addr(&self) -> bool {
+        let mut is_private = false;
+        let components = self.iter().collect::<Vec<_>>();
+        for comp in components.iter() {
+            match comp {
+                protocol::Protocol::Ip4(ipv4_addr) => {
+                    is_private = ipv4_addr.is_private() || ipv4_addr.is_loopback() || ipv4_addr.is_link_local();
+                }
+                protocol::Protocol::Ip6(ipv6_addr) => {
+                    is_private = ipv6_addr.is_loopback();
+                    //TODO: unstable feature, ipv6_addr.is_unique_local()||ipv6_addr.is_unicast_link_local();
+                }
+                _ => {}
+            }
+        }
+        is_private
+    }
+
+    /// we don't consume FD's for relay addresses for now as they will be consumed when the Relay Transport actually dials the Relay server.
+    /// That dial call will also pass through this limiter with the address of the relay server i.e. non-relay address.
+    pub fn should_consume_fd(&self) -> bool {
+        let mut find = false;
+        for p in self.iter() {
+            if let Ok(key) = p.get_key() {
+                if key == protocol::UNIX || key == protocol::TCP {
+                    find = true;
+                }
+            }
+        }
+        find
+    }
+
     /// Like [`Multiaddr::push`] but consumes `self`.
     pub fn with(mut self, p: Protocol<'_>) -> Self {
         let mut w = io::Cursor::<&mut Vec<u8>>::new(Arc::make_mut(&mut self.bytes));

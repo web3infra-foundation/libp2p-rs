@@ -46,6 +46,7 @@
 
 pub mod connection;
 mod control;
+mod dial;
 mod muxer;
 mod network;
 mod registry;
@@ -59,15 +60,17 @@ pub mod substream;
 pub use control::Control;
 pub use protocol_handler::DummyProtocolHandler;
 
-use async_std::task;
 use fnv::FnvHashMap;
 use futures::channel::{mpsc, oneshot};
 use futures::future::Either;
 use futures::prelude::*;
 use smallvec::SmallVec;
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::Duration;
 use std::{error, fmt};
+
+use async_std::task;
 
 use libp2prs_core::peerstore::PeerStore;
 use libp2prs_core::upgrade::ProtocolName;
@@ -88,7 +91,6 @@ use crate::ping::{PingConfig, PingHandler};
 use crate::protocol_handler::IProtocolHandler;
 use crate::registry::Addresses;
 use crate::substream::{ConnectInfo, StreamId, Substream};
-use std::sync::Arc;
 
 type Result<T> = std::result::Result<T, SwarmError>;
 
@@ -97,10 +99,12 @@ type Result<T> = std::result::Result<T, SwarmError>;
 pub enum SwarmEvent {
     /// A connection to the given peer has been opened.
     ConnectionEstablished {
-        /// The connection, stream muxer
+        /// The connection, AKA. the trait object of stream muxer.
         stream_muxer: IStreamMuxer,
-        /// Direction of the connection
+        /// Direction of the connection.
         direction: Direction,
+        /// The dial transaction id
+        tid: Option<TransactionId>,
     },
     /// A connection with the given peer has been closed.
     ConnectionClosed {
@@ -118,15 +122,8 @@ pub enum SwarmEvent {
     },
     /// A new substream opened.
     StreamOpened {
-        // /// The sub stream.
+        /// The sub stream.
         sub_stream: Substream,
-    },
-    /// A substream has been closed.
-    StreamClosed {
-        /// The connection Id of the sub stream.
-        cid: ConnectionId,
-        /// The substream Id.
-        sid: StreamId,
     },
     /// An error happened on a connection during its initial handshake.
     ///
@@ -141,10 +138,12 @@ pub enum SwarmEvent {
     OutgoingConnectionError {
         /// The remote Peer Id.
         peer_id: PeerId,
-        /// The remote multiaddr.
-        remote_addr: Multiaddr,
+        // /// The remote multiaddr.
+        // remote_addr: Multiaddr,
         /// The error that happened when dialing.
-        error: TransportError,
+        error: SwarmError,
+        // The dial transaction id
+        tid: TransactionId,
     },
     /// We connected to a peer, but we immediately closed the connection because that peer is banned.
     BannedPeer {
@@ -211,11 +210,41 @@ pub enum SwarmEvent {
         /// Duration means the TTL when succeeded, or SwarmError for failed.
         result: Result<(IdentifyInfo, Multiaddr)>,
     },
-    /// Close swarm
-    SwarmClosed,
+}
+
+/// The Transports helper.
+#[derive(Clone, Default)]
+struct Transports {
+    inner: FnvHashMap<u32, ITransportEx>,
+}
+
+impl Transports {
+    pub(crate) fn lookup_by_addr(&self, mut addr: Multiaddr) -> Result<ITransportEx> {
+        log::trace!("get transport for addr={}", addr);
+
+        if let Some(d) = addr.pop() {
+            if let Ok(id) = d.get_key() {
+                if let Some(transport) = self.inner.get(&id).map(|s| s.box_clone()) {
+                    return Ok(transport);
+                }
+            }
+        }
+        Err(SwarmError::Transport(TransportError::MultiaddrNotSupported(addr)))
+    }
+    pub(crate) fn get(&self, id: &u32) -> Option<&ITransportEx> {
+        self.inner.get(id)
+    }
+    pub(crate) fn add(&mut self, id: u32, transport: ITransportEx) -> Option<ITransportEx> {
+        self.inner.insert(id, transport)
+    }
 }
 
 type ProtocolId = &'static [u8];
+
+/// The post-processing callback for Dialer.
+type DialCallback = Box<dyn FnOnce(Result<&mut Connection>) + Send>;
+/// The transaction Id for dialer post-processing.
+type TransactionId = usize;
 
 /// Contains the state of the network, plus the way it should behave.
 pub struct Swarm {
@@ -226,7 +255,7 @@ pub struct Swarm {
     muxer: Muxer,
 
     /// The Transports.
-    transports: FnvHashMap<u32, ITransportEx>,
+    transports: Transports,
 
     /// The local peer ID.
     local_peer_id: PeerId,
@@ -267,15 +296,16 @@ pub struct Swarm {
     ctrl_receiver: mpsc::Receiver<SwarmControlCmd>,
     /// The Swarm event sender wil be cloned and then taken by others
     ctrl_sender: mpsc::Sender<SwarmControlCmd>,
+
+    /// The dialer for making outgoing connections.
+    dialer: dial::AsyncDialer,
+
+    /// The dialer unique transaction id.
+    next_tid: TransactionId,
+    /// The dialer post-processing hashmap.
+    dial_transactions: FnvHashMap<TransactionId, DialCallback>,
 }
 
-// impl<TBehaviour, TInEvent, TOutEvent, THandler, TConnInfo> Unpin for
-//     Swarm<TBehaviour, TInEvent, TOutEvent, THandler, TConnInfo>
-// where
-//     THandler: IntoProtocolsHandler,
-//     TConnInfo: ConnectionInfo<PeerId = PeerId>,
-// {
-// }
 #[allow(dead_code)]
 impl Swarm {
     /// Builds a new `Swarm`.
@@ -292,7 +322,7 @@ impl Swarm {
 
         if let Err(e) = peers.load_data() {
             if e.kind() != std::io::ErrorKind::UnexpectedEof {
-                log::error!("{}", e);
+                log::info!("PeerStore load data error: {}", e);
             }
         }
 
@@ -315,22 +345,21 @@ impl Swarm {
             event_sender: event_tx,
             ctrl_receiver: ctrl_rx,
             ctrl_sender: ctrl_tx,
+            dialer: dial::AsyncDialer::new(),
+            next_tid: 0,
+            dial_transactions: Default::default(),
         }
     }
-
     fn assign_cid(&mut self) -> usize {
         self.next_connection_id += 1;
         self.next_connection_id
     }
-    // /// Creates Swarm with transports.(TODO: only support one Transport,so far)
-    // pub fn with_transports(self, transports: Vec<ITransport<TStreamMuxer>>) -> Self {
-    //     let mut me = self;
-    //     for transport in transports {
-    //         me = me.with_transport(transport);
-    //     }
-    //     me
-    // }
-    /// Creates Swarm with transport.
+    fn assign_tid(&mut self) -> TransactionId {
+        self.next_tid += 1;
+        self.next_tid
+    }
+
+    /// Adds transport to Swarm.
     pub fn with_transport(mut self, transport: ITransportEx) -> Self {
         let protocols = transport.protocols();
         if protocols.is_empty() {
@@ -349,7 +378,7 @@ impl Swarm {
 
         for p in protocols.iter() {
             log::trace!("add protocol={}", p);
-            self.transports.insert(*p, transport.box_clone());
+            self.transports.add(*p, transport.box_clone());
         }
         self
     }
@@ -385,7 +414,6 @@ impl Swarm {
     /// in general, it should be spawned in a Task
     pub async fn next(&mut self) -> Result<()> {
         // TODO: check if terminated??
-
         // handle messages, which makes actual progress for Swarm
         self.handle_messages().await?;
 
@@ -410,7 +438,7 @@ impl Swarm {
                 }
                 Either::Right((cmd, _)) => {
                     if let Some(cmd) = cmd {
-                        self.on_command(cmd).await?;
+                        self.on_command(cmd)?;
                     } else {
                         // we are closed anyway, break
                         log::debug!("Swarm control channel is closed, closing down...");
@@ -423,21 +451,20 @@ impl Swarm {
 
     fn on_event(&mut self, event: SwarmEvent) -> Result<()> {
         log::trace!("Swarm event={:?}", event);
-
         match event {
             SwarmEvent::ListenerClosed { addresses: _, reason: _ } => {}
-            SwarmEvent::ConnectionEstablished { stream_muxer, direction } => {
-                let _ = self.handle_connection_opened(stream_muxer, direction);
+            SwarmEvent::ConnectionEstablished {
+                stream_muxer,
+                direction,
+                tid,
+            } => {
+                let _ = self.handle_connection_opened(stream_muxer, direction, tid);
             }
             SwarmEvent::ConnectionClosed { cid, error: _ } => {
                 let _ = self.handle_connection_closed(cid);
             }
-            SwarmEvent::OutgoingConnectionError {
-                peer_id: _,
-                remote_addr: _,
-                error: _,
-            } => {
-                // TODO: add statistics
+            SwarmEvent::OutgoingConnectionError { tid, peer_id, error } => {
+                let _ = self.handle_connection_error(peer_id, error, tid);
             }
             SwarmEvent::StreamError { .. } => {
                 // TODO: add statistics
@@ -445,17 +472,11 @@ impl Swarm {
             SwarmEvent::StreamOpened { sub_stream } => {
                 let _ = self.handle_stream_opened(sub_stream);
             }
-            SwarmEvent::StreamClosed { cid, sid } => {
-                let _ = self.handle_stream_closed(cid, sid);
-            }
             SwarmEvent::PingResult { cid, result } => {
                 let _ = self.handle_ping_result(cid, result);
             }
             SwarmEvent::IdentifyResult { cid, result } => {
                 let _ = self.handle_identify_result(cid, result);
-            }
-            SwarmEvent::SwarmClosed => {
-                let _ = self.handle_swarm_closed();
             }
 
             // TODO: handle other messages
@@ -467,7 +488,7 @@ impl Swarm {
         Ok(())
     }
 
-    async fn on_command(&mut self, cmd: SwarmControlCmd) -> Result<()> {
+    fn on_command(&mut self, cmd: SwarmControlCmd) -> Result<()> {
         log::trace!("Swarm control command={:?}", cmd);
 
         match cmd {
@@ -485,7 +506,7 @@ impl Swarm {
             }
             SwarmControlCmd::CloseStream(cid, sid) => {
                 // got the connection_id, try closing a new sub stream
-                let _ = self.on_close_stream(cid, sid).await;
+                let _ = self.on_close_stream(cid, sid);
             }
             SwarmControlCmd::NetworkInfo(reply) => {
                 // Received from channel, try retrieving network info
@@ -501,10 +522,12 @@ impl Swarm {
             }
             SwarmControlCmd::CloseSwarm => {
                 log::info!("closing the swarm...");
-                let _ = self.on_close_swarm().await;
+
+                if let Err(e) = self.peers.save_data() {
+                    log::info!("PeerStore save data failed: {}", e);
+                }
                 let _ = self.event_sender.close_channel();
-            } // TODO:
-              //_ => {}
+            }
         }
 
         Ok(())
@@ -515,8 +538,10 @@ impl Swarm {
         if let Some(_conn) = self.get_best_conn(&peer_id) {
             let _ = reply.send(Ok(()));
         } else {
-            // Note: reply moved
-            let _ = self.start_dialer(peer_id, Some(reply));
+            // dialing peer, with the post-processing callback
+            self.dial_peer(peer_id, |r: Result<&mut Connection>| {
+                let _ = reply.send(r.map(|_| ()));
+            });
         }
         Ok(())
     }
@@ -538,25 +563,29 @@ impl Swarm {
     fn on_new_stream(&mut self, peer_id: PeerId, pids: Vec<ProtocolId>, reply: oneshot::Sender<Result<Substream>>) -> Result<()> {
         if let Some(connection) = self.get_best_conn(&peer_id) {
             // well, we have a connection, start a task to open the stream
-            connection.open_stream(pids, |r| {
+            connection.open_stream(pids, move |r| {
                 let _ = reply.send(r.map_err(|e| e.into()));
             });
+            log::debug!("Create a new stream using the existing connection");
         } else {
-            let _ = reply.send(Err(SwarmError::NoConnection(peer_id)));
+            log::debug!("Dial and then create a new stream");
+            // dialing peer, and opening a new stream in the post-processing callback
+            self.dial_peer(peer_id.clone(), |r: Result<&mut Connection>| match r {
+                Ok(connection) => {
+                    connection.open_stream(pids, |r| {
+                        let _ = reply.send(r.map_err(|e| e.into()));
+                    });
+                }
+                Err(e) => {
+                    let _ = reply.send(Err(e));
+                }
+            });
         }
         Ok(())
     }
 
-    async fn on_close_stream(&mut self, cid: ConnectionId, sid: StreamId) -> Result<()> {
-        let _ = self.event_sender.send(SwarmEvent::StreamClosed { cid, sid }).await;
-        //self.handle_stream_closed(Direction::Outbound, cid, sid);
-        Ok(())
-    }
-
-    /// Close swarm
-    async fn on_close_swarm(&mut self) -> Result<()> {
-        let _ = self.event_sender.send(SwarmEvent::SwarmClosed).await;
-        Ok(())
+    fn on_close_stream(&mut self, cid: ConnectionId, sid: StreamId) -> Result<()> {
+        self.handle_stream_closed(cid, sid)
     }
 
     ///
@@ -574,7 +603,6 @@ impl Swarm {
     pub fn start(self) {
         // well, self 'move' explicitly,
         let mut swarm = self;
-
         task::spawn(async move { while let Ok(()) = swarm.next().await {} });
     }
     //
@@ -629,26 +657,24 @@ impl Swarm {
     /// Returns an error if the address is not supported.
     pub fn listen_on(&mut self, addrs: Vec<Multiaddr>) -> Result<()> {
         let mut succeeded: u32 = 0;
-        let mut errs = Vec::new();
+        let mut errs = FnvHashMap::<u32, SwarmError>::default();
         for (i, n) in addrs.clone().into_iter().enumerate() {
             let r = self.add_listen_addr(n);
             match r {
-                Ok(_) => succeeded += 1,
+                Ok(()) => succeeded += 1,
                 Err(e) => {
-                    errs.insert(i, e);
+                    errs.insert(i as u32, e);
                 }
             };
         }
 
-        for (i, n) in errs.into_iter().enumerate() {
-            log::warn!("listen on {} failed: {}", addrs[i], n)
+        for (i, err) in errs.into_iter().enumerate() {
+            log::warn!("listen on {} failed: {:?}", addrs[i], err)
         }
 
         if succeeded == 0 && !addrs.is_empty() {
-            log::error!("failed to listen on any addresses:{:?}", addrs);
             return Err(SwarmError::CanNotListenOnAny);
         }
-
         Ok(())
     }
 
@@ -665,7 +691,7 @@ impl Swarm {
         }
     */
     fn add_listen_addr(&mut self, addr: Multiaddr) -> Result<()> {
-        let mut transport = self.get_best_transport(addr.clone())?;
+        let mut transport = self.transports.lookup_by_addr(addr.clone())?;
         let mut listener = transport.listen_on(addr)?;
         self.listened_addrs.push(listener.multi_addr());
 
@@ -684,6 +710,7 @@ impl Swarm {
                             .send(SwarmEvent::ConnectionEstablished {
                                 stream_muxer: muxer,
                                 direction: Direction::Inbound,
+                                tid: None,
                             })
                             .await;
                     }
@@ -701,122 +728,47 @@ impl Swarm {
         });
         Ok(())
     }
-    ///  retrieves the appropriate transport for listening on or dial the given multiaddr.
-    fn get_best_transport(&self, mut addr: Multiaddr) -> Result<ITransportEx> {
-        let protocol = addr.pop();
-        match protocol {
-            Some(d) => {
-                log::info!("get best transport, protocol={}", &d);
-                let id = d
-                    .get_key()
-                    .map_err(|_| SwarmError::Transport(TransportError::MultiaddrNotSupported(addr)))?;
-                if let Some(selected) = self.transports.get(&id).map(|s| s.box_clone()) {
-                    return Ok(selected);
+
+    fn dial_peer<F: FnOnce(Result<&mut Connection>) + Send + 'static>(&mut self, peer_id: PeerId, f: F) {
+        // if dialing to itself...
+        if self.local_peer_id().eq(&peer_id) {
+            f(Err(SwarmError::DialToSelf));
+            return;
+        }
+        // then check addrs, return error if none when DHT is not enabled
+        let r = self.peers.addrs.get_addr(&peer_id);
+        let addrs = match r {
+            Some(l) if !l.is_empty() => dial::EitherDialAddr::Addresses(l.iter().map(|r| r.get_addr().clone()).collect()),
+            _ => {
+                // if DHT is NOT enabled, reply with NoAddresses
+                if true
+                /*self.dht*/
+                {
+                    f(Err(SwarmError::NoAddresses(peer_id)));
+                    return;
                 }
-                Err(SwarmError::TransportsNotRegistered)
+                // ok, move the DHT controller into EitherDialAddr
+                dial::EitherDialAddr::DHT(0)
             }
-            None => Err(SwarmError::Transport(TransportError::MultiaddrNotSupported(addr))),
-        }
-    }
-    /// Tries to dial the given address.
-    ///
-    /// Returns an error if the address is not supported.
-    fn dial_peer_with_addr(&mut self, peer_id: PeerId, addr: Multiaddr, reply: Option<oneshot::Sender<Result<()>>>) {
-        // TODO: add dial limiter...
+        };
 
-        log::trace!("dialing addr={:?}, expecting {:?}", addr, peer_id);
-
-        let mut tx = self.event_sender.clone();
-        // TODO: first_mut ==> per protocol
-        //let mut transport = self.transports.first_mut().unwrap().box_clone();
-        let mut transport = self.get_best_transport(addr.clone()).unwrap();
-        task::spawn(async move {
-            let r = transport.dial(addr.clone()).await;
-            let response = match r {
-                Ok(stream_muxer) => {
-                    // test if the PeerId matches expectation, otherwise,
-                    // it is a bad outgoing connection
-                    if peer_id == stream_muxer.remote_peer() {
-                        let _ = tx
-                            .send(SwarmEvent::ConnectionEstablished {
-                                stream_muxer,
-                                direction: Direction::Outbound,
-                            })
-                            .await;
-                        Ok(())
-                    } else {
-                        let wrong_id = stream_muxer.remote_peer();
-                        log::info!(
-                            "bad connection, peerid mismatch conn={:?} wanted={:?} got={:?}",
-                            stream_muxer,
-                            peer_id,
-                            wrong_id
-                        );
-                        let _ = tx
-                            .send(SwarmEvent::OutgoingConnectionError {
-                                peer_id,
-                                remote_addr: addr,
-                                error: TransportError::Internal,
-                            })
-                            .await;
-
-                        Err(SwarmError::InvalidPeerId(wrong_id))
-                    }
-                }
-                Err(err) => {
-                    let _ = tx
-                        .send(SwarmEvent::OutgoingConnectionError {
-                            peer_id,
-                            remote_addr: addr,
-                            error: TransportError::Internal,
-                        })
-                        .await;
-
-                    Err(SwarmError::Transport(err))
-                }
-            };
-            reply.map(|reply| reply.send(response));
-        });
+        // allocate transaction id and push box::f into hashmap for post-processing
+        let tid = self.assign_tid();
+        self.dial_transactions.insert(tid, Box::new(f));
+        self.dialer
+            .dial(peer_id, self.transports.clone(), addrs, self.event_sender.clone(), tid);
     }
 
-    /// Starts a dialing task
-    /// reply is optional, it might be 'None' when dialer is initiated internally
-    pub fn start_dialer(&mut self, peer_id: PeerId, reply: Option<oneshot::Sender<Result<()>>>) -> Result<()> {
-        log::trace!("dialer, looking for {:?}", peer_id);
-
-        // TODO: find a better way to handle multiple addresses of PeerId
-        if let Some(addrs) = self.peers.addrs.get_addr(&peer_id) {
-            // TODO: handle multiple addresses
-
-            // TODO: add dial limiter...
-
-            let addr = addrs.first().expect("must have one").clone();
-            self.dial_peer_with_addr(peer_id, addr.addr, reply);
-
-            Ok(())
-        } else {
-            Err(SwarmError::NoAddresses(peer_id))
-        }
-    }
-
-    /// Tries to initiate a dialing attempt to the given peer.
-    ///
-    pub async fn dial_peer(&mut self, peer_id: PeerId) -> Result<()> {
-        if let Some(_conn) = self.get_best_conn(&peer_id) {
-            Ok(())
-        } else {
-            self.start_dialer(peer_id, None)
-        }
-    }
-
-    fn get_best_conn(&mut self, peer_id: &PeerId) -> Option<&mut Connection> {
+    fn get_best_conn(&mut self, peer_id: &PeerId) -> Option<&mut connection::Connection> {
         let mut best = None;
         // selects the best connection we have to the peer.
         // TODO: we might have multiple connections towards a PeerId
 
         log::trace!("trying to get the best connnection for {:?}", peer_id);
 
-        self.connections_by_peer.iter().for_each(|(k, v)| log::info!("{:?}={:?}", k, v));
+        self.connections_by_peer
+            .iter()
+            .for_each(|(k, v)| log::info!("get best conn,{:?}={:?}", k, v));
 
         //let v = self.connections_by_peer.get_mut(peer_id).unwrap();
 
@@ -974,29 +926,26 @@ impl Swarm {
         // start Ping service if need
     }
 
-    /// Handles a new connection
+    /// Handles a new connection.
     ///
     /// start a Task for accepting new sub-stream from the connection
-    fn handle_connection_opened(&mut self, stream_muxer: IStreamMuxer, dir: Direction) -> Result<()> {
+    fn handle_connection_opened(&mut self, stream_muxer: IStreamMuxer, dir: Direction, tid: Option<TransactionId>) -> Result<()> {
         log::trace!("handle_connection_opened: {:?} {:?}", stream_muxer, dir);
 
         let metric = self.metric.clone();
-        let pid = self.local_peer_id.clone();
-        let pubkey = stream_muxer.clone().local_priv_key().public();
 
-        self.peers.keys.add_key(&pid, pubkey);
-        // Save peer_id into metric
+        // add local pubkey to keybook
+        self.peers.keys.add_key(&self.local_peer_id, stream_muxer.local_priv_key().public());
 
         // clone the stream_muxer, and then wrap into Connection, task_handle will be assigned later
         let mut connection = Connection::new(
             self.assign_cid(),
-            stream_muxer.box_clone(),
+            stream_muxer.clone(),
             dir,
             self.event_sender.clone(),
             self.ctrl_sender.clone(),
             metric.clone(),
         );
-
         // TODO: filtering the multiaddr, Err = AddrFiltered(addr)
 
         /*        raddr := tc.RemoteMultiaddr()
@@ -1088,6 +1037,14 @@ impl Swarm {
             handler.connected(&mut connection);
         }
 
+        // dial callback for post-processing
+        // note that it must cleanup the tid entry
+        if let Some(id) = tid {
+            // the entry must be there
+            let callback = self.dial_transactions.remove(&id).expect("no match tid found");
+            callback(Ok(&mut connection));
+        }
+
         // insert to the hashmap of connections
         // there might be a race condition:
         // the spawned connection task might have exited for some reason, before we insert connection
@@ -1095,6 +1052,16 @@ impl Swarm {
         // event.
         self.add_connection(connection);
 
+        Ok(())
+    }
+
+    /// Handles outgoing connection error.
+    fn handle_connection_error(&mut self, _peer_id: PeerId, error: SwarmError, tid: TransactionId) -> Result<()> {
+        //execute dial callback for post processing
+        let callback = self.dial_transactions.remove(&tid).expect("no match tid found");
+        callback(Err(error));
+
+        // TODO: add statistics
         Ok(())
     }
 
@@ -1215,17 +1182,6 @@ impl Swarm {
         Ok(())
     }
 
-    /// Handles closing a swarm
-    ///
-    ///
-    fn handle_swarm_closed(&mut self) -> Result<()> {
-        log::info!("Exiting...");
-        if let Err(e) = self.peers.save_data() {
-            log::error!("{}", e);
-        }
-        Ok(())
-    }
-
     pub fn peer_addrs_add(&mut self, peer_id: &PeerId, addr: Multiaddr, ttl: Duration) {
         self.peers.addrs.add_addr(peer_id, addr, ttl);
     }
@@ -1237,10 +1193,16 @@ pub enum SwarmError {
     /// The configured limit for simultaneous outgoing connections
     /// has been reached.
     ConnectionLimit(ConnectionLimit),
+
     /// Returned no addresses for the peer to dial.
     NoAddresses(PeerId),
+
+    // we find addresses for a peer but  can't use any of them.
+    NoGoodAddresses(PeerId),
+
     /// No connection yet, unable to open a sub stream.
     NoConnection(PeerId),
+
     /// The peer identity obtained on the connection did not
     /// match the one that was expected.
     InvalidPeerId(PeerId),
@@ -1260,22 +1222,44 @@ pub enum SwarmError {
     /// listen on fail
     CanNotListenOnAny,
 
-    /// Transports not registered
-    TransportsNotRegistered,
+    ///ErrDialToSelf is returned if we attempt to dial our own peer
+    DialToSelf,
+
+    ///been dialed too frequently
+    DialBackoff,
+
+    ///AllDialsFailed is returned when connecting to a peer has ultimately failed
+    AllDialsFailed,
+
+    ///dial timeout
+    DialTimeout(Multiaddr, u64),
+
+    ///max dial attempts exceeded
+    MaxDialAttempts(u32),
+
+    ///max concurrent dial  exceeded
+    ConcurrentDialLimit(u32),
 }
 
+#[rustfmt::skip]
 impl fmt::Display for SwarmError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SwarmError::ConnectionLimit(err) => write!(f, "Swarm Dial error: {}", err),
             SwarmError::NoAddresses(peer_id) => write!(f, "Swarm Dial error: no addresses for peer{:?}.", peer_id),
+            SwarmError::NoGoodAddresses(peer_id) => write!(f, "Swarm Dial error: no good addresses for peer{:?}.", peer_id),
             SwarmError::NoConnection(peer_id) => write!(f, "Swarm Stream error: no connections for peer{:?}.", peer_id),
             SwarmError::InvalidPeerId(peer_id) => write!(f, "Swarm Dial error: invalid peer id{:?}.", peer_id),
             SwarmError::Transport(err) => write!(f, "Swarm Transport error: {}.", err),
             SwarmError::Internal => write!(f, "Swarm internal error."),
             SwarmError::Closing(s) => write!(f, "Swarm channel closed source={}.", s),
             SwarmError::CanNotListenOnAny => write!(f, "Failed to listen on any addresses"),
-            SwarmError::TransportsNotRegistered => write!(f, "Transports not registered"),
+            SwarmError::DialToSelf => write!(f, "Swarm Dial error:dial to self attempted"),
+            SwarmError::DialBackoff => write!(f, "Swarm Dial error:dial backoff"),
+            SwarmError::AllDialsFailed => write!(f, "Swarm Dial error:all dials failed"),
+            SwarmError::DialTimeout(ma, t) => write!(f,"Swarm Dial error:dial timeout, addr={:?},timeout={:?}",ma,Duration::from_secs(*t)),
+            SwarmError::MaxDialAttempts(c) => write!(f, "Swarm Dial error:max dial attempts exceeded, count={}", c),
+            SwarmError::ConcurrentDialLimit(c) => write!(f, "Swarm Dial error:max concurrent dial exceeded, count={}", c),
         }
     }
 }
@@ -1285,13 +1269,19 @@ impl error::Error for SwarmError {
         match self {
             SwarmError::ConnectionLimit(err) => Some(err),
             SwarmError::NoAddresses(_) => None,
+            SwarmError::NoGoodAddresses(_) => None,
             SwarmError::NoConnection(_) => None,
             SwarmError::InvalidPeerId(_) => None,
             SwarmError::Transport(err) => Some(err),
             SwarmError::Internal => None,
             SwarmError::Closing(_) => None,
             SwarmError::CanNotListenOnAny => None,
-            SwarmError::TransportsNotRegistered => None,
+            SwarmError::DialToSelf => None,
+            SwarmError::DialBackoff => None,
+            SwarmError::AllDialsFailed => None,
+            SwarmError::DialTimeout(_, _) => None,
+            SwarmError::MaxDialAttempts(_) => None,
+            SwarmError::ConcurrentDialLimit(_) => None,
         }
     }
 }

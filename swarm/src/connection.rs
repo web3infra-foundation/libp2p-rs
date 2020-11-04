@@ -99,6 +99,27 @@ pub struct Connection {
     metric: Arc<Metric>,
 }
 
+impl Clone for Connection {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id,
+            stream_muxer: self.stream_muxer.clone(),
+            tx: self.tx.clone(),
+            ctrl: self.ctrl.clone(),
+            substreams: self.substreams.clone(),
+            dir: self.dir,
+            ping_running: self.ping_running.clone(),
+            ping_failures: self.ping_failures,
+            identity: None,
+            handle: None,
+            ping_handle: None,
+            identify_handle: None,
+            identify_push_handle: None,
+            metric: self.metric.clone(),
+        }
+    }
+}
+
 impl PartialEq for Connection {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
@@ -164,7 +185,7 @@ impl Connection {
     }
 
     /// Opens a sub stream with the protocols specified
-    pub(crate) fn open_stream<T: Send + 'static>(
+    pub fn open_stream<T: Send + 'static>(
         &mut self,
         pids: Vec<ProtocolId>,
         f: impl FnOnce(Result<Substream, TransportError>) -> T + Send + 'static,
@@ -195,7 +216,7 @@ impl Connection {
     }
 
     /// Closes the inner stream_muxer. Spawn a task to avoid blocking.
-    pub(crate) fn close(&self) {
+    pub fn close(&self) {
         log::trace!("closing {:?}", self);
 
         let mut stream_muxer = self.stream_muxer.clone();

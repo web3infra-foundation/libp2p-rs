@@ -13,6 +13,7 @@ edition = "2018"
 async-trait = "0.1"
 async-std = "1.6"
 futures = "0.3"
+futures-timer="3.0.2"
 log = "0.4"
 rand = "0.7"
 fnv = "1.0"
@@ -27,7 +28,6 @@ libp2prs-core = { path = "../core", version = "0.1.0", package = "libp2prs-core"
 prost-build = "0.6"
 
 [dev-dependencies]
-#libp2prs-mplex = { path = "../muxer/mplex" }
 quickcheck = "0.9.0"
 rand = "0.7.2"
 env_logger = "0.8.1"
