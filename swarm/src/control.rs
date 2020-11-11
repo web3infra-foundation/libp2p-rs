@@ -29,6 +29,7 @@ use crate::identify::IdentifyInfo;
 use crate::network::NetworkInfo;
 use crate::substream::{StreamId, Substream};
 use crate::{ProtocolId, SwarmError};
+use std::time::Duration;
 
 type Result<T> = std::result::Result<T, SwarmError>;
 
@@ -100,13 +101,16 @@ impl Control {
         rx.await?
     }
 
-    /// Close the connection.
+    /// Close the swarm.
     pub async fn close(&mut self) -> Result<()> {
         // SwarmControlCmd::CloseSwarm doesn't need a response from Swarm
         if self.sender.send(SwarmControlCmd::CloseSwarm).await.is_err() {
             // The receiver is closed which means the connection is already closed.
             return Ok(());
         }
+        self.sender.close_channel();
+        std::thread::sleep(Duration::from_secs(5));
+        log::info!("Exit success");
         Ok(())
     }
 }

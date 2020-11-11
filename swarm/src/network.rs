@@ -19,6 +19,8 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::connection::ConnectionInfo;
+use crate::metrics::metric::Metric;
+use std::sync::Arc;
 
 /// Information about the network obtained by [`Network::info()`].
 #[derive(Debug)]
@@ -35,6 +37,8 @@ pub struct NetworkInfo {
     pub num_active_streams: usize,
     /// The information of all established connections.
     pub connection_info: Vec<ConnectionInfo>,
+    /// The monitoring data of current swarm.
+    pub metric: Arc<Metric>,
 }
 
 /// The (optional) configuration for a [`Network`].
