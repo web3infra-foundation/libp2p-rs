@@ -51,6 +51,7 @@ mod network;
 mod registry;
 
 pub mod identify;
+pub mod metrics;
 pub mod ping;
 pub mod protocol_handler;
 pub mod substream;
@@ -80,12 +81,14 @@ use libp2prs_core::{
 use crate::connection::{Connection, ConnectionId, ConnectionLimit, Direction};
 use crate::control::SwarmControlCmd;
 use crate::identify::{IdentifyConfig, IdentifyHandler, IdentifyInfo, IdentifyPushHandler};
+use crate::metrics::metric::Metric;
 use crate::muxer::Muxer;
 use crate::network::NetworkInfo;
 use crate::ping::{PingConfig, PingHandler};
 use crate::protocol_handler::IProtocolHandler;
 use crate::registry::Addresses;
-use crate::substream::{RemotePeerInfo, StreamId, Substream};
+use crate::substream::{ConnectInfo, StreamId, Substream};
+use std::sync::Arc;
 
 type Result<T> = std::result::Result<T, SwarmError>;
 
@@ -208,6 +211,8 @@ pub enum SwarmEvent {
         /// Duration means the TTL when succeeded, or SwarmError for failed.
         result: Result<(IdentifyInfo, Multiaddr)>,
     },
+    /// Close swarm
+    SwarmClosed,
 }
 
 type ProtocolId = &'static [u8];
@@ -235,6 +240,9 @@ pub struct Swarm {
     /// List of multiaddresses we're listening on, after account for external IP addresses and
     /// similar mechanisms.
     external_addrs: Addresses,
+
+    /// Metrics. Monitor the network resource that spend on connection
+    metric: Arc<Metric>,
 
     /// List of nodes for which we deny any incoming connection.
     banned_peers: HashSet<PeerId>,
@@ -282,6 +290,14 @@ impl Swarm {
         let mut peers = PeerStore::default();
         peers.keys.add_key(&key.clone().into_peer_id(), key.clone());
 
+        task::block_on(async {
+            if let Err(e) = peers.load_data().await {
+                log::error!("{}", e);
+            }
+        });
+
+        let metric = Metric::new();
+
         Swarm {
             peers,
             muxer: Muxer::new(),
@@ -294,6 +310,7 @@ impl Swarm {
             banned_peers: Default::default(),
             connections_by_id: Default::default(),
             connections_by_peer: Default::default(),
+            metric: Arc::new(metric),
             event_receiver: event_rx,
             event_sender: event_tx,
             ctrl_receiver: ctrl_rx,
@@ -346,6 +363,11 @@ impl Swarm {
         self.muxer.add_protocol_handler(Box::new(PingHandler::new(ping)));
         self
     }
+    /// Creates Swarm with Metrics.
+    pub fn with_metric(mut self, metric: Metric) -> Self {
+        self.metric = Arc::new(metric);
+        self
+    }
     /// Creates Swarm with Identify service.
     pub fn with_identify(mut self, config: IdentifyConfig) -> Self {
         let handler = IdentifyHandler::new(self.ctrl_sender.clone());
@@ -356,7 +378,7 @@ impl Swarm {
     }
     /// Get a controller for Swarm.
     pub fn control(&self) -> Control {
-        Control::new(self.ctrl_sender.clone())
+        Control::new(self.ctrl_sender.clone(), self.metric.clone())
     }
 
     /// Makes progress for Swarm
@@ -432,6 +454,9 @@ impl Swarm {
             SwarmEvent::IdentifyResult { cid, result } => {
                 let _ = self.handle_identify_result(cid, result);
             }
+            SwarmEvent::SwarmClosed => {
+                let _ = self.handle_swarm_closed();
+            }
 
             // TODO: handle other messages
             e => {
@@ -476,6 +501,7 @@ impl Swarm {
             }
             SwarmControlCmd::CloseSwarm => {
                 log::info!("closing the swarm...");
+                let _ = self.on_close_swarm().await;
                 let _ = self.event_sender.close_channel();
             } // TODO:
               //_ => {}
@@ -526,6 +552,13 @@ impl Swarm {
         //self.handle_stream_closed(Direction::Outbound, cid, sid);
         Ok(())
     }
+
+    /// Close swarm
+    async fn on_close_swarm(&mut self) -> Result<()> {
+        let _ = self.event_sender.send(SwarmEvent::SwarmClosed).await;
+        Ok(())
+    }
+
     ///
     fn on_retrieve_network_info(&mut self, f: impl FnOnce(Result<NetworkInfo>)) -> Result<()> {
         f(Ok(self.network_info()));
@@ -947,10 +980,12 @@ impl Swarm {
     fn handle_connection_opened(&mut self, stream_muxer: IStreamMuxer, dir: Direction) -> Result<()> {
         log::trace!("handle_connection_opened: {:?} {:?}", stream_muxer, dir);
 
+        let metric = self.metric.clone();
         let pid = self.local_peer_id.clone();
         let pubkey = stream_muxer.clone().local_priv_key().public();
 
         self.peers.keys.add_key(&pid, pubkey);
+        // Save peer_id into metric
 
         // clone the stream_muxer, and then wrap into Connection, task_handle will be assigned later
         let mut connection = Connection::new(
@@ -959,6 +994,7 @@ impl Swarm {
             dir,
             self.event_sender.clone(),
             self.ctrl_sender.clone(),
+            metric.clone(),
         );
 
         // TODO: filtering the multiaddr, Err = AddrFiltered(addr)
@@ -991,6 +1027,7 @@ impl Swarm {
             // start the background task of the stream_muxer, the handle can be await'ed by us
             let task_handle = stream_muxer.task().map(task::spawn);
             loop {
+                let metric = metric.clone();
                 let ctrl = ctrl.clone();
                 let r = stream_muxer.accept_stream().await;
 
@@ -1009,8 +1046,8 @@ impl Swarm {
                                 let la = stream_muxer.local_multiaddr();
                                 let ra = stream_muxer.remote_multiaddr();
                                 let rpid = stream_muxer.remote_peer();
-                                let ri = RemotePeerInfo { ra, rpid };
-                                let stream = Substream::new(raw_stream, Direction::Inbound, proto, cid, la, ri, ctrl);
+                                let ci = ConnectInfo { la, ra, rpid };
+                                let stream = Substream::new(raw_stream, metric, Direction::Inbound, proto, cid, ci, ctrl);
                                 let sub_stream = stream.clone();
                                 let _ = tx.send(SwarmEvent::StreamOpened { sub_stream }).await;
 
@@ -1120,6 +1157,8 @@ impl Swarm {
         log::info!("after close {:?}", self.connections_by_id);
         log::info!("after close {:?}", self.connections_by_peer);
 
+        log::info!("close {:?}", self.peers.addrs);
+
         Ok(())
     }
 
@@ -1173,6 +1212,19 @@ impl Swarm {
             }
         }
 
+        Ok(())
+    }
+
+    /// Handles closing a swarm
+    ///
+    ///
+    fn handle_swarm_closed(&mut self) -> Result<()> {
+        log::info!("Exiting...");
+        task::block_on(async {
+            if let Err(e) = self.peers.save_data().await {
+                log::error!("{}", e);
+            }
+        });
         Ok(())
     }
 
