@@ -26,9 +26,12 @@ use libp2prs_core::PeerId;
 
 use crate::connection::ConnectionId;
 use crate::identify::IdentifyInfo;
+use crate::metrics::metric::Metric;
 use crate::network::NetworkInfo;
 use crate::substream::{StreamId, Substream};
 use crate::{ProtocolId, SwarmError};
+use std::sync::Arc;
+use std::time::Duration;
 
 type Result<T> = std::result::Result<T, SwarmError>;
 
@@ -65,19 +68,42 @@ pub enum SwarmControlCmd {
 pub struct Control {
     /// Command channel to `Connection`.
     sender: mpsc::Sender<SwarmControlCmd>,
+    /// Swarm metric
+    metric: Arc<Metric>,
 }
 
 impl Clone for Control {
     fn clone(&self) -> Self {
         Control {
             sender: self.sender.clone(),
+            metric: self.metric.clone(),
         }
     }
 }
 
 impl Control {
-    pub(crate) fn new(sender: mpsc::Sender<SwarmControlCmd>) -> Self {
-        Control { sender }
+    pub(crate) fn new(sender: mpsc::Sender<SwarmControlCmd>, metric: Arc<Metric>) -> Self {
+        Control { sender, metric }
+    }
+
+    /// Get recv package count&bytes
+    pub fn get_recv_count_and_size(&self) -> (usize, usize) {
+        self.metric.get_recv_count_and_size()
+    }
+
+    /// Get send package count&bytes
+    pub fn get_sent_count_and_size(&self) -> (usize, usize) {
+        self.metric.get_sent_count_and_size()
+    }
+
+    /// Get recv&send bytes by protocol_id
+    pub fn get_protocol_in_and_out(&self, protocol_id: &ProtocolId) -> (Option<usize>, Option<usize>) {
+        self.metric.get_protocol_in_and_out(protocol_id)
+    }
+
+    /// Get recv&send bytes by peer_id
+    pub fn get_peer_in_and_out(&self, peer_id: &PeerId) -> (Option<usize>, Option<usize>) {
+        self.metric.get_peer_in_and_out(peer_id)
     }
 
     /// make a connection to the remote.
@@ -100,13 +126,16 @@ impl Control {
         rx.await?
     }
 
-    /// Close the connection.
+    /// Close the swarm.
     pub async fn close(&mut self) -> Result<()> {
         // SwarmControlCmd::CloseSwarm doesn't need a response from Swarm
         if self.sender.send(SwarmControlCmd::CloseSwarm).await.is_err() {
             // The receiver is closed which means the connection is already closed.
             return Ok(());
         }
+        self.sender.close_channel();
+        std::thread::sleep(Duration::from_secs(5));
+        log::info!("Exit success");
         Ok(())
     }
 }

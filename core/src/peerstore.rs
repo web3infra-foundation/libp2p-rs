@@ -19,16 +19,55 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::{Multiaddr, PeerId, PublicKey};
+use async_std::fs::File;
+use libp2prs_traits::{ReadEx, WriteEx};
+use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use std::collections::HashMap;
-use std::fmt;
+use std::str::FromStr;
 use std::time::{Duration, SystemTime};
+use std::{fmt, io};
 
 #[derive(Default, Clone)]
 pub struct PeerStore {
     pub addrs: AddrBook,
     pub protos: ProtoBook,
     pub keys: KeyBook,
+}
+
+impl PeerStore {
+    /// Save addr_book when closing swarm
+    pub async fn save_data(&self) -> io::Result<()> {
+        let mut ds_addr_book = HashMap::new();
+        // Transfer peer_id to String and insert into a new HashMap
+        for (peer_id, value) in self.addrs.addr_book.clone() {
+            let key = peer_id.to_string();
+            ds_addr_book.insert(key, value.to_vec());
+        }
+        let v = serde_json::to_string(&ds_addr_book)?;
+
+        let mut file = File::create("./ds_addr_book.txt").await?;
+        file.write_one_fixed(v.as_bytes()).await
+    }
+
+    /// Load addr_book when initializing swarm
+    pub async fn load_data(&mut self) -> io::Result<()> {
+        let mut file = File::open("./ds_addr_book.txt").await?;
+
+        // Read data length
+        let length = file.read_fixed_u32().await?;
+        let mut buf = vec![0u8; length];
+        let _ = file.read_exact2(buf.as_mut()).await?;
+
+        let json_data: HashMap<String, Vec<AddrBookRecord>> =
+            serde_json::from_slice(&buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+        for (key, value) in json_data {
+            let peer_id = PeerId::from_str(&key).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            self.addrs.addr_book.insert(peer_id, SmallVec::from(value));
+        }
+
+        Ok(())
+    }
 }
 
 impl fmt::Debug for PeerStore {
@@ -50,7 +89,7 @@ pub struct AddrBook {
 }
 
 /// Store address, time-to-server, and expired time
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AddrBookRecord {
     pub addr: Multiaddr,
     ttl: f64,
@@ -58,18 +97,22 @@ pub struct AddrBookRecord {
 }
 
 impl AddrBookRecord {
+    /// Set the route-trip-time
     pub fn set_ttl(&mut self, ttl: Duration) {
         self.ttl = ttl.as_secs_f64()
     }
 
+    /// Set the expiry time
     pub fn set_expiry(&mut self, expiry: Duration) {
         self.expiry = expiry
     }
 
+    /// Get the route-trip-time
     pub fn get_ttl(&self) -> f64 {
         self.ttl
     }
 
+    /// Get the expiry time
     pub fn get_expiry(&self) -> Duration {
         self.expiry
     }
@@ -89,23 +132,28 @@ impl fmt::Display for AddrBook {
 }
 
 impl AddrBook {
+    /// Add address to address_book by peer_id, if exists, update rtt.
     pub fn add_addr(&mut self, peer_id: &PeerId, addr: Multiaddr, ttl: Duration) {
+        // Peer_id exist, get vector.
         if let Some(entry) = self.addr_book.get_mut(peer_id) {
             let mut exist = false;
+
+            // Update address's expiry if exist.
             for (count, i) in entry.iter().enumerate() {
                 if i.addr == addr {
                     // In order to get mutable
                     let record: &mut AddrBookRecord = entry.get_mut(count).unwrap();
-                    let enpiry = SystemTime::now()
+                    let expiry = SystemTime::now()
                         .duration_since(SystemTime::UNIX_EPOCH)
                         .unwrap()
                         .checked_add(ttl)
                         .unwrap();
-                    record.set_expiry(enpiry);
+                    record.set_expiry(expiry);
                     exist = true;
                     break;
                 }
             }
+            // If not exists, insert an address into vector.
             if !exist {
                 entry.push(AddrBookRecord {
                     addr,
@@ -118,6 +166,7 @@ impl AddrBook {
                 })
             }
         } else {
+            // Peer_id non-exists, create a new vector.
             let vec = vec![AddrBookRecord {
                 addr,
                 ttl: ttl.as_secs_f64(),
@@ -139,6 +188,7 @@ impl AddrBook {
         self.addr_book.get(peer_id)
     }
 
+    /// Update ttl if current_ttl equals old_ttl.
     pub fn update_addr(&mut self, peer_id: &PeerId, old_ttl: Duration, new_ttl: Duration) {
         if self.get_addr(peer_id).is_some() {
             let record_vec = self.addr_book.get_mut(peer_id).unwrap();
@@ -161,15 +211,12 @@ impl AddrBook {
     pub fn remove_timeout_addr(&mut self, peer_id: &PeerId) {
         let addr = self.addr_book.get_mut(peer_id).unwrap();
         let time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
-        let mut count = 0;
-        let iter = addr.clone();
-        for item in iter.into_iter() {
-            if item.expiry > time {
-                count += 1;
+        let iter_vec = addr.clone();
+        for (index, value) in iter_vec.iter().enumerate() {
+            if value.expiry > time {
                 continue;
             } else {
-                addr.remove(count);
-                count += 1;
+                addr.remove(index);
             }
         }
     }
@@ -184,16 +231,19 @@ pub struct KeyBook {
 }
 
 impl KeyBook {
+    /// Insert public key by peer_id.
     pub fn add_key(&mut self, peer_id: &PeerId, key: PublicKey) {
         if self.key_book.get(peer_id).is_none() {
             self.key_book.insert(peer_id.clone(), key);
         }
     }
 
+    /// Delete public key by peer_id.
     pub fn del_key(&mut self, peer_id: &PeerId) {
         self.key_book.remove(peer_id);
     }
 
+    /// Get public key by peer_id.
     pub fn get_key(&self, peer_id: &PeerId) -> Option<&PublicKey> {
         self.key_book.get(peer_id)
     }
@@ -219,6 +269,7 @@ impl fmt::Display for ProtoBook {
 }
 
 impl ProtoBook {
+    /// Insert support protocol by peer_id
     pub fn add_protocol(&mut self, peer_id: &PeerId, proto: Vec<String>) {
         if let Some(s) = self.proto_book.get_mut(peer_id) {
             for item in proto {
@@ -233,6 +284,7 @@ impl ProtoBook {
         }
     }
 
+    /// Remove support protocol by peer_id
     pub fn remove_protocol(&mut self, peer_id: &PeerId) {
         log::info!("remove protocol");
         self.proto_book.remove(peer_id);
@@ -251,7 +303,7 @@ impl ProtoBook {
         }
     }
 
-    // Get the first protocol which matched by given protocols
+    /// Get the first protocol which matched by given protocols
     pub fn first_supported_protocol(&self, peer_id: &PeerId, proto: Vec<String>) -> Option<String> {
         match self.proto_book.get(peer_id) {
             Some(hmap) => {
@@ -266,7 +318,7 @@ impl ProtoBook {
         }
     }
 
-    // Search all protocols and return an option that matches by given proto param
+    /// Search all protocols and return an option that matches by given proto param
     pub fn support_protocol(&self, peer_id: &PeerId, proto: Vec<String>) -> Option<Vec<String>> {
         match self.proto_book.get(peer_id) {
             Some(hmap) => {
@@ -280,6 +332,20 @@ impl ProtoBook {
             }
             None => None,
         }
+    }
+
+    pub fn get_iter(&self) -> (Vec<PeerId>, Vec<String>) {
+        let mut peer = vec![];
+        let mut proto = vec![];
+        for (k, v) in self.proto_book.iter() {
+            peer.push(k.clone());
+            for key in v.keys() {
+                if !proto.contains(key) {
+                    proto.push(key.clone())
+                }
+            }
+        }
+        (peer, proto)
     }
 }
 

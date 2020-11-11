@@ -47,8 +47,9 @@ use libp2prs_core::PublicKey;
 
 use crate::control::SwarmControlCmd;
 use crate::identify::{IDENTIFY_PROTOCOL, IDENTIFY_PUSH_PROTOCOL};
+use crate::metrics::metric::Metric;
 use crate::ping::PING_PROTOCOL;
-use crate::substream::{RemotePeerInfo, StreamId, Substream};
+use crate::substream::{ConnectInfo, StreamId, Substream};
 use crate::{identify, ping, Multiaddr, PeerId, ProtocolId, SwarmError, SwarmEvent};
 
 /// The direction of a peer-to-peer communication channel.
@@ -94,6 +95,8 @@ pub struct Connection {
     identify_handle: Option<JoinHandle<()>>,
     /// The task handle of the Identify Push service of this connection
     identify_push_handle: Option<JoinHandle<()>>,
+    /// Global metrics.
+    metric: Arc<Metric>,
 }
 
 impl PartialEq for Connection {
@@ -125,6 +128,7 @@ impl Connection {
         dir: Direction,
         tx: mpsc::UnboundedSender<SwarmEvent>,
         ctrl: mpsc::Sender<SwarmControlCmd>,
+        metric: Arc<Metric>,
     ) -> Self {
         Connection {
             id: ConnectionId(id),
@@ -140,6 +144,7 @@ impl Connection {
             identity: None,
             identify_handle: None,
             identify_push_handle: None,
+            metric,
         }
     }
 
@@ -168,9 +173,10 @@ impl Connection {
         let stream_muxer = self.stream_muxer().clone();
         let mut tx = self.tx.clone();
         let ctrl = self.ctrl.clone();
+        let metric = self.metric.clone();
 
         task::spawn(async move {
-            let result = open_stream_internal(cid, stream_muxer, pids, ctrl).await;
+            let result = open_stream_internal(cid, stream_muxer, pids, ctrl, metric).await;
 
             // TODO: how to extract the error from TransportError, ??? it doesn't implement 'Clone'
             // So, at this moment, make a new 'TransportError::Internal'
@@ -269,6 +275,7 @@ impl Connection {
         let flag = self.ping_running.clone();
         let pids = vec![PING_PROTOCOL];
         let ctrl = self.ctrl.clone();
+        let metric = self.metric.clone();
 
         let handle = task::spawn(async move {
             let mut fail_cnt: u32 = 0;
@@ -289,7 +296,7 @@ impl Connection {
                 let pids = pids.clone();
 
                 let ctrl2 = ctrl.clone();
-                let r = open_stream_internal(cid, stream_muxer, pids, ctrl2).await;
+                let r = open_stream_internal(cid, stream_muxer, pids, ctrl2, metric.clone()).await;
                 let r = match r {
                     Ok(stream) => {
                         let sub_stream = stream.clone();
@@ -344,9 +351,10 @@ impl Connection {
         let mut tx = self.tx.clone();
         let ctrl = self.ctrl.clone();
         let pids = vec![IDENTIFY_PROTOCOL];
+        let metric = self.metric.clone();
 
         let handle = task::spawn(async move {
-            let r = open_stream_internal(cid, stream_muxer, pids, ctrl).await;
+            let r = open_stream_internal(cid, stream_muxer, pids, ctrl, metric).await;
             let r = match r {
                 Ok(stream) => {
                     let sub_stream = stream.clone();
@@ -384,6 +392,8 @@ impl Connection {
         let cid = self.id();
         let stream_muxer = self.stream_muxer.clone();
         let pids = vec![IDENTIFY_PUSH_PROTOCOL];
+        let metric = self.metric.clone();
+
         let mut ctrl = self.ctrl.clone();
 
         let mut tx = self.tx.clone();
@@ -393,7 +403,7 @@ impl Connection {
             ctrl.send(SwarmControlCmd::IdentifyInfo(swrm_tx)).await.expect("send");
             let info = swrm_rx.await.expect("identify info").expect("get identify info");
 
-            let r = open_stream_internal(cid, stream_muxer, pids, ctrl).await;
+            let r = open_stream_internal(cid, stream_muxer, pids, ctrl, metric).await;
             match r {
                 Ok(stream) => {
                     let sub_stream = stream.clone();
@@ -445,6 +455,7 @@ async fn open_stream_internal(
     mut stream_muxer: IStreamMuxer,
     pids: Vec<ProtocolId>,
     ctrl: mpsc::Sender<SwarmControlCmd>,
+    metric: Arc<Metric>,
 ) -> Result<Substream, TransportError> {
     let raw_stream = stream_muxer.open_stream().await?;
     let la = stream_muxer.local_multiaddr();
@@ -458,8 +469,9 @@ async fn open_stream_internal(
     match result {
         Ok((proto, raw_stream)) => {
             log::debug!("selected outbound {:?} {:?}", cid, proto.protocol_name_str());
-            let ri = RemotePeerInfo { ra, rpid };
-            let stream = Substream::new(raw_stream, Direction::Outbound, proto, cid, la, ri, ctrl);
+
+            let ci = ConnectInfo { la, ra, rpid };
+            let stream = Substream::new(raw_stream, metric.clone(), Direction::Outbound, proto, cid, ci, ctrl);
             Ok(stream)
         }
         Err(err) => {
