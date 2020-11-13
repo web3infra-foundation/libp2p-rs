@@ -19,11 +19,11 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::{Multiaddr, PeerId, PublicKey};
-use async_std::fs::File;
-use libp2prs_traits::{ReadEx, WriteEx};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::{Read, Write};
 use std::str::FromStr;
 use std::time::{Duration, SystemTime};
 use std::{fmt, io};
@@ -37,28 +37,27 @@ pub struct PeerStore {
 
 impl PeerStore {
     /// Save addr_book when closing swarm
-    pub async fn save_data(&self) -> io::Result<()> {
+    pub fn save_data(&self) -> io::Result<()> {
         let mut ds_addr_book = HashMap::new();
         // Transfer peer_id to String and insert into a new HashMap
         for (peer_id, value) in self.addrs.addr_book.clone() {
             let key = peer_id.to_string();
             ds_addr_book.insert(key, value.to_vec());
         }
-        let v = serde_json::to_string(&ds_addr_book)?;
+        let json_addrbook = serde_json::to_string(&ds_addr_book)?;
 
-        let mut file = File::create("./ds_addr_book.txt").await?;
-        file.write_one_fixed(v.as_bytes()).await
+        let mut file = File::create("./ds_addr_book.txt")?;
+        file.write_all(json_addrbook.as_bytes())
     }
 
     /// Load addr_book when initializing swarm
-    pub async fn load_data(&mut self) -> io::Result<()> {
-        let mut file = File::open("./ds_addr_book.txt").await?;
-
-        // Read data length
-        let length = file.read_fixed_u32().await?;
+    pub fn load_data(&mut self) -> io::Result<()> {
+        let mut file = File::open("./ds_addr_book.txt")?;
+        let metadata = file.metadata()?;
+        let length = metadata.len() as usize;
         let mut buf = vec![0u8; length];
-        let _ = file.read_exact2(buf.as_mut()).await?;
 
+        let _ = file.read_exact(buf.as_mut())?;
         let json_data: HashMap<String, Vec<AddrBookRecord>> =
             serde_json::from_slice(&buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
         for (key, value) in json_data {

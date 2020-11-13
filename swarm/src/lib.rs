@@ -290,11 +290,11 @@ impl Swarm {
         let mut peers = PeerStore::default();
         peers.keys.add_key(&key.clone().into_peer_id(), key.clone());
 
-        task::block_on(async {
-            if let Err(e) = peers.load_data().await {
+        if let Err(e) = peers.load_data() {
+            if e.kind() != std::io::ErrorKind::UnexpectedEof {
                 log::error!("{}", e);
             }
-        });
+        }
 
         let metric = Metric::new();
 
@@ -1220,11 +1220,9 @@ impl Swarm {
     ///
     fn handle_swarm_closed(&mut self) -> Result<()> {
         log::info!("Exiting...");
-        task::block_on(async {
-            if let Err(e) = self.peers.save_data().await {
-                log::error!("{}", e);
-            }
-        });
+        if let Err(e) = self.peers.save_data() {
+            log::error!("{}", e);
+        }
         Ok(())
     }
 
