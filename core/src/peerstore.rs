@@ -52,9 +52,21 @@ impl PeerStore {
 
     /// Load addr_book when initializing swarm
     pub fn load_data(&mut self) -> io::Result<()> {
-        let mut file = File::open("./ds_addr_book.txt")?;
+        let mut file = match File::open("./ds_addr_book.txt") {
+            Ok(file) => file,
+            Err(e) => {
+                if e.kind() == io::ErrorKind::NotFound {
+                    File::create("./ds_addr_book.txt")?
+                } else {
+                    return Err(e);
+                }
+            }
+        };
         let metadata = file.metadata()?;
         let length = metadata.len() as usize;
+        if length == 0 {
+            return Ok(());
+        }
         let mut buf = vec![0u8; length];
 
         let _ = file.read_exact(buf.as_mut())?;
