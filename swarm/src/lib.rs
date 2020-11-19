@@ -1169,7 +1169,8 @@ impl Swarm {
                     self.peers.keys.add_key(&peer_id, remote_pubkey);
 
                     // update peer store with the
-                    self.peers.addrs.add_addr(&peer_id, observed_addr, Duration::from_secs(1));
+                    let remote_addr = connection.stream_muxer().remote_multiaddr();
+                    self.peers.addrs.add_addr(&peer_id, remote_addr, Duration::from_secs(1));
                     self.peers.protos.add_protocol(&peer_id, info.protocols);
                     //
                 }
@@ -1257,7 +1258,7 @@ impl fmt::Display for SwarmError {
             SwarmError::DialToSelf => write!(f, "Swarm Dial error:dial to self attempted"),
             SwarmError::DialBackoff => write!(f, "Swarm Dial error:dial backoff"),
             SwarmError::AllDialsFailed => write!(f, "Swarm Dial error:all dials failed"),
-            SwarmError::DialTimeout(ma, t) => write!(f,"Swarm Dial error:dial timeout, addr={:?},timeout={:?}",ma,Duration::from_secs(*t)),
+            SwarmError::DialTimeout(ma, t) => write!(f, "Swarm Dial error:dial timeout, addr={:?},timeout={:?}", ma, Duration::from_secs(*t)),
             SwarmError::MaxDialAttempts(c) => write!(f, "Swarm Dial error:max dial attempts exceeded, count={}", c),
             SwarmError::ConcurrentDialLimit(c) => write!(f, "Swarm Dial error:max concurrent dial exceeded, count={}", c),
         }
