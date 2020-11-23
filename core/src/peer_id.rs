@@ -21,7 +21,7 @@
 use crate::PublicKey;
 use multihash::{self, Code, Sha2_256};
 use rand::Rng;
-use std::{borrow::Borrow, cmp, convert::TryFrom, fmt, hash, str::FromStr};
+use std::{borrow::Borrow, cmp, convert::TryFrom, fmt, hash, io, str::FromStr};
 use thiserror::Error;
 
 /// Public keys with byte-lengths smaller than `MAX_INLINE_KEY_LENGTH` will be
@@ -170,6 +170,13 @@ impl PeerId {
     /// Returns a base-58 encoded string of this `PeerId`.
     pub fn to_base58(&self) -> String {
         bs58::encode(self.as_bytes()).into_string()
+    }
+
+    /// Returns a base-58 result that decoded by given data
+    pub fn from_base58(data: Vec<u8>) -> io::Result<Vec<u8>> {
+        bs58::decode(data)
+            .into_vec()
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
     }
 
     /// Checks whether the public key passed as parameter matches the public key of this `PeerId`.

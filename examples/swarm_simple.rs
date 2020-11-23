@@ -29,6 +29,7 @@ use libp2prs_core::transport::memory::MemoryTransport;
 use libp2prs_core::transport::upgrade::TransportUpgrade;
 use libp2prs_core::upgrade::{Selector, UpgradeInfo};
 use libp2prs_core::{Multiaddr, PeerId};
+use libp2prs_infoserver::InfoServer;
 use libp2prs_mplex as mplex;
 use libp2prs_secio as secio;
 use libp2prs_swarm::identify::IdentifyConfig;
@@ -111,9 +112,13 @@ fn run_server() {
 
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
 
-    let _control = swarm.control();
+    let control = swarm.control();
 
     swarm.listen_on(vec![listen_addr1, listen_addr2]).unwrap();
+
+    let monitor = InfoServer::new(control);
+
+    monitor.start("127.0.0.1:8999".to_string());
 
     swarm.start();
 

@@ -162,11 +162,10 @@ fn no_protocol_found() {
             let protos = vec![b"/proto1", b"/proto2"];
             let neg = Negotiator::new_with_protocols(protos);
 
-            match neg.negotiate(connec).await {
-                Ok(_) => panic!(),
-                // We don't explicitly check for `Failed` because the client might close the connection when it
-                // realizes that we have no protocol in common.
-                Err(_) => return,
+            // We don't explicitly check for `Failed` because the client might close the connection when it
+            // realizes that we have no protocol in common.
+            if neg.negotiate(connec).await.is_ok() {
+                panic!()
             }
         });
 
@@ -175,7 +174,7 @@ fn no_protocol_found() {
             let protos = vec![b"/proto3", b"/proto4"];
             let neg = Negotiator::new_with_protocols(protos);
             match neg.select_one(connec).await {
-                Err(NegotiationError::Failed) => return,
+                Err(NegotiationError::Failed) => {}
                 Ok(_) => {}
                 Err(_) => panic!(),
             }

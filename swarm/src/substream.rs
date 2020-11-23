@@ -179,7 +179,10 @@ impl ReadEx for Substream {
     async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
         self.inner.read2(buf).await.map(|n| {
             self.metric.log_recv_msg(n);
-            self.metric.log_recv_stream(self.protocol(), n, &self.info.ci.rpid);
+            let protocol = self.protocol().to_vec();
+            if let Ok(pid) = String::from_utf8(protocol) {
+                self.metric.log_recv_stream(pid, n, &self.info.ci.rpid);
+            }
             n
         })
     }
@@ -190,7 +193,10 @@ impl WriteEx for Substream {
     async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
         self.inner.write2(buf).await.map(|n| {
             self.metric.log_sent_msg(n);
-            self.metric.log_sent_stream(self.protocol(), n, &self.info.ci.rpid);
+            let protocol = self.protocol().to_vec();
+            if let Ok(pid) = String::from_utf8(protocol) {
+                self.metric.log_sent_stream(pid, n, &self.info.ci.rpid);
+            }
             n
         })
     }
