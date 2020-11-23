@@ -1,5 +1,4 @@
 use crate::metrics::metricmap::MetricMap;
-use crate::ProtocolId;
 use libp2prs_core::PeerId;
 use std::fmt;
 use std::ops::Add;
@@ -17,9 +16,9 @@ pub struct Metric {
     byte_recv: AtomicUsize,
 
     /// A hashmap that key is protocol name and value is a counter of bytes received.
-    protocol_in: MetricMap<ProtocolId, usize>,
+    protocol_in: MetricMap<String, usize>,
     /// A hashmap that key is protocol name and value is a counter of bytes sent.
-    protocol_out: MetricMap<ProtocolId, usize>,
+    protocol_out: MetricMap<String, usize>,
 
     /// A hashmap that key is peer_id and value is a counter of bytes received.
     peer_in: MetricMap<PeerId, usize>,
@@ -76,13 +75,13 @@ impl Metric {
     }
 
     #[inline]
-    pub(crate) fn log_sent_stream(&self, protocol: ProtocolId, count: usize, peer_id: &PeerId) {
+    pub(crate) fn log_sent_stream(&self, protocol: String, count: usize, peer_id: &PeerId) {
         self.protocol_out.store_or_modify(&protocol, count, |_, value| value.add(count));
         self.peer_out.store_or_modify(peer_id, count, |_, value| value.add(count));
     }
 
     #[inline]
-    pub(crate) fn log_recv_stream(&self, protocol: ProtocolId, count: usize, peer_id: &PeerId) {
+    pub(crate) fn log_recv_stream(&self, protocol: String, count: usize, peer_id: &PeerId) {
         self.protocol_in.store_or_modify(&protocol, count, |_, value| value.add(count));
         self.peer_in.store_or_modify(peer_id, count, |_, value| value.add(count));
     }
@@ -98,9 +97,9 @@ impl Metric {
     }
 
     /// Get in&out bytes by protocol_id
-    pub fn get_protocol_in_and_out(&self, protocol_id: &ProtocolId) -> (Option<usize>, Option<usize>) {
-        let protocol_in = self.protocol_in.load(protocol_id);
-        let protocol_out = self.protocol_out.load(protocol_id);
+    pub fn get_protocol_in_and_out(&self, protocol_id: String) -> (Option<usize>, Option<usize>) {
+        let protocol_in = self.protocol_in.load(&protocol_id);
+        let protocol_out = self.protocol_out.load(&protocol_id);
         (protocol_in, protocol_out)
     }
 
@@ -170,15 +169,16 @@ mod tests {
         let metric = Arc::new(generate_metrics());
 
         let peer_id = PeerId::random();
-        let protocol = ProtocolId::default();
+        let protocol = String::from_utf8(ProtocolId::default().to_vec()).unwrap();
         task::block_on(async {
             let mut t = Vec::new();
             for i in 0..16 {
                 let m = metric.clone();
                 let pid = peer_id.clone();
+                let p = protocol.clone();
                 t.push(task::spawn(async move {
-                    m.log_sent_stream(protocol, i, &pid);
-                    m.log_recv_stream(protocol, i, &pid);
+                    m.log_sent_stream(p.clone(), i, &pid);
+                    m.log_recv_stream(p, i, &pid);
                 }));
             }
 
@@ -188,6 +188,6 @@ mod tests {
         });
 
         assert_eq!(metric.get_peer_in_and_out(&peer_id), (Some(120), Some(120)));
-        assert_eq!(metric.get_protocol_in_and_out(&protocol), (Some(120), Some(120)));
+        assert_eq!(metric.get_protocol_in_and_out(protocol), (Some(120), Some(120)));
     }
 }

@@ -81,18 +81,16 @@ fn test_floodsub_basic() {
             srv_swarm.listen_on(vec![addr.clone()]).unwrap();
             srv_swarm.start();
 
-            let srv_handle = task::block_on(async move {
+            let mut sub = srv_fs_ctrl.subscribe(FLOODSUB_TOPIC.clone()).await.unwrap();
+            let srv_handle = task::spawn(async move {
                 // subscribe "chat"
-                let mut sub = srv_fs_ctrl.subscribe(FLOODSUB_TOPIC.clone()).await.unwrap();
-                task::spawn(async move {
-                    match sub.ch.next().await {
-                        Some(msg) => {
-                            log::info!("server recived: {:?}", msg.data);
-                            msg.data
-                        }
-                        None => Vec::<u8>::new(),
+                match sub.ch.next().await {
+                    Some(msg) => {
+                        log::info!("server recived: {:?}", msg.data);
+                        msg.data
                     }
-                })
+                    None => Vec::<u8>::new(),
+                }
             });
 
             let cli_keys = Keypair::generate_secp256k1();

@@ -97,7 +97,7 @@ impl Control {
     }
 
     /// Get recv&send bytes by protocol_id
-    pub fn get_protocol_in_and_out(&self, protocol_id: &ProtocolId) -> (Option<usize>, Option<usize>) {
+    pub fn get_protocol_in_and_out(&self, protocol_id: String) -> (Option<usize>, Option<usize>) {
         self.metric.get_protocol_in_and_out(protocol_id)
     }
 
