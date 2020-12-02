@@ -28,7 +28,7 @@ libp2prs-dns = { path = "transports/dns", version = "0.1.0", package = "libp2prs
 libp2prs-websocket = { path = "transports/websocket", version = "0.1.0", package = "libp2prs-websocket" }
 libp2prs-swarm = { path = "swarm", version = "0.1.0", package = "libp2prs-swarm" }
 libp2prs-infoserver = { path="infoserver", version = "0.1.0", package = "libp2prs-infoserver" }
-
+libp2prs-exporter = { path="exporter", version = "0.1.0", package = "libp2prs-exporter" }
 
 async-std = { version = "1.6", features = ["attributes", "unstable"] }
 async-trait = "0.1"

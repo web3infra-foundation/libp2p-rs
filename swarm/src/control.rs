@@ -30,6 +30,7 @@ use crate::metrics::metric::Metric;
 use crate::network::NetworkInfo;
 use crate::substream::{StreamId, Substream};
 use crate::{ProtocolId, SwarmError};
+use std::collections::hash_map::IntoIter;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -82,8 +83,29 @@ impl Clone for Control {
 }
 
 impl Control {
+    /// Create a new control.
     pub(crate) fn new(sender: mpsc::Sender<SwarmControlCmd>, metric: Arc<Metric>) -> Self {
         Control { sender, metric }
+    }
+
+    /// Return an iterator that contains all input bytes group by peer.
+    pub fn peer_in_iter(&self) -> IntoIter<PeerId, usize> {
+        self.metric.get_peers_in_list()
+    }
+
+    /// Return an iterator that contains all output bytes group by peer.
+    pub fn peer_out_iter(&self) -> IntoIter<PeerId, usize> {
+        self.metric.get_peers_out_list()
+    }
+
+    /// Return an iterator that contains all input bytes group by protocol.
+    pub fn protocol_in_iter(&self) -> IntoIter<String, usize> {
+        self.metric.get_protocols_in_list()
+    }
+
+    /// Return an iterator that contains all output bytes group by protocol.
+    pub fn protocol_out_iter(&self) -> IntoIter<String, usize> {
+        self.metric.get_protocols_out_list()
     }
 
     /// Get recv package count&bytes

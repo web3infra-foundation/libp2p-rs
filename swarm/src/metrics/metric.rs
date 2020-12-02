@@ -1,5 +1,6 @@
 use crate::metrics::metricmap::MetricMap;
 use libp2prs_core::PeerId;
+use std::collections::hash_map::IntoIter;
 use std::fmt;
 use std::ops::Add;
 use std::sync::atomic::Ordering::SeqCst;
@@ -108,6 +109,26 @@ impl Metric {
         let peer_in = self.peer_in.load(peer_id);
         let peer_out = self.peer_out.load(peer_id);
         (peer_in, peer_out)
+    }
+
+    /// Get an iterator that key is peer_id and value is input bytes.
+    pub fn get_peers_in_list(&self) -> IntoIter<PeerId, usize> {
+        self.peer_in.iterator().unwrap()
+    }
+
+    /// Get an iterator that key is peer_id and value is output bytes.
+    pub fn get_peers_out_list(&self) -> IntoIter<PeerId, usize> {
+        self.peer_out.iterator().unwrap()
+    }
+
+    /// Get an iterator that key is protocol and value is input bytes.
+    pub fn get_protocols_in_list(&self) -> IntoIter<String, usize> {
+        self.protocol_in.iterator().unwrap()
+    }
+
+    /// Get an iterator that key is protocol and value is output bytes.
+    pub fn get_protocols_out_list(&self) -> IntoIter<String, usize> {
+        self.protocol_out.iterator().unwrap()
     }
 }
 
