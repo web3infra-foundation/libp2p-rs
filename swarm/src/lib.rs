@@ -48,7 +48,7 @@ pub mod connection;
 mod control;
 mod dial;
 mod muxer;
-mod network;
+pub mod network;
 mod registry;
 
 pub mod identify;

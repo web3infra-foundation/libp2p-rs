@@ -29,6 +29,7 @@ use libp2prs_core::transport::memory::MemoryTransport;
 use libp2prs_core::transport::upgrade::TransportUpgrade;
 use libp2prs_core::upgrade::{Selector, UpgradeInfo};
 use libp2prs_core::{Multiaddr, PeerId};
+use libp2prs_exporter::ExporterServer;
 use libp2prs_infoserver::InfoServer;
 use libp2prs_mplex as mplex;
 use libp2prs_secio as secio;
@@ -116,9 +117,11 @@ fn run_server() {
 
     swarm.listen_on(vec![listen_addr1, listen_addr2]).unwrap();
 
-    let monitor = InfoServer::new(control);
+    let monitor = InfoServer::new(control.clone());
 
     monitor.start("127.0.0.1:8999".to_string());
+
+    ExporterServer::new(control).start("127.0.0.1:9102".to_string());
 
     swarm.start();
 
