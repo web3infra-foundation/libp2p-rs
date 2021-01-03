@@ -27,7 +27,7 @@ extern crate lazy_static;
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::transport::upgrade::TransportUpgrade;
 use libp2prs_core::upgrade::UpgradeInfo;
-use libp2prs_core::{Multiaddr, PeerId};
+use libp2prs_core::{Multiaddr, PeerId, ProtocolId};
 use libp2prs_mplex as mplex;
 use libp2prs_secio as secio;
 use libp2prs_swarm::identify::IdentifyConfig;
@@ -51,6 +51,7 @@ fn main() {
 lazy_static! {
     static ref SERVER_KEY: Keypair = Keypair::generate_ed25519_fixed();
 }
+const PROTO_NAME: &[u8] = b"/my/1.0.0";
 
 #[allow(clippy::empty_loop)]
 fn run_server() {
@@ -65,10 +66,10 @@ fn run_server() {
     struct MyProtocolHandler;
 
     impl UpgradeInfo for MyProtocolHandler {
-        type Info = &'static [u8];
+        type Info = ProtocolId;
 
         fn protocol_info(&self) -> Vec<Self::Info> {
-            vec![b"/my/1.0.0"]
+            vec![PROTO_NAME.into()]
         }
     }
 
@@ -138,7 +139,7 @@ fn run_client() {
 
     task::block_on(async move {
         control.new_connection(remote_peer_id.clone()).await.unwrap();
-        let mut stream = control.new_stream(remote_peer_id, vec![b"/my/1.0.0"]).await.unwrap();
+        let mut stream = control.new_stream(remote_peer_id, vec![PROTO_NAME.into()]).await.unwrap();
         log::info!("stream {:?} opened, writing something...", stream);
         let msg = b"hello";
         let _ = stream.write2(msg).await;

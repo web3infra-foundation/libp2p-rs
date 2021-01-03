@@ -54,6 +54,7 @@ use libp2prs_traits::{ReadEx, WriteEx};
 use crate::connection::Connection;
 use crate::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandler};
 use crate::substream::Substream;
+use libp2prs_core::ProtocolId;
 
 /// The configuration for outbound pings.
 #[derive(Clone, Debug)]
@@ -226,9 +227,9 @@ pub(crate) const PING_PROTOCOL: &[u8] = b"/ipfs/ping/1.0.0";
 const PING_SIZE: usize = 32;
 
 impl UpgradeInfo for PingHandler {
-    type Info = &'static [u8];
+    type Info = ProtocolId;
     fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![PING_PROTOCOL]
+        vec![PING_PROTOCOL.into()]
     }
 }
 
@@ -287,7 +288,7 @@ mod tests {
             let socket = Substream::new_with_default(Box::new(socket));
 
             let mut handler = PingHandler::new(PingConfig::new().with_unsolicited(true));
-            let _ = handler.handle(socket, handler.protocol_info().first().unwrap()).await;
+            let _ = handler.handle(socket, handler.protocol_info().first().unwrap().clone()).await;
         });
 
         async_std::task::block_on(async move {

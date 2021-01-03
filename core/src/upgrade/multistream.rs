@@ -22,7 +22,7 @@ use crate::multistream::Negotiator;
 use crate::transport::TransportError;
 use crate::upgrade::{ProtocolName, Upgrader};
 use libp2prs_traits::{ReadEx, WriteEx};
-use log::{info, trace};
+use log::{debug, trace};
 
 //b"/multistream/1.0.0"
 
@@ -55,7 +55,7 @@ impl<U> Multistream<U> {
 
         let (proto, socket) = neg.negotiate(socket).await?;
 
-        info!("select_inbound {:?}", proto.protocol_name_str());
+        debug!("select_inbound {:?}", proto);
         self.inner.upgrade_inbound(socket, proto.0).await
     }
 
@@ -70,7 +70,7 @@ impl<U> Multistream<U> {
 
         let (proto, socket) = neg.select_one(socket).await?;
 
-        info!("select_outbound {:?}", proto.protocol_name_str());
+        debug!("select_outbound {:?}", proto);
         self.inner.upgrade_outbound(socket, proto.0).await
     }
 }
@@ -81,6 +81,12 @@ struct NameWrap<N>(N);
 impl<N: ProtocolName> AsRef<[u8]> for NameWrap<N> {
     fn as_ref(&self) -> &[u8] {
         self.0.protocol_name()
+    }
+}
+
+impl<N: ProtocolName> std::fmt::Debug for NameWrap<N> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", String::from_utf8_lossy(self.0.protocol_name()))
     }
 }
 

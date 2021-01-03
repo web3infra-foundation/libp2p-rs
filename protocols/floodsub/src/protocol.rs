@@ -27,7 +27,7 @@ use async_std::task;
 use async_trait::async_trait;
 use futures::{channel::mpsc, SinkExt};
 use libp2prs_core::upgrade::UpgradeInfo;
-use libp2prs_core::PeerId;
+use libp2prs_core::{PeerId, ProtocolId};
 use libp2prs_swarm::protocol_handler::Notifiee;
 use libp2prs_swarm::{
     connection::Connection,
@@ -49,10 +49,10 @@ impl Handler {
 }
 
 impl UpgradeInfo for Handler {
-    type Info = &'static [u8];
+    type Info = ProtocolId;
 
     fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![FLOOD_SUB_ID]
+        vec![FLOOD_SUB_ID.into()]
     }
 }
 

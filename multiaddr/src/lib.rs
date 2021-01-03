@@ -32,7 +32,7 @@ static_assertions::const_assert! {
 }
 
 /// Representation of a Multiaddr.
-#[derive(PartialEq, Eq, Clone, Hash)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
 #[allow(clippy::rc_buffer)]
 pub struct Multiaddr {
     bytes: Arc<Vec<u8>>,
@@ -121,6 +121,23 @@ impl Multiaddr {
             }
         }
         None
+    }
+
+    pub fn is_loopback_addr(&self) -> bool {
+        let mut is_loopback = false;
+        let components = self.iter().collect::<Vec<_>>();
+        for comp in components.iter() {
+            match comp {
+                protocol::Protocol::Ip4(ipv4_addr) => {
+                    is_loopback = ipv4_addr.is_loopback();
+                }
+                protocol::Protocol::Ip6(ipv6_addr) => {
+                    is_loopback = ipv6_addr.is_loopback();
+                }
+                _ => {}
+            }
+        }
+        is_loopback
     }
 
     pub fn is_private_addr(&self) -> bool {

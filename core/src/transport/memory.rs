@@ -162,8 +162,8 @@ impl TransportListener for Listener {
         self.receiver.next().await.ok_or(TransportError::Unreachable)
     }
 
-    fn multi_addr(&self) -> Multiaddr {
-        self.addr.clone()
+    fn multi_addr(&self) -> Vec<Multiaddr> {
+        vec![self.addr.clone()]
     }
 }
 

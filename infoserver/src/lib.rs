@@ -226,7 +226,7 @@ async fn get_sent_pkg(req: Request<Control>) -> tide::Result {
 /// Get sent&received package bytes by protocol_id
 async fn get_protocol_info(req: Request<Control>) -> tide::Result {
     let protocol: Protocol = req.query()?;
-    let (receive, send) = req.state().get_protocol_in_and_out(protocol.protocol_id);
+    let (receive, send) = req.state().get_protocol_in_and_out(&protocol.protocol_id);
 
     let mut spec_info = SpecInfo {
         package_in: 0,

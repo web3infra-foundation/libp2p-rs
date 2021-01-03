@@ -260,6 +260,22 @@ pub enum ParseError {
     MultiHash,
 }
 
+impl TryFrom<String> for PeerId {
+    type Error = ParseError;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        PeerId::from_str(&s)
+    }
+}
+
+impl<'a> TryFrom<&'a str> for PeerId {
+    type Error = ParseError;
+
+    fn try_from(s: &'a str) -> Result<Self, Self::Error> {
+        PeerId::from_str(s)
+    }
+}
+
 impl FromStr for PeerId {
     type Err = ParseError;
 

@@ -164,9 +164,7 @@ fn no_protocol_found() {
 
             // We don't explicitly check for `Failed` because the client might close the connection when it
             // realizes that we have no protocol in common.
-            if neg.negotiate(connec).await.is_ok() {
-                panic!()
-            }
+            assert!(neg.negotiate(connec).await.is_err());
         });
 
         let client = async_std::task::spawn(async move {
@@ -174,7 +172,7 @@ fn no_protocol_found() {
             let protos = vec![b"/proto3", b"/proto4"];
             let neg = Negotiator::new_with_protocols(protos);
             match neg.select_one(connec).await {
-                Err(NegotiationError::Failed) => {}
+                Err(NegotiationError::Failed(_)) => {}
                 Ok(_) => {}
                 Err(_) => panic!(),
             }

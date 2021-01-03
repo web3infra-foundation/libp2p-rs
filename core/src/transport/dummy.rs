@@ -79,8 +79,8 @@ impl TransportListener for DummyListener {
         Err(TransportError::Internal)
     }
 
-    fn multi_addr(&self) -> Multiaddr {
-        "/ip4/127.0.0.1/tcp/12345".parse::<Multiaddr>().unwrap()
+    fn multi_addr(&self) -> Vec<Multiaddr> {
+        vec![]
     }
 }
 

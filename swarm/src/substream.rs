@@ -34,7 +34,6 @@ use crate::control::SwarmControlCmd;
 use crate::metrics::metric::Metric;
 use crate::ProtocolId;
 use libp2prs_core::muxing::IReadWrite;
-use libp2prs_core::upgrade::ProtocolName;
 use libp2prs_core::{Multiaddr, PeerId};
 use libp2prs_traits::{ReadEx, WriteEx};
 use std::sync::Arc;
@@ -80,7 +79,7 @@ struct SubstreamMeta {
 #[derive(Clone)]
 pub struct Substream {
     /// The inner sub stream, created by the StreamMuxer
-    inner: IReadWrite,
+    inner: Option<IReadWrite>,
     /// The inner information of the sub-stream
     info: Arc<SubstreamMeta>,
     /// The control channel for closing stream
@@ -93,10 +92,28 @@ impl fmt::Debug for Substream {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Substream")
             .field("inner", &self.inner)
-            .field("protocol", &self.info.protocol.protocol_name_str())
+            .field("protocol", &self.info.protocol)
             .field("dir", &self.info.dir)
             .field("cid", &self.info.cid)
             .finish()
+    }
+}
+
+// Note that we spawn a task to close Substream, since Rust doesn't support Async Destructor yet
+impl Drop for Substream {
+    fn drop(&mut self) {
+        let inner = self.inner.take();
+        if let Some(mut inner) = inner {
+            let cid = self.cid();
+            let sid = StreamId(inner.id());
+            let mut s = self.ctrl.clone();
+            log::debug!("garbage collecting stream {:?}/{:?} {:?}", cid, sid, self.protocol());
+
+            async_std::task::spawn(async move {
+                let _ = s.send(SwarmControlCmd::CloseStream(cid, sid)).await;
+                let _ = inner.close2().await;
+            });
+        }
     }
 }
 
@@ -111,7 +128,7 @@ impl Substream {
         ctrl: mpsc::Sender<SwarmControlCmd>,
     ) -> Self {
         Self {
-            inner,
+            inner: Some(inner),
             info: Arc::new(SubstreamMeta { protocol, dir, cid, ci }),
             ctrl,
             metric,
@@ -120,7 +137,7 @@ impl Substream {
     /// For internal test only
     #[allow(dead_code)]
     pub(crate) fn new_with_default(inner: IReadWrite) -> Self {
-        let protocol = b"/test";
+        let protocol = ProtocolId::from(b"/test" as &[u8]);
         let dir = Direction::Outbound;
         let cid = ConnectionId::default();
         let ci = ConnectInfo {
@@ -131,15 +148,24 @@ impl Substream {
         let (ctrl, _) = mpsc::channel(0);
         let metric = Arc::new(Metric::new());
         Self {
-            inner,
+            inner: Some(inner),
             info: Arc::new(SubstreamMeta { protocol, dir, cid, ci }),
             ctrl,
             metric,
         }
     }
+    /// Builds a SubstreamView struct.
+    pub fn to_view(&self) -> SubstreamView {
+        SubstreamView {
+            cid: self.cid(),
+            id: self.id(),
+            protocol: self.protocol().clone(),
+            dir: self.dir(),
+        }
+    }
     /// Returns the protocol of the sub stream.
-    pub fn protocol(&self) -> ProtocolId {
-        self.info.protocol
+    pub fn protocol(&self) -> &ProtocolId {
+        &self.info.protocol
     }
     /// Returns the direction of the sub stream.
     pub fn dir(&self) -> Direction {
@@ -151,7 +177,7 @@ impl Substream {
     }
     /// Returns the sub stream Id.
     pub fn id(&self) -> StreamId {
-        StreamId(self.inner.id())
+        StreamId(self.inner.as_ref().expect("already closed?").id())
     }
     /// Returns the remote multiaddr of the sub stream.
     pub fn remote_multiaddr(&self) -> Multiaddr {
@@ -168,7 +194,7 @@ impl Substream {
     /// Returns the info of the sub stream.
     pub fn info(&self) -> SubstreamInfo {
         SubstreamInfo {
-            protocol: self.protocol(),
+            protocol: self.protocol().clone(),
             dir: self.dir(),
         }
     }
@@ -177,12 +203,9 @@ impl Substream {
 #[async_trait]
 impl ReadEx for Substream {
     async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
-        self.inner.read2(buf).await.map(|n| {
+        self.inner.as_mut().expect("already closed?").read2(buf).await.map(|n| {
             self.metric.log_recv_msg(n);
-            let protocol = self.protocol().to_vec();
-            if let Ok(pid) = String::from_utf8(protocol) {
-                self.metric.log_recv_stream(pid, n, &self.info.ci.rpid);
-            }
+            self.metric.log_recv_stream(self.protocol(), n, &self.info.ci.rpid);
             n
         })
     }
@@ -191,26 +214,47 @@ impl ReadEx for Substream {
 #[async_trait]
 impl WriteEx for Substream {
     async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
-        self.inner.write2(buf).await.map(|n| {
+        self.inner.as_mut().expect("already closed?").write2(buf).await.map(|n| {
             self.metric.log_sent_msg(n);
-            let protocol = self.protocol().to_vec();
-            if let Ok(pid) = String::from_utf8(protocol) {
-                self.metric.log_sent_stream(pid, n, &self.info.ci.rpid);
-            }
+            self.metric.log_sent_stream(self.protocol(), n, &self.info.ci.rpid);
             n
         })
     }
 
     async fn flush2(&mut self) -> Result<(), io::Error> {
-        self.inner.flush2().await
+        self.inner.as_mut().expect("already closed?").flush2().await
     }
 
     // try to send a CloseStream command to Swarm, then close inner stream
     async fn close2(&mut self) -> Result<(), io::Error> {
-        // to ask Swarm to remove myself
-        let cid = self.cid();
-        let sid = self.id();
-        let _ = self.ctrl.send(SwarmControlCmd::CloseStream(cid, sid)).await;
-        self.inner.close2().await
+        let inner = self.inner.take();
+        if let Some(mut inner) = inner {
+            // to ask Swarm to remove myself
+            let cid = self.cid();
+            let sid = StreamId(inner.id());
+            let _ = self.ctrl.send(SwarmControlCmd::CloseStream(cid, sid)).await;
+            inner.close2().await
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// SubstreamView represents the basic information of a substream.
+#[derive(Debug, Clone)]
+pub struct SubstreamView {
+    /// The connection id of the substream.
+    pub cid: ConnectionId,
+    /// The id of the substream.
+    pub id: StreamId,
+    /// The protocol of the sub stream.
+    pub protocol: ProtocolId,
+    /// The direction of the sub stream.
+    pub dir: Direction,
+}
+
+impl fmt::Display for SubstreamView {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} Sid({}) {} {}", self.cid, self.id.0, self.dir, self.protocol)
     }
 }

@@ -46,7 +46,7 @@ use std::{error::Error, io};
 
 use libp2prs_core::transport::TransportError;
 use libp2prs_core::upgrade::UpgradeInfo;
-use libp2prs_core::{Multiaddr, PublicKey};
+use libp2prs_core::{Multiaddr, ProtocolId, PublicKey};
 use libp2prs_traits::{ReadEx, WriteEx};
 
 use crate::connection::Connection;
@@ -130,7 +130,7 @@ fn parse_proto_msg(msg: impl AsRef<[u8]>) -> Result<(IdentifyInfo, Multiaddr), i
     }
 }
 
-pub(crate) async fn consume_message(mut stream: Substream) -> Result<(IdentifyInfo, Multiaddr), TransportError> {
+pub(crate) async fn process_message(mut stream: Substream) -> Result<(IdentifyInfo, Multiaddr), TransportError> {
     let buf = stream.read_one(4096).await?;
     stream.close2().await?;
 
@@ -187,15 +187,15 @@ impl IdentifyHandler {
 }
 
 impl UpgradeInfo for IdentifyHandler {
-    type Info = &'static [u8];
+    type Info = ProtocolId;
     fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![IDENTIFY_PROTOCOL]
+        vec![IDENTIFY_PROTOCOL.into()]
     }
 }
 
 impl Notifiee for IdentifyHandler {
     fn connected(&mut self, connection: &mut Connection) {
-        log::trace!("starting Identify service for {:?}", connection);
+        log::debug!("starting Identify service for {:?}", connection);
         connection.start_identify();
     }
 }
@@ -205,13 +205,13 @@ impl ProtocolHandler for IdentifyHandler {
     /// The IdentifyHandler's inbound protocol.
     /// Simply wait for any thing that coming in then send back
     async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn Error>> {
-        log::trace!("Identify Protocol handling on {:?}", stream);
+        log::debug!("Identify Protocol handling on {:?}", stream);
 
         let (tx, rx) = oneshot::channel();
         self.ctrl.send(SwarmControlCmd::IdentifyInfo(tx)).await?;
         let identify_info = rx.await??;
 
-        log::trace!("IdentifyHandler sending identify info to client...");
+        log::debug!("IdentifyHandler sending identify info to client...");
 
         produce_message(stream, identify_info).await.map_err(|e| e.into())
     }
@@ -251,16 +251,16 @@ impl IdentifyPushHandler {
 }
 
 impl UpgradeInfo for IdentifyPushHandler {
-    type Info = &'static [u8];
+    type Info = ProtocolId;
     fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![IDENTIFY_PUSH_PROTOCOL]
+        vec![IDENTIFY_PUSH_PROTOCOL.into()]
     }
 }
 
 impl Notifiee for IdentifyPushHandler {
     fn connected(&mut self, connection: &mut Connection) {
         if self.config.push {
-            log::trace!("starting Identify Push service for {:?}", connection);
+            log::debug!("starting Identify Push service for {:?}", connection);
             connection.start_identify_push();
         }
     }
@@ -271,9 +271,9 @@ impl ProtocolHandler for IdentifyPushHandler {
     // receive the message and consume it
     async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn Error>> {
         let cid = stream.cid();
-        log::trace!("Identify Push Protocol handling on {:?}", stream);
+        log::debug!("Identify Push Protocol handling on {:?}", stream);
 
-        let result = consume_message(stream).await.map_err(TransportError::into);
+        let result = process_message(stream).await.map_err(TransportError::into);
 
         let _ = self.tx.send(SwarmEvent::IdentifyResult { cid, result }).await;
 
@@ -319,7 +319,7 @@ mod tests {
             let socket = Substream::new_with_default(Box::new(socket));
 
             let mut handler = IdentifyHandler::new(tx);
-            let _ = handler.handle(socket, handler.protocol_info().first().unwrap()).await;
+            let _ = handler.handle(socket, handler.protocol_info().first().unwrap().clone()).await;
         });
 
         async_std::task::spawn(async move {
@@ -341,7 +341,7 @@ mod tests {
             let socket = MemoryTransport.dial(listener_addr).await.unwrap();
             let socket = Substream::new_with_default(Box::new(socket));
 
-            let (ri, _addr) = identify::consume_message(socket).await.unwrap();
+            let (ri, _addr) = identify::process_message(socket).await.unwrap();
             assert_eq!(ri.public_key, pubkey);
         });
     }
@@ -377,7 +377,7 @@ mod tests {
             let socket = Substream::new_with_default(Box::new(socket));
 
             let mut handler = IdentifyPushHandler::new(IdentifyConfig::default(), tx);
-            let _ = handler.handle(socket, handler.protocol_info().first().unwrap()).await;
+            let _ = handler.handle(socket, handler.protocol_info().first().unwrap().clone()).await;
 
             let r = rx.next().await.unwrap();
 

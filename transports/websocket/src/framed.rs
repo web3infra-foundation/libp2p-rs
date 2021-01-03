@@ -205,7 +205,7 @@ impl TransportListener for WsTransListener {
         Ok(conn)
     }
 
-    fn multi_addr(&self) -> Multiaddr {
+    fn multi_addr(&self) -> Vec<Multiaddr> {
         self.inner.multi_addr()
     }
 }

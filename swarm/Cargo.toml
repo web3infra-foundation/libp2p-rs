@@ -21,6 +21,8 @@ smallvec = "1.0"
 prost = "0.6"
 void = "1"
 crossbeam-epoch = "0.9.0"
+#xcli = { path = "xcli", version = "0.2.0", package = "xcli" }
+xcli = { git = "https://github.com/kingwel-xie/xcli-rs.git", branch = "master"}
 libp2prs-traits = { path = "../traits", version = "0.1.0", package = "libp2prs-traits" }
 libp2prs-core = { path = "../core", version = "0.1.0", package = "libp2prs-core" }
 
