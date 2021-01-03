@@ -271,7 +271,12 @@ impl FloodSub {
 
     // Handle when new peer connect.
     async fn handle_new_peer(&mut self, pid: PeerId) {
-        let stream = self.control.as_mut().unwrap().new_stream(pid.clone(), vec![FLOOD_SUB_ID]).await;
+        let stream = self
+            .control
+            .as_mut()
+            .unwrap()
+            .new_stream(pid.clone(), vec![FLOOD_SUB_ID.into()])
+            .await;
 
         // if new stream failed, ignore it Since some peer don's support floodsub protocol
         if let Ok(stream) = stream {

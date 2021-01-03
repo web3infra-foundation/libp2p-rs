@@ -81,9 +81,10 @@ fn test_floodsub_basic() {
             srv_swarm.listen_on(vec![addr.clone()]).unwrap();
             srv_swarm.start();
 
+            // subscribe "chat"
             let mut sub = srv_fs_ctrl.subscribe(FLOODSUB_TOPIC.clone()).await.unwrap();
+
             let srv_handle = task::spawn(async move {
-                // subscribe "chat"
                 match sub.ch.next().await {
                     Some(msg) => {
                         log::info!("server recived: {:?}", msg.data);

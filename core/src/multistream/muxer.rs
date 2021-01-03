@@ -62,12 +62,12 @@ pub struct Muxer<TProto, T> {
 
 impl<TProto, T> Muxer<TProto, T>
 where
-    TProto: AsRef<[u8]> + Clone + Eq + std::hash::Hash,
+    TProto: AsRef<[u8]> + Clone + Eq + std::hash::Hash + std::fmt::Debug,
     T: Send + 'static,
 {
     pub fn new() -> Self {
         Muxer {
-            negotiator: Negotiator::new(),
+            negotiator: Negotiator::default(),
             handlers: HashMap::new(),
         }
     }
@@ -104,7 +104,7 @@ where
 
 impl<TProto, T> Default for Muxer<TProto, T>
 where
-    TProto: AsRef<[u8]> + Clone + Eq + std::hash::Hash,
+    TProto: AsRef<[u8]> + Clone + Eq + std::hash::Hash + std::fmt::Debug,
     T: Send + 'static,
 {
     fn default() -> Self {

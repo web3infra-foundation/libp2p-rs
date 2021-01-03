@@ -19,13 +19,16 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::connection::ConnectionInfo;
+use libp2prs_core::PeerId;
 
 /// Information about the network obtained by [`Network::info()`].
 #[derive(Debug)]
 pub struct NetworkInfo {
+    /// The local Peer Id of self node.
+    pub id: PeerId,
     /// The total number of connected peers.
     pub num_peers: usize,
-    /// The total number of connections, both established and pending.
+    /// The total number of connections.
     pub num_connections: usize,
     /// The total number of pending connections, both incoming and outgoing.
     pub num_connections_pending: usize,

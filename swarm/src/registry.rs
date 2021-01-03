@@ -27,7 +27,7 @@ use std::{collections::VecDeque, num::NonZeroUsize};
 /// Every address has an associated score and iterating over addresses will return them
 /// in order from highest to lowest. When reaching the limit, addresses with the lowest
 /// score will be dropped first.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Addresses {
     /// The ranked sequence of addresses.
     registry: SmallVec<[Record; 8]>,
@@ -36,6 +36,16 @@ pub struct Addresses {
     /// Queue of last reports. Every new report is added to the queue. If the queue reaches its
     /// capacity, we also pop the first element.
     reports: VecDeque<Multiaddr>,
+}
+
+// We don't want the debug info of reports which might be huge...
+impl std::fmt::Debug for Addresses {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Addresses")
+            .field("registry", &self.registry)
+            .field("limit", &self.limit)
+            .finish()
+    }
 }
 
 // An address record associates a score to a Multiaddr.

@@ -42,14 +42,14 @@ use libp2prs_core::identity::Keypair;
 use libp2prs_core::multistream::Negotiator;
 use libp2prs_core::muxing::IStreamMuxer;
 use libp2prs_core::transport::TransportError;
-use libp2prs_core::upgrade::ProtocolName;
 use libp2prs_core::PublicKey;
 
+use crate::connection::Direction::Outbound;
 use crate::control::SwarmControlCmd;
 use crate::identify::{IDENTIFY_PROTOCOL, IDENTIFY_PUSH_PROTOCOL};
 use crate::metrics::metric::Metric;
 use crate::ping::PING_PROTOCOL;
-use crate::substream::{ConnectInfo, StreamId, Substream};
+use crate::substream::{ConnectInfo, StreamId, Substream, SubstreamView};
 use crate::{identify, ping, Multiaddr, PeerId, ProtocolId, SwarmError, SwarmEvent};
 
 /// The direction of a peer-to-peer communication channel.
@@ -61,8 +61,20 @@ pub enum Direction {
     Inbound,
 }
 
+impl fmt::Display for Direction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", if self == &Outbound { "Out" } else { "In " })
+    }
+}
+
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ConnectionId(usize);
+
+impl fmt::Display for ConnectionId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:<5}", self.0)
+    }
+}
 
 /// A multiplexed connection to a peer with associated `Substream`s.
 #[allow(dead_code)]
@@ -75,9 +87,8 @@ pub struct Connection {
     tx: mpsc::UnboundedSender<SwarmEvent>,
     /// The ctrl tx channel.
     ctrl: mpsc::Sender<SwarmControlCmd>,
-    /// Handler that processes substreams.
-    substreams: SmallVec<[Substream; 8]>,
-    //substreams: SmallVec<[StreamId; 8]>,
+    /// All sub-streams belonged to this connection.
+    substreams: SmallVec<[SubstreamView; 8]>,
     /// Direction of this connection
     dir: Direction,
     /// Indicates if Ping task is running.
@@ -97,27 +108,6 @@ pub struct Connection {
     identify_push_handle: Option<JoinHandle<()>>,
     /// Global metrics.
     metric: Arc<Metric>,
-}
-
-impl Clone for Connection {
-    fn clone(&self) -> Self {
-        Self {
-            id: self.id,
-            stream_muxer: self.stream_muxer.clone(),
-            tx: self.tx.clone(),
-            ctrl: self.ctrl.clone(),
-            substreams: self.substreams.clone(),
-            dir: self.dir,
-            ping_running: self.ping_running.clone(),
-            ping_failures: self.ping_failures,
-            identity: None,
-            handle: None,
-            ping_handle: None,
-            identify_handle: None,
-            identify_push_handle: None,
-            metric: self.metric.clone(),
-        }
-    }
 }
 
 impl PartialEq for Connection {
@@ -169,6 +159,19 @@ impl Connection {
         }
     }
 
+    pub(crate) fn to_view(&self) -> ConnectionView {
+        ConnectionView {
+            id: self.id,
+            dir: self.dir,
+            info: self.info(),
+            substreams: self.substreams.clone(),
+        }
+    }
+
+    pub(crate) fn substream_view(&self) -> Vec<SubstreamView> {
+        self.substreams.to_vec()
+    }
+
     /// Returns the unique Id of the connection.
     pub(crate) fn id(&self) -> ConnectionId {
         self.id
@@ -201,15 +204,18 @@ impl Connection {
 
             // TODO: how to extract the error from TransportError, ??? it doesn't implement 'Clone'
             // So, at this moment, make a new 'TransportError::Internal'
-            let nr = result.as_ref().map(|s| s.clone()).map_err(|_| TransportError::Internal);
-            match nr {
+            let event = match result.as_ref() {
                 Ok(sub_stream) => {
-                    let _ = tx.send(SwarmEvent::StreamOpened { sub_stream }).await;
+                    let view = sub_stream.to_view();
+                    SwarmEvent::StreamOpened { view }
                 }
-                Err(err) => {
-                    let _ = tx.send(SwarmEvent::StreamError { cid, error: err }).await;
-                }
-            }
+                Err(_) => SwarmEvent::StreamError {
+                    cid,
+                    error: TransportError::Internal,
+                },
+            };
+
+            let _ = tx.send(event).await;
 
             f(result)
         })
@@ -217,7 +223,7 @@ impl Connection {
 
     /// Closes the inner stream_muxer. Spawn a task to avoid blocking.
     pub fn close(&self) {
-        log::trace!("closing {:?}", self);
+        log::debug!("closing {:?}", self);
 
         let mut stream_muxer = self.stream_muxer.clone();
         // spawns a task to close the stream_muxer, later connection will cleaned up
@@ -266,14 +272,14 @@ impl Connection {
     }
 
     /// Adds a substream id to the list.
-    pub(crate) fn add_stream(&mut self, sub_stream: Substream) {
-        log::trace!("adding sub {:?} to {:?}", sub_stream, self);
-        self.substreams.push(sub_stream);
+    pub(crate) fn add_stream(&mut self, view: SubstreamView) {
+        log::debug!("adding sub {:?} to connection", view);
+        self.substreams.push(view);
     }
     /// Removes a substream id from the list.
     pub(crate) fn del_stream(&mut self, sid: StreamId) {
-        log::trace!("removing sub {:?} from {:?}", sid, self);
-        self.substreams.retain(|s| s.id() != sid);
+        log::debug!("removing sub {:?} from connection", sid);
+        self.substreams.retain(|s| s.id != sid);
     }
 
     /// Returns how many substreams in the list.
@@ -294,7 +300,7 @@ impl Connection {
         let stream_muxer = self.stream_muxer.clone();
         let mut tx = self.tx.clone();
         let flag = self.ping_running.clone();
-        let pids = vec![PING_PROTOCOL];
+        let pids = vec![PING_PROTOCOL.into()];
         let ctrl = self.ctrl.clone();
         let metric = self.metric.clone();
 
@@ -320,8 +326,8 @@ impl Connection {
                 let r = open_stream_internal(cid, stream_muxer, pids, ctrl2, metric.clone()).await;
                 let r = match r {
                     Ok(stream) => {
-                        let sub_stream = stream.clone();
-                        let _ = tx.send(SwarmEvent::StreamOpened { sub_stream }).await;
+                        let view = stream.to_view();
+                        let _ = tx.send(SwarmEvent::StreamOpened { view }).await;
                         let res = ping::ping(stream, timeout).await;
                         if res.is_ok() {
                             fail_cnt = 0;
@@ -332,7 +338,7 @@ impl Connection {
                     }
                     Err(err) => {
                         // looks like the peer doesn't support the protocol
-                        log::warn!("Ping protocol not supported: {:?}", err);
+                        log::info!("Ping protocol not supported: {:?}", err);
                         Err(err)
                     }
                 };
@@ -349,7 +355,7 @@ impl Connection {
                 }
             }
 
-            log::trace!("ping task exiting...");
+            log::debug!("ping task exiting...");
         });
 
         self.ping_handle = Some(handle);
@@ -358,7 +364,7 @@ impl Connection {
     /// Stops the Ping service on this connection
     pub(crate) async fn stop_ping(&mut self) {
         if let Some(h) = self.ping_handle.take() {
-            log::debug!("stopping Ping service...");
+            log::debug!("stopping Ping service for {:?}...", self.id);
             self.ping_running.store(false, Ordering::Relaxed);
             h.await;
             //h.cancel().await;
@@ -371,20 +377,20 @@ impl Connection {
         let stream_muxer = self.stream_muxer.clone();
         let mut tx = self.tx.clone();
         let ctrl = self.ctrl.clone();
-        let pids = vec![IDENTIFY_PROTOCOL];
+        let pids = vec![IDENTIFY_PROTOCOL.into()];
         let metric = self.metric.clone();
 
         let handle = task::spawn(async move {
             let r = open_stream_internal(cid, stream_muxer, pids, ctrl, metric).await;
             let r = match r {
                 Ok(stream) => {
-                    let sub_stream = stream.clone();
-                    let _ = tx.send(SwarmEvent::StreamOpened { sub_stream }).await;
-                    identify::consume_message(stream).await
+                    let view = stream.to_view();
+                    let _ = tx.send(SwarmEvent::StreamOpened { view }).await;
+                    identify::process_message(stream).await
                 }
                 Err(err) => {
                     // looks like the peer doesn't support the protocol
-                    log::warn!("Identify protocol not supported: {:?}", err);
+                    log::info!("Identify protocol not supported: {:?}", err);
                     Err(err)
                 }
             };
@@ -395,7 +401,7 @@ impl Connection {
                 })
                 .await;
 
-            log::trace!("identify task exiting...");
+            log::debug!("identify task exiting...");
         });
 
         self.identify_handle = Some(handle);
@@ -403,7 +409,7 @@ impl Connection {
 
     pub(crate) async fn stop_identify(&mut self) {
         if let Some(h) = self.identify_handle.take() {
-            log::debug!("stopping Identify service...");
+            log::debug!("stopping Identify service for {:?}...", self.id);
             h.cancel().await;
         }
     }
@@ -412,7 +418,7 @@ impl Connection {
     pub(crate) fn start_identify_push(&mut self) {
         let cid = self.id();
         let stream_muxer = self.stream_muxer.clone();
-        let pids = vec![IDENTIFY_PUSH_PROTOCOL];
+        let pids = vec![IDENTIFY_PUSH_PROTOCOL.into()];
         let metric = self.metric.clone();
 
         let mut ctrl = self.ctrl.clone();
@@ -427,26 +433,26 @@ impl Connection {
             let r = open_stream_internal(cid, stream_muxer, pids, ctrl, metric).await;
             match r {
                 Ok(stream) => {
-                    let sub_stream = stream.clone();
-                    let _ = tx.send(SwarmEvent::StreamOpened { sub_stream }).await;
+                    let view = stream.to_view();
+                    let _ = tx.send(SwarmEvent::StreamOpened { view }).await;
                     // ignore the error
                     let _ = identify::produce_message(stream, info).await;
                 }
                 Err(err) => {
                     // looks like the peer doesn't support the protocol
-                    log::warn!("Identify push protocol not supported: {:?}", err);
+                    log::info!("Identify push protocol not supported: {:?}", err);
                     //Err(err)
                 }
             }
 
-            log::trace!("identify push task exiting...");
+            log::debug!("identify push task exiting...");
         });
 
         self.identify_push_handle = Some(handle);
     }
     pub(crate) async fn stop_identify_push(&mut self) {
         if let Some(h) = self.identify_push_handle.take() {
-            log::debug!("stopping Identify Push service...");
+            log::debug!("stopping Identify Push service for {:?}...", self.id);
             h.cancel().await;
         }
     }
@@ -454,7 +460,7 @@ impl Connection {
     pub(crate) fn info(&self) -> ConnectionInfo {
         // calculate inbound
         let num_inbound_streams = self.substreams.iter().fold(0usize, |mut acc, s| {
-            if s.dir() == Direction::Inbound {
+            if s.dir == Direction::Inbound {
                 acc += 1;
             }
             acc
@@ -471,6 +477,29 @@ impl Connection {
     }
 }
 
+#[derive(Debug)]
+/// ConnectionView is used for debugging purpose.
+pub struct ConnectionView {
+    /// The unique ID for a connection.
+    pub id: ConnectionId,
+    /// Direction of this connection.
+    pub dir: Direction,
+    /// Detailed information of this connection.
+    pub info: ConnectionInfo,
+    /// Handler that processes substreams.
+    pub substreams: SmallVec<[SubstreamView; 8]>,
+}
+
+impl fmt::Display for ConnectionView {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} {} RPID({:52}) I/O({}{}) RA({})",
+            self.id, self.dir, self.info.remote_peer_id, self.info.num_inbound_streams, self.info.num_outbound_streams, self.info.ra
+        )
+    }
+}
+
 async fn open_stream_internal(
     cid: ConnectionId,
     mut stream_muxer: IStreamMuxer,
@@ -478,6 +507,8 @@ async fn open_stream_internal(
     ctrl: mpsc::Sender<SwarmControlCmd>,
     metric: Arc<Metric>,
 ) -> Result<Substream, TransportError> {
+    log::debug!("opening substream on {:?} {:?}", cid, pids);
+
     let raw_stream = stream_muxer.open_stream().await?;
     let la = stream_muxer.local_multiaddr();
     let ra = stream_muxer.remote_multiaddr();
@@ -489,14 +520,14 @@ async fn open_stream_internal(
 
     match result {
         Ok((proto, raw_stream)) => {
-            log::debug!("selected outbound {:?} {:?}", cid, proto.protocol_name_str());
+            log::debug!("selected outbound {:?} {:?}", cid, proto);
 
             let ci = ConnectInfo { la, ra, rpid };
             let stream = Substream::new(raw_stream, metric.clone(), Direction::Outbound, proto, cid, ci, ctrl);
             Ok(stream)
         }
         Err(err) => {
-            log::info!("failed outbound protocol selection {:?} {:?}", cid, err);
+            log::debug!("failed outbound protocol selection {:?} {:?}", cid, err);
             Err(TransportError::NegotiationError(err))
         }
     }

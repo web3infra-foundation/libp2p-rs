@@ -98,7 +98,7 @@ where
         self.pnet.clone().handshake(stream).await.map_err(|e| e.into())
     }
 
-    fn multi_addr(&self) -> Multiaddr {
+    fn multi_addr(&self) -> Vec<Multiaddr> {
         self.inner.multi_addr()
     }
 }

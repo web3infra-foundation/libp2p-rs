@@ -34,11 +34,13 @@ pub struct Negotiator<TProto> {
     protocols: Vec<(TProto, Protocol)>,
 }
 
-impl<TProto: AsRef<[u8]> + Clone> Negotiator<TProto> {
-    pub fn new() -> Self {
+impl<TProto> Default for Negotiator<TProto> {
+    fn default() -> Self {
         Negotiator { protocols: Vec::new() }
     }
+}
 
+impl<TProto: AsRef<[u8]> + Clone + fmt::Debug> Negotiator<TProto> {
     pub fn new_with_protocols<Iter>(protocols: Iter) -> Self
     where
         Iter: IntoIterator<Item = TProto>,
@@ -131,6 +133,8 @@ impl<TProto: AsRef<[u8]> + Clone> Negotiator<TProto> {
             return Err(ProtocolError::InvalidMessage.into());
         }
 
+        let mut cause = vec![];
+
         for proto in &self.protocols {
             io.send_message(Message::Protocol(proto.1.clone())).await?;
             log::debug!("Dialer: Proposed protocol: {}", proto.1);
@@ -143,24 +147,22 @@ impl<TProto: AsRef<[u8]> + Clone> Negotiator<TProto> {
                     return Ok((proto.0.clone(), io));
                 }
                 Message::NotAvailable => {
-                    log::debug!(
-                        "Dialer: Received rejection of protocol: {}",
-                        String::from_utf8_lossy(proto.0.as_ref())
-                    );
+                    log::debug!("Dialer: Received rejection of protocol: {:?}", proto.0);
+                    cause.push(format!("{:?}", proto.0));
                     continue;
                 }
                 _ => return Err(ProtocolError::InvalidMessage.into()),
             }
         }
-        Err(NegotiationError::Failed)
+        Err(NegotiationError::Failed(cause))
     }
 }
 
-impl<TProto: AsRef<[u8]> + Clone> Default for Negotiator<TProto> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// impl<TProto: AsRef<[u8]> + Clone> Default for Negotiator<TProto> {
+//     fn default() -> Self {
+//         Self::new()
+//     }
+// }
 
 #[derive(Debug)]
 pub enum NegotiationError {
@@ -168,7 +170,9 @@ pub enum NegotiationError {
     ProtocolError(ProtocolError),
 
     /// Protocol negotiation failed because no protocol could be agreed upon.
-    Failed,
+    ///
+    /// Vec<String> contains the rejected protocols.
+    Failed(Vec<String>),
 }
 
 impl From<ProtocolError> for NegotiationError {
@@ -205,7 +209,7 @@ impl fmt::Display for NegotiationError {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
             NegotiationError::ProtocolError(p) => fmt.write_fmt(format_args!("Protocol error: {}", p)),
-            NegotiationError::Failed => fmt.write_str("Protocol negotiation failed."),
+            NegotiationError::Failed(cause) => fmt.write_fmt(format_args!("Protocol negotiation failed {:?}.", cause)),
         }
     }
 }

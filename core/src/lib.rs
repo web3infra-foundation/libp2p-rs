@@ -57,9 +57,11 @@ pub use transport::Transport;
 pub mod muxing;
 pub mod secure_io;
 pub mod upgrade;
+pub use upgrade::ProtocolId;
 
 pub mod either;
 
 pub mod peerstore;
 
 pub mod pnet;
+pub mod translation;

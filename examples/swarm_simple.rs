@@ -25,10 +25,11 @@ use std::{error::Error, time::Duration};
 extern crate lazy_static;
 
 use libp2prs_core::identity::Keypair;
+use libp2prs_core::peerstore::ADDRESS_TTL;
 use libp2prs_core::transport::memory::MemoryTransport;
 use libp2prs_core::transport::upgrade::TransportUpgrade;
 use libp2prs_core::upgrade::{Selector, UpgradeInfo};
-use libp2prs_core::{Multiaddr, PeerId};
+use libp2prs_core::{Multiaddr, PeerId, ProtocolId};
 use libp2prs_exporter::ExporterServer;
 use libp2prs_infoserver::InfoServer;
 use libp2prs_mplex as mplex;
@@ -58,6 +59,8 @@ lazy_static! {
     static ref SERVER_KEY: Keypair = Keypair::generate_ed25519_fixed();
 }
 
+const PROTO_NAME: &[u8] = b"/my/1.0.0";
+
 #[allow(clippy::empty_loop)]
 fn run_server() {
     let keys = SERVER_KEY.clone();
@@ -75,10 +78,10 @@ fn run_server() {
     struct MyProtocolHandler;
 
     impl UpgradeInfo for MyProtocolHandler {
-        type Info = &'static [u8];
+        type Info = ProtocolId;
 
         fn protocol_info(&self) -> Vec<Self::Info> {
-            vec![b"/my/1.0.0"]
+            vec![PROTO_NAME.into()]
         }
     }
 
@@ -150,8 +153,8 @@ fn run_client() {
 
     log::info!("about to connect to {:?}", remote_peer_id);
 
-    swarm.peer_addrs_add(&remote_peer_id, "/ip4/127.0.0.1/tcp/30199/ws".parse().unwrap(), Duration::default());
-    swarm.peer_addrs_add(&remote_peer_id, "/ip4/127.0.0.1/tcp/8086".parse().unwrap(), Duration::default());
+    swarm.peer_addrs_add(&remote_peer_id, "/ip4/127.0.0.1/tcp/30199/ws".parse().unwrap(), ADDRESS_TTL);
+    swarm.peer_addrs_add(&remote_peer_id, "/ip4/127.0.0.1/tcp/8086".parse().unwrap(), ADDRESS_TTL);
 
     swarm.start();
 
@@ -162,7 +165,7 @@ fn run_client() {
             //let mut stream = connection.open_stream(vec![b"/my/1.0.0"], |r| r.unwrap()).await;
 
             // method 2
-            let mut stream = control.new_stream(remote_peer_id.clone(), vec![b"/my/1.0.0"]).await.unwrap();
+            let mut stream = control.new_stream(remote_peer_id.clone(), vec![PROTO_NAME.into()]).await.unwrap();
             log::info!("stream {:?} opened, writing something...", stream);
             let _ = stream.write_all2(b"hello").await;
 

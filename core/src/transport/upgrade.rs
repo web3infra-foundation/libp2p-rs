@@ -81,6 +81,7 @@ where
     }
 
     async fn dial(&mut self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
+        trace!("dialing {} ...", addr);
         let socket = self.inner.dial(addr).await?;
         let sec = self.sec.clone();
         let sec_socket = sec.select_outbound(socket).await?;
@@ -125,7 +126,7 @@ where
         let stream = self.inner.accept().await?;
         let sec = self.sec.clone();
 
-        trace!("got a new connection, upgrading...");
+        trace!("accept a new connection from {}, upgrading...", stream.remote_multiaddr());
         //futures_timer::Delay::new(Duration::from_secs(3)).await;
         let sec_socket = sec.select_inbound(stream).await?;
 
@@ -135,7 +136,7 @@ where
         Ok(Box::new(o))
     }
 
-    fn multi_addr(&self) -> Multiaddr {
+    fn multi_addr(&self) -> Vec<Multiaddr> {
         self.inner.multi_addr()
     }
 }

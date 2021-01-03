@@ -48,19 +48,23 @@
 //! In general, multiple protocol handlers should be made into trait objects and then added to `Swarm::muxer`.
 //!
 
+use async_trait::async_trait;
+use libp2prs_core::upgrade::UpgradeInfo;
+use libp2prs_core::PeerId;
+use std::error::Error;
+
 use crate::connection::Connection;
 use crate::substream::Substream;
 use crate::ProtocolId;
-use async_trait::async_trait;
-use libp2prs_core::upgrade::{ProtocolName, UpgradeInfo};
-use std::error::Error;
 
-/// Notifiee is an trait for an object wishing to receive notifications from swarm
+/// Notifiee is an trait for an object wishing to receive notifications from swarm.
 pub trait Notifiee {
-    /// called when a connection opened
+    /// called when a connection opened.
     fn connected(&mut self, _conn: &mut Connection) {}
-    /// called when a connection closed
+    /// called when a connection closed.
     fn disconnected(&mut self, _conn: &mut Connection) {}
+    /// called when finishing identifi a remote peer.
+    fn identified(&mut self, _peer: PeerId) {}
 }
 
 /// Common trait for upgrades that can be applied on inbound substreams, outbound substreams,
@@ -99,9 +103,12 @@ impl DummyProtocolHandler {
 }
 
 impl UpgradeInfo for DummyProtocolHandler {
-    type Info = &'static [u8];
+    type Info = ProtocolId;
     fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![b"/dummy/1.0.0", b"/dummy/2.0.0"]
+        vec![
+            ProtocolId::from(b"/dummy/1.0.0" as &[u8]),
+            ProtocolId::from(b"/dummy/2.0.0" as &[u8]),
+        ]
     }
 }
 
@@ -110,7 +117,7 @@ impl Notifiee for DummyProtocolHandler {}
 #[async_trait]
 impl ProtocolHandler for DummyProtocolHandler {
     async fn handle(&mut self, stream: Substream, info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn Error>> {
-        log::trace!("Dummy Protocol handling inbound {:?} {:?}", stream, info.protocol_name_str());
+        log::trace!("Dummy Protocol handling inbound {:?} {:?}", stream, info);
         Ok(())
     }
     fn box_clone(&self) -> IProtocolHandler {
