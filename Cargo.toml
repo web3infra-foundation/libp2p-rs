@@ -23,6 +23,7 @@ libp2prs-secio = { path = "protocols/secio", version = "0.1.0", package = "libp2
 libp2prs-plaintext = { path = "protocols/plaintext", version = "0.1.0", package = "libp2prs-plaintext" }
 libp2prs-noise = { path = "protocols/noise", version = "0.1.0", package = "libp2prs-noise" }
 libp2prs-floodsub = { path = "protocols/floodsub", version = "0.1.0", package = "libp2prs-floodsub" }
+libp2prs-mdns = { path = "protocols/mdns", version = "0.1.0", package = "libp2prs-mdns" }
 libp2prs-tcp = { path = "transports/tcp", version = "0.1.0", package = "libp2prs-tcp" }
 libp2prs-dns = { path = "transports/dns", version = "0.1.0", package = "libp2prs-dns" }
 libp2prs-websocket = { path = "transports/websocket", version = "0.1.0", package = "libp2prs-websocket" }
@@ -76,6 +77,7 @@ members = [
   "protocols/plaintext",
   "protocols/noise",
   "protocols/floodsub",
+  "protocols/mdns",
   "protocols/kad",
   "core",
   "transports/tcp",

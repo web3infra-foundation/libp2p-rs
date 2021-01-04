@@ -1,0 +1,30 @@
+[package]
+name = "libp2prs-mdns"
+version = "0.1.0"
+authors = ["zhongxh <zhong_xiaohong@yeah.net>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-std = "1.6"
+data-encoding = "2.0"
+dns-parser = "0.8"
+either = "1.5.3"
+futures-timer = "3.0.2"
+lazy_static = "1.4"
+log = "0.4.1"
+net2 = "0.2"
+nohash-hasher = "0.2"
+rand = "0.7"
+smallvec = "1.0"
+libp2prs-core = { path = "../../core", version = "0.1.0", package = "libp2prs-core" }
+
+[dev-dependencies]
+env_logger = "0.6.0"
+quickcheck = "0.9"
+
+[dependencies.futures]
+version = "0.3.4"
+features = ["std"]
+default-features = false
