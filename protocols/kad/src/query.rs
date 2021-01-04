@@ -907,26 +907,6 @@ mod test_closest_peers {
         // closest_peers has 1 peer and its state is Succeeded, can terminate
         closest_peers.set_peer_state(&peer1, PeerState::Succeeded);
         assert!(closest_peers.can_terminate(1));
-
-        let peer2 = PeerId::random();
-        let peer3 = PeerId::random();
-        let kad_peer2 = KadPeer {
-            node_id: peer2.clone(),
-            multiaddrs: vec![],
-            connection_ty: KadConnectionType::NotConnected,
-        };
-        let kad_peer3 = KadPeer {
-            node_id: peer3,
-            multiaddrs: vec![],
-            connection_ty: KadConnectionType::NotConnected,
-        };
-        closest_peers.add_peers(vec![kad_peer2, kad_peer3]);
-        // closest_peers has 3 nodes, but the second one is not Succeeded, can not terminate
-        assert!(!closest_peers.can_terminate(2));
-
-        // closest_peers has 3 peer and first 2 peer is Succeeded, can terminate
-        closest_peers.set_peer_state(&peer2, PeerState::Succeeded);
-        assert!(closest_peers.can_terminate(1));
     }
 }
 
