@@ -22,12 +22,12 @@
 #[macro_use]
 extern crate lazy_static;
 
-use libp2prs_core::identity::Keypair;
+use libp2prs_core::identity;
 use libp2prs_core::transport::upgrade::TransportUpgrade;
 use libp2prs_core::upgrade::Selector;
 use libp2prs_core::{Multiaddr, PeerId};
 use libp2prs_mplex as mplex;
-use libp2prs_secio as secio;
+use libp2prs_noise::{Keypair, NoiseConfig, X25519Spec};
 use libp2prs_swarm::identify::IdentifyConfig;
 use libp2prs_swarm::Swarm;
 use libp2prs_tcp::TcpConfig;
@@ -70,7 +70,7 @@ fn main() {
 }
 
 lazy_static! {
-    static ref SERVER_KEY: Keypair = Keypair::generate_ed25519_fixed();
+    static ref SERVER_KEY: identity::Keypair = identity::Keypair::generate_ed25519_fixed();
 }
 
 #[allow(clippy::empty_loop)]
@@ -79,7 +79,8 @@ fn run_server(bootstrap_peer: PeerId, bootstrap_addr: Multiaddr) {
 
     let listen_addr1: Multiaddr = "/ip4/0.0.0.0/tcp/8086".parse().unwrap();
 
-    let sec = secio::Config::new(keys.clone());
+    let dh = Keypair::<X25519Spec>::new().into_authentic(&keys).unwrap();
+    let sec = NoiseConfig::xx(dh, keys.clone());
     let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
 
