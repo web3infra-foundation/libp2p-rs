@@ -154,7 +154,7 @@ impl UpgradeInfo for NoiseConfig<XX, X25519> {
     // type InfoIter = std::iter::Once<Self::Info>;
 
     fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![b"/noise/x25519/1.0.0"]
+        vec![b"/noise/xx/25519/chachapoly/sha256/0.1.0"]
     }
 }
 

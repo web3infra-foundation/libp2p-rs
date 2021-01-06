@@ -18,7 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use libp2prs_core::identity::Keypair;
+use libp2prs_core::identity;
 use libp2prs_core::transport::upgrade::TransportUpgrade;
 use libp2prs_core::upgrade::Selector;
 use libp2prs_core::Multiaddr;
@@ -26,7 +26,7 @@ use libp2prs_kad::kad::Kademlia;
 use libp2prs_kad::store::MemoryStore;
 use libp2prs_kad::Control as KadControl;
 use libp2prs_mplex as mplex;
-use libp2prs_secio as secio;
+use libp2prs_noise::{Keypair, NoiseConfig, X25519Spec};
 use libp2prs_swarm::identify::IdentifyConfig;
 use libp2prs_swarm::Control as SwarmControl;
 use libp2prs_swarm::Swarm;
@@ -44,8 +44,8 @@ fn main() {
     let port = std::env::args().nth(1).expect("usage: ./kad_nodes.exe <listen_port>");
     let listen_port = port.parse::<u16>().expect("string to u16");
 
-    let keys = Keypair::generate_ed25519();
-    let mut listen_addr: Multiaddr = "/ip4/127.0.0.1".parse().unwrap();
+    let keys = identity::Keypair::generate_ed25519();
+    let mut listen_addr: Multiaddr = "/ip4/0.0.0.0".parse().unwrap();
     listen_addr.push(Protocol::Tcp(listen_port));
     let (swarm_control, kad_control) = setup_kad(keys, listen_addr);
 
@@ -57,8 +57,10 @@ fn main() {
     app.run();
 }
 
-fn setup_kad(keys: Keypair, listen_addr: Multiaddr) -> (SwarmControl, KadControl) {
-    let sec = secio::Config::new(keys.clone());
+fn setup_kad(keys: identity::Keypair, listen_addr: Multiaddr) -> (SwarmControl, KadControl) {
+    // let sec = secio::Config::new(keys.clone());
+    let dh = Keypair::<X25519Spec>::new().into_authentic(&keys).unwrap();
+    let sec = NoiseConfig::xx(dh, keys.clone());
     let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
 

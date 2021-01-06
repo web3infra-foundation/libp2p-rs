@@ -79,7 +79,7 @@ impl UpgradeInfo for NoiseConfig<XX, X25519Spec> {
     type Info = &'static [u8];
 
     fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![b"/noise/x25519spec/1.0.0"]
+        vec![b"/noise"]
     }
 }
 

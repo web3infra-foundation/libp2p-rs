@@ -19,8 +19,8 @@
 // DEALINGS IN THE SOFTWARE.
 
 use async_std::task;
-use libp2prs_core::identity;
-use libp2prs_noise::{Keypair, NoiseConfig, X25519};
+use libp2prs_core::{identity, PeerId};
+use libp2prs_noise::{Keypair, NoiseConfig, X25519Spec};
 use libp2prs_traits::{ReadEx, WriteEx};
 use log::info;
 use log::LevelFilter;
@@ -32,21 +32,24 @@ fn main() {
         info!("Starting server ......");
         run_server();
     } else {
-        info!("Starting client ......");
+        info!("Starting client .......");
         run_client();
     }
 }
 
 fn run_server() {
     task::block_on(async {
+        let server_id = identity::Keypair::generate_ed25519_fixed();
+        // let server_id_public = server_id.public();
+        let pid = PeerId::from(server_id.public());
+        info!("I am {}", pid);
+
         let listener = async_std::net::TcpListener::bind("127.0.0.1:3214").await.unwrap();
 
         while let Ok((socket, _)) = listener.accept().await {
+            let server_id = server_id.clone();
             task::spawn(async move {
-                let server_id = identity::Keypair::generate_ed25519();
-                // let server_id_public = server_id.public();
-
-                let server_dh = Keypair::<X25519>::new().into_authentic(&server_id).unwrap();
+                let server_dh = Keypair::<X25519Spec>::new().into_authentic(&server_id).unwrap();
 
                 let config = NoiseConfig::xx(server_dh, server_id);
 
@@ -85,7 +88,7 @@ fn run_client() {
         let client_id = identity::Keypair::generate_ed25519();
         // let client_id_public = client_id.public();
 
-        let client_dh = Keypair::<X25519>::new().into_authentic(&client_id).unwrap();
+        let client_dh = Keypair::<X25519Spec>::new().into_authentic(&client_id).unwrap();
 
         let config = NoiseConfig::xx(client_dh, client_id);
 
@@ -93,10 +96,10 @@ fn run_client() {
         info!("Handshake finished");
 
         let data = b"hello world";
-        let _ = b.write2(data).await;
+        let _ = b.write_all2(data).await;
         info!("write finished");
         let mut buf = vec![0u8; 100];
-        let _ = b.read2(buf.as_mut()).await;
-        info!("read finished, {:?}", String::from_utf8(buf).unwrap());
+        let nr = b.read2(buf.as_mut()).await.unwrap();
+        info!("read finished, {:?}", &buf[..nr]);
     })
 }

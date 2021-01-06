@@ -277,39 +277,7 @@ where
 {
     let msg = recv(state).await?;
 
-    // NOTE: We first try to decode the entire frame as a protobuf message,
-    // as required by the libp2p-noise spec. As long as the frame length
-    // is less than 256 bytes, which is the case for all protobuf payloads
-    // not containing RSA keys, there is no room for misinterpretation,
-    // since if a two-bytes length prefix is present the first byte will
-    // be 0, which is always an unexpected protobuf tag value because the
-    // fields in the .proto file start with 1 and decoding thus expects
-    // a non-zero first byte. We will therefore always correctly fall back to
-    // the legacy protobuf parsing in these cases (again, not considering
-    // RSA keys, for which there may be a probabilistically very small chance
-    // of misinterpretation).
-    //
-    // This is only temporary! Once a release is made that supports
-    // decoding without a length prefix, a follow-up release will
-    // change `send_identity` such that no length prefix is sent.
-    // In yet another release the fallback protobuf parsing can then
-    // be removed.
-    let pb = payload_proto::NoiseHandshakePayload::decode(&msg[..]).or_else(|e| {
-        if msg.len() > 2 {
-            let mut buf = [0, 0];
-            buf.copy_from_slice(&msg[..2]);
-            // If there is a second length it must be 2 bytes shorter than the
-            // frame length, because each length is encoded as a `u16`.
-            if usize::from(u16::from_be_bytes(buf)) + 2 == msg.len() {
-                log::debug!("Attempting fallback legacy protobuf decoding.");
-                payload_proto::NoiseHandshakePayload::decode(&msg[2..])
-            } else {
-                Err(e)
-            }
-        } else {
-            Err(e)
-        }
-    })?;
+    let pb = payload_proto::NoiseHandshakePayload::decode(&msg[..])?;
 
     info!("pb parsed ok");
 
@@ -343,10 +311,8 @@ where
     if let Some(ref sig) = state.identity.signature {
         pb.identity_sig = sig.clone()
     }
-    // NOTE: We temporarily need to continue sending the (legacy) length prefix
-    // for a short while to permit migration.
-    let mut msg = Vec::with_capacity(pb.encoded_len() + 2);
-    msg.extend_from_slice(&(pb.encoded_len() as u16).to_be_bytes());
+
+    let mut msg = Vec::with_capacity(pb.encoded_len());
     pb.encode(&mut msg).expect("Vec<u8> provides capacity as needed");
     state.io.send2(&msg).await?;
 
