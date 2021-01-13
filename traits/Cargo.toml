@@ -1,6 +1,6 @@
 [package]
 name = "libp2prs-traits"
-version = "0.1.0"
+version = "0.2.0"
 license = "MIT"
 description = "Read/Write traits"
 authors = ["Netwarps Technologies admin@paradeum.com"]

@@ -101,7 +101,7 @@ impl Graph {
             connected_nodes.shuffle(&mut rng);
             not_connected_nodes.shuffle(&mut rng);
 
-            let mut next = not_connected_nodes.pop().unwrap();
+            let next = not_connected_nodes.pop().unwrap();
             let connected_pid = connected_nodes[0].0.clone();
             let connected_addr = connected_nodes[0].1.clone();
 
@@ -112,10 +112,9 @@ impl Graph {
             let addr = next.2.clone();
             let floodsub_ctrl = next.3.clone();
 
-            next.0.peer_addrs_add(&connected_pid, connected_addr, Duration::default());
             next.0.start();
 
-            swarm_ctrl.new_connection(connected_pid).await.unwrap();
+            swarm_ctrl.connect_with_addrs(connected_pid, vec![connected_addr]).await.unwrap();
 
             connected_nodes.push((lpid, addr, floodsub_ctrl));
         }

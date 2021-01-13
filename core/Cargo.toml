@@ -1,6 +1,6 @@
 [package]
 name = "libp2prs-core"
-version = "0.1.0"
+version = "0.2.0"
 license = "MIT"
 description = "Core traits and structs of libp2p"
 authors = ["Netwarps Technologies admin@paradeum.com"]
@@ -32,8 +32,8 @@ parking_lot = "0.10.0"
 rw-stream-sink = "0.2.0"
 bytes = "0.5"
 pin-project = "0.4"
-libp2prs-multiaddr = { path = "../multiaddr", version = "0.1.0", package = "libp2prs-multiaddr"}
-libp2prs-traits = { path = "../traits", version = "0.1.0", package = "libp2prs-traits" }
+libp2prs-multiaddr = { path = "../multiaddr", version = "0.2.0", package = "libp2prs-multiaddr"}
+libp2prs-traits = { path = "../traits", version = "0.2.0", package = "libp2prs-traits" }
 [target.'cfg(not(any(target_os = "emscripten", target_os = "unknown")))'.dependencies]
 ring = { version = "0.16.9", features = ["alloc", "std"], default-features = true }
 salsa20 = "0.3.0"

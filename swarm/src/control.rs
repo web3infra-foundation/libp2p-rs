@@ -22,9 +22,8 @@ use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
 };
-use libp2prs_core::peerstore::{AddrBookRecord, PeerStore};
+use libp2prs_core::peerstore::PeerStore;
 use libp2prs_core::{Multiaddr, PeerId, ProtocolId, PublicKey};
-use smallvec::SmallVec;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -46,25 +45,23 @@ type Result<T> = std::result::Result<T, SwarmError>;
 pub enum SwarmControlCmd {
     /// Open a connection to the remote peer with address specified.
     Connect(PeerId, Vec<Multiaddr>, oneshot::Sender<Result<()>>),
-    /// Open a connection to the remote peer. Parameter 'bool' means using DHT(if available) to
-    /// look for multiaddr of the remote peer.
+    /// Open a connection to the remote peer. Parameter 'bool' means using Routing(if available) to
+    /// lookup multiaddr of the remote peer.
     NewConnection(PeerId, bool, oneshot::Sender<Result<()>>),
     /// Close any connection to the remote peer.
     CloseConnection(PeerId, oneshot::Sender<Result<()>>),
     /// Open a new stream specified with protocol Ids to the remote peer.
-    /// Parameter 'bool' means using DHT(if available) to look for
-    /// multiaddr of the remote peer.
+    /// Parameter 'bool' means using routing interface(if available) to
+    /// lookup multiaddr of the remote peer.
     NewStream(PeerId, Vec<ProtocolId>, bool, oneshot::Sender<Result<Substream>>),
     /// Close a stream specified.
     CloseStream(ConnectionId, StreamId),
-    /// Close the whole connection.
-    CloseSwarm,
     /// Retrieve the self multi addresses of Swarm.
-    SelfAddresses(oneshot::Sender<Result<Vec<Multiaddr>>>),
+    SelfAddresses(oneshot::Sender<Vec<Multiaddr>>),
     /// Retrieve network information of Swarm.
-    NetworkInfo(oneshot::Sender<Result<NetworkInfo>>),
+    NetworkInfo(oneshot::Sender<NetworkInfo>),
     /// Retrieve network information of Swarm.
-    IdentifyInfo(oneshot::Sender<Result<IdentifyInfo>>),
+    IdentifyInfo(oneshot::Sender<IdentifyInfo>),
     ///
     Dump(DumpCommand),
 }
@@ -74,7 +71,7 @@ pub enum SwarmControlCmd {
 pub enum DumpCommand {
     /// Dump the active connections belonged to some remote peer.
     /// None means dumping all active connections.
-    Connections(Option<PeerId>, oneshot::Sender<Result<Vec<ConnectionView>>>),
+    Connections(Option<PeerId>, oneshot::Sender<Vec<ConnectionView>>),
     /// Dump all substreams of a connection.
     Streams(PeerId, oneshot::Sender<Result<Vec<SubstreamView>>>),
 }
@@ -125,8 +122,8 @@ impl Control {
     }
 
     /// Get all peers in the AddrBook of Peerstore.
-    pub fn get_all_peers(&self) -> Vec<PeerId> {
-        self.peer_store.get_all_peers()
+    pub fn get_peers(&self) -> Vec<PeerId> {
+        self.peer_store.get_peers()
     }
 
     /// Get recv package count&bytes
@@ -149,49 +146,50 @@ impl Control {
         self.metric.get_peer_in_and_out(peer_id)
     }
 
-    /// Make a new connection towards the remote peer with address specified.
-    pub async fn connect(&mut self, peer_id: PeerId, addrs: Vec<Multiaddr>) -> Result<()> {
+    /// Make a new connection towards the remote peer with addresses specified.
+    pub async fn connect_with_addrs(&mut self, peer_id: PeerId, addrs: Vec<Multiaddr>) -> Result<()> {
         let (tx, rx) = oneshot::channel::<Result<()>>();
-        let _ = self.sender.send(SwarmControlCmd::Connect(peer_id, addrs, tx)).await;
+        self.sender.send(SwarmControlCmd::Connect(peer_id, addrs, tx)).await?;
         rx.await?
     }
 
     /// Make a new connection towards the remote peer.
     ///
-    /// It will lookup the peer store for address of the peer,
-    /// otherwise initiate Kad-DHT for address querying, when DHT is enabled.
+    /// It will lookup the peer store for address of the peer, otherwise
+    /// initiate the routing interface for querying the addresses, if routing
+    /// is available.
     pub async fn new_connection(&mut self, peer_id: PeerId) -> Result<()> {
         let (tx, rx) = oneshot::channel::<Result<()>>();
-        let _ = self.sender.send(SwarmControlCmd::NewConnection(peer_id, true, tx)).await;
+        self.sender.send(SwarmControlCmd::NewConnection(peer_id, true, tx)).await?;
         rx.await?
     }
-    /// Make a new connection towards the remote peer, without using DHT.
-    pub async fn new_connection_no_dht(&mut self, peer_id: PeerId) -> Result<()> {
+    /// Make a new connection towards the remote peer, without using routing(Kad-DHT).
+    pub async fn new_connection_no_routing(&mut self, peer_id: PeerId) -> Result<()> {
         let (tx, rx) = oneshot::channel::<Result<()>>();
-        let _ = self.sender.send(SwarmControlCmd::NewConnection(peer_id, false, tx)).await;
+        self.sender.send(SwarmControlCmd::NewConnection(peer_id, false, tx)).await?;
         rx.await?
     }
     /// Close connection towards the remote peer.
     pub async fn disconnect(&mut self, peer_id: PeerId) -> Result<()> {
-        let (tx, rx) = oneshot::channel::<Result<()>>();
-        let _ = self.sender.send(SwarmControlCmd::CloseConnection(peer_id, tx)).await;
+        let (tx, rx) = oneshot::channel();
+        self.sender.send(SwarmControlCmd::CloseConnection(peer_id, tx)).await?;
         rx.await?
     }
 
     /// Open a new outbound stream towards the remote peer.
     ///
     /// It will lookup the peer store for address of the peer,
-    /// otherwise initiate Kad-DHT for address querying, when DHT is enabled.
-    /// In the end, it will open an outgoing sub-stream when the connection is
-    /// eventually established.
+    /// otherwise initiate the routing interface for address querying,
+    /// when routing is enabled. In the end, it will open an outgoing
+    /// sub-stream when the connection is eventually established.
     pub async fn new_stream(&mut self, peer_id: PeerId, pids: Vec<ProtocolId>) -> Result<Substream> {
         let (tx, rx) = oneshot::channel();
         self.sender.send(SwarmControlCmd::NewStream(peer_id, pids, true, tx)).await?;
         rx.await?
     }
 
-    /// Open a new outbound stream towards the remote peer, without using DHT.
-    pub async fn new_stream_no_dht(&mut self, peer_id: PeerId, pids: Vec<ProtocolId>) -> Result<Substream> {
+    /// Open a new outbound stream towards the remote peer, without routing.
+    pub async fn new_stream_no_routing(&mut self, peer_id: PeerId, pids: Vec<ProtocolId>) -> Result<Substream> {
         let (tx, rx) = oneshot::channel();
         self.sender.send(SwarmControlCmd::NewStream(peer_id, pids, false, tx)).await?;
         rx.await?
@@ -204,21 +202,21 @@ impl Control {
     pub async fn self_addrs(&mut self) -> Result<Vec<Multiaddr>> {
         let (tx, rx) = oneshot::channel();
         self.sender.send(SwarmControlCmd::SelfAddresses(tx)).await?;
-        rx.await?
+        Ok(rx.await?)
     }
 
     /// Retrieve network information from Swarm.
     pub async fn retrieve_networkinfo(&mut self) -> Result<NetworkInfo> {
         let (tx, rx) = oneshot::channel();
         self.sender.send(SwarmControlCmd::NetworkInfo(tx)).await?;
-        rx.await?
+        Ok(rx.await?)
     }
 
     /// Retrieve identify information from Swarm.
     pub async fn retrieve_identify_info(&mut self) -> Result<IdentifyInfo> {
         let (tx, rx) = oneshot::channel();
         self.sender.send(SwarmControlCmd::IdentifyInfo(tx)).await?;
-        rx.await?
+        Ok(rx.await?)
     }
 
     pub async fn dump_connections(&mut self, peer_id: Option<PeerId>) -> Result<Vec<ConnectionView>> {
@@ -226,7 +224,7 @@ impl Control {
         self.sender
             .send(SwarmControlCmd::Dump(DumpCommand::Connections(peer_id, tx)))
             .await?;
-        rx.await?
+        Ok(rx.await?)
     }
 
     pub async fn dump_streams(&mut self, peer_id: PeerId) -> Result<Vec<SubstreamView>> {
@@ -236,89 +234,79 @@ impl Control {
     }
 
     /// Close the swarm.
-    pub async fn close(&mut self) -> Result<()> {
-        // SwarmControlCmd::CloseSwarm doesn't need a response from Swarm
-        if self.sender.send(SwarmControlCmd::CloseSwarm).await.is_err() {
-            // The receiver is closed which means the connection is already closed.
-            return Ok(());
-        }
+    pub async fn close(&mut self) {
+        // simply close the tx, then exit the main loop
+        // TODO: wait for the main loop to exit before returning
         self.sender.close_channel();
-        std::thread::sleep(Duration::from_secs(5));
-        log::info!("Exit success");
-        Ok(())
     }
 
-    /// Insert a public key, indexed by peer_id.
-    pub fn add_key(&self, peer_id: &PeerId, key: PublicKey) {
-        self.peer_store.add_key(peer_id, key)
-    }
-    /// Delete public key by peer_id.
-    pub fn del_key(&self, peer_id: &PeerId) {
-        self.peer_store.del_key(peer_id);
+    /// Pins the peer Id so that GC wouldn't recycle the multiaddr of the peer.
+    pub fn pin(&self, peer_id: &PeerId) {
+        self.peer_store.pin(peer_id)
     }
 
-    /// Get public key by peer_id.
+    /// Unpins the peer Id.
+    pub fn unpin(&self, peer_id: &PeerId) {
+        self.peer_store.unpin(peer_id);
+    }
+
+    /// Checks if the peer is currently being pinned in peer store.
+    pub fn pinned(&self, peer_id: &PeerId) -> bool {
+        self.peer_store.pinned(peer_id)
+    }
+
+    /// Gets the public key by peer_id.
     pub fn get_key(&self, peer_id: &PeerId) -> Option<PublicKey> {
         self.peer_store.get_key(peer_id)
     }
 
-    /// Get multiaddr of a peer.
-    pub fn get_addrs(&self, peer_id: &PeerId) -> Option<SmallVec<[AddrBookRecord; 4]>> {
+    /// Gets all multiaddr of a peer.
+    pub fn get_addrs(&self, peer_id: &PeerId) -> Option<Vec<Multiaddr>> {
         self.peer_store.get_addrs(peer_id)
     }
 
-    /// Get multiaddr of a peer, in a Vec<>.
-    pub fn get_addrs_vec(&self, peer_id: &PeerId) -> Option<Vec<Multiaddr>> {
-        let r = self.peer_store.get_addrs(peer_id);
-        r.map(|r| r.into_iter().map(|r| r.into_maddr()).collect())
+    /// Adds a address to address_book by peer_id, if exists, update rtt.
+    pub fn add_addr(&self, peer_id: &PeerId, addr: Multiaddr, ttl: Duration) {
+        self.peer_store.add_addr(peer_id, addr, ttl)
     }
 
-    /// Add a address to address_book by peer_id, if exists, update rtt.
-    pub fn add_addr(&self, peer_id: &PeerId, addr: Multiaddr, ttl: Duration, is_kad: bool) {
-        self.peer_store.add_addr(peer_id, addr, ttl, is_kad)
+    /// Adds many new addresses if they're not already in the peer store.
+    pub fn add_addrs(&self, peer_id: &PeerId, addrs: Vec<Multiaddr>, ttl: Duration) {
+        self.peer_store.add_addrs(peer_id, addrs, ttl)
     }
 
-    /// Add many new addresses if they're not already in the Address Book.
-    pub fn add_addrs(&self, peer_id: &PeerId, addrs: Vec<Multiaddr>, ttl: Duration, is_kad: bool) {
-        self.peer_store.add_addrs(peer_id, addrs, ttl, is_kad)
-    }
-
-    /// Delete all multiaddr of a peer from address book.
+    /// Clears all multiaddr of a peer from the peer store.
     pub fn clear_addrs(&self, peer_id: &PeerId) {
         self.peer_store.clear_addrs(peer_id)
     }
 
-    /// Update ttl if current_ttl equals old_ttl.
+    /// Updates ttl.
     pub fn update_addr(&self, peer_id: &PeerId, new_ttl: Duration) {
         self.peer_store.update_addr(peer_id, new_ttl)
     }
-    /// Get smallvec by peer_id and remove expired address
-    pub fn remove_expired_addr(&self, peer_id: &PeerId) {
-        self.peer_store.remove_expired_addr(peer_id)
+
+    /// Adds the protocols by peer_id.
+    pub fn add_protocols(&self, peer_id: &PeerId, protos: Vec<String>) {
+        self.peer_store.add_protocols(peer_id, protos);
     }
 
-    /// Insert supported protocol by peer_id
-    pub fn add_protocol(&self, peer_id: &PeerId, proto: Vec<String>) {
-        self.peer_store.add_protocol(peer_id, proto);
+    /// Removes the protocols by peer_id.
+    pub fn clear_protocols(&self, peer_id: &PeerId) {
+        self.peer_store.clear_protocols(peer_id);
     }
 
-    /// Remove support protocol by peer_id
-    pub fn remove_protocol(&self, peer_id: &PeerId) {
-        self.peer_store.remove_protocol(peer_id);
+    /// Gets the protocols supported by the specified PeerId.
+    pub fn get_protocols(&self, peer_id: &PeerId) -> Option<Vec<String>> {
+        self.peer_store.get_protocols(peer_id)
     }
 
-    /// Get the protocols supported by the specified PeerId.
-    pub fn get_protocol(&self, peer_id: &PeerId) -> Option<Vec<String>> {
-        self.peer_store.get_protocol(peer_id)
+    /// Tests if the PeerId supports the given protocols.
+    pub fn first_supported_protocol(&self, peer_id: &PeerId, protos: Vec<String>) -> Option<String> {
+        self.peer_store.first_supported_protocol(peer_id, protos)
     }
 
-    /// Test if the PeerId supports the given protocols.
-    pub fn first_supported_protocol(&self, peer_id: &PeerId, proto: Vec<String>) -> Option<String> {
-        self.peer_store.first_supported_protocol(peer_id, proto)
-    }
-
-    /// Search all protocols and return an option that matches by given proto param
-    fn support_protocols(&self, peer_id: &PeerId, proto: Vec<String>) -> Option<Vec<String>> {
-        self.peer_store.support_protocols(peer_id, proto)
+    /// Searches all protocols and return an option that matches by given protocols.
+    fn support_protocols(&self, peer_id: &PeerId, protos: Vec<String>) -> Option<Vec<String>> {
+        self.peer_store.support_protocols(peer_id, protos)
     }
 }

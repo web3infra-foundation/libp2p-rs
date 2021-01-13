@@ -50,7 +50,7 @@
 
 use async_trait::async_trait;
 use libp2prs_core::upgrade::UpgradeInfo;
-use libp2prs_core::PeerId;
+use libp2prs_core::{Multiaddr, PeerId};
 use std::error::Error;
 
 use crate::connection::Connection;
@@ -59,12 +59,19 @@ use crate::ProtocolId;
 
 /// Notifiee is an trait for an object wishing to receive notifications from swarm.
 pub trait Notifiee {
-    /// called when a connection opened.
+    /// It is emitted when a connection is connected.
     fn connected(&mut self, _conn: &mut Connection) {}
-    /// called when a connection closed.
+    /// It is emitted when a connection is disconnected.
     fn disconnected(&mut self, _conn: &mut Connection) {}
-    /// called when finishing identifi a remote peer.
+    /// It is emitted when finishing identified a remote peer. Therefore,
+    /// the multiaddr and protocols of the remote peer can be retrieved
+    /// from the PeerStore.
     fn identified(&mut self, _peer: PeerId) {}
+    /// It is emitted when the listen addresses for the local host changes.
+    /// This might happen for some reasons, f.g., interface up/down.
+    ///
+    /// The notification contains a snapshot of the current listen addresses.
+    fn address_changed(&mut self, _addrs: Vec<Multiaddr>) {}
 }
 
 /// Common trait for upgrades that can be applied on inbound substreams, outbound substreams,
@@ -124,259 +131,3 @@ impl ProtocolHandler for DummyProtocolHandler {
         Box::new(self.clone())
     }
 }
-
-/*
-
-/// Configuration of inbound or outbound substream protocol(s)
-/// for a [`ProtocolsHandler`].
-///
-/// The inbound substream protocol(s) are defined by [`ProtocolsHandler::listen_protocol`]
-/// and the outbound substream protocol(s) by [`ProtocolsHandlerEvent::OutboundSubstreamRequest`].
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct SubstreamProtocol<TUpgrade> {
-    upgrade: TUpgrade,
-    timeout: Duration,
-}
-
-impl<TUpgrade> SubstreamProtocol<TUpgrade> {
-    /// Create a new `SubstreamProtocol` from the given upgrade.
-    ///
-    /// The default timeout for applying the given upgrade on a substream is
-    /// 10 seconds.
-    pub fn new(upgrade: TUpgrade) -> SubstreamProtocol<TUpgrade> {
-        SubstreamProtocol {
-            upgrade,
-            timeout: Duration::from_secs(10),
-        }
-    }
-
-    /// Sets the multistream-select protocol (version) to use for negotiating
-    /// protocols upgrades on outbound substreams.
-    pub fn with_upgrade_protocol(mut self, version: upgrade::Version) -> Self {
-        self.upgrade_protocol = version;
-        self
-    }
-
-    /// Maps a function over the protocol upgrade.
-    pub fn map_upgrade<U, F>(self, f: F) -> SubstreamProtocol<U>
-    where
-        F: FnOnce(TUpgrade) -> U,
-    {
-        SubstreamProtocol {
-            upgrade: f(self.upgrade),
-            timeout: self.timeout,
-        }
-    }
-
-    /// Sets a new timeout for the protocol upgrade.
-    pub fn with_timeout(mut self, timeout: Duration) -> Self {
-        self.timeout = timeout;
-        self
-    }
-
-    /// Borrows the contained protocol upgrade.
-    pub fn upgrade(&self) -> &TUpgrade {
-        &self.upgrade
-    }
-
-    /// Borrows the timeout for the protocol upgrade.
-    pub fn timeout(&self) -> &Duration {
-        &self.timeout
-    }
-
-    /// Converts the substream protocol configuration into the contained upgrade.
-    pub fn into_upgrade(self) -> (upgrade::Version, TUpgrade) {
-        (self.upgrade_protocol, self.upgrade)
-    }
-}
-
-impl<TUpgrade> From<TUpgrade> for SubstreamProtocol<TUpgrade> {
-    fn from(upgrade: TUpgrade) -> SubstreamProtocol<TUpgrade> {
-        SubstreamProtocol::new(upgrade)
-    }
-}
-
-/// Event produced by a handler.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ProtocolsHandlerEvent<TConnectionUpgrade, TOutboundOpenInfo, TCustom, TErr> {
-    /// Request a new outbound substream to be opened with the remote.
-    OutboundSubstreamRequest {
-        /// The protocol(s) to apply on the substream.
-        protocol: SubstreamProtocol<TConnectionUpgrade>,
-        /// User-defined information, passed back when the substream is open.
-        info: TOutboundOpenInfo,
-    },
-
-    /// Close the connection for the given reason.
-    Close(TErr),
-
-    /// Other event.
-    Custom(TCustom),
-}
-
-/// Event produced by a handler.
-impl<TConnectionUpgrade, TOutboundOpenInfo, TCustom, TErr>
-    ProtocolsHandlerEvent<TConnectionUpgrade, TOutboundOpenInfo, TCustom, TErr>
-{
-    /// If this is an `OutboundSubstreamRequest`, maps the `info` member from a
-    /// `TOutboundOpenInfo` to something else.
-    #[inline]
-    pub fn map_outbound_open_info<F, I>(
-        self,
-        map: F,
-    ) -> ProtocolsHandlerEvent<TConnectionUpgrade, I, TCustom, TErr>
-    where
-        F: FnOnce(TOutboundOpenInfo) -> I,
-    {
-        match self {
-            ProtocolsHandlerEvent::OutboundSubstreamRequest { protocol, info } => {
-                ProtocolsHandlerEvent::OutboundSubstreamRequest {
-                    protocol,
-                    info: map(info),
-                }
-            }
-            ProtocolsHandlerEvent::Custom(val) => ProtocolsHandlerEvent::Custom(val),
-            ProtocolsHandlerEvent::Close(val) => ProtocolsHandlerEvent::Close(val),
-        }
-    }
-
-    /// If this is an `OutboundSubstreamRequest`, maps the protocol (`TConnectionUpgrade`)
-    /// to something else.
-    #[inline]
-    pub fn map_protocol<F, I>(
-        self,
-        map: F,
-    ) -> ProtocolsHandlerEvent<I, TOutboundOpenInfo, TCustom, TErr>
-    where
-        F: FnOnce(TConnectionUpgrade) -> I,
-    {
-        match self {
-            ProtocolsHandlerEvent::OutboundSubstreamRequest { protocol, info } => {
-                ProtocolsHandlerEvent::OutboundSubstreamRequest {
-                    protocol: protocol.map_upgrade(map),
-                    info,
-                }
-            }
-            ProtocolsHandlerEvent::Custom(val) => ProtocolsHandlerEvent::Custom(val),
-            ProtocolsHandlerEvent::Close(val) => ProtocolsHandlerEvent::Close(val),
-        }
-    }
-
-    /// If this is a `Custom` event, maps the content to something else.
-    #[inline]
-    pub fn map_custom<F, I>(
-        self,
-        map: F,
-    ) -> ProtocolsHandlerEvent<TConnectionUpgrade, TOutboundOpenInfo, I, TErr>
-    where
-        F: FnOnce(TCustom) -> I,
-    {
-        match self {
-            ProtocolsHandlerEvent::OutboundSubstreamRequest { protocol, info } => {
-                ProtocolsHandlerEvent::OutboundSubstreamRequest { protocol, info }
-            }
-            ProtocolsHandlerEvent::Custom(val) => ProtocolsHandlerEvent::Custom(map(val)),
-            ProtocolsHandlerEvent::Close(val) => ProtocolsHandlerEvent::Close(val),
-        }
-    }
-
-    /// If this is a `Close` event, maps the content to something else.
-    #[inline]
-    pub fn map_close<F, I>(
-        self,
-        map: F,
-    ) -> ProtocolsHandlerEvent<TConnectionUpgrade, TOutboundOpenInfo, TCustom, I>
-    where
-        F: FnOnce(TErr) -> I,
-    {
-        match self {
-            ProtocolsHandlerEvent::OutboundSubstreamRequest { protocol, info } => {
-                ProtocolsHandlerEvent::OutboundSubstreamRequest { protocol, info }
-            }
-            ProtocolsHandlerEvent::Custom(val) => ProtocolsHandlerEvent::Custom(val),
-            ProtocolsHandlerEvent::Close(val) => ProtocolsHandlerEvent::Close(map(val)),
-        }
-    }
-}
-
-/// Error that can happen on an outbound substream opening attempt.
-#[derive(Debug)]
-pub enum ProtocolsHandlerUpgrErr<TUpgrErr> {
-    /// The opening attempt timed out before the negotiation was fully completed.
-    Timeout,
-    /// There was an error in the timer used.
-    Timer,
-    /// Error while upgrading the substream to the protocol we want.
-    Upgrade(UpgradeError<TUpgrErr>),
-}
-
-impl<TUpgrErr> fmt::Display for ProtocolsHandlerUpgrErr<TUpgrErr>
-where
-    TUpgrErr: fmt::Display,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ProtocolsHandlerUpgrErr::Timeout => {
-                write!(f, "Timeout error while opening a substream")
-            },
-            ProtocolsHandlerUpgrErr::Timer => {
-                write!(f, "Timer error while opening a substream")
-            },
-            ProtocolsHandlerUpgrErr::Upgrade(err) => write!(f, "{}", err),
-        }
-    }
-}
-
-impl<TUpgrErr> error::Error for ProtocolsHandlerUpgrErr<TUpgrErr>
-where
-    TUpgrErr: error::Error + 'static
-{
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        match self {
-            ProtocolsHandlerUpgrErr::Timeout => None,
-            ProtocolsHandlerUpgrErr::Timer => None,
-            ProtocolsHandlerUpgrErr::Upgrade(err) => Some(err),
-        }
-    }
-}
-
-/// How long the connection should be kept alive.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum KeepAlive {
-    /// If nothing new happens, the connection should be closed at the given `Instant`.
-    Until(Instant),
-    /// Keep the connection alive.
-    Yes,
-    /// Close the connection as soon as possible.
-    No,
-}
-
-impl KeepAlive {
-    /// Returns true for `Yes`, false otherwise.
-    pub fn is_yes(&self) -> bool {
-        match *self {
-            KeepAlive::Yes => true,
-            _ => false,
-        }
-    }
-}
-
-impl PartialOrd for KeepAlive {
-    fn partial_cmp(&self, other: &KeepAlive) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for KeepAlive {
-    fn cmp(&self, other: &KeepAlive) -> Ordering {
-        use self::KeepAlive::*;
-
-        match (self, other) {
-            (No, No) | (Yes, Yes)  => Ordering::Equal,
-            (No,  _) | (_,   Yes)  => Ordering::Less,
-            (_,  No) | (Yes,   _)  => Ordering::Greater,
-            (Until(t1), Until(t2)) => t1.cmp(t2),
-        }
-    }
-}
-*/

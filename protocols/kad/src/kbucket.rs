@@ -1,4 +1,5 @@
-// Copyright 2018 Parity Technologies (UK) Ltd.
+// Copyright 2019 Parity Technologies (UK) Ltd.
+// Copyright 2020 Netwarps Ltd.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
 // copy of this software and associated documentation files (the "Software"),
@@ -92,7 +93,7 @@ pub struct KBucketsTable<TKey, TVal> {
 /// A (type-safe) index into a `KBucketsTable`, i.e. a non-negative integer in the
 /// interval `[0, NUM_BUCKETS)`.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct BucketIndex(usize);
+struct BucketIndex(usize);
 
 impl BucketIndex {
     /// Creates a new `BucketIndex` for a `Distance`.
@@ -184,15 +185,15 @@ where
         })
     }
 
-    /// Returns the bucket index for the disctance to the given key.
+    /// Returns the bucket index for the distance to the given key.
     ///
     /// Returns `None` if the given key refers to the local key.
-    pub fn bucket_index<K>(&self, key: &K) -> Option<BucketIndex>
+    pub fn bucket_index<K>(&self, key: &K) -> Option<u32>
     where
         K: AsRef<KeyBytes>,
     {
         let d = self.local_key.as_ref().distance(key);
-        BucketIndex::new(&d)
+        d.ilog2()
     }
 
     /// Returns the bucket for the distance to the given key.

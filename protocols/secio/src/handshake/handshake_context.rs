@@ -1,5 +1,4 @@
 /// Most of the code for this module comes from `rust-libp2p`, but it has been partially modified.
-/// It does not use protobuf. It uses flatbuffers as the basis for serialization and deserialization.
 /// It does not use protobuf bytes when determining the order of the order. But the original public key bytes
 use crate::{
     crypto::cipher::CipherType, error::SecioError, exchange::KeyAgreement, handshake_proto::Propose, support, Config, Digest,

@@ -1,3 +1,23 @@
+// Copyright 2020 Netwarps Ltd.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom the
+// Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+
 use async_std::task;
 use std::str::FromStr;
 
@@ -8,42 +28,55 @@ use xcli::*;
 const DHT: &str = "dht";
 
 pub fn dht_cli_commands<'a>() -> Command<'a> {
-    let bootstrap_cmd = Command::new("bootstrap")
+    let close_cmd = Command::new("close")
+        .about("Close Kad main loop")
+        .usage("close")
+        .action(cli_close_kad);
+    let bootstrap_cmd = Command::new_with_alias("bootstrap", "boot")
         .about("Show or edit the list of bootstrap peers")
         .usage("bootstrap")
-        .action(bootstrap);
+        .action(cli_bootstrap);
     let add_node_cmd = Command::new("add")
         .about("Add peer to KBucket")
         .usage("add [<peer>] [<multi_address>]")
-        .action(add_node);
+        .action(cli_add_node);
     let rm_node_cmd = Command::new("rm")
         .about("Remove peer from KBucket")
         .usage("rm [<peer>] [<multi_address>]")
-        .action(rm_node);
+        .action(cli_rm_node);
 
-    let find_peer_cmd = Command::new("findpeer")
+    let find_peer_cmd = Command::new_with_alias("findpeer", "fp")
         .about("find peer through dht")
         .usage("findpeer <peerid>")
         .action(find_peer);
-    let get_value_cmd = Command::new("getvalue")
+    let get_value_cmd = Command::new_with_alias("getvalue", "gv")
         .about("get value through dht")
         .usage("getvalue <key>")
         .action(get_value);
 
-    let dump_messenger_cmd = Command::new("dump").about("Dump KBuckets").usage("dump").action(cli_dump_kbuckets);
-    let dump_dht_cmd = Command::new("messenger")
-        .about("Dump Messengers")
+    let dump_kbucket_cmd = Command::new_with_alias("dump", "dp")
+        .about("dump k-buckets")
+        .usage("dump")
+        .action(cli_dump_kbuckets);
+    let dump_messenger_cmd = Command::new_with_alias("messenger", "ms")
+        .about("dump messengers")
         .usage("messengers")
         .action(cli_dump_messengers);
+    let dump_stats_cmd = Command::new_with_alias("stats", "st")
+        .about("dump statistics")
+        .usage("stats")
+        .action(cli_dump_statistics);
 
-    Command::new("dht")
-        .about("find peer or record through dht")
+    Command::new_with_alias(DHT, "d")
+        .about("Kad-DHT")
         .usage("dht")
+        .subcommand(close_cmd)
         .subcommand(bootstrap_cmd)
         .subcommand(add_node_cmd)
         .subcommand(rm_node_cmd)
-        .subcommand(dump_dht_cmd)
+        .subcommand(dump_kbucket_cmd)
         .subcommand(dump_messenger_cmd)
+        .subcommand(dump_stats_cmd)
         .subcommand(find_peer_cmd)
         .subcommand(get_value_cmd)
 }
@@ -54,7 +87,13 @@ fn handler(app: &App) -> Control {
     kad
 }
 
-fn bootstrap(app: &App, _args: &[&str]) -> XcliResult {
+fn cli_close_kad(app: &App, _args: &[&str]) -> XcliResult {
+    let mut kad = handler(app);
+    task::block_on(kad.close());
+    Ok(CmdExeCode::Ok)
+}
+
+fn cli_bootstrap(app: &App, _args: &[&str]) -> XcliResult {
     let mut kad = handler(app);
     task::block_on(async {
         kad.bootstrap().await;
@@ -64,7 +103,7 @@ fn bootstrap(app: &App, _args: &[&str]) -> XcliResult {
     Ok(CmdExeCode::Ok)
 }
 
-fn add_node(app: &App, args: &[&str]) -> XcliResult {
+fn cli_add_node(app: &App, args: &[&str]) -> XcliResult {
     let mut kad = handler(app);
 
     if args.len() != 2 {
@@ -85,7 +124,7 @@ fn add_node(app: &App, args: &[&str]) -> XcliResult {
     Ok(CmdExeCode::Ok)
 }
 
-fn rm_node(app: &App, args: &[&str]) -> XcliResult {
+fn cli_rm_node(app: &App, args: &[&str]) -> XcliResult {
     let mut kad = handler(app);
 
     if args.len() != 1 {
@@ -109,7 +148,7 @@ fn cli_dump_kbuckets(app: &App, args: &[&str]) -> XcliResult {
     let verbose = !args.is_empty();
 
     task::block_on(async {
-        let buckets = kad.dump_kbuckets().await;
+        let buckets = kad.dump_kbuckets().await.unwrap();
         println!("Index Entries Active");
         for b in buckets {
             let active = b.bucket.iter().filter(|e| e.aliveness.is_some()).count();
@@ -125,11 +164,26 @@ fn cli_dump_kbuckets(app: &App, args: &[&str]) -> XcliResult {
     Ok(CmdExeCode::Ok)
 }
 
+fn cli_dump_statistics(app: &App, _args: &[&str]) -> XcliResult {
+    let mut kad = handler(app);
+
+    task::block_on(async {
+        let stats = kad.dump_statistics().await.unwrap();
+        println!("Total refreshes : {}", stats.total_refreshes);
+        println!("Successful queries   : {}", stats.successful_queries);
+        println!("Timeout queries   : {}", stats.timeout_queries);
+        println!("Query details   : {:?}", stats.query);
+        println!("Kad rx messages : {:?}", stats.message_rx);
+    });
+
+    Ok(CmdExeCode::Ok)
+}
+
 fn cli_dump_messengers(app: &App, _args: &[&str]) -> XcliResult {
     let mut kad = handler(app);
 
     task::block_on(async {
-        let messengers = kad.dump_messengers().await;
+        let messengers = kad.dump_messengers().await.unwrap();
         println!("Remote-Peer-Id                                       Reuse CID   SID    DIR Protocol");
         for m in messengers {
             println!("{:52} {:<5} {}", m.peer, m.reuse, m.stream);

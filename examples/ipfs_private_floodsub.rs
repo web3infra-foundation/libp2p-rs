@@ -165,9 +165,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
 
-    if dialer {
-        swarm.peer_addrs_add(&remote_peer_id, addr, Duration::default());
-    } else {
+    if !dialer {
         swarm.listen_on(vec![listen_addr]).unwrap();
     }
 
@@ -176,7 +174,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     task::block_on(async {
         // if dialer
         if dialer {
-            swarm_control.new_connection(remote_peer_id).await.unwrap();
+            swarm_control.connect_with_addrs(remote_peer_id, vec![addr]).await.unwrap();
         }
 
         // subscribe "chat"

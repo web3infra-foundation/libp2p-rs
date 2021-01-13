@@ -114,20 +114,21 @@ fn run_server() {
 fn run_client() {
     let keys = Keypair::generate_secp256k1();
 
-    let (mut swarm, floodsub_control) = setup_swarm(keys);
+    let (swarm, floodsub_control) = setup_swarm(keys);
     let mut swarm_control = swarm.control();
 
     let remote_peer_id = PeerId::from_public_key(SERVER_KEY.public());
 
     log::info!("about to connect to {:?}", remote_peer_id);
 
-    swarm.peer_addrs_add(&remote_peer_id, "/ip4/127.0.0.1/tcp/8086".parse().unwrap(), Duration::default());
-
     swarm.start();
 
     task::block_on(async {
         // dial
-        swarm_control.new_connection(remote_peer_id.clone()).await.unwrap();
+        swarm_control
+            .connect_with_addrs(remote_peer_id.clone(), vec!["/ip4/127.0.0.1/tcp/8086".parse().unwrap()])
+            .await
+            .unwrap();
 
         // subscribe "chat"
         let mut control = floodsub_control.clone();

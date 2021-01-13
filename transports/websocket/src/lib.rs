@@ -1,3 +1,4 @@
+// Copyright 2017-2019 Parity Technologies (UK) Ltd.
 // Copyright 2020 Netwarps Ltd.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -19,7 +20,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 //! Implementation of the libp2p `Transport` trait for Websockets.
-// pub mod connection;
+
 pub mod connection;
 pub mod error;
 pub mod framed;
@@ -120,6 +121,7 @@ impl Transport for WsConfig {
 mod tests {
     use super::WsConfig;
     use async_std::task;
+    use libp2prs_core::transport::ListenerEvent;
     use libp2prs_core::Multiaddr;
     use libp2prs_core::Transport;
     use libp2prs_traits::{ReadEx, WriteEx};
@@ -164,7 +166,11 @@ mod tests {
             .timeout(std::time::Duration::from_secs(5))
             .listen_on(listen_addr.clone())
             .expect("listener");
-        let mut stream = listener.accept().await.expect("no error");
+
+        let mut stream = match listener.accept().await.expect("no error") {
+            ListenerEvent::Accepted(s) => s,
+            _ => panic!("unreachable"),
+        };
         let mut buf = vec![0_u8; 3];
         stream.read_exact2(&mut buf).await.expect("read_exact");
         vec![1, 23, 5] == buf

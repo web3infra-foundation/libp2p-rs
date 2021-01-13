@@ -1,3 +1,4 @@
+// Copyright 2018 Parity Technologies (UK) Ltd.
 // Copyright 2020 Netwarps Ltd.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -298,7 +299,7 @@ impl<T: SplittableReadWrite> Connection<T> {
         }
 
         let result = self.handle_coming().await;
-        log::info!("{}: error exit, {:?}", self.id, result);
+        log::debug!("{}: error exit, {:?}", self.id, result);
 
         self.is_closed = true;
 

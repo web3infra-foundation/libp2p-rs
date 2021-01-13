@@ -45,7 +45,7 @@ use crate::protocol::{
 
 use crate::addresses::PeerInfo;
 use crate::kbucket::KBucketsTable;
-use crate::query::{FixedQuery, IterativeQuery, PeerRecord, QueryConfig, QueryType};
+use crate::query::{FixedQuery, IterativeQuery, PeerRecord, QueryConfig, QueryStats, QueryType};
 use crate::store::RecordStore;
 use crate::{kbucket, record, KadError, ProviderRecord, Record};
 use libp2prs_core::peerstore::{ADDRESS_TTL, PROVIDER_ADDR_TTL};
@@ -60,11 +60,14 @@ pub struct Kademlia<TStore> {
     /// Configuration of the wire protocol.
     protocol_config: KademliaProtocolConfig,
 
-    /// Flag to indicate if bootstrapping has been triggered.
-    bootstrapped: bool,
+    /// Flag to indicate if refreshing is ongoing.
+    refreshing: bool,
 
     /// The config for queries.
     query_config: QueryConfig,
+
+    /// The statistics of Kad DHT.
+    stats: KademliaStats,
 
     /// The cache manager of Kademlia messenger.
     messengers: Option<MessengerManager>,
@@ -83,6 +86,10 @@ pub struct Kademlia<TStore> {
     /// The periodic interval to cleanup expired provider records.
     cleanup_interval: Duration,
 
+    /// The periodic interval to refreshing the routing table.
+    /// `None` disables auto refresh.
+    refresh_interval: Option<Duration>,
+
     /// The TTL of regular (value-)records.
     record_ttl: Option<Duration>,
 
@@ -98,7 +105,6 @@ pub struct Kademlia<TStore> {
     /// The currently known addresses of the local node.
     ///
     /// The addresses come from Swarm when initializing Kademlia.
-    /// TODO: The addresses might change for some reason (f.g., interface up/down)
     local_addrs: Vec<Multiaddr>,
 
     /// The record storage.
@@ -121,6 +127,26 @@ pub struct Kademlia<TStore> {
     control_rx: mpsc::UnboundedReceiver<ControlCommand>,
 }
 
+/// The statistics of Kademlia.
+#[derive(Debug, Clone, Default)]
+pub struct KademliaStats {
+    pub successful_queries: usize,
+    pub timeout_queries: usize,
+    pub total_refreshes: usize,
+    pub query: QueryStats,
+    pub message_rx: MessageStats,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct MessageStats {
+    pub(crate) ping: usize,
+    pub(crate) find_node: usize,
+    pub(crate) get_provider: usize,
+    pub(crate) add_provider: usize,
+    pub(crate) get_value: usize,
+    pub(crate) put_value: usize,
+}
+
 /// The configuration for the `Kademlia` behaviour.
 ///
 /// The configuration is consumed by [`Kademlia::new`].
@@ -128,6 +154,7 @@ pub struct Kademlia<TStore> {
 pub struct KademliaConfig {
     query_config: QueryConfig,
     protocol_config: KademliaProtocolConfig,
+    refresh_interval: Option<Duration>,
     cleanup_interval: Duration,
     record_ttl: Option<Duration>,
     record_replication_interval: Option<Duration>,
@@ -156,6 +183,7 @@ impl Default for KademliaConfig {
         KademliaConfig {
             query_config: QueryConfig::default(),
             protocol_config: Default::default(),
+            refresh_interval: Some(Duration::from_secs(10 * 60)),
             cleanup_interval: Duration::from_secs(24 * 60 * 60),
             record_ttl: Some(Duration::from_secs(36 * 60 * 60)),
             record_replication_interval: Some(Duration::from_secs(60 * 60)),
@@ -174,7 +202,7 @@ impl KademliaConfig {
     /// Kademlia nodes only communicate with other nodes using the same protocol
     /// name. Using a custom name therefore allows to segregate the DHT from
     /// others, if that is desired.
-    pub fn set_protocol_name(&mut self, name: ProtocolId) -> &mut Self {
+    pub fn with_protocol_name(mut self, name: ProtocolId) -> Self {
         self.protocol_config.set_protocol_name(name);
         self
     }
@@ -185,17 +213,14 @@ impl KademliaConfig {
     /// > as the replication factor, i.e. this is not a request timeout.
     ///
     /// The default is 60 seconds.
-    pub fn set_query_timeout(&mut self, timeout: Duration) -> &mut Self {
+    pub fn with_query_timeout(mut self, timeout: Duration) -> Self {
         self.query_config.timeout = timeout;
         self
     }
 
-    /// Sets the replication factor to use.
-    ///
-    /// The replication factor determines to how many closest peers
-    /// a record is replicated. The default is [`K_VALUE`].
-    pub fn set_replication_factor(&mut self, replication_factor: NonZeroUsize) -> &mut Self {
-        self.query_config.replication_factor = replication_factor;
+    /// Sets the K value to use. The default is [`K_VALUE`].
+    pub fn with_k(mut self, k: NonZeroUsize) -> Self {
+        self.query_config.k_value = k;
         self
     }
 
@@ -205,27 +230,27 @@ impl KademliaConfig {
     /// that an iterative query is allowed to wait for in parallel while
     /// iterating towards the closest nodes to a target. Defaults to
     /// `ALPHA_VALUE`.
-    ///
-    /// This only controls the level of parallelism of an iterative query, not
-    /// the level of parallelism of a query to a fixed set of peers.
-    ///
-    /// When used with [`KademliaConfig::disjoint_query_paths`] it equals
-    /// the amount of disjoint paths used.
-    pub fn set_parallelism(&mut self, parallelism: NonZeroUsize) -> &mut Self {
-        self.query_config.parallelism = parallelism;
+    pub fn with_alpha(mut self, alpha: NonZeroUsize) -> Self {
+        self.query_config.alpha_value = alpha;
         self
     }
 
-    /// Require iterative queries to use disjoint paths for increased resiliency
-    /// in the presence of potentially adversarial nodes.
+    /// Sets the beta value for iterative queries.
     ///
-    /// When enabled the number of disjoint paths used equals the configured
-    /// parallelism.
+    /// The number of peers closest to a target that must have responded
+    /// for an iterative query to terminate. Defaults to `BETA_VALUE`.
+    pub fn with_beta(mut self, beta: NonZeroUsize) -> Self {
+        self.query_config.beta_value = beta;
+        self
+    }
+
+    /// Sets the interval for routing table refresh.
     ///
-    /// See the S/Kademlia paper for more information on the high level design
-    /// as well as its security improvements.
-    pub fn disjoint_query_paths(&mut self, enabled: bool) -> &mut Self {
-        self.query_config.disjoint_query_paths = enabled;
+    /// The Kad routing table will be refreshed automatically per the interval.
+    /// The default is 10 minutes. Sets to `None` to disable auto refresh.
+    ///
+    pub fn with_refresh_interval(mut self, interval: Option<Duration>) -> Self {
+        self.refresh_interval = interval;
         self
     }
 
@@ -234,7 +259,7 @@ impl KademliaConfig {
     /// The provider records will be cleaned up per the interval.The default is 1
     /// hour.
     ///
-    pub fn set_cleanup_interval(&mut self, interval: Duration) -> &mut Self {
+    pub fn with_cleanup_interval(mut self, interval: Duration) -> Self {
         self.cleanup_interval = interval;
         self
     }
@@ -248,7 +273,7 @@ impl KademliaConfig {
     /// `None` means records never expire.
     ///
     /// Does not apply to provider records.
-    pub fn set_record_ttl(&mut self, record_ttl: Option<Duration>) -> &mut Self {
+    pub fn with_record_ttl(mut self, record_ttl: Option<Duration>) -> Self {
         self.record_ttl = record_ttl;
         self
     }
@@ -270,7 +295,7 @@ impl KademliaConfig {
     /// `None` means that stored records are never re-replicated.
     ///
     /// Does not apply to provider records.
-    pub fn set_replication_interval(&mut self, interval: Option<Duration>) -> &mut Self {
+    pub fn with_replication_interval(mut self, interval: Option<Duration>) -> Self {
         self.record_replication_interval = interval;
         self
     }
@@ -288,7 +313,7 @@ impl KademliaConfig {
     /// `None` means that stored records are never automatically re-published.
     ///
     /// Does not apply to provider records.
-    pub fn set_publication_interval(&mut self, interval: Option<Duration>) -> &mut Self {
+    pub fn with_publication_interval(mut self, interval: Option<Duration>) -> Self {
         self.record_publication_interval = interval;
         self
     }
@@ -298,7 +323,7 @@ impl KademliaConfig {
     /// `None` means that stored provider records never expire.
     ///
     /// Must be significantly larger than the provider publication interval.
-    pub fn set_provider_record_ttl(&mut self, ttl: Option<Duration>) -> &mut Self {
+    pub fn with_provider_record_ttl(mut self, ttl: Option<Duration>) -> Self {
         self.provider_record_ttl = ttl;
         self
     }
@@ -310,13 +335,13 @@ impl KademliaConfig {
     /// re-published.
     ///
     /// Must be significantly less than the provider record TTL.
-    pub fn set_provider_publication_interval(&mut self, interval: Option<Duration>) -> &mut Self {
+    pub fn with_provider_publication_interval(mut self, interval: Option<Duration>) -> Self {
         self.provider_publication_interval = interval;
         self
     }
 
     /// Sets the amount of time to keep connections alive when they're idle.
-    pub fn set_connection_idle_timeout(&mut self, duration: Duration) -> &mut Self {
+    pub fn with_connection_idle_timeout(mut self, duration: Duration) -> Self {
         self.connection_idle_timeout = duration;
         self
     }
@@ -325,7 +350,7 @@ impl KademliaConfig {
     ///
     /// It might be necessary to increase this value if trying to put large
     /// records.
-    pub fn set_max_packet_size(&mut self, size: usize) -> &mut Self {
+    pub fn with_max_packet_size(mut self, size: usize) -> Self {
         self.protocol_config.set_max_packet_size(size);
         self
     }
@@ -376,13 +401,15 @@ where
             control_rx,
             kbuckets: KBucketsTable::new(local_key),
             protocol_config: config.protocol_config,
-            bootstrapped: false,
+            refreshing: false,
             query_config: config.query_config,
+            stats: Default::default(),
             messengers: None,
             connected_peers: Default::default(),
             provider_timer_handle: None,
             refresh_timer_handle: None,
             cleanup_interval: config.cleanup_interval,
+            refresh_interval: config.refresh_interval,
             record_ttl: config.record_ttl,
             provider_record_ttl: config.provider_record_ttl,
             connection_idle_timeout: config.connection_idle_timeout,
@@ -521,7 +548,7 @@ where
         let key = kbucket::Key::new(peer.clone());
 
         log::debug!(
-            "trying to add a peer: {:?} {:?}, query={}",
+            "trying to add a peer: {:?} bucket-index={:?}, query={}",
             peer,
             self.kbuckets.bucket_index(&key),
             queried
@@ -539,6 +566,10 @@ where
                 let info = PeerInfo::new(queried);
                 if entry.insert(info.clone()) {
                     log::debug!("Peer added to routing table: {} {:?}", peer, info);
+                    // pin this peer in PeerStore to prevent GC from recycling multiaddr
+                    if let Some(s) = self.swarm.as_ref() {
+                        s.pin(&peer)
+                    }
                 } else {
                     log::debug!("Bucket full, trying to replace an old node for {}", peer);
                     // try replacing an 'old' peer
@@ -552,8 +583,16 @@ where
                         let key = candidate.key.clone();
                         let evicted = bucket.remove(&key);
                         log::debug!("Bucket full. Peer node added, {} replacing {:?}", peer, evicted);
+                        // unpin the evicted peer
+                        if let Some(s) = self.swarm.as_ref() {
+                            s.unpin(key.preimage())
+                        }
                         // now try to insert the value again
                         let _ = entry.insert(info);
+                        // pin this peer in PeerStore to prevent GC from recycling multiaddr
+                        if let Some(s) = self.swarm.as_ref() {
+                            s.pin(&peer)
+                        }
                     } else {
                         log::debug!("Bucket full, but can't find an replaced node, give up {}", peer);
                     }
@@ -570,10 +609,20 @@ where
     fn try_remove_peer(&mut self, peer: PeerId) -> Option<kbucket::EntryView<kbucket::Key<PeerId>, PeerInfo>> {
         let key = kbucket::Key::new(peer.clone());
 
-        log::debug!("trying to remove a peer: {:?} {:?}", peer, self.kbuckets.bucket_index(&key));
+        log::debug!(
+            "trying to remove a peer: {:?} bucket-index={:?}",
+            peer,
+            self.kbuckets.bucket_index(&key)
+        );
 
         match self.kbuckets.entry(&key) {
-            kbucket::Entry::Present(entry) => Some(entry.remove()),
+            kbucket::Entry::Present(entry) => {
+                // unpin the peer, so GC can run normally
+                if let Some(s) = self.swarm.as_ref() {
+                    s.unpin(&peer)
+                }
+                Some(entry.remove())
+            }
             kbucket::Entry::Absent(..) | kbucket::Entry::SelfEntry => None,
         }
     }
@@ -587,7 +636,11 @@ where
     fn try_deactivate_peer(&mut self, peer: PeerId) {
         let key = kbucket::Key::new(peer.clone());
 
-        log::debug!("trying to deactivate a peer: {:?} {:?}", peer, self.kbuckets.bucket_index(&key));
+        log::debug!(
+            "trying to deactivate a peer: {:?} bucket-index={:?}",
+            peer,
+            self.kbuckets.bucket_index(&key)
+        );
 
         match self.kbuckets.entry(&key) {
             kbucket::Entry::Present(mut entry) => entry.value().set_aliveness(None),
@@ -623,7 +676,7 @@ where
             .kbuckets
             .closest_keys(&target)
             .into_iter()
-            .take(self.query_config.replication_factor.get())
+            .take(self.query_config.k_value.get())
             .collect();
 
         IterativeQuery::new(
@@ -702,7 +755,7 @@ where
     where
         F: FnOnce(Result<PeerRecord>) + Send + 'static,
     {
-        let quorum = self.query_config.replication_factor.get();
+        let quorum = self.query_config.k_value.get();
         let mut records = Vec::with_capacity(quorum);
 
         if let Some(record) = self.store.get(&key) {
@@ -829,7 +882,7 @@ where
     ///
     /// > **Note**: Bootstrapping requires at least one node of the DHT to be known.
     async fn bootstrap(&mut self) {
-        if !self.bootstrapped {
+        if !self.refreshing {
             log::debug!("bootstrapping...");
             let mut poster = self.poster();
             let _ = poster.post(ProtocolEvent::Refresh(RefreshStage::Start)).await;
@@ -838,7 +891,7 @@ where
 
     fn add_node(&mut self, peer: PeerId, addresses: Vec<Multiaddr>) {
         if let Some(s) = self.swarm.as_ref() {
-            s.add_addrs(&peer, addresses, ADDRESS_TTL, true)
+            s.add_addrs(&peer, addresses, ADDRESS_TTL)
         }
         self.try_add_peer(peer, false);
     }
@@ -852,6 +905,10 @@ where
 
     fn dump_messengers(&mut self) -> Vec<KadMessengerView> {
         self.messengers.as_ref().expect("must be Some").messengers()
+    }
+
+    fn dump_statistics(&mut self) -> KademliaStats {
+        self.stats.clone()
     }
 
     fn dump_kbuckets(&mut self) -> Vec<KBucketView> {
@@ -870,7 +927,7 @@ where
                         let id = n.node.key.preimage().clone();
                         let aliveness = n.node.value.get_aliveness();
                         let connected = connected.contains(&id);
-                        let addresses = swarm.get_addrs_vec(&id).unwrap_or_else(Vec::new);
+                        let addresses = swarm.get_addrs(&id).unwrap_or_else(Vec::new);
                         KNodeView {
                             id,
                             aliveness,
@@ -924,7 +981,7 @@ where
             if let Err(e) = peers {
                 f(Err(e));
             } else {
-                let peers = peers.unwrap().into_iter().map(KadPeer::into).collect::<Vec<_>>();
+                let peers = peers.unwrap().into_iter().map(KadPeer::into).collect();
                 let fixed_query = FixedQuery::new(QueryType::AddProvider { provider, addresses }, messengers, config, peers);
                 fixed_query.run(f);
             }
@@ -946,7 +1003,7 @@ where
         if target == self.kbuckets.self_key() {
             vec![KadPeer {
                 node_id: self.kbuckets.self_key().preimage().clone(),
-                multiaddrs: vec![],
+                multiaddrs: vec![], // don't bother, they must have our addresses
                 connection_ty: KadConnectionType::Connected,
             }]
         } else {
@@ -955,7 +1012,7 @@ where
             self.kbuckets
                 .closest(target)
                 .filter(|e| e.node.key.preimage() != source)
-                .take(self.query_config.replication_factor.get())
+                .take(self.query_config.k_value.get())
                 .map(|n| {
                     let node_id = n.node.key.into_preimage();
                     let connection_ty = if connected.contains(&node_id) {
@@ -963,7 +1020,7 @@ where
                     } else {
                         KadConnectionType::NotConnected
                     };
-                    let multiaddrs = swarm.get_addrs_vec(&node_id).unwrap_or_default();
+                    let multiaddrs = swarm.get_addrs(&node_id).unwrap_or_default();
                     // Note: here might be a possibility that multiaddrs is empty, if the peerstore doesn't have
                     // the address info for some reason(BUG?). Therefore, we'll send out a Kad peer without addresses.
                     // Shall we or shall we not???
@@ -1003,7 +1060,7 @@ where
                     let multiaddrs = if &node_id == kbuckets.self_key().preimage() {
                         Some(local_addrs.clone())
                     } else {
-                        swarm.get_addrs_vec(&node_id)
+                        swarm.get_addrs(&node_id)
                     }
                     .unwrap_or_default();
 
@@ -1016,7 +1073,7 @@ where
                     None
                 }
             })
-            .take(self.query_config.replication_factor.get())
+            .take(self.query_config.k_value.get())
             .collect()
     }
     /*
@@ -1068,7 +1125,7 @@ where
         // outside of the k closest nodes to a key.
         let target = kbucket::Key::new(record.key.clone());
         let num_between = self.kbuckets.count_nodes_between(&target);
-        let k = self.query_config.replication_factor.get();
+        let k = self.query_config.k_value.get();
         let num_beyond_k = (usize::max(k, num_between) - k) as u32;
         let expiration = self.record_ttl.map(|ttl| now + exp_decrease(ttl, num_beyond_k));
         // The smaller TTL prevails. Only if neither TTL is set is the record
@@ -1120,7 +1177,7 @@ where
             self.swarm
                 .as_ref()
                 .expect("must be Some")
-                .add_addrs(&provider.node_id, provider.multiaddrs, PROVIDER_ADDR_TTL, true);
+                .add_addrs(&provider.node_id, provider.multiaddrs, PROVIDER_ADDR_TTL);
 
             let record = ProviderRecord::new(key, provider.node_id, self.provider_record_ttl.map(|ttl| Instant::now() + ttl));
             if let Err(e) = self.store.add_provider(record) {
@@ -1138,46 +1195,8 @@ where
         Control::new(self.control_tx.clone())
     }
 
-    fn start_refresh_timer(&mut self) {
-        // start timer task, which would generate ProtocolEvent::Timer to kad main loop
-        log::info!("starting refresh timer task...");
-        let interval = self.check_kad_peer_interval;
-        let now = Instant::now();
-        let self_key = self.kbuckets.self_key().clone();
-        let mut swarm = self.swarm.clone().expect("must be Some");
-        let mut poster = self.poster();
-
-        let peers_to_check = self
-            .kbuckets
-            .closest(&self_key)
-            .filter(|n| n.node.value.get_aliveness().map_or(true, |a| now.duration_since(a) > interval))
-            .map(|n| n.node.key.into_preimage())
-            .collect::<Vec<_>>();
-
-        let h = task::spawn(async move {
-            task::sleep(interval).await;
-            // run healthy check for all nodes whose aliveness is older than check_kad_peer_interval
-            log::debug!("about to health check {} nodes", peers_to_check.len());
-            let mut count: u32 = 0;
-            for peer in peers_to_check {
-                log::debug!("health checking {}", peer);
-                let r = swarm.new_connection(peer.clone()).await;
-                if r.is_err() {
-                    log::debug!("health checking failed at {}, removing from Kbuckets", peer);
-                    count += 1;
-                    let _ = poster.post(ProtocolEvent::KadPeerStopped(peer)).await;
-                }
-            }
-
-            log::info!("Kad refresh restarted, total {} nodes removed from Kbuckets", count);
-            let _ = poster.post(ProtocolEvent::Refresh(RefreshStage::Start)).await;
-        });
-
-        self.refresh_timer_handle = Some(h);
-    }
-
-    fn start_provider_gc(&mut self) {
-        // start timer task, which would generate ProtocolEvent::Timer to kad main loop
+    fn start_provider_gc_timer(&mut self) {
+        // start timer task, which would generate ProtocolEvent::ProviderCleanupTimer to kad main loop
         log::info!("starting provider timer task...");
         let interval = self.cleanup_interval;
         let mut poster = self.poster();
@@ -1191,85 +1210,59 @@ where
         self.provider_timer_handle = Some(h);
     }
 
+    fn start_refresh_timer(&mut self) {
+        if let Some(interval) = self.refresh_interval {
+            // start timer task, which would generate ProtocolEvent::RefreshTimer to kad main loop
+            log::info!("starting refresh timer task...");
+            let mut poster = self.poster();
+            let h = task::spawn(async move {
+                loop {
+                    task::sleep(interval).await;
+                    let _ = poster.post(ProtocolEvent::RefreshTimer).await;
+                }
+            });
+
+            self.refresh_timer_handle = Some(h);
+        }
+    }
+
     /// Start the main message loop of Kademlia.
     pub fn start(mut self, swarm: SwarmControl) {
         self.messengers = Some(MessengerManager::new(swarm.clone(), self.protocol_config.clone()));
         self.swarm = Some(swarm);
 
-        // start provider gc
-        self.start_provider_gc();
+        // start provider gc timer
+        self.start_provider_gc_timer();
+        // start refresh timer
+        self.start_refresh_timer();
 
         // well, self 'move' explicitly,
         let mut kad = self;
         task::spawn(async move {
-            // As we get Swarm control, try getting Swarm self addresses
-            let swarm = kad.swarm.as_mut().expect("must be Some");
-            kad.local_addrs = swarm.self_addrs().await.expect("listen addrs > 0");
+            // // As we get Swarm control, try getting Swarm self addresses
+            // let swarm = kad.swarm.as_mut().expect("must be Some");
+            // kad.local_addrs = swarm.self_addrs().await.expect("listen addrs > 0");
+            let r = kad.process_loop().await;
+            assert!(r.is_err());
+            log::info!("Kad main loop closed, quitting due to {:?}", r);
 
-            let _ = kad.process_loop().await;
+            if let Some(h) = kad.refresh_timer_handle.take() {
+                h.cancel().await;
+            }
+            if let Some(h) = kad.provider_timer_handle.take() {
+                h.cancel().await;
+            }
+
+            log::info!("Kad main loop exited");
         });
     }
 
     /// Message Process Loop.
     async fn process_loop(&mut self) -> Result<()> {
-        let result = self.next().await;
-        //
-        // if !self.peer_rx.is_terminated() {
-        //     self.peer_rx.close();
-        //     while self.peer_rx.next().await.is_some() {
-        //         // just drain
-        //     }
-        // }
-        //
-        // if !self.event_rx.is_terminated() {
-        //     self.event_rx.close();
-        //     while self.event_rx.next().await.is_some() {
-        //         // just drain
-        //     }
-        // }
-        //
-        // if !self.control_rx.is_terminated() {
-        //     self.control_rx.close();
-        //     while let Some(cmd) = self.control_rx.next().await {
-        //         match cmd {
-        //             ControlCommand::Publish(_, reply) => {
-        //                 let _ = reply.send(());
-        //             }
-        //             ControlCommand::Subscribe(_, reply) => {
-        //                 let _ = reply.send(None);
-        //             }
-        //             ControlCommand::Ls(reply) => {
-        //                 let _ = reply.send(Vec::new());
-        //             }
-        //             ControlCommand::GetPeers(_, reply) => {
-        //                 let _ = reply.send(Vec::new());
-        //             }
-        //         }
-        //     }
-        // }
-        //
-        // if !self.cancel_rx.is_terminated() {
-        //     self.cancel_rx.close();
-        //     while self.cancel_rx.next().await.is_some() {
-        //         // just drain
-        //     }
-        // }
-        //
-        // self.drop_all_peers();
-        // self.drop_all_my_topics();
-        // self.drop_all_topics();
-
-        result
-    }
-
-    async fn next(&mut self) -> Result<()> {
         loop {
             select! {
-                // cmd = self.peer_rx.next() => {
-                //     self.handle_peer_event(cmd).await;
-                // }
                 evt = self.event_rx.next() => {
-                    self.handle_events(evt).await?;
+                    self.on_events(evt).await?;
                 }
                 cmd = self.control_rx.next() => {
                     self.on_control_command(cmd).await?;
@@ -1312,6 +1305,14 @@ where
         }
     }
 
+    // handle a local address changes. Update the local_addrs and start a refresh immediately.
+    fn handle_address_changed(&mut self, addrs: Vec<Multiaddr>) {
+        log::debug!("address changed: {:?}, starting refresh...", addrs);
+        self.local_addrs = addrs;
+        // TODO: probably we should start a timer to trigger refreshing, to avoid refreshing too often
+        self.handle_refresh_stage(RefreshStage::Start);
+    }
+
     // handle a new Kad peer is found.
     fn handle_peer_found(&mut self, peer_id: PeerId, queried: bool) {
         self.try_add_peer(peer_id, queried);
@@ -1320,66 +1321,92 @@ where
     // handle a Kad peer is dead.
     fn handle_peer_stopped(&mut self, peer_id: PeerId) {
         //self.try_remove_peer(peer_id);
-        self.try_deactivate_peer(peer_id);
+        self.try_remove_peer(peer_id);
+    }
+
+    // handle iterative query completion
+    fn handle_query_stats(&mut self, stats: QueryStats) {
+        log::info!("iterative query report : {:?}", stats);
+
+        // calculate the average duration...
+        let total = self.stats.query.duration * self.stats.successful_queries as u32 + stats.duration;
+        self.stats.successful_queries += 1;
+        self.stats.query.duration = total / self.stats.successful_queries as u32;
+        self.stats.query.merge(stats);
+    }
+
+    // handle iterative query timeout
+    fn handle_query_timeout(&mut self) {
+        self.stats.timeout_queries += 1;
     }
 
     // Handle Kad events sent from protocol handler.
-    async fn handle_events(&mut self, msg: Option<ProtocolEvent>) -> Result<()> {
+    async fn on_events(&mut self, msg: Option<ProtocolEvent>) -> Result<()> {
         log::debug!("handle kad event: {:?}", msg);
         match msg {
             Some(ProtocolEvent::PeerConnected(peer_id)) => {
                 self.handle_peer_connected(peer_id);
-                Ok(())
             }
             Some(ProtocolEvent::PeerDisconnected(peer_id)) => {
                 self.handle_peer_disconnected(peer_id);
-                Ok(())
             }
             Some(ProtocolEvent::PeerIdentified(peer_id)) => {
                 self.handle_peer_identified(peer_id);
-                Ok(())
+            }
+            Some(ProtocolEvent::AddressChanged(addrs)) => {
+                self.handle_address_changed(addrs);
             }
             Some(ProtocolEvent::KadPeerFound(peer_id, queried)) => {
                 self.handle_peer_found(peer_id, queried);
-                Ok(())
             }
             Some(ProtocolEvent::KadPeerStopped(peer_id)) => {
                 self.handle_peer_stopped(peer_id);
-                Ok(())
+            }
+            Some(ProtocolEvent::IterativeQueryCompleted(stats)) => {
+                self.handle_query_stats(stats);
+            }
+            Some(ProtocolEvent::IterativeQueryTimeout) => {
+                self.handle_query_timeout();
             }
             Some(ProtocolEvent::KadRequest { request, source, reply }) => {
                 self.handle_kad_request(request, source, reply);
-                Ok(())
             }
             Some(ProtocolEvent::ProviderCleanupTimer) => {
                 self.handle_provider_cleanup();
-                Ok(())
+            }
+            Some(ProtocolEvent::RefreshTimer) => {
+                self.handle_refresh_timer();
             }
             Some(ProtocolEvent::Refresh(stage)) => {
                 self.handle_refresh_stage(stage);
-                Ok(())
             }
-            None => Err(KadError::Closed(1)),
+            None => {
+                return Err(KadError::Closing(2));
+            }
         }
+        Ok(())
     }
 
     // Handles Kad request messages. ProtoBuf message decoded by handler.
     fn handle_kad_request(&mut self, request: KadRequestMsg, source: PeerId, reply: oneshot::Sender<Result<Option<KadResponseMsg>>>) {
-        log::debug!("handle Kad request message {:?} from {:}", request, source);
+        log::debug!("handle Kad request message from {:?}, {:?} ", source, request);
 
         // Obviously we found a Kad peer
         self.try_add_peer(source.clone(), true);
 
         let response = match request {
             KadRequestMsg::Ping => {
-                // respond with the request message
+                self.stats.message_rx.ping += 1;
+                // respond with the Pong message
                 Ok(Some(KadResponseMsg::Pong))
             }
             KadRequestMsg::FindNode { key } => {
+                self.stats.message_rx.find_node += 1;
                 let closer_peers = self.find_closest(&kbucket::Key::new(key), &source);
                 Ok(Some(KadResponseMsg::FindNode { closer_peers }))
             }
             KadRequestMsg::AddProvider { key, provider } => {
+                self.stats.message_rx.add_provider += 1;
                 // Only accept a provider record from a legitimate peer.
                 if provider.node_id != source {
                     log::info!("received provider from wrong peer {:?}", source);
@@ -1391,6 +1418,7 @@ where
                 }
             }
             KadRequestMsg::GetProviders { key } => {
+                self.stats.message_rx.get_provider += 1;
                 let provider_peers = self.provider_peers(&key, Some(&source));
                 let closer_peers = self.find_closest(&kbucket::Key::new(key), &source);
                 Ok(Some(KadResponseMsg::GetProviders {
@@ -1399,6 +1427,7 @@ where
                 }))
             }
             KadRequestMsg::GetValue { key } => {
+                self.stats.message_rx.get_value += 1;
                 // Lookup the record locally.
                 let record = match self.store.get(&key) {
                     Some(record) => {
@@ -1415,7 +1444,10 @@ where
                 let closer_peers = self.find_closest(&kbucket::Key::new(key), &source);
                 Ok(Some(KadResponseMsg::GetValue { record, closer_peers }))
             }
-            KadRequestMsg::PutValue { record } => self.handle_put_record(source, record).map(Some),
+            KadRequestMsg::PutValue { record } => {
+                self.stats.message_rx.put_value += 1;
+                self.handle_put_record(source, record).map(Some)
+            }
         };
 
         let _ = reply.send(response);
@@ -1441,18 +1473,65 @@ where
         });
     }
 
+    // handle the timer to refresh the routing table. Actually it will trigger the
+    // periodic bootstrap procedure in a fixed interval.
+    fn handle_refresh_timer(&mut self) {
+        let interval = self.check_kad_peer_interval;
+        let now = Instant::now();
+        let self_key = self.kbuckets.self_key().clone();
+        let mut swarm = self.swarm.clone().expect("must be Some");
+        let mut poster = self.poster();
+
+        // collect all peers whose aliveness is older than check_kad_peer_interval
+        let peers_to_check = self
+            .kbuckets
+            .closest(&self_key)
+            .filter(|n| n.node.value.get_aliveness().map_or(true, |a| now.duration_since(a) > interval))
+            .map(|n| n.node.key.into_preimage())
+            .collect::<Vec<_>>();
+
+        // start a task to do health check
+        task::spawn(async move {
+            // run healthy check for all nodes whose aliveness is older than check_kad_peer_interval
+            log::debug!("about to health check {} nodes", peers_to_check.len());
+            let mut count: u32 = 0;
+            for peer in peers_to_check {
+                log::debug!("health checking {}", peer);
+                let r = swarm.new_connection(peer.clone()).await;
+                if r.is_err() {
+                    log::debug!("health checking failed at {}, removing from Kbuckets", peer);
+                    count += 1;
+                    let _ = poster.post(ProtocolEvent::KadPeerStopped(peer)).await;
+                }
+            }
+
+            log::info!("Kad refresh restarted, total {} nodes removed from Kbuckets", count);
+            let _ = poster.post(ProtocolEvent::Refresh(RefreshStage::Start)).await;
+        });
+    }
+
     // When bootstrap is finished, we start a timer to refresh the routing table. Actually
     // it will trigger the periodic bootstrap procedure in a fixed interval.
     fn handle_refresh_stage(&mut self, stage: RefreshStage) {
         match stage {
             RefreshStage::Start => {
+                // check if we are running a refresh. do NOT run again if yes
+                if self.refreshing {
+                    return;
+                }
+                log::debug!("start refreshing kbuckets...");
+
+                // always mark refreshing as true if we step into this stage
+                self.refreshing = true;
+                // and increase the counter
+                self.stats.total_refreshes += 1;
+
                 let local_id = self.kbuckets.self_key().preimage().clone();
                 let mut poster = self.poster();
 
                 self.get_closest_peers(local_id.into(), |r| {
                     if r.is_err() {
                         log::info!("refresh get_closest_peers failed: {:?}", r);
-                        return;
                     }
                     task::spawn(async move {
                         let _ = poster.post(ProtocolEvent::Refresh(RefreshStage::SelfQueryDone)).await;
@@ -1468,9 +1547,6 @@ where
                 //         println!("{:?} : {}", k.index(), k.num_entries());
                 //     }
                 // });
-
-                // always mark bootstrapped as true if we step into this stage
-                self.bootstrapped = true;
 
                 let self_key = self.kbuckets.self_key().clone();
                 // The lookup for the local key finished. To complete the bootstrap process,
@@ -1499,6 +1575,7 @@ where
                         for _ in 0..16 {
                             let d = self_key.distance(&target);
                             if b.contains(&d) {
+                                log::trace!("random Id generated for bucket-index={:?}", d.ilog2());
                                 break;
                             }
                             target = kbucket::Key::new(PeerId::random());
@@ -1521,13 +1598,9 @@ where
             }
             RefreshStage::Completed => {
                 log::debug!("kbuckets entries={}", self.kbuckets.num_entries());
-                log::info!("bootstrap: finished, start the refresh timer");
-                // self.kbuckets.iter().for_each(|k|{
-                //     if k.num_entries() > 0 {
-                //         println!("{:?} : {}", k.index(), k.num_entries());
-                //     }
-                // });
-                self.start_refresh_timer();
+                log::info!("bootstrap: finished");
+                // reset the refreshing flag
+                self.refreshing = false;
             }
         }
     }
@@ -1538,9 +1611,8 @@ where
             Some(ControlCommand::Bootstrap) => {
                 self.bootstrap().await;
             }
-            Some(ControlCommand::AddNode(peer, addresses, reply)) => {
+            Some(ControlCommand::AddNode(peer, addresses)) => {
                 self.add_node(peer, addresses);
-                let _ = reply.send(());
             }
             Some(ControlCommand::RemoveNode(peer)) => {
                 self.remove_node(peer);
@@ -1579,13 +1651,17 @@ where
                 DumpCommand::Entries(reply) => {
                     let _ = reply.send(self.dump_kbuckets());
                 }
+                DumpCommand::Statistics(reply) => {
+                    let _ = reply.send(self.dump_statistics());
+                }
                 DumpCommand::Messengers(reply) => {
                     let _ = reply.send(self.dump_messengers());
                 }
             },
-            None => {}
+            None => {
+                return Err(KadError::Closing(1));
+            }
         }
-
         Ok(())
     }
 }
@@ -1595,77 +1671,7 @@ fn exp_decrease(ttl: Duration, exp: u32) -> Duration {
     Duration::from_secs(ttl.as_secs().checked_shr(exp).unwrap_or(0))
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// Events
-
-/// The events produced by the `Kademlia` behaviour.
-///
-/// See [`NetworkBehaviour::poll`].
-#[derive(Debug)]
-pub enum KademliaEvent {
-    /// The routing table has been updated with a new peer and / or
-    /// address, thereby possibly evicting another peer.
-    RoutingUpdated {
-        /// The ID of the peer that was added or updated.
-        peer: PeerId,
-        /// The ID of the peer that was evicted from the routing table to make
-        /// room for the new peer, if any.
-        old_peer: Option<PeerId>,
-    },
-
-    /// A peer has connected for whom no listen address is known.
-    ///
-    /// If the peer is to be added to the routing table, a known
-    /// listen address for the peer must be provided via [`Kademlia::add_address`].
-    UnroutablePeer { peer: PeerId },
-
-    /// A connection to a peer has been established for whom a listen address
-    /// is known but the peer has not been added to the routing table either
-    /// because [`KademliaBucketInserts::Manual`] is configured or because
-    /// the corresponding bucket is full.
-    ///
-    /// If the peer is to be included in the routing table, it must
-    /// must be explicitly added via [`Kademlia::add_address`], possibly after
-    /// removing another peer.
-    ///
-    /// See [`Kademlia::kbucket`] for insight into the contents of
-    /// the k-bucket of `peer`.
-    RoutablePeer { peer: PeerId, address: Multiaddr },
-
-    /// A connection to a peer has been established for whom a listen address
-    /// is known but the peer is only pending insertion into the routing table
-    /// if the least-recently disconnected peer is unresponsive, i.e. the peer
-    /// may not make it into the routing table.
-    ///
-    /// If the peer is to be unconditionally included in the routing table,
-    /// it should be explicitly added via [`Kademlia::add_address`] after
-    /// removing another peer.
-    ///
-    /// See [`Kademlia::kbucket`] for insight into the contents of
-    /// the k-bucket of `peer`.
-    PendingRoutablePeer { peer: PeerId, address: Multiaddr },
-}
-
-/// The possible outcomes of [`Kademlia::add_address`].
-pub enum RoutingUpdate {
-    /// The given peer and address has been added to the routing
-    /// table.
-    Success,
-    /// The peer and address is pending insertion into
-    /// the routing table, if a disconnected peer fails
-    /// to respond. If the given peer and address ends up
-    /// in the routing table, [`KademliaEvent::RoutingUpdated`]
-    /// is eventually emitted.
-    Pending,
-    /// The routing table update failed, either because the
-    /// corresponding bucket for the peer is full and the
-    /// pending slot(s) are occupied, or because the given
-    /// peer ID is deemed invalid (e.g. refers to the local
-    /// peer ID).
-    Failed,
-}
-
-///////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////
 #[derive(Clone)]
 pub(crate) struct MessengerManager {
     swarm: SwarmControl,

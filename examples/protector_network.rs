@@ -32,6 +32,7 @@ use libp2prs_tcp::TcpConfig;
 
 use libp2prs_core::identity::Keypair;
 
+use libp2prs_core::transport::ListenerEvent;
 use libp2prs_core::upgrade::Selector;
 use libp2prs_mplex as mplex;
 use libp2prs_secio as secio;
@@ -66,7 +67,10 @@ fn run_server() {
         let mut listener = tu.listen_on(listen_addr).unwrap();
 
         loop {
-            let mut stream_muxer = listener.accept().await.unwrap();
+            let mut stream_muxer = match listener.accept().await.unwrap() {
+                ListenerEvent::Accepted(s) => s,
+                _ => continue,
+            };
             info!("server accept a new connection: {:?}", stream_muxer);
 
             if let Some(task) = stream_muxer.task() {
