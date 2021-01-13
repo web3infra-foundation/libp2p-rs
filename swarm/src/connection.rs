@@ -427,8 +427,11 @@ impl Connection {
 
         let handle = task::spawn(async move {
             let (swrm_tx, swrm_rx) = oneshot::channel();
-            ctrl.send(SwarmControlCmd::IdentifyInfo(swrm_tx)).await.expect("send");
-            let info = swrm_rx.await.expect("identify info").expect("get identify info");
+            if ctrl.send(SwarmControlCmd::IdentifyInfo(swrm_tx)).await.is_err() {
+                // this might happen, when swarm is exiting...
+                return;
+            }
+            let info = swrm_rx.await.expect("get identify info");
 
             let r = open_stream_internal(cid, stream_muxer, pids, ctrl, metric).await;
             match r {

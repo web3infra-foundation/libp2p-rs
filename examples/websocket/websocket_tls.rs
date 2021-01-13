@@ -20,7 +20,7 @@
 
 use async_std::task;
 use async_trait::async_trait;
-use std::{error::Error, time::Duration};
+use std::error::Error;
 #[macro_use]
 extern crate lazy_static;
 
@@ -228,7 +228,7 @@ fn run_client() -> io::Result<()> {
         .to_owned();
     let tu = TransportUpgrade::new(ws, mux, sec);
 
-    let mut swarm = Swarm::new(keys.public()).with_transport(Box::new(tu));
+    let swarm = Swarm::new(keys.public()).with_transport(Box::new(tu));
 
     let mut control = swarm.control();
 
@@ -236,12 +236,10 @@ fn run_client() -> io::Result<()> {
 
     log::info!("about to connect to {:?}", remote_peer_id);
 
-    swarm.peer_addrs_add(&remote_peer_id, addr, Duration::default());
-
     swarm.start();
 
     task::block_on(async move {
-        control.new_connection(remote_peer_id.clone()).await.unwrap();
+        control.connect_with_addrs(remote_peer_id.clone(), vec![addr]).await.unwrap();
         let mut stream = control.new_stream(remote_peer_id, vec![PROTO_NAME.into()]).await.unwrap();
         log::info!("stream {:?} opened, writing something...", stream);
 

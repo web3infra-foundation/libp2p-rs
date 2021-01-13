@@ -17,11 +17,14 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
+#[macro_use]
+extern crate lazy_static;
 
 use async_std::task;
+use libp2prs_core::secure_io::SecureInfo;
 use libp2prs_core::{identity, PeerId};
 use libp2prs_noise::{Keypair, NoiseConfig, X25519Spec};
-use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_traits::{copy, ReadEx, SplitEx, WriteEx};
 use log::info;
 use log::LevelFilter;
 use std::string::ToString;
@@ -37,44 +40,30 @@ fn main() {
     }
 }
 
+lazy_static! {
+    static ref SERVER_KEY: identity::Keypair = identity::Keypair::generate_ed25519_fixed();
+}
+
 fn run_server() {
     task::block_on(async {
-        let server_id = identity::Keypair::generate_ed25519_fixed();
-        // let server_id_public = server_id.public();
-        let pid = PeerId::from(server_id.public());
+        let pid = PeerId::from(SERVER_KEY.public());
         info!("I am {}", pid);
 
         let listener = async_std::net::TcpListener::bind("127.0.0.1:3214").await.unwrap();
 
         while let Ok((socket, _)) = listener.accept().await {
-            let server_id = server_id.clone();
+            let server_id = SERVER_KEY.clone();
             task::spawn(async move {
-                let server_dh = Keypair::<X25519Spec>::new().into_authentic(&server_id).unwrap();
-
+                let server_dh = Keypair::<X25519Spec>::new().into_authentic(&server_id.clone()).unwrap();
                 let config = NoiseConfig::xx(server_dh, server_id);
 
-                let (_a, mut b) = config.handshake(socket, false).await.unwrap();
-
+                let (_a, b) = config.handshake(socket, false).await.unwrap();
                 info!("handshake finished");
 
-                let mut buf = [0; 100];
+                info!("remote peer is {:?}", b.remote_pub_key().into_peer_id());
 
-                loop {
-                    info!("outside loop");
-                    if let Ok(_n) = b.read2(&mut buf).await {
-                        // info!("public key is {:?}", b.remote_pub_key());
-                        info!("data is {:?}", buf.to_vec());
-                        // let mut buffer = Vec::from(buf[..11]);
-                        let u = b"!";
-                        // buffer.push(u[0]);
-                        buf[11] = u[0];
-                        if b.write_all2(&buf).await.is_err() {
-                            break;
-                        }
-                    } else {
-                        break;
-                    }
-                }
+                let (r, w) = b.split();
+                let _ = copy(r, w).await;
             });
         }
     })
@@ -86,20 +75,22 @@ fn run_client() {
         info!("[client] connected to server: {:?}", socket.peer_addr());
 
         let client_id = identity::Keypair::generate_ed25519();
-        // let client_id_public = client_id.public();
+        let pid = PeerId::from(client_id.public());
+        info!("I am {}", pid);
 
         let client_dh = Keypair::<X25519Spec>::new().into_authentic(&client_id).unwrap();
-
         let config = NoiseConfig::xx(client_dh, client_id);
 
         let (_a, mut b) = config.handshake(socket, true).await.unwrap();
         info!("Handshake finished");
 
+        assert_eq!(SERVER_KEY.public(), b.remote_pub_key());
+
         let data = b"hello world";
         let _ = b.write_all2(data).await;
         info!("write finished");
-        let mut buf = vec![0u8; 100];
-        let nr = b.read2(buf.as_mut()).await.unwrap();
-        info!("read finished, {:?}", &buf[..nr]);
+        let mut buf = vec![0u8; data.len()];
+        b.read_exact2(buf.as_mut()).await.unwrap();
+        info!("read finished, {:?}", &buf);
     })
 }

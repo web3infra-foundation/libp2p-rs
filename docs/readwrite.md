@@ -1,4 +1,7 @@
 
+**Note: Obsolete**. We have decided to remove ReadEx/WriteEx/SplitEx in near future. We realize they are not compatible with the existing AsyncRead/AsyncWrite, so the I/O object which support ReadEx/WriteEx can not be applied to the existing code/lib. Moreover, SplitEx is kind of complicated, bringing more constraints to the generic types, which is bad. So... it is an unsuccessful attempt, but still interesting...  
+
+
 # ReadEx and WriteEx
 
 ReadEx and WriteEx are the traits to support I/O operations, quite similar to the AsyncRead and AsyncWrite combination defined in futures::io. As for the latter, the corresponding Ext traits provide read/write futures that can be `await`ed by async code. But for developers, we have to implement the `poll_xxx` methods if we want to implement AsyncRead and AsyncWrite. It is so called implementing future manually. Actually, ReadEx and WriteEx provide the similar functionanlity as they can be `await`ed as well, however, not like the AsyncRead + AsyncWrite, these two are async traits which allow to directly write async fn() in traits. Thus, we don't have to write `poll_xxx` methods any more. This is the motivation of introducing these two traits.

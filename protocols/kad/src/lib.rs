@@ -1,4 +1,5 @@
-// Copyright 2018 Parity Technologies (UK) Ltd.
+// Copyright 2019 Parity Technologies (UK) Ltd.
+// Copyright 2020 Netwarps Ltd.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
 // copy of this software and associated documentation files (the "Software"),
@@ -41,55 +42,13 @@ mod dht_proto {
     include!(concat!(env!("OUT_DIR"), "/dht.pb.rs"));
 }
 
-//pub use addresses::Addresses;
-//pub use behaviour::{Kademlia, KademliaBucketInserts, KademliaConfig, KademliaEvent, Quorum};
-// pub use behaviour::{
-//     QueryRef,
-//     QueryMut,
-//
-//     QueryResult,
-//     QueryInfo,
-//     QueryStats,
-//
-//     PeerRecord,
-//
-//     BootstrapResult,
-//     BootstrapOk,
-//     BootstrapError,
-//
-//     GetRecordResult,
-//     GetRecordOk,
-//     GetRecordError,
-//
-//     PutRecordPhase,
-//     PutRecordContext,
-//     PutRecordResult,
-//     PutRecordOk,
-//     PutRecordError,
-//
-//     GetClosestPeersResult,
-//     GetClosestPeersOk,
-//     GetClosestPeersError,
-//
-//     AddProviderPhase,
-//     AddProviderContext,
-//     AddProviderResult,
-//     AddProviderOk,
-//     AddProviderError,
-//
-//     GetProvidersResult,
-//     GetProvidersOk,
-//     GetProvidersError,
-// };
-//pub use query::QueryId;
-//pub use protocol::KadConnectionType;
 pub use record::{store, ProviderRecord, Record};
 
 use std::error::Error;
 use std::fmt;
 use std::num::NonZeroUsize;
 
-use futures::channel::mpsc;
+use futures::channel::{mpsc, oneshot};
 use libp2prs_core::PeerId;
 use libp2prs_swarm::SwarmError;
 
@@ -143,19 +102,12 @@ pub enum KadError {
     Upgrade,
     /// Error while bootstrapping Kademlia-DHT.
     Bootstrap,
-    /// Error while looking up closest peers.
-    GetClosestPeers,
-    /// Error while finding providers.
-    GetProviders,
-    /// Error while providing.
-    AddProvider,
-    /// Error while putting value.
-    PutRecord,
-    /// Error while getting value.
-    GetRecord,
 
-    /// Internal error, e.g., mpsc::SendError
+    /// Internal error, e.g., mpsc::SendError.
     Internal,
+
+    /// Iterative query timeout.
+    Timeout,
 
     /// Error while decoding protobuf.
     Decode,
@@ -170,14 +122,18 @@ pub enum KadError {
     Io(std::io::Error),
     /// Underlying Swarm error.
     Swarm(SwarmError),
-    /// Kademliad is Closed
-    Closed(u32),
+    /// Indicates that the Kad main loop is Closing.
+    Closing(u32),
 }
 
 impl fmt::Display for KadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             KadError::MaxRecords => write!(f, "Storage is at capaticy"),
+            KadError::NoKnownPeers => write!(f, "No any peers in routing table"),
+            KadError::NotFound => write!(f, "Not found"),
+            KadError::Timeout => write!(f, "Iterative query timeout"),
+            KadError::Swarm(e) => write!(f, "Underlying Swarm error {}", e),
             _ => write!(f, "Kad error"),
         }
     }
@@ -208,5 +164,11 @@ impl From<std::io::Error> for KadError {
 impl From<SwarmError> for KadError {
     fn from(err: SwarmError) -> Self {
         KadError::Swarm(err)
+    }
+}
+
+impl From<oneshot::Canceled> for KadError {
+    fn from(_: oneshot::Canceled) -> Self {
+        KadError::Internal
     }
 }

@@ -1,3 +1,23 @@
+// Copyright 2020 Netwarps Ltd.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom the
+// Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+
 use async_std::task;
 use std::convert::TryFrom;
 
@@ -8,26 +28,33 @@ use xcli::*;
 const SWRM: &str = "swarm";
 
 pub fn swarm_cli_commands<'a>() -> Command<'a> {
-    Command::new(SWRM)
-        .about("Swarm commands")
+    Command::new_with_alias(SWRM, "s")
+        .about("Swarm")
         .usage("swarm")
+        .subcommand(Command::new("close").about("close swarm").usage("close").action(cli_close_swarm))
         .subcommand(
             Command::new("show")
-                .about("displays swarm basic information")
-                .usage("connection [PeerId]")
+                .about("show basic information")
+                .usage("show")
                 .action(cli_show_basic),
         )
         .subcommand(
-            Command::new("connection")
-                .about("displays connection information")
+            Command::new_with_alias("connection", "con")
+                .about("display connection information")
                 .usage("connection [PeerId]")
                 .action(cli_show_connections),
         )
         .subcommand(
-            Command::new("peer")
-                .about("displays peer information")
+            Command::new_with_alias("peer", "pr")
+                .about("display peer information")
                 .usage("peer [PeerId]")
                 .action(cli_show_peers),
+        )
+        .subcommand(
+            Command::new_with_alias("connect", "c")
+                .about("connect to a peer")
+                .usage("connect <PeerId> [Multiaddr]")
+                .action(cli_connect),
         )
 }
 
@@ -40,13 +67,13 @@ fn handler(app: &App) -> Control {
 fn cli_show_basic(app: &App, _args: &[&str]) -> XcliResult {
     let mut swarm = handler(app);
     task::block_on(async {
-        let r = swarm.retrieve_networkinfo().await;
+        let r = swarm.retrieve_networkinfo().await.unwrap();
         println!("NetworkInfo: {:?}", r);
 
-        let r = swarm.retrieve_identify_info().await;
+        let r = swarm.retrieve_identify_info().await.unwrap();
         println!("IdentifyInfo: {:?}", r);
 
-        let addresses = swarm.self_addrs().await;
+        let addresses = swarm.self_addrs().await.unwrap();
         println!("Addresses: {:?}", addresses);
 
         println!(
@@ -56,6 +83,13 @@ fn cli_show_basic(app: &App, _args: &[&str]) -> XcliResult {
         );
     });
 
+    Ok(CmdExeCode::Ok)
+}
+
+fn cli_close_swarm(app: &App, _args: &[&str]) -> XcliResult {
+    let mut swarm = handler(app);
+
+    task::block_on(swarm.close());
     Ok(CmdExeCode::Ok)
 }
 
@@ -97,15 +131,32 @@ fn cli_show_peers(app: &App, args: &[&str]) -> XcliResult {
     };
 
     if let Some(peer) = pid {
-        let addrs = swarm.get_addrs_vec(&peer);
-        let protos = swarm.get_protocol(&peer);
+        let addrs = swarm.get_addrs(&peer);
+        let protos = swarm.get_protocols(&peer);
         println!("Addrs: {:?}\nProtocols: {:?}", addrs, protos);
     } else {
-        let peers = swarm.get_all_peers();
-        println!("Remote-Peer-Id                                       Multiaddrs");
+        let peers = swarm.get_peers();
+        println!("Remote-Peer-Id                                       Pin   Multiaddrs");
         peers.iter().for_each(|v| {
-            println!("{:52} {:?}", v, swarm.get_addrs_vec(v));
+            println!("{:52} {:5} {:?}", v, swarm.pinned(v), swarm.get_addrs(v));
         });
     }
+    Ok(CmdExeCode::Ok)
+}
+
+fn cli_connect(app: &App, args: &[&str]) -> XcliResult {
+    let mut swarm = handler(app);
+
+    let peer_id = if args.len() == 1 {
+        PeerId::try_from(args[0]).map_err(|e| XcliError::BadArgument(e.to_string()))?
+    } else {
+        return Err(XcliError::MismatchArgument(1, args.len()));
+    };
+
+    task::block_on(async {
+        let r = swarm.new_connection(peer_id.clone()).await;
+        println!("Connecting to {}: {:?}", peer_id, r);
+    });
+
     Ok(CmdExeCode::Ok)
 }

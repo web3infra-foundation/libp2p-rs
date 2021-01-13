@@ -178,18 +178,16 @@ fn run_client() {
     let mux = yamux::Config::new();
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
 
-    let mut swarm = Swarm::new(keys.public()).with_transport(Box::new(tu));
+    let swarm = Swarm::new(keys.public()).with_transport(Box::new(tu));
 
     let mut control = swarm.control();
 
     log::info!("about to connect to {:?}", remote_peer_id);
 
-    swarm.peer_addrs_add(&remote_peer_id, dial_addr, Duration::default());
-
     swarm.start();
 
     task::block_on(async move {
-        control.new_connection(remote_peer_id.clone()).await.unwrap();
+        control.connect_with_addrs(remote_peer_id.clone(), vec![dial_addr]).await.unwrap();
         let stream = control.new_stream(remote_peer_id, vec![PROTO_NAME.into()]).await.unwrap();
 
         log::info!("stream {:?} opened, writing something...", stream);

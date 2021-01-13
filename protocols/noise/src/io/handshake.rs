@@ -1,3 +1,4 @@
+// Copyright 2019 Parity Technologies (UK) Ltd.
 // Copyright 2020 Netwarps Ltd.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -30,7 +31,6 @@ use crate::protocol::{KeypairIdentity, Protocol, PublicKey};
 use bytes::Bytes;
 use libp2prs_core::identity;
 use libp2prs_traits::SplittableReadWrite;
-use log::info;
 use prost::Message;
 use std::io;
 
@@ -120,10 +120,11 @@ where
 {
     let mut state = State::new(io, session, identity, identity_x)?;
     send_empty(&mut state).await?;
-    info!("send empty finished");
+    log::debug!("stage 0: send empty finished");
     recv_identity(&mut state).await?;
-    info!("recv identity finished");
+    log::debug!("stage 1: recv identity finished");
     send_identity(&mut state).await?;
+    log::debug!("stage 2: recv identity finished");
     state.finish(priv_key)
 }
 
@@ -158,9 +159,11 @@ where
 {
     let mut state = State::new(io, session, identity, identity_x)?;
     recv_empty(&mut state).await?;
-    info!("recv_empty finished");
+    log::debug!("stage 0: recv_empty finished");
     send_identity(&mut state).await?;
+    log::debug!("stage 1: send identity finished");
     recv_identity(&mut state).await?;
+    log::debug!("stage 2: recv identity finished");
     state.finish(keypair)
 }
 
@@ -266,7 +269,6 @@ where
     let u = Vec::<u8>::new();
     state.io.send2(&u).await?;
     state.io.flush2().await?;
-    info!("send empty payload finished");
     Ok(())
 }
 
@@ -278,8 +280,6 @@ where
     let msg = recv(state).await?;
 
     let pb = payload_proto::NoiseHandshakePayload::decode(&msg[..])?;
-
-    info!("pb parsed ok");
 
     if !pb.identity_key.is_empty() {
         let pk = identity::PublicKey::from_protobuf_encoding(&pb.identity_key).map_err(|_| NoiseError::InvalidKey)?;
@@ -295,7 +295,6 @@ where
         state.dh_remote_pubkey_sig = Some(pb.identity_sig);
     }
 
-    info!("recv identity finished");
     Ok(())
 }
 

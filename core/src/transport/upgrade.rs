@@ -24,13 +24,19 @@
 
 use crate::muxing::{IStreamMuxer, StreamMuxer, StreamMuxerEx};
 use crate::secure_io::SecureInfo;
-use crate::transport::{ConnectionInfo, IListener, ITransport, TransportListener};
+use crate::transport::{ConnectionInfo, IListener, ITransport, ListenerEvent, TransportListener};
 use crate::upgrade::multistream::Multistream;
 use crate::upgrade::Upgrader;
 use crate::{transport::TransportError, Multiaddr, Transport};
 use async_trait::async_trait;
+use futures::{future::Either, stream::FuturesUnordered, FutureExt, StreamExt};
 use libp2prs_traits::{ReadEx, WriteEx};
-use log::trace;
+use std::{
+    future::Future,
+    num::NonZeroUsize,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 /// A `TransportUpgrade` is a `Transport` that wraps another `Transport` and adds
 /// upgrade capabilities to all inbound and outbound connection attempts.
@@ -81,11 +87,12 @@ where
     }
 
     async fn dial(&mut self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
-        trace!("dialing {} ...", addr);
         let socket = self.inner.dial(addr).await?;
         let sec = self.sec.clone();
+        log::debug!("upgrading outbound security towards {}...", socket.remote_multiaddr());
         let sec_socket = sec.select_outbound(socket).await?;
         let mux = self.mux.clone();
+        log::debug!("security applied, upgrading outbound stream muxer...");
         let o = mux.select_outbound(sec_socket).await?;
         Ok(Box::new(o))
     }
@@ -98,45 +105,182 @@ where
         self.inner.protocols()
     }
 }
-pub struct ListenerUpgrade<TOutput, TMux, TSec> {
+
+type UpgradeFuture<Output> = Pin<Box<dyn Future<Output = Result<Output, TransportError>> + Send>>;
+
+pub struct ListenerUpgrade<TOutput, TMux, TSec>
+where
+    TOutput: ConnectionInfo + ReadEx + WriteEx + Unpin + 'static,
+    TSec: Upgrader<TOutput> + Send + Clone + 'static,
+    TSec::Output: SecureInfo + ReadEx + WriteEx + Unpin,
+    TMux: Upgrader<TSec::Output> + 'static,
+    TMux::Output: StreamMuxerEx + 'static,
+{
     inner: IListener<TOutput>,
     mux: Multistream<TMux>,
     sec: Multistream<TSec>,
-    // TODO: add threshold support here
+    futures: FuturesUnordered<UpgradeFuture<TMux::Output>>,
+    limit: Option<NonZeroUsize>,
+    event: Option<ListenerEvent<<Self as TransportListener>::Output>>,
 }
 
-impl<TOutput, TMux, TSec> ListenerUpgrade<TOutput, TMux, TSec> {
+impl<TOutput, TMux, TSec> ListenerUpgrade<TOutput, TMux, TSec>
+where
+    TOutput: ConnectionInfo + ReadEx + WriteEx + Unpin + 'static,
+    TSec: Upgrader<TOutput> + Send + Clone + 'static,
+    TSec::Output: SecureInfo + ReadEx + WriteEx + Unpin,
+    TMux: Upgrader<TSec::Output> + 'static,
+    TMux::Output: StreamMuxerEx + 'static,
+{
     pub(crate) fn new(inner: IListener<TOutput>, mux: Multistream<TMux>, sec: Multistream<TSec>) -> Self {
-        Self { inner, mux, sec }
+        Self {
+            inner,
+            mux,
+            sec,
+            futures: FuturesUnordered::new(),
+            limit: NonZeroUsize::new(10),
+            event: None,
+        }
+    }
+
+    pub fn limit(&self) -> Option<NonZeroUsize> {
+        self.limit
+    }
+
+    pub fn set_limit(&mut self, limit: Option<NonZeroUsize>) {
+        self.limit = limit;
     }
 }
 
 #[async_trait]
 impl<TOutput, TMux, TSec> TransportListener for ListenerUpgrade<TOutput, TMux, TSec>
 where
-    TOutput: ConnectionInfo + ReadEx + WriteEx + Unpin,
-    TSec: Upgrader<TOutput> + Send + Clone,
+    TOutput: ConnectionInfo + ReadEx + WriteEx + Unpin + 'static,
+    TSec: Upgrader<TOutput> + Send + Clone + 'static,
     TSec::Output: SecureInfo + ReadEx + WriteEx + Unpin,
-    TMux: Upgrader<TSec::Output>,
+    TMux: Upgrader<TSec::Output> + 'static,
     TMux::Output: StreamMuxerEx + 'static,
 {
     type Output = IStreamMuxer;
 
-    async fn accept(&mut self) -> Result<Self::Output, TransportError> {
-        let stream = self.inner.accept().await?;
-        let sec = self.sec.clone();
+    async fn accept(&mut self) -> Result<ListenerEvent<Self::Output>, TransportError> {
+        loop {
+            if let Some(evt) = self.event.take() {
+                return Ok(evt);
+            }
 
-        trace!("accept a new connection from {}, upgrading...", stream.remote_multiaddr());
-        //futures_timer::Delay::new(Duration::from_secs(3)).await;
-        let sec_socket = sec.select_inbound(stream).await?;
+            let mut next_incoming = if self.limit.map(|limit| limit.get() > self.futures.len()).unwrap_or(true) {
+                Either::Left(self.inner.accept())
+            } else {
+                Either::Right(futures::future::pending())
+            };
 
-        let mux = self.mux.clone();
+            let mut next_upgraded = self.futures.next();
 
-        let o = mux.select_inbound(sec_socket).await?;
-        Ok(Box::new(o))
+            let next = futures::future::poll_fn(move |cx: &mut Context| {
+                let a = next_incoming.poll_unpin(cx);
+                let b = next_upgraded.poll_unpin(cx);
+
+                let upgrade_pending = match b {
+                    Poll::Pending | Poll::Ready(None) => {
+                        // when the queue is empty, FuturesUnordered next return none
+                        true
+                    }
+                    _ => false,
+                };
+
+                if a.is_pending() && upgrade_pending {
+                    return Poll::Pending;
+                }
+                Poll::Ready((a, b))
+            });
+
+            let (incoming, upgraded) = next.await;
+
+            let mut event: Option<ListenerEvent<Self::Output>> = None;
+
+            if let Poll::Ready(ret) = incoming {
+                match ret? {
+                    ListenerEvent::AddressAdded(a) => {
+                        event = Some(ListenerEvent::AddressAdded(a));
+                    }
+                    ListenerEvent::AddressDeleted(a) => {
+                        event = Some(ListenerEvent::AddressDeleted(a));
+                    }
+                    ListenerEvent::Accepted(socket) => {
+                        let sec = self.sec.clone();
+                        let mux = self.mux.clone();
+
+                        self.futures.push(
+                            async move {
+                                log::trace!("accept a new connection from {}, upgrading...", socket.remote_multiaddr());
+                                //futures_timer::Delay::new(Duration::from_secs(3)).await;
+                                let sec_socket = sec.select_inbound(socket).await?;
+                                mux.select_inbound(sec_socket).await
+                            }
+                            .boxed(),
+                        );
+                    }
+                }
+            }
+
+            match upgraded {
+                Poll::Pending => { /* continue */ }
+                Poll::Ready(Some(Ok(o))) => {
+                    let evt: ListenerEvent<Self::Output> = ListenerEvent::Accepted(Box::new(o));
+                    if event.is_some() {
+                        self.event = Some(evt);
+                    } else {
+                        event = Some(evt);
+                    }
+                }
+                Poll::Ready(Some(Err(e))) => {
+                    // TODO Is it necessary to strictly follow the sequence of events when an error occurs
+                    return Err(e);
+                }
+                Poll::Ready(None) => {
+                    // futures is empty and new incoming pushed to futures
+                    // continue loop
+                }
+            }
+            if let Some(evt) = event {
+                return Ok(evt);
+            }
+        }
+
+        /*
+        let r = self.inner.accept().await?;
+        match r {
+            ListenerEvent::Accepted(socket) => {
+                let sec = self.sec.clone();
+                log::debug!("accept a new connection from {}, upgrading inbound security...", socket.remote_multiaddr());
+                //futures_timer::Delay::new(Duration::from_secs(3)).await;
+                let sec_socket = sec.select_inbound(socket).await?;
+
+                let mux = self.mux.clone();
+                log::debug!("security applied, upgrading inbound stream muxer...");
+                let o = mux.select_inbound(sec_socket).await?;
+
+                Ok(ListenerEvent::Accepted(Box::new(o)))
+            }
+            ListenerEvent::AddressAdded(a) => Ok(ListenerEvent::AddressAdded(a)),
+            ListenerEvent::AddressDeleted(a) => Ok(ListenerEvent::AddressDeleted(a)),
+        }
+         */
+
+        // let sec = self.sec.clone();
+        //
+        // log::debug!("accept a new connection from {}, upgrading inbound security...", socket.remote_multiaddr());
+        // //futures_timer::Delay::new(Duration::from_secs(3)).await;
+        // let sec_socket = sec.select_inbound(socket).await?;
+        //
+        // let mux = self.mux.clone();
+        //
+        // log::debug!("security applied, upgrading inbound stream muxer...");
+        // let o = mux.select_inbound(sec_socket).await?;
     }
 
-    fn multi_addr(&self) -> Vec<Multiaddr> {
+    fn multi_addr(&self) -> Option<&Multiaddr> {
         self.inner.multi_addr()
     }
 }
@@ -174,12 +318,12 @@ mod tests {
 
         let listener = async move {
             let mut listener = t1.listen_on(t1_addr.clone()).unwrap();
+            let mut socket = match listener.accept().await.unwrap() {
+                ListenerEvent::Accepted(s) => s,
+                _ => panic!("unreachable"),
+            };
 
-            let mut socket = listener.accept().await.unwrap();
-
-            let r = socket.accept_stream().await;
-
-            assert!(r.is_err());
+            socket.accept_stream().await.unwrap_err();
         };
 
         // Setup dialer.

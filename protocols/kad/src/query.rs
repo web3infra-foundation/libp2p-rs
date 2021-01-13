@@ -1,4 +1,4 @@
-// Copyright 2019 Parity Technologies (UK) Ltd.
+// Copyright 2020 Netwarps Ltd.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
 // copy of this software and associated documentation files (the "Software"),
@@ -19,7 +19,8 @@
 // DEALINGS IN THE SOFTWARE.
 
 use futures::channel::mpsc;
-use futures::{SinkExt, StreamExt};
+use futures::future::Either;
+use futures::{FutureExt, SinkExt, StreamExt};
 use std::collections::BTreeMap;
 use std::{num::NonZeroUsize, time::Duration, time::Instant};
 
@@ -42,37 +43,26 @@ type Result<T> = std::result::Result<T, KadError>;
 #[derive(Debug, Clone)]
 pub struct QueryConfig {
     /// Timeout of a single query.
-    ///
-    /// See [`crate::behaviour::KademliaConfig::set_query_timeout`] for details.
     pub timeout: Duration,
 
-    /// The replication factor to use.
-    ///
-    /// See [`crate::behaviour::KademliaConfig::set_replication_factor`] for details.
-    pub replication_factor: NonZeroUsize,
+    /// The k value to use.
+    pub k_value: NonZeroUsize,
 
-    /// Allowed level of parallelism for iterative queries.
-    ///
-    /// See [`crate::behaviour::KademliaConfig::set_parallelism`] for details.
-    pub parallelism: NonZeroUsize,
+    /// Alpha value for iterative queries.
+    pub alpha_value: NonZeroUsize,
 
-    /// The number of peers closest to a target that must have responded for a query path to terminate.
+    /// The number of peers closest to a target that must have responded
+    /// for an iterative query to terminate.
     pub beta_value: NonZeroUsize,
-
-    /// Whether to use disjoint paths on iterative lookups.
-    ///
-    /// See [`crate::behaviour::KademliaConfig::disjoint_query_paths`] for details.
-    pub disjoint_query_paths: bool,
 }
 
 impl Default for QueryConfig {
     fn default() -> Self {
         QueryConfig {
-            timeout: Duration::from_secs(60),
-            replication_factor: K_VALUE,
-            parallelism: ALPHA_VALUE,
+            timeout: Duration::from_secs(180),
+            k_value: K_VALUE,
+            alpha_value: ALPHA_VALUE,
             beta_value: BETA_VALUE,
-            disjoint_query_paths: false,
         }
     }
 }
@@ -114,7 +104,7 @@ impl FixedQuery {
         }
 
         let me = self;
-        let mut limiter = TaskLimiter::new(me.config.parallelism);
+        let mut limiter = TaskLimiter::new(me.config.alpha_value);
         task::spawn(async move {
             for peer in me.peers {
                 // let record = record.clone();
@@ -440,6 +430,8 @@ pub(crate) struct IterativeQuery {
     seeds: Vec<Key<PeerId>>,
     /// The KadPoster used to post ProtocolEvent to Kad main loop.
     poster: KadPoster,
+    /// The statistics of this iterative query.
+    stats: QueryStats,
 }
 
 impl IterativeQuery {
@@ -463,6 +455,7 @@ impl IterativeQuery {
             config,
             seeds,
             poster,
+            stats: QueryStats::default(),
         }
     }
 
@@ -473,7 +466,7 @@ impl IterativeQuery {
         closest_peers: &mut ClosestPeers,
     ) -> bool {
         let me = self;
-        let k_value = me.config.replication_factor.get();
+        let k_value = me.config.k_value.get();
 
         // handle update, update the closest_peers, and update the kbuckets for new peer
         // or dead peer detected, update the QueryResult
@@ -494,6 +487,9 @@ impl IterativeQuery {
                     duration
                 );
                 log::trace!("{:?} returns closer peers: {:?}", source, closer);
+
+                me.stats.success += 1;
+
                 // note we don't add myself
                 closer.retain(|p| p.node_id != me.local_id.clone());
 
@@ -502,7 +498,7 @@ impl IterativeQuery {
                 for peer in closer.iter() {
                     // kingwel, we filter out all loopback addresses
                     let addrs = peer.multiaddrs.iter().filter(|a| !a.is_loopback_addr()).cloned().collect();
-                    me.swarm.add_addrs(&peer.node_id, addrs, TEMP_ADDR_TTL, true);
+                    me.swarm.add_addrs(&peer.node_id, addrs, TEMP_ADDR_TTL);
                 }
 
                 closest_peers.add_peers(closer);
@@ -529,7 +525,7 @@ impl IterativeQuery {
                             // update the PeerStore for the multiaddr, add all multiaddr of Closer peers
                             // to PeerStore
                             for peer in provider.iter() {
-                                me.swarm.add_addrs(&peer.node_id, peer.multiaddrs.clone(), PROVIDER_ADDR_TTL, true);
+                                me.swarm.add_addrs(&peer.node_id, peer.multiaddrs.clone(), PROVIDER_ADDR_TTL);
                             }
 
                             if !provider.is_empty() {
@@ -595,6 +591,9 @@ impl IterativeQuery {
             QueryUpdate::Unreachable(peer) => {
                 // set to PeerState::Unreachable
                 log::debug!("unreachable peer {:?} detected", peer);
+
+                me.stats.failure += 1;
+
                 closest_peers.set_peer_state(&peer, PeerState::Unreachable);
                 // signal for dead peer detected
                 let _ = me.poster.post(ProtocolEvent::KadPeerStopped(peer)).await;
@@ -618,9 +617,11 @@ impl IterativeQuery {
         }
 
         let mut me = self;
-        let alpha_value = me.config.parallelism.get();
+        let alpha_value = me.config.alpha_value.get();
         let beta_value = me.config.beta_value.get();
-        let k_value = me.config.replication_factor.get();
+        let k_value = me.config.k_value.get();
+        let timeout = me.config.timeout;
+        let start = Instant::now();
 
         // closest_peers is used to retrieve the closer peers. It is a sorted btree-map, which is
         // indexed by Distance of the peer. The queried 'key' is used to calculate the distance.
@@ -649,8 +650,16 @@ impl IterativeQuery {
         // the channel used to deliver the result of each jobs
         let (mut tx, mut rx) = mpsc::channel(alpha_value);
 
-        // start a task for query
-        task::spawn(async move {
+        // deadline for an iterative query
+        let mut poster = me.poster.clone();
+        let deadline = async move {
+            task::sleep(timeout).await;
+            let _ = poster.post(ProtocolEvent::IterativeQueryTimeout).await;
+            log::info!("iterative query timeout");
+        };
+
+        // a task for query
+        let query = async move {
             let seeds = me
                 .seeds
                 .iter()
@@ -660,6 +669,8 @@ impl IterativeQuery {
                     connection_ty: KadConnectionType::CanConnect,
                 })
                 .collect();
+
+            me.stats.requests += 1;
 
             // deliver the seeds to kick off the initial query
             let _ = tx
@@ -709,6 +720,8 @@ impl IterativeQuery {
 
                     log::debug!("creating query job for {:?}", peer_id);
 
+                    me.stats.requests += 1;
+
                     let job = QueryJob {
                         key: me.key.clone(),
                         qt: me.query_type.clone(),
@@ -747,91 +760,42 @@ impl IterativeQuery {
                 query_results.closest_peers = Some(peers);
             }
 
-            f(Ok(query_results));
+            me.stats.duration = Instant::now().duration_since(start);
+
+            // send the statistics back to the Kad main loop
+            let _ = me.poster.post(ProtocolEvent::IterativeQueryCompleted(me.stats)).await;
+
+            Ok(query_results)
+        };
+
+        task::spawn(async {
+            let either = futures::future::select(query.boxed(), deadline.boxed()).await;
+            match either {
+                Either::Left((result, _)) => f(result),
+                Either::Right((_, _)) => f(Err(KadError::Timeout)),
+            }
         });
     }
 }
 
 /// Execution statistics of a query.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Default)]
 pub struct QueryStats {
-    requests: u32,
-    success: u32,
-    failure: u32,
-    start: Option<Instant>,
-    end: Option<Instant>,
+    pub(crate) requests: u32,
+    pub(crate) success: u32,
+    pub(crate) failure: u32,
+    pub(crate) duration: Duration,
 }
 
 impl QueryStats {
-    pub fn empty() -> Self {
-        QueryStats {
-            requests: 0,
-            success: 0,
-            failure: 0,
-            start: None,
-            end: None,
-        }
-    }
-
-    /// Gets the total number of requests initiated by the query.
-    pub fn num_requests(&self) -> u32 {
-        self.requests
-    }
-
-    /// Gets the number of successful requests.
-    pub fn num_successes(&self) -> u32 {
-        self.success
-    }
-
-    /// Gets the number of failed requests.
-    pub fn num_failures(&self) -> u32 {
-        self.failure
-    }
-
-    /// Gets the number of pending requests.
-    ///
-    /// > **Note**: A query can finish while still having pending
-    /// > requests, if the termination conditions are already met.
-    pub fn num_pending(&self) -> u32 {
-        self.requests - (self.success + self.failure)
-    }
-
-    /// Gets the duration of the query.
-    ///
-    /// If the query has not yet finished, the duration is measured from the
-    /// start of the query to the current instant.
-    ///
-    /// If the query did not yet start (i.e. yield the first peer to contact),
-    /// `None` is returned.
-    pub fn duration(&self) -> Option<Duration> {
-        if let Some(s) = self.start {
-            if let Some(e) = self.end {
-                Some(e - s)
-            } else {
-                Some(Instant::now() - s)
-            }
-        } else {
-            None
-        }
-    }
-
     /// Merges these stats with the given stats of another query,
-    /// e.g. to accumulate statistics from a multi-phase query.
+    /// e.g. to accumulate the global statistics.
     ///
-    /// Counters are merged cumulatively while the instants for
-    /// start and end of the queries are taken as the minimum and
-    /// maximum, respectively.
-    pub fn merge(self, other: QueryStats) -> Self {
-        QueryStats {
-            requests: self.requests + other.requests,
-            success: self.success + other.success,
-            failure: self.failure + other.failure,
-            start: match (self.start, other.start) {
-                (Some(a), Some(b)) => Some(std::cmp::min(a, b)),
-                (a, b) => a.or(b),
-            },
-            end: std::cmp::max(self.end, other.end),
-        }
+    /// Counters are merged cumulatively.
+    pub fn merge(&mut self, other: QueryStats) {
+        self.requests += other.requests;
+        self.success += other.success;
+        self.failure += other.failure;
     }
 }
 

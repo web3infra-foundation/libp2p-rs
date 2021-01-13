@@ -28,17 +28,19 @@ use libp2prs_core::upgrade::Selector;
 use libp2prs_core::{Multiaddr, PeerId};
 use libp2prs_mplex as mplex;
 use libp2prs_noise::{Keypair, NoiseConfig, X25519Spec};
+use libp2prs_secio as secio;
 use libp2prs_swarm::identify::IdentifyConfig;
 use libp2prs_swarm::Swarm;
 use libp2prs_tcp::TcpConfig;
 //use libp2prs_traits::{ReadEx, WriteEx};
-use libp2prs_kad::kad::Kademlia;
+use libp2prs_kad::kad::{Kademlia, KademliaConfig};
 use libp2prs_kad::store::MemoryStore;
 use libp2prs_yamux as yamux;
 
 use libp2prs_kad::cli::dht_cli_commands;
 use libp2prs_swarm::cli::swarm_cli_commands;
 use std::convert::TryFrom;
+use std::time::Duration;
 use xcli::*;
 
 fn main() {
@@ -80,7 +82,11 @@ fn run_server(bootstrap_peer: PeerId, bootstrap_addr: Multiaddr) {
     let listen_addr1: Multiaddr = "/ip4/0.0.0.0/tcp/8086".parse().unwrap();
 
     let dh = Keypair::<X25519Spec>::new().into_authentic(&keys).unwrap();
-    let sec = NoiseConfig::xx(dh, keys.clone());
+
+    let sec_noise = NoiseConfig::xx(dh, keys.clone());
+    let sec_secio = secio::Config::new(keys.clone());
+    let sec = Selector::new(sec_noise, sec_secio);
+
     let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
 
@@ -90,29 +96,38 @@ fn run_server(bootstrap_peer: PeerId, bootstrap_addr: Multiaddr) {
 
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
 
-    let swarm_control = swarm.control();
-
+    let mut swarm_control = swarm.control();
     swarm.listen_on(vec![listen_addr1]).unwrap();
 
-    let store = MemoryStore::new(swarm.local_peer_id().clone());
-    let kad = Kademlia::new(swarm.local_peer_id().clone(), store);
+    // build Kad
+    let config = KademliaConfig::default()
+        .with_query_timeout(Duration::from_secs(90))
+        .with_refresh_interval(None);
 
+    let store = MemoryStore::new(swarm.local_peer_id().clone());
+    let kad = Kademlia::with_config(swarm.local_peer_id().clone(), store, config);
     let mut kad_control = kad.control();
 
-    swarm = swarm.with_protocol(Box::new(kad.handler()));
-    kad.start(swarm_control.clone());
+    // update Swarm to support Kad and Routing
+    swarm = swarm.with_protocol(Box::new(kad.handler())).with_routing(Box::new(kad.control()));
 
+    kad.start(swarm_control.clone());
     swarm.start();
 
     async_std::task::block_on(async {
         kad_control.add_node(bootstrap_peer, vec![bootstrap_addr]).await;
         kad_control.bootstrap().await;
+
+        let mut app = App::new("xCLI").version("v0.1").author("kingwel.xie@139.com");
+
+        app.add_subcommand_with_userdata(swarm_cli_commands(), Box::new(swarm_control.clone()));
+        app.add_subcommand_with_userdata(dht_cli_commands(), Box::new(kad_control.clone()));
+
+        app.run();
+
+        kad_control.close().await;
+        swarm_control.close().await;
+
+        async_std::task::sleep(Duration::from_secs(1)).await;
     });
-
-    let mut app = App::new("xCLI").version("v0.1").author("kingwel.xie@139.com");
-
-    app.add_subcommand_with_userdata(swarm_cli_commands(), Box::new(swarm_control));
-    app.add_subcommand_with_userdata(dht_cli_commands(), Box::new(kad_control));
-
-    app.run();
 }

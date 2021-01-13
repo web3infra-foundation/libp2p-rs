@@ -1,3 +1,4 @@
+// Copyright 2017-2018 Parity Technologies (UK) Ltd.
 // Copyright 2020 Netwarps Ltd.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -120,6 +121,68 @@ pub trait Transport: Send {
     }
 }
 
+/// Event produced by [`Transport::Listener`]s.
+///
+/// Transports are expected to produce `Upgrade` events only for
+/// listen addresses which have previously been announced via
+/// a `NewAddress` event and which have not been invalidated by
+/// an `AddressExpired` event yet.
+#[derive(Clone, Debug)]
+pub enum ListenerEvent<TOutput> {
+    /// A new additional [`Multiaddr`] has been added.
+    AddressAdded(Multiaddr),
+    /// A [`Multiaddr`] is no longer existent.
+    AddressDeleted(Multiaddr),
+    /// A TOutput has been accepted.
+    Accepted(TOutput),
+}
+
+impl<TOutput> ListenerEvent<TOutput> {
+    /// In case this [`ListenerEvent`] is an Accpeted(), apply the given function
+    /// produce another listener event based the the function's result.
+    pub fn map<U>(self, f: impl FnOnce(TOutput) -> Result<U, TransportError>) -> Result<ListenerEvent<U>, TransportError> {
+        match self {
+            ListenerEvent::Accepted(o) => f(o).map(ListenerEvent::Accepted),
+            ListenerEvent::AddressAdded(a) => Ok(ListenerEvent::AddressAdded(a)),
+            ListenerEvent::AddressDeleted(a) => Ok(ListenerEvent::AddressDeleted(a)),
+        }
+    }
+
+    /// Returns `true` if this is a `AddressAdded` listener event.
+    pub fn is_address_added(&self) -> bool {
+        matches!(self, ListenerEvent::AddressAdded(_))
+    }
+
+    /// Try to turn this listener event into the `AddressAdded` part.
+    ///
+    /// Returns `None` if the event is not actually a `AddressAdded`,
+    /// otherwise the address.
+    pub fn into_new_address(self) -> Option<Multiaddr> {
+        if let ListenerEvent::AddressAdded(a) = self {
+            Some(a)
+        } else {
+            None
+        }
+    }
+
+    /// Returns `true` if this is an `AddressExpired` listener event.
+    pub fn is_address_deleted(&self) -> bool {
+        matches!(self, ListenerEvent::AddressDeleted(_))
+    }
+
+    /// Try to turn this listener event into the `AddressDeleted` part.
+    ///
+    /// Returns `None` if the event is not actually a `AddressDeleted`,
+    /// otherwise the address.
+    pub fn into_address_deleted(self) -> Option<Multiaddr> {
+        if let ListenerEvent::AddressDeleted(a) = self {
+            Some(a)
+        } else {
+            None
+        }
+    }
+}
+
 #[async_trait]
 pub trait TransportListener: Send {
     /// The result of a connection setup process, including protocol upgrades.
@@ -130,11 +193,13 @@ pub trait TransportListener: Send {
     type Output: Send;
 
     /// The Listener handles the inbound connections
-    async fn accept(&mut self) -> Result<Self::Output, TransportError>;
+    async fn accept(&mut self) -> Result<ListenerEvent<Self::Output>, TransportError>;
 
-    /// Returns the local addresses being listened on. An address like 0.0.0.0 shall
-    /// be expanded to its all addresses on the network interface.
-    fn multi_addr(&self) -> Vec<Multiaddr>;
+    /// Returns the local addresses being listened on.
+    ///
+    /// This might be `None` if it is listening on an unspecified address. The actual
+    /// addresses will be reported by ListenerEvent::AddressAdded in this case.
+    fn multi_addr(&self) -> Option<&Multiaddr>;
 
     fn incoming(&mut self) -> Incoming<Self>
     where
@@ -144,6 +209,15 @@ pub trait TransportListener: Send {
     }
     // /// Returns the local network address
     // fn local_addr(&self) -> io::Result<SocketAddr>;
+
+    /// The Listener handles the inbound connections
+    async fn accept_output(&mut self) -> Result<Self::Output, TransportError> {
+        loop {
+            if let ListenerEvent::Accepted(o) = self.accept().await? {
+                break Ok(o);
+            }
+        }
+    }
 }
 
 /// Trait object for `TransportListener`
@@ -166,14 +240,14 @@ impl<'a, T> Stream for Incoming<'a, T>
 where
     T: TransportListener,
 {
-    type Item = Result<T::Output, TransportError>;
+    type Item = Result<ListenerEvent<T::Output>, TransportError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let future = self.0.accept();
         futures::pin_mut!(future);
 
-        let socket = futures::ready!(future.poll(cx))?;
-        Poll::Ready(Some(Ok(socket)))
+        let evt = futures::ready!(future.poll(cx))?;
+        Poll::Ready(Some(Ok(evt)))
     }
 }
 
@@ -199,6 +273,9 @@ pub enum TransportError {
 
     /// The memory transport is unreachable.
     Unreachable,
+
+    /// Routing to the peer is not available.
+    Routing(String),
 
     /// Internal error
     Internal,
@@ -249,6 +326,7 @@ impl fmt::Display for TransportError {
         match self {
             TransportError::MultiaddrNotSupported(addr) => write!(f, "Multiaddr is not supported: {}", addr),
             TransportError::Timeout => write!(f, "Operation timeout"),
+            TransportError::Routing(s) => write!(f, "Routing not available {}", s),
             TransportError::Unreachable => write!(f, "Memory transport unreachable"),
             TransportError::Internal => write!(f, "Internal error"),
             TransportError::IoError(err) => write!(f, "IO error {}", err),
@@ -268,6 +346,7 @@ impl Error for TransportError {
             TransportError::MultiaddrNotSupported(_) => None,
             TransportError::Timeout => None,
             TransportError::Unreachable => None,
+            TransportError::Routing(_) => None,
             TransportError::Internal => None,
             TransportError::IoError(err) => Some(err),
             TransportError::ResolveFail(_) => None,

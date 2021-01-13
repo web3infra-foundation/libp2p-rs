@@ -1,3 +1,4 @@
+// Copyright 2018 Parity Technologies (UK) Ltd.
 // Copyright 2020 Netwarps Ltd.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -186,6 +187,7 @@ impl error::Error for DnsErr {
 mod tests {
     use super::DnsConfig;
     use async_std::task;
+    use libp2prs_core::transport::ListenerEvent;
     use libp2prs_core::Transport;
     use libp2prs_multiaddr::Multiaddr;
     use libp2prs_tcp::TcpConfig;
@@ -203,7 +205,10 @@ mod tests {
 
             let handle = task::spawn(async move {
                 let mut listener = transport.listen_on(listen_addr).unwrap();
-                let mut conn = listener.accept().await.unwrap();
+                let mut conn = match listener.accept().await.unwrap() {
+                    ListenerEvent::Accepted(s) => s,
+                    _ => panic!("unreachable"),
+                };
 
                 let mut buf = vec![0; msg.len()];
                 conn.read_exact2(&mut buf).await.expect("server read exact");
@@ -233,7 +238,10 @@ mod tests {
 
             let handle = task::spawn(async move {
                 let mut listener = transport.listen_on(listen_addr).expect("S listen");
-                let mut conn = listener.accept().await.unwrap();
+                let mut conn = match listener.accept().await.unwrap() {
+                    ListenerEvent::Accepted(s) => s,
+                    _ => panic!("unreachable"),
+                };
 
                 let mut buf = vec![0; msg.len()];
                 conn.read_exact2(&mut buf).await.expect("S read exact");
