@@ -1,3 +1,4 @@
+// Copyright 2018 Parity Technologies (UK) Ltd.
 // Copyright 2020 Netwarps Ltd.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -31,7 +32,7 @@ use parking_lot::Mutex;
 use rw_stream_sink::RwStreamSink;
 
 use crate::muxing::{IReadWrite, ReadWriteEx, StreamInfo};
-use crate::transport::{ConnectionInfo, IListener, ITransport, TransportListener};
+use crate::transport::{ConnectionInfo, IListener, ITransport, ListenerEvent, TransportListener};
 use crate::{transport::TransportError, Transport};
 // use libp2prs_traits::SplitEx;
 // use futures::io::{ReadHalf, WriteHalf};
@@ -158,12 +159,16 @@ pub struct Listener {
 impl TransportListener for Listener {
     type Output = Channel;
 
-    async fn accept(&mut self) -> Result<Self::Output, TransportError> {
-        self.receiver.next().await.ok_or(TransportError::Unreachable)
+    async fn accept(&mut self) -> Result<ListenerEvent<Self::Output>, TransportError> {
+        self.receiver
+            .next()
+            .await
+            .map(ListenerEvent::Accepted)
+            .ok_or(TransportError::Unreachable)
     }
 
-    fn multi_addr(&self) -> Vec<Multiaddr> {
-        vec![self.addr.clone()]
+    fn multi_addr(&self) -> Option<&Multiaddr> {
+        Some(&self.addr)
     }
 }
 
@@ -231,18 +236,6 @@ impl AsyncWrite for Channel {
         this.io.poll_close(cx)
     }
 }
-
-/*
-impl SplitEx for Channel {
-    type Reader = ReadHalf<RwStreamSink<Chan>>;
-    type Writer = WriteHalf<RwStreamSink<Chan>>;
-
-    fn split(self) -> (Self::Reader, Self::Writer) {
-        let (r, w) = AsyncReadExt::split(self.io);
-        (r, w)
-    }
-}
- */
 
 /// A channel represents an established, in-memory, logical connection between two endpoints.
 ///
@@ -362,8 +355,10 @@ mod tests {
 
         let listener = async move {
             let mut listener = t1.listen_on(t1_addr.clone()).unwrap();
-
-            let mut socket = listener.accept().await.unwrap();
+            let mut socket = match listener.accept().await.unwrap() {
+                ListenerEvent::Accepted(socket) => socket,
+                _ => panic!("unreachable"),
+            };
 
             let mut buf = [0; 3];
             socket.read_exact2(&mut buf).await.unwrap();

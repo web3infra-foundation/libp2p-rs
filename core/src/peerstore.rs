@@ -18,17 +18,17 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use crate::peerstore::AddrType::{KAD, OTHER};
-use crate::{Multiaddr, PeerId, PublicKey};
 use serde::{Deserialize, Serialize};
-use smallvec::SmallVec;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
+use std::io;
 use std::io::{Read, Write};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use std::{fmt, io};
+
+use crate::{PeerId, PublicKey};
+use libp2prs_multiaddr::Multiaddr;
 
 pub const ADDRESS_TTL: Duration = Duration::from_secs(60 * 60);
 pub const TEMP_ADDR_TTL: Duration = Duration::from_secs(2 * 60);
@@ -39,25 +39,54 @@ pub const OWN_OBSERVED_ADDR_TTL: Duration = Duration::from_secs(10 * 60);
 pub const PERMANENT_ADDR_TTL: Duration = Duration::from_secs(u64::MAX - 1);
 pub const CONNECTED_ADDR_TTL: Duration = Duration::from_secs(u64::MAX - 2);
 
-pub const GC_PURGE_INTERVAL: Duration = Duration::from_secs(10 * 60);
-
 #[derive(Default, Clone)]
 pub struct PeerStore {
-    inner: Arc<Mutex<Inner>>,
-}
-
-#[derive(Default, Debug)]
-pub struct Inner {
-    addrs: AddrBook,
-    protos: ProtoBook,
-    keys: KeyBook,
+    inner: Arc<Mutex<HashMap<PeerId, PeerRecord>>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PeerSaved {
     addr: Multiaddr,
-    addr_type: AddrType,
     ttl: Duration,
+}
+
+/// The PeerInfo represents a remote peer and its elements.
+#[derive(Clone)]
+struct PeerRecord {
+    /// Indicates if this record is currently pinned in peer store.
+    ///
+    /// PeerStore GC will not recycle a pinned record.
+    pinned: bool,
+    /// The multiaddr owned by this peer.
+    addrs: Vec<AddrBookRecord>,
+    /// The public key of the peer.
+    key: Option<PublicKey>,
+    /// The protocols supported by the peer.
+    protos: HashSet<String>,
+}
+
+impl PeerRecord {
+    fn new(addrs: Vec<AddrBookRecord>, key: Option<PublicKey>, protos: HashSet<String>) -> Self {
+        Self {
+            pinned: false,
+            addrs,
+            key,
+            protos,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct AddrBookRecord {
+    addr: Multiaddr,
+    ttl: Duration,
+    expiry: Instant,
+}
+
+impl Into<Multiaddr> for AddrBookRecord {
+    fn into(self) -> Multiaddr {
+        self.addr
+    }
 }
 
 impl PeerStore {
@@ -68,13 +97,13 @@ impl PeerStore {
         {
             let guard = self.inner.lock().unwrap();
             // Transfer peer_id to String and insert into a new HashMap
-            for (peer_id, value) in guard.addrs.addr_book.iter() {
+            for (peer_id, value) in guard.iter() {
                 let key = peer_id.to_string();
                 let mut v = Vec::new();
-                for item in value.to_vec() {
+                // save address info
+                for item in value.addrs.to_vec() {
                     v.push(PeerSaved {
                         addr: item.addr,
-                        addr_type: item.addr_type,
                         ttl: item.ttl,
                     })
                 }
@@ -106,483 +135,263 @@ impl PeerStore {
         }
         let mut buf = vec![0u8; length];
 
+        // Read data from file and deserialize
         let _ = file.read_exact(buf.as_mut())?;
         let json_data: HashMap<String, Vec<PeerSaved>> =
             serde_json::from_slice(&buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
+        // Iter and insert into hashmap
         let mut guard = self.inner.lock().unwrap();
         for (key, value) in json_data {
             let peer_id = PeerId::from_str(&key).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
             let mut v = Vec::new();
             for item in value {
-                v.push(AddrBookRecord {
-                    addr: item.addr,
-                    addr_type: item.addr_type,
-                    ttl: item.ttl,
-                    expiry: Instant::now().checked_add(item.ttl),
-                })
+                v.push(AddrBookRecord::new(item.addr, item.ttl));
             }
-            guard.addrs.addr_book.insert(peer_id, SmallVec::from(v));
+            guard.insert(peer_id, PeerRecord::new(v, None, Default::default()));
         }
-
-        println!("{:?}", guard.addrs);
 
         Ok(())
     }
 
-    /// Insert a public key, indexed by peer_id.
+    /// Gets all peer Ids in peer store.
+    pub fn get_peers(&self) -> Vec<PeerId> {
+        let guard = self.inner.lock().unwrap();
+        guard.keys().cloned().collect()
+    }
+
+    /// Pins the peer Id so that GC wouldn't recycle the multiaddr of the peer.
+    pub fn pin(&self, peer_id: &PeerId) {
+        let mut guard = self.inner.lock().unwrap();
+        if let Some(pr) = guard.get_mut(peer_id) {
+            pr.pinned = true;
+        }
+    }
+
+    /// Unpins the peer Id.
+    pub fn unpin(&self, peer_id: &PeerId) {
+        let mut guard = self.inner.lock().unwrap();
+        if let Some(pr) = guard.get_mut(peer_id) {
+            pr.pinned = false;
+        }
+    }
+
+    /// Checks if the peer is currently being pinned in peer store.
+    pub fn pinned(&self, peer_id: &PeerId) -> bool {
+        let guard = self.inner.lock().unwrap();
+        guard.get(peer_id).map_or(false, |pr| pr.pinned)
+    }
+
+    /// Adds public key by peer_id.
     pub fn add_key(&self, peer_id: &PeerId, key: PublicKey) {
         let mut guard = self.inner.lock().unwrap();
-        guard.keys.add_key(peer_id, key)
-    }
-    /// Delete public key by peer_id.
-    pub fn del_key(&self, peer_id: &PeerId) {
-        let mut guard = self.inner.lock().unwrap();
-        guard.keys.del_key(peer_id);
+        if let Some(pr) = guard.get_mut(peer_id) {
+            pr.key = Some(key);
+        }
     }
 
-    /// Get public key by peer_id.
+    /// Gets public key by peer_id.
     pub fn get_key(&self, peer_id: &PeerId) -> Option<PublicKey> {
         let guard = self.inner.lock().unwrap();
-        guard.keys.get_key(peer_id).cloned()
-    }
-
-    /// Get all peer Ids in peer store.
-    pub fn get_all_peers(&self) -> Vec<PeerId> {
-        let guard = self.inner.lock().unwrap();
-        guard.addrs.get_all_peers()
+        guard.get(peer_id).and_then(|pr| pr.key.clone())
     }
 
     /// Add address to address_book by peer_id, if exists, update rtt.
-    pub fn add_addr(&self, peer_id: &PeerId, addr: Multiaddr, ttl: Duration, is_kad: bool) {
-        let mut guard = self.inner.lock().unwrap();
-        guard.addrs.add_addr(peer_id, addr, ttl, is_kad);
+    pub fn add_addr(&self, peer_id: &PeerId, addr: Multiaddr, ttl: Duration) {
+        self.add_addrs(peer_id, vec![addr], ttl)
     }
 
-    /// Add many new addresses if they're not already in the Address Book.
-    pub fn add_addrs(&self, peer_id: &PeerId, addrs: Vec<Multiaddr>, ttl: Duration, is_kad: bool) {
+    /// Adds many new addresses if they're not already in the Address Book.
+    pub fn add_addrs(&self, peer_id: &PeerId, addrs: Vec<Multiaddr>, ttl: Duration) {
         let mut guard = self.inner.lock().unwrap();
-        guard.addrs.add_addrs(peer_id, addrs, ttl, is_kad);
+        if let Some(pr) = guard.get_mut(peer_id) {
+            for addr in addrs {
+                if let Some(record) = pr.addrs.iter_mut().find(|item| item.addr == addr) {
+                    // addr exists, update ttl & expiry
+                    record.set_ttl(ttl);
+                } else {
+                    pr.addrs.push(AddrBookRecord::new(addr, ttl));
+                }
+            }
+        } else {
+            // Peer_id non-exists, create a new PeerRecord and fill with a new AddrBookRecord.
+            let vec = addrs.into_iter().map(|addr| AddrBookRecord::new(addr, ttl)).collect();
+            guard.insert(peer_id.clone(), PeerRecord::new(vec, None, Default::default()));
+        }
     }
 
-    /// Delete all multiaddr of a peer from address book.
+    /// Removes all multiaddr of a peer from peer store.
     pub fn clear_addrs(&self, peer_id: &PeerId) {
         let mut guard = self.inner.lock().unwrap();
-        guard.addrs.clear_addrs(peer_id);
+        if let Some(pr) = guard.get_mut(peer_id) {
+            pr.addrs.clear();
+        }
     }
 
-    /// Retrieve the record from the address book.
-    pub fn get_addrs(&self, peer_id: &PeerId) -> Option<SmallVec<[AddrBookRecord; 4]>> {
+    /// Retrieves the all multiaddr of a peer from the peer store.
+    pub fn get_addrs(&self, peer_id: &PeerId) -> Option<Vec<Multiaddr>> {
         let guard = self.inner.lock().unwrap();
-        guard.addrs.get_addrs(peer_id).cloned()
+        guard.get(peer_id).map(|pr| pr.addrs.iter().map(|a| a.clone().into()).collect())
     }
 
-    /// Update ttl if current_ttl equals old_ttl.
+    /// Updates the ttl of the multiaddr of the peer.
     pub fn update_addr(&self, peer_id: &PeerId, new_ttl: Duration) {
         let mut guard = self.inner.lock().unwrap();
-        guard.addrs.update_addr(peer_id, new_ttl);
+
+        if let Some(pr) = guard.get_mut(peer_id) {
+            for record in pr.addrs.iter_mut() {
+                record.set_ttl(new_ttl);
+            }
+        }
     }
 
-    /// Get smallvec by peer_id and remove expired address
-    pub fn remove_expired_addr(&self, peer_id: &PeerId) {
+    /// Removes all expired address.
+    pub fn remove_expired_addrs(&self) {
+        let mut to_remove = vec![];
         let mut guard = self.inner.lock().unwrap();
-        guard.addrs.remove_expired_addr(peer_id)
+        for (peer, pr) in guard.iter_mut() {
+            if !pr.pinned {
+                log::debug!("GC attempt for {:?}", peer);
+                pr.addrs.retain(|record| record.expiry.elapsed() < record.ttl);
+                // delete this peer if no addr at all
+                if pr.addrs.is_empty() {
+                    log::debug!("remove {:?} from peerstore", peer);
+                    to_remove.push(peer.clone());
+                }
+            }
+        }
+
+        for peer in to_remove {
+            guard.remove(&peer);
+        }
     }
 
-    /// Insert supported protocol by peer_id
-    pub fn add_protocol(&self, peer_id: &PeerId, proto: Vec<String>) {
+    /// Adds the supported protocols of a peer to the peer store.
+    pub fn add_protocols(&self, peer_id: &PeerId, protos: Vec<String>) {
         let mut guard = self.inner.lock().unwrap();
-        guard.protos.add_protocol(peer_id, proto);
+        if let Some(pr) = guard.get_mut(peer_id) {
+            pr.protos.extend(protos);
+        } else {
+            let mut s = HashSet::new();
+            s.extend(protos);
+            guard.insert(peer_id.clone(), PeerRecord::new(Default::default(), None, s));
+        }
     }
 
-    /// Remove support protocol by peer_id
-    pub fn remove_protocol(&self, peer_id: &PeerId) {
+    /// Clears the protocols by peer_id
+    pub fn clear_protocols(&self, peer_id: &PeerId) {
         let mut guard = self.inner.lock().unwrap();
-        guard.protos.remove_protocol(peer_id);
+        if let Some(pr) = guard.get_mut(peer_id) {
+            pr.protos.clear();
+        }
     }
 
-    /// Get supported protocol by peer_id.
-    pub fn get_protocol(&self, peer_id: &PeerId) -> Option<Vec<String>> {
+    /// Gets the protocols by peer_id.
+    pub fn get_protocols(&self, peer_id: &PeerId) -> Option<Vec<String>> {
         let guard = self.inner.lock().unwrap();
-        guard.protos.get_protocol(peer_id)
+        guard.get(peer_id).map(|pr| pr.protos.iter().cloned().collect())
     }
 
     /// Get the first protocol which is matched by the given protocols.
-    pub fn first_supported_protocol(&self, peer_id: &PeerId, proto: Vec<String>) -> Option<String> {
+    pub fn first_supported_protocol(&self, peer_id: &PeerId, protos: Vec<String>) -> Option<String> {
         let guard = self.inner.lock().unwrap();
-        guard.protos.first_supported_protocol(peer_id, proto)
-    }
-
-    /// Search all protocols and return an option that matches by given proto param.
-    pub fn support_protocols(&self, peer_id: &PeerId, proto: Vec<String>) -> Option<Vec<String>> {
-        let guard = self.inner.lock().unwrap();
-        guard.protos.support_protocols(peer_id, proto)
-    }
-
-    /// Remove timeout address
-    pub async fn addr_gc(self) {
-        loop {
-            log::info!("GC is looping...");
-            async_std::task::sleep(GC_PURGE_INTERVAL).await;
-            let pid_addr = self.get_all_peers();
-            if !pid_addr.is_empty() {
-                for id in pid_addr {
-                    self.remove_expired_addr(&id);
+        if let Some(pr) = guard.get(peer_id) {
+            for proto in protos {
+                if pr.protos.contains(&proto) {
+                    return Some(proto);
                 }
             }
-            log::info!("GC finished");
+        }
+        None
+    }
+
+    /// Searches all protocols and return an option that matches by the given protocols.
+    pub fn support_protocols(&self, peer_id: &PeerId, protos: Vec<String>) -> Option<Vec<String>> {
+        let guard = self.inner.lock().unwrap();
+        if let Some(pr) = guard.get(peer_id) {
+            let mut proto_list = Vec::with_capacity(protos.len());
+            for item in protos {
+                if pr.protos.contains(&item) {
+                    proto_list.push(item)
+                }
+            }
+            Some(proto_list)
+        } else {
+            None
         }
     }
 }
 
-impl fmt::Debug for PeerStore {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("PeerStore").field(&self.inner).finish()
-    }
-}
-
-#[derive(Copy, Clone, PartialOrd, PartialEq, Debug, Serialize, Deserialize)]
-pub enum AddrType {
-    // KAD means that address is comes from kad protocol.
-    // We can't delete kad address in gc, because it may used later.
-    KAD,
-
-    // Normal address, it will be deleted if timeout.
-    OTHER,
-}
-
-/// Store address
-#[derive(Default, Clone)]
-struct AddrBook {
-    addr_book: HashMap<PeerId, SmallVec<[AddrBookRecord; 4]>>,
-}
-
-/// Store address, time-to-server, and expired time
-#[derive(Clone, Debug)]
-pub struct AddrBookRecord {
-    addr: Multiaddr,
-    addr_type: AddrType,
-    ttl: Duration,
-    expiry: Option<Instant>,
-}
-
+#[allow(dead_code)]
 impl AddrBookRecord {
-    /// Set the route-trip-time
+    pub fn new(addr: Multiaddr, ttl: Duration) -> Self {
+        Self {
+            addr,
+            ttl,
+            expiry: Instant::now(),
+        }
+    }
+    /// Get the multiaddr.
     pub fn get_addr(&self) -> &Multiaddr {
         &self.addr
     }
 
-    /// Set the route-trip-time
-    pub fn into_maddr(self) -> Multiaddr {
-        self.addr
-    }
-
-    /// Set the route-trip-time
+    /// Set the time-to-live. It would also reset the 'expiry'.
     pub fn set_ttl(&mut self, ttl: Duration) {
-        self.ttl = ttl
-    }
-
-    /// Set the expiry time
-    pub fn set_expiry(&mut self, expiry: Option<Instant>) {
-        self.expiry = expiry
-    }
-
-    /// Get the route-trip-time
-    pub fn get_type(&self) -> AddrType {
-        self.addr_type
-    }
-
-    /// Set the type of address
-    pub fn set_type(&mut self, addr_type: AddrType) {
-        self.addr_type = addr_type
-    }
-
-    /// Get the expiry time
-    pub fn get_expiry(&self) -> Option<Instant> {
-        self.expiry
-    }
-}
-
-impl fmt::Debug for AddrBook {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("AddrBook").field(&self.addr_book).finish()
-    }
-}
-
-impl fmt::Display for AddrBook {
-    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        //self.addr_book.iter().for_each(|a| a.0.fmt(f)
-        Ok(())
-    }
-}
-
-impl AddrBook {
-    // Add address to address_book by peer_id, if exists, update rtt.
-    fn add_addr(&mut self, peer_id: &PeerId, addr: Multiaddr, ttl: Duration, is_kad: bool) {
-        // KAD address will never time out.
-        let expiry = if is_kad { None } else { Instant::now().checked_add(ttl) };
-
-        let addr_type = if is_kad { KAD } else { OTHER };
-        // Peer_id exist, get vector.
-        if let Some(entry) = self.addr_book.get_mut(peer_id) {
-            let mut exist = false;
-
-            // Update address's expiry if exist.
-            for (count, i) in entry.iter().enumerate() {
-                if i.addr == addr {
-                    let record: &mut AddrBookRecord = entry.get_mut(count).unwrap();
-
-                    if is_kad {
-                        // Update addr to KAD addr.
-                        record.set_type(KAD);
-                        record.set_expiry(None);
-                    } else {
-                        record.set_expiry(expiry);
-                    }
-                    exist = true;
-                    break;
-                }
-            }
-
-            // If not exists, insert an address into vector.
-            if !exist {
-                entry.push(AddrBookRecord {
-                    addr,
-                    addr_type,
-                    ttl,
-                    expiry,
-                })
-            }
-        } else {
-            // Peer_id non-exists, create a new vector.
-            let vec = vec![AddrBookRecord {
-                addr,
-                addr_type,
-                ttl,
-                expiry,
-            }];
-            self.addr_book.insert(peer_id.clone(), SmallVec::from_vec(vec));
-        }
-    }
-
-    fn add_addrs(&mut self, peer_id: &PeerId, addrs: Vec<Multiaddr>, ttl: Duration, is_kad: bool) {
-        for addr in addrs {
-            self.add_addr(peer_id, addr, ttl, is_kad)
-        }
-    }
-
-    fn clear_addrs(&mut self, peer_id: &PeerId) {
-        self.addr_book.remove(peer_id);
-    }
-
-    fn get_addrs(&self, peer_id: &PeerId) -> Option<&SmallVec<[AddrBookRecord; 4]>> {
-        self.addr_book.get(peer_id)
-    }
-
-    fn get_all_peers(&self) -> Vec<PeerId> {
-        self.addr_book.keys().cloned().collect()
-    }
-
-    // Update ttl if current_ttl equals old_ttl.
-    fn update_addr(&mut self, peer_id: &PeerId, new_ttl: Duration) {
-        if let Some(record_vec) = self.addr_book.get_mut(peer_id) {
-            let time = Instant::now().checked_add(new_ttl);
-            for record in record_vec.iter_mut() {
-                if record.addr_type == KAD {
-                    continue;
-                }
-                record.set_expiry(time);
-            }
-        }
-    }
-
-    // Get smallvec by peer_id and remove expired address
-    pub fn remove_expired_addr(&mut self, peer_id: &PeerId) {
-        let addr = self.addr_book.get_mut(peer_id).unwrap();
-        let iter_vec = addr.clone();
-        let mut remove_count = 0;
-        for (index, value) in iter_vec.iter().enumerate() {
-            if value.addr_type == KAD {
-                continue;
-            }
-            if value.expiry.map_or(PERMANENT_ADDR_TTL, |d| d.elapsed()) < GC_PURGE_INTERVAL {
-                continue;
-            } else {
-                addr.remove(index - remove_count);
-                remove_count += 1;
-            }
-        }
-    }
-}
-
-/// Retrieve public_key by peer_id.
-///
-/// As we all known, we can use public_key to obtain peer_id, but can't do it inversely.
-#[derive(Default, Clone, Debug)]
-struct KeyBook {
-    key_book: HashMap<PeerId, PublicKey>,
-}
-
-impl KeyBook {
-    // Insert public key by peer_id, if it is not there.
-    fn add_key(&mut self, peer_id: &PeerId, key: PublicKey) {
-        self.key_book.entry(peer_id.clone()).or_insert(key);
-    }
-
-    // Delete public key by peer_id.
-    fn del_key(&mut self, peer_id: &PeerId) {
-        self.key_book.remove(peer_id);
-    }
-
-    // Get public key by peer_id.
-    fn get_key(&self, peer_id: &PeerId) -> Option<&PublicKey> {
-        self.key_book.get(peer_id)
-    }
-}
-
-/// Store all protocols that the peer supports.
-#[derive(Default, Clone)]
-struct ProtoBook {
-    proto_book: HashMap<PeerId, HashSet<String>>,
-}
-
-impl fmt::Debug for ProtoBook {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("ProtoBook").field(&self.proto_book).finish()
-    }
-}
-
-impl fmt::Display for ProtoBook {
-    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        //self.addr_book.iter().for_each(|a| a.0.fmt(f)
-        Ok(())
-    }
-}
-
-impl ProtoBook {
-    /// Insert support protocol by peer_id
-    fn add_protocol(&mut self, peer_id: &PeerId, proto: Vec<String>) {
-        if let Some(s) = self.proto_book.get_mut(peer_id) {
-            for item in proto {
-                s.insert(item);
-            }
-        } else {
-            let mut s = HashSet::new();
-            for item in proto {
-                s.insert(item);
-            }
-            self.proto_book.insert(peer_id.clone(), s);
-        }
-    }
-
-    /// Remove support protocol by peer_id
-    fn remove_protocol(&mut self, peer_id: &PeerId) {
-        log::info!("remove protocol");
-        self.proto_book.remove(peer_id);
-    }
-
-    fn get_protocol(&self, peer_id: &PeerId) -> Option<Vec<String>> {
-        match self.proto_book.get(peer_id) {
-            Some(set) => {
-                let mut result = Vec::<String>::new();
-                for s in set.iter() {
-                    result.push(s.parse().unwrap())
-                }
-                Some(result)
-            }
-            None => None,
-        }
-    }
-
-    /// Get the first protocol which matched by given protocols
-    fn first_supported_protocol(&self, peer_id: &PeerId, proto: Vec<String>) -> Option<String> {
-        match self.proto_book.get(peer_id) {
-            Some(s) => {
-                for item in proto {
-                    if s.contains(&item) {
-                        return Some(item);
-                    }
-                }
-                None
-            }
-            None => None,
-        }
-    }
-
-    /// Search all protocols and return an option that matches by given proto param
-    fn support_protocols(&self, peer_id: &PeerId, proto: Vec<String>) -> Option<Vec<String>> {
-        match self.proto_book.get(peer_id) {
-            Some(s) => {
-                let mut proto_list = Vec::new();
-                for item in proto {
-                    if s.contains(&item) {
-                        proto_list.push(item)
-                    }
-                }
-                Some(proto_list)
-            }
-            None => None,
-        }
-    }
-
-    #[allow(dead_code)]
-    fn get_iter(&self) -> (Vec<PeerId>, Vec<String>) {
-        let mut peer = vec![];
-        let mut proto = vec![];
-        for (k, v) in self.proto_book.iter() {
-            peer.push(k.clone());
-            for key in v.iter() {
-                if !proto.contains(key) {
-                    proto.push(key.clone())
-                }
-            }
-        }
-        (peer, proto)
+        self.ttl = ttl;
+        self.expiry = Instant::now();
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::peerstore::{AddrBook, ProtoBook};
+    use crate::identity::Keypair;
+    use crate::peerstore::{PeerStore, ADDRESS_TTL};
     use crate::PeerId;
+    use libp2prs_multiaddr::Multiaddr;
     use std::time::Duration;
 
     #[test]
-    fn addr_book_basic() {
-        //env_logger::from_env(env_logger::Env::default().default_filter_or("trace")).init();
-        let mut ab = AddrBook::default();
+    fn addr_basic() {
+        let keypair = Keypair::generate_secp256k1();
+        let peer_id = PeerId::from_public_key(keypair.public());
 
-        let peer_id = PeerId::random();
+        let peerstore = PeerStore::default();
 
-        ab.add_addr(&peer_id, "/memory/123456".parse().unwrap(), Duration::from_secs(1), false);
+        peerstore.add_key(&peer_id, keypair.public());
+        peerstore.add_addr(&peer_id, "/memory/123456".parse().unwrap(), Duration::from_secs(1));
 
         assert_eq!(
-            &(ab.get_addrs(&peer_id).unwrap().first().unwrap().addr),
-            &"/memory/123456".parse().unwrap()
+            peerstore.get_addrs(&peer_id).unwrap().first().unwrap(),
+            &"/memory/123456".parse::<Multiaddr>().unwrap()
         );
 
-        ab.add_addr(&peer_id, "/memory/654321".parse().unwrap(), Duration::from_secs(1), false);
-        let addrs = ab.get_addrs(&peer_id).unwrap();
+        peerstore.add_addr(&peer_id, "/memory/654321".parse().unwrap(), Duration::from_secs(1));
+        let addrs = peerstore.get_addrs(&peer_id).unwrap();
         assert_eq!(addrs.len(), 2);
 
-        ab.add_addr(&peer_id, "/memory/654321".parse().unwrap(), Duration::from_secs(1), false);
-        let addrs = ab.get_addrs(&peer_id).unwrap();
+        peerstore.add_addr(&peer_id, "/memory/654321".parse().unwrap(), Duration::from_secs(1));
+        let addrs = peerstore.get_addrs(&peer_id).unwrap();
         assert_eq!(addrs.len(), 2);
 
-        ab.clear_addrs(&peer_id);
-        assert!(ab.get_addrs(&peer_id).is_none());
+        peerstore.clear_addrs(&peer_id);
+        assert_eq!(peerstore.get_addrs(&peer_id).unwrap().len(), 0);
     }
 
     #[test]
-    fn proto_book_basic() {
-        //env_logger::from_env(env_logger::Env::default().default_filter_or("trace")).init();
-        let mut proto = ProtoBook::default();
-        let peer_id = PeerId::random();
+    fn proto_basic() {
+        let keypair = Keypair::generate_secp256k1();
+        let peer_id = PeerId::from_public_key(keypair.public());
+
+        let peerstore = PeerStore::default();
 
         let proto_list = vec!["/libp2p/secio/1.0.0".to_string(), "/libp2p/yamux/1.0.0".to_string()];
-        proto.add_protocol(&peer_id, proto_list.clone());
 
-        let p = proto.get_protocol(&peer_id).unwrap();
+        peerstore.add_key(&peer_id, keypair.public());
+        peerstore.add_protocols(&peer_id, proto_list.clone());
+
+        let p = peerstore.get_protocols(&peer_id).unwrap();
+        // let p = peerstore.get_protocol(&peer_id).unwrap();
 
         for i in proto_list {
             if p.contains(&i) {
@@ -593,7 +402,7 @@ mod tests {
         }
 
         let optional_list = vec!["/libp2p/noise/1.0.0".to_string(), "/libp2p/yamux/1.0.0".to_string()];
-        let protocol = proto.first_supported_protocol(&peer_id, optional_list);
+        let protocol = peerstore.first_supported_protocol(&peer_id, optional_list);
         assert_eq!(protocol.unwrap(), "/libp2p/yamux/1.0.0");
 
         let option_support_list = vec![
@@ -601,10 +410,58 @@ mod tests {
             "/libp2p/noise/1.0.0".to_string(),
             "/libp2p/yamux/1.0.0".to_string(),
         ];
-        let support_protocol = proto.support_protocols(&peer_id, option_support_list);
+        let support_protocol = peerstore.support_protocols(&peer_id, option_support_list);
         assert_eq!(
             support_protocol.unwrap(),
             vec!["/libp2p/secio/1.0.0".to_string(), "/libp2p/yamux/1.0.0".to_string()]
         );
+    }
+
+    #[test]
+    fn peerstore_basic() {
+        let keypair = Keypair::generate_secp256k1();
+        let peer_id = PeerId::from_public_key(keypair.public());
+
+        let addrs = vec!["/memory/123456".parse().unwrap(), "/memory/123456".parse().unwrap()];
+        let protos = vec!["/libp2p/secio/1.0.0".to_string(), "/libp2p/yamux/1.0.0".to_string()];
+
+        let ps = PeerStore::default();
+        ps.add_key(&peer_id, keypair.public());
+        ps.add_addrs(&peer_id, addrs, ADDRESS_TTL);
+        ps.add_protocols(&peer_id, protos);
+
+        let optional_list = vec!["/libp2p/noise/1.0.0".to_string(), "/libp2p/yamux/1.0.0".to_string()];
+        let protocol = ps.first_supported_protocol(&peer_id, optional_list);
+        assert_eq!(protocol.unwrap(), "/libp2p/yamux/1.0.0");
+
+        let option_support_list = vec![
+            "/libp2p/secio/1.0.0".to_string(),
+            "/libp2p/noise/1.0.0".to_string(),
+            "/libp2p/yamux/1.0.0".to_string(),
+        ];
+        let support_protocol = ps.support_protocols(&peer_id, option_support_list);
+        assert_eq!(
+            support_protocol.unwrap(),
+            vec!["/libp2p/secio/1.0.0".to_string(), "/libp2p/yamux/1.0.0".to_string()]
+        );
+    }
+
+    #[test]
+    fn peerstore_gc() {
+        let peer_id = PeerId::random();
+        let addrs = vec!["/memory/123456".parse().unwrap()];
+
+        let ps = PeerStore::default();
+        ps.add_addrs(&peer_id, addrs, Duration::from_secs(5));
+        ps.pin(&peer_id);
+        assert!(ps.get_addrs(&peer_id).is_some());
+
+        std::thread::sleep(Duration::from_secs(5));
+        ps.remove_expired_addrs();
+        assert!(ps.get_addrs(&peer_id).is_some());
+
+        ps.unpin(&peer_id);
+        ps.remove_expired_addrs();
+        assert!(ps.get_addrs(&peer_id).is_none());
     }
 }

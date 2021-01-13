@@ -1,6 +1,6 @@
 [package]
 name = "libp2prs-tcp"
-version = "0.1.0"
+version = "0.2.0"
 license = "MIT"
 description = "TCP/IP transport protocol for libp2p"
 authors = ["Netwarps Technologies admin@paradeum.com"]
@@ -12,12 +12,12 @@ edition = "2018"
 [dependencies]
 async-std = { version = "1.6"}
 futures = "0.3.1"
-futures-timer = "3.0"
 if-addrs = "0.6.4"
 ipnet = "2.0.0"
-libp2prs-core = { version = "0.1.0", path = "../../core" }
+libp2prs-core = { version = "0.2.0", path = "../../core" }
 log = "0.4.1"
 socket2 = "0.3.12"
 async-trait = "0.1"
+if-watch = "0.1.7"
 
 

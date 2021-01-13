@@ -1,3 +1,4 @@
+// Copyright 2018 Parity Technologies (UK) Ltd.
 // Copyright 2020 Netwarps Ltd.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -24,7 +25,7 @@
 //! underlying `Transport`.
 // TODO: add example
 
-use crate::transport::{ConnectionInfo, IListener, ITransport, TransportListener};
+use crate::transport::{ConnectionInfo, IListener, ITransport, ListenerEvent, TransportListener};
 use crate::{transport::TransportError, Multiaddr, Transport};
 use async_trait::async_trait;
 use futures::future::{select, Either};
@@ -106,20 +107,6 @@ where
                 Err(TransportError::Timeout)
             }
         }
-        // let mut dial = self.inner.dial(addr).fuse();
-        // let mut timeout = Delay::new(self.outgoing_timeout).fuse();
-        //
-        // select! {
-        //     stream = dial => {
-        //         trace!("connected first");
-        //         let stream = stream?;
-        //         Ok(stream)
-        //     },
-        //     _ = timeout => {
-        //         trace!("dial timeout first");
-        //         Err(TransportError::Timeout)
-        //     }
-        // }
     }
 
     fn box_clone(&self) -> ITransport<Self::Output> {
@@ -140,35 +127,21 @@ pub struct TimeoutListener<TOutput> {
 impl<TOutput: Send> TransportListener for TimeoutListener<TOutput> {
     type Output = TOutput;
 
-    async fn accept(&mut self) -> Result<Self::Output, TransportError> {
+    async fn accept(&mut self) -> Result<ListenerEvent<Self::Output>, TransportError> {
         let output = select(self.inner.accept(), Delay::new(self.timeout)).await;
         match output {
-            Either::Left((stream, _)) => {
+            Either::Left((r, _)) => {
                 trace!("accepted first");
-                Ok(stream?)
+                r
             }
             Either::Right(_) => {
                 trace!("accept timeout first");
                 Err(TransportError::Timeout)
             }
         }
-        // let mut accept = self.inner.accept().fuse();
-        // let mut timeout = Delay::new(self.timeout).fuse();
-        //
-        // select! {
-        //     stream = accept => {
-        //         trace!("accept first");
-        //         let stream = stream?;
-        //         Ok(stream)
-        //     },
-        //     _ = timeout => {
-        //         trace!("dial timeout first");
-        //         Err(TransportError::Timeout)
-        //     }
-        // }
     }
 
-    fn multi_addr(&self) -> Vec<Multiaddr> {
+    fn multi_addr(&self) -> Option<&Multiaddr> {
         self.inner.multi_addr()
     }
 }

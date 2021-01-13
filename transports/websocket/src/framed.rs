@@ -1,3 +1,4 @@
+// Copyright 2019 Parity Technologies (UK) Ltd.
 // Copyright 2020 Netwarps Ltd.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -24,7 +25,7 @@ use crate::{error::WsError, tls};
 use async_trait::async_trait;
 use either::Either;
 use futures::prelude::*;
-use libp2prs_core::transport::ConnectionInfo;
+use libp2prs_core::transport::{ConnectionInfo, ListenerEvent};
 use libp2prs_core::transport::{IListener, ITransport};
 use libp2prs_core::{
     either::AsyncEitherOutput,
@@ -149,8 +150,12 @@ impl WsTransListener {
 #[async_trait]
 impl TransportListener for WsTransListener {
     type Output = Connection<TlsOrPlain<TcpTransStream>>;
-    async fn accept(&mut self) -> Result<Self::Output, TransportError> {
-        let raw_stream = self.inner.accept().await?;
+    async fn accept(&mut self) -> Result<ListenerEvent<Self::Output>, TransportError> {
+        let raw_stream = match self.inner.accept().await? {
+            ListenerEvent::Accepted(stream) => stream,
+            ListenerEvent::AddressAdded(a) => return Ok(ListenerEvent::AddressAdded(a)),
+            ListenerEvent::AddressDeleted(a) => return Ok(ListenerEvent::AddressDeleted(a)),
+        };
         let local_addr = raw_stream.local_multiaddr();
         let remote_addr = raw_stream.remote_multiaddr();
         let remote1 = remote_addr.clone(); // used for logging
@@ -166,9 +171,7 @@ impl TransportListener for WsTransListener {
                 WsError::Tls(tls::Error::from(e))
             })?;
 
-            let stream = TlsServerStream(stream);
-
-            let stream: TlsOrPlain<_> = AsyncEitherOutput::A(AsyncEitherOutput::B(stream));
+            let stream: TlsOrPlain<_> = AsyncEitherOutput::A(AsyncEitherOutput::B(TlsServerStream(stream)));
             stream
         } else {
             // continue with plain stream
@@ -202,10 +205,10 @@ impl TransportListener for WsTransListener {
             builder.set_max_frame_size(self.inner_config.max_data_size);
             Connection::new(builder, local_addr, remote_addr)
         };
-        Ok(conn)
+        Ok(ListenerEvent::Accepted(conn))
     }
 
-    fn multi_addr(&self) -> Vec<Multiaddr> {
+    fn multi_addr(&self) -> Option<&Multiaddr> {
         self.inner.multi_addr()
     }
 }
@@ -293,7 +296,7 @@ impl WsConfig {
                 if dns_name.is_none() {
                     debug!("[Client] no DNS name in {}", address);
                     return Err(WsError::InvalidMultiaddr(address));
-                }
+                };
                 (true, path)
             }
             _ => {

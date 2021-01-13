@@ -1,3 +1,4 @@
+// Copyright 2019 Parity Technologies (UK) Ltd.
 // Copyright 2020 Netwarps Ltd.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -18,7 +19,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use crate::transport::{ConnectionInfo, IListener, ITransport, Transport, TransportError, TransportListener};
+use crate::transport::{ConnectionInfo, IListener, ITransport, ListenerEvent, Transport, TransportError, TransportListener};
 use crate::Multiaddr;
 use async_trait::async_trait;
 use std::fmt;
@@ -75,12 +76,12 @@ pub struct DummyListener;
 impl TransportListener for DummyListener {
     type Output = DummyStream;
 
-    async fn accept(&mut self) -> Result<Self::Output, TransportError> {
+    async fn accept(&mut self) -> Result<ListenerEvent<Self::Output>, TransportError> {
         Err(TransportError::Internal)
     }
 
-    fn multi_addr(&self) -> Vec<Multiaddr> {
-        vec![]
+    fn multi_addr(&self) -> Option<&Multiaddr> {
+        None
     }
 }
 

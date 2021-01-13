@@ -141,7 +141,7 @@ fn run_client() {
     let tu = TransportUpgrade::new(TcpConfig::default(), mux.clone(), sec.clone());
     let tu2 = TransportUpgrade::new(WsConfig::new(), mux, sec);
 
-    let mut swarm = Swarm::new(keys.public())
+    let swarm = Swarm::new(keys.public())
         .with_transport(Box::new(tu))
         .with_transport(Box::new(tu2))
         .with_ping(PingConfig::new().with_unsolicited(false).with_interval(Duration::from_secs(1)))
@@ -153,10 +153,14 @@ fn run_client() {
 
     log::info!("about to connect to {:?}", remote_peer_id);
 
-    swarm.peer_addrs_add(&remote_peer_id, "/ip4/127.0.0.1/tcp/30199/ws".parse().unwrap(), ADDRESS_TTL);
-    swarm.peer_addrs_add(&remote_peer_id, "/ip4/127.0.0.1/tcp/8086".parse().unwrap(), ADDRESS_TTL);
-
     swarm.start();
+
+    // add a peer to peer store manually
+    let addrs = vec![
+        "/ip4/127.0.0.1/tcp/30199/ws".parse().unwrap(),
+        "/ip4/127.0.0.1/tcp/8086".parse().unwrap(),
+    ];
+    control.add_addrs(&remote_peer_id, addrs, ADDRESS_TTL);
 
     task::block_on(async move {
         for _ in 0..2 {

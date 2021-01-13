@@ -1,4 +1,5 @@
-// Copyright 2018 Parity Technologies (UK) Ltd.
+// Copyright 2019 Parity Technologies (UK) Ltd.
+// Copyright 2020 Netwarps Ltd.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
 // copy of this software and associated documentation files (the "Software"),
@@ -44,6 +45,7 @@ use libp2prs_swarm::Control as SwarmControl;
 use libp2prs_traits::{ReadEx, WriteEx};
 
 use crate::kad::KadPoster;
+use crate::query::QueryStats;
 use crate::record::{self, Record};
 use crate::{dht_proto as proto, KadError, ProviderRecord};
 
@@ -254,6 +256,12 @@ impl Notifiee for KadProtocolHandler {
             let _ = tx.post(ProtocolEvent::PeerIdentified(peer_id)).await;
         });
     }
+    fn address_changed(&mut self, addrs: Vec<Multiaddr>) {
+        let mut tx = self.poster.clone();
+        task::spawn(async move {
+            let _ = tx.post(ProtocolEvent::AddressChanged(addrs)).await;
+        });
+    }
 }
 
 #[async_trait]
@@ -319,9 +327,9 @@ pub struct KadMessengerView {
 
 impl KadMessenger {
     pub(crate) async fn build(mut swarm: SwarmControl, peer: PeerId, config: KademliaProtocolConfig) -> Result<Self, KadError> {
-        // open a new stream, don't use DHT, as we are parts of DHT
+        // open a new stream, without routing, so that Swarm wouldn't do routing for us
         let stream = swarm
-            .new_stream_no_dht(peer.clone(), vec![config.protocol_name().to_owned()])
+            .new_stream_no_routing(peer.clone(), vec![config.protocol_name().to_owned()])
             .await?;
         Ok(Self {
             stream,
@@ -853,7 +861,7 @@ pub enum RefreshStage {
 
 /// Event produced by the Kademlia handler.
 #[derive(Debug)]
-pub enum ProtocolEvent {
+pub(crate) enum ProtocolEvent {
     /// Refresh state.
     Refresh(RefreshStage),
 
@@ -872,6 +880,14 @@ pub enum ProtocolEvent {
     ///
     /// This notification comes from Protocol Notifiee trait.
     PeerIdentified(PeerId),
+    /// The local address change is detected.
+    ///
+    /// In fact the local address might change for many reasons. f.g.,
+    /// interface up/down. When our address changes, we should proactively
+    /// tell our closest peers about it so we become discoverable quickly.
+    ///
+    /// This notification comes from Protocol Notifiee trait.
+    AddressChanged(Vec<Multiaddr>),
 
     /// A new peer found when trying to query a 'Key' or receiving a
     /// query from peer, which obviously implies we are talking to an
@@ -887,8 +903,17 @@ pub enum ProtocolEvent {
     /// notification from event bus(TBD).
     KadPeerStopped(PeerId),
 
+    /// The event to notify that iterative query has been completed.
+    IterativeQueryCompleted(QueryStats),
+
+    /// The event to notify that iterative query has failed due to timeout.
+    IterativeQueryTimeout,
+
     /// Timer event for Provider cleanup.
     ProviderCleanupTimer,
+
+    /// Timer event for Refresh.
+    RefreshTimer,
 
     /// Kad request message from remote peer.
     ///

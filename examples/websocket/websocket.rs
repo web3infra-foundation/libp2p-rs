@@ -123,7 +123,7 @@ fn run_client() {
     let mux = mplex::Config::new();
     let tu = TransportUpgrade::new(WsConfig::new(), mux, sec);
 
-    let mut swarm = Swarm::new(keys.public())
+    let swarm = Swarm::new(keys.public())
         .with_transport(Box::new(tu))
         .with_identify(IdentifyConfig::new(false));
 
@@ -133,12 +133,10 @@ fn run_client() {
 
     log::info!("about to connect to {:?}", remote_peer_id);
 
-    swarm.peer_addrs_add(&remote_peer_id, addr, Duration::default());
-
     swarm.start();
 
     task::block_on(async move {
-        control.new_connection(remote_peer_id.clone()).await.unwrap();
+        control.connect_with_addrs(remote_peer_id.clone(), vec![addr]).await.unwrap();
         let mut stream = control.new_stream(remote_peer_id, vec![PROTO_NAME.into()]).await.unwrap();
         log::info!("stream {:?} opened, writing something...", stream);
         let msg = b"hello";

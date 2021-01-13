@@ -1,4 +1,4 @@
-// Copyright 2020 Parity Technologies (UK) Ltd.
+// Copyright 2020 Netwarps Ltd.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
 // copy of this software and associated documentation files (the "Software"),
@@ -18,6 +18,33 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-fn main() {
-    prost_build::compile_protos(&["src/keys.proto"], &["src"]).unwrap();
+//! Routing provides the capability of finding a peer with the given peer Id.
+//!
+//! The `Routing` traits is implemented on types that provide the find_peer
+//! method..
+//!
+
+use crate::transport::TransportError;
+use crate::PeerId;
+use async_trait::async_trait;
+use libp2prs_multiaddr::Multiaddr;
+
+/// `routing` trait for finding a peer.
+#[async_trait]
+pub trait Routing: Send {
+    /// Retrieves the addresses of a remote peer.
+    ///
+    /// Any types supporting this trait can be used to search network for the
+    /// addresses, f.g., Kad-DHT.
+    async fn find_peer(&mut self, peer_id: &PeerId) -> Result<Vec<Multiaddr>, TransportError>;
+
+    fn box_clone(&self) -> IRouting;
+}
+
+pub type IRouting = Box<dyn Routing>;
+
+impl Clone for IRouting {
+    fn clone(&self) -> Self {
+        self.box_clone()
+    }
 }

@@ -35,7 +35,7 @@ use std::{fmt, io};
 /// Useful for testing purposes.
 pub struct DummyUpgrader;
 
-pub struct DummyStream<T>(T);
+pub struct DummyStream<T>(pub(crate) T);
 
 impl<T> Clone for DummyStream<T> {
     fn clone(&self) -> Self {

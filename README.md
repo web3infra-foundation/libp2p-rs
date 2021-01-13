@@ -10,18 +10,19 @@ This repository is an alternative implementation in `Rust` of the [libp2p](https
 
 How to use the library?
 
-- API Documentation can be found: https://docs.rs/libp2p-rs
+As mentioned above, the API is completely different from `rust-libp2p`. There is no such thing as 'NetworkBehaviour' in `libp2p-rs` at all. Instead, you should build the Swarm with the transports you like to use, then you have to create a Swarm::Control from it. The Swarm::Control is exposing all Swarm APIs which can be used to manipulate the Swarm - open/read/write/close streams and even more. This is quite similar as the BasicHost in `go-libp2p`. As for Kad-DHT, similarly you should get the Kad::Control for the same reason. Furthermore, you can combine the Swarm with Kad, after that you have the RoutedHost, which has a routing functionality over the BasicHost.
+
+It is strongly recommended to check the docs and sample code in details:
+
+- API Documentations can be found: https://docs.rs/libp2p-rs
 - Design documentation can be found in `docs`
 
 Code examples:
 
-- More details about how to write your code can be found in `examples`
-
-
-## Limitations
-
-As for the first stage, we'd like to limit our development scope to deliver the basic functionality equivalent to the basic-host in `go-libp2p`. There is a lone term plan to make a full package which includes the `routing` protocols as `go-libp2p` does. Therefore, the first release will not include any KAD-DHT, mDns and so on. Contributions are welcome to complete the `libp2p-rs` as a full functional libp2p package.     
-
+- Details about how to write your code can be found in `examples`
+    + swarm_simple demonstrates how to build transport and create sub-stream for communication
+    + kad_simple demonstrates how to run a Kad-DHT server. In this example, the interactive shell is integrated for debugging/observing Kad-DHT internal data structures
+    + ... 
 
 ## Releases
 

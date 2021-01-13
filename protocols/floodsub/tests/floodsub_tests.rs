@@ -95,18 +95,17 @@ fn test_floodsub_basic() {
             });
 
             let cli_keys = Keypair::generate_secp256k1();
-            let (mut cli_swarm, cli_fs_ctrl) = setup_swarm(cli_keys);
+            let (cli_swarm, cli_fs_ctrl) = setup_swarm(cli_keys);
             let mut cli_swarm_ctrl = cli_swarm.control();
 
             let remote_peer_id = PeerId::from_public_key(SERVER_KEY.public());
             log::info!("about to connect to {:?}", remote_peer_id);
 
-            cli_swarm.peer_addrs_add(&remote_peer_id, addr, Duration::default());
             cli_swarm.start();
 
             let cli_handle = task::spawn(async move {
                 // dial
-                cli_swarm_ctrl.new_connection(remote_peer_id).await.unwrap();
+                cli_swarm_ctrl.connect_with_addrs(remote_peer_id, vec![addr]).await.unwrap();
 
                 // wait for connection
                 task::sleep(Duration::from_secs(1)).await;
