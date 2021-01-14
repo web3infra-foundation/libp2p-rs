@@ -39,8 +39,8 @@ pin-project-lite = "0.1"
 log = "0.4"
 bytes = "0.5.0"
 igd = "0.9"
-#xcli = { path = "xcli", version = "0.5.1", package = "xcli" }
-xcli = { git = "https://github.com/kingwel-xie/xcli-rs.git", branch = "master"}
+#xcli = { git = "https://github.com/kingwel-xie/xcli-rs.git", branch = "master"}
+xcli = "0.5.1"
 
 [target.'cfg(unix)'.dependencies.libc]
 version = "0.2"
