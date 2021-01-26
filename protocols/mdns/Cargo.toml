@@ -1,8 +1,13 @@
 [package]
 name = "libp2prs-mdns"
-version = "0.2.1"
-authors = ["zhongxh <zhong_xiaohong@yeah.net>"]
 edition = "2018"
+description = "mdns protocol for libp2p"
+version = "0.2.1"
+authors = ["Netwarps Technologies admin@paradeum.com"]
+license = "MIT"
+repository = "https://github.com/netwarps/libp2p-rs"
+keywords = ["peer-to-peer", "libp2p"]
+categories = ["network-programming", "asynchronous"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
