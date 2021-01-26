@@ -70,13 +70,12 @@
 mod bucket;
 mod entry;
 mod key;
+use primitive_types::U256;
 
 pub use entry::*;
 
 use arrayvec::{self, ArrayVec};
 use bucket::KBucket;
-
-use primitive_types::U256;
 
 /// Maximum number of k-buckets.
 const NUM_BUCKETS: usize = 256;

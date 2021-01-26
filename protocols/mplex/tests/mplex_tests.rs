@@ -18,10 +18,10 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::task;
 use futures::channel::oneshot;
 use futures::{channel::mpsc, prelude::*};
 use libp2prs_mplex::connection::{stream::Stream as mplex_stream, Connection};
+use libp2prs_runtime::task;
 use libp2prs_traits::{copy, ReadEx, SplitEx, WriteEx};
 use quickcheck::{QuickCheck, TestResult};
 use std::collections::VecDeque;
@@ -498,8 +498,8 @@ fn prop_closing() {
             // close connection A and B
             mpa_ctrl.close().await.expect("A close connection");
             mpb_ctrl.close().await.expect("A close connection");
-            let na = handle_a.await;
-            let nb = handle_b.await;
+            let na = handle_a.await.unwrap();
+            let nb = handle_b.await.unwrap();
 
             TestResult::from_bool(na == 0 && nb == 0)
         })
@@ -785,8 +785,8 @@ fn prop_fuzz_close_stream() {
             // close connection A and B
             mpa_ctrl.close().await.expect("A close connection");
             mpb_ctrl.close().await.expect("B close connection");
-            let na = handle_a.await;
-            let nb = handle_b.await;
+            let na = handle_a.await.unwrap();
+            let nb = handle_b.await.unwrap();
 
             TestResult::from_bool(na == 0 && nb == 0)
         })

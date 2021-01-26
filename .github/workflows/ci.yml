@@ -38,7 +38,7 @@ jobs:
     strategy:
       matrix:
         os: [[self-hosted, linux, X64],[self-hosted, windows, X64]]
-        rust: [1.47.0]
+        rust: [1.48.0]
 
     steps:
     - uses: actions/checkout@v1

@@ -150,19 +150,20 @@ impl<TOutput: Send> TransportListener for TimeoutListener<TOutput> {
 mod tests {
     use crate::transport::memory::MemoryTransport;
     use crate::{Multiaddr, Transport};
+    use libp2prs_runtime::task;
     use std::time::Duration;
 
     #[test]
     fn dialer_and_listener_timeout() {
         fn test1(addr: Multiaddr) {
-            futures::executor::block_on(async move {
+            task::block_on(async move {
                 let mut timeout_listener = MemoryTransport::default().timeout(Duration::from_secs(1)).listen_on(addr).unwrap();
                 assert!(timeout_listener.accept().await.is_err());
             });
         }
 
         fn test2(addr: Multiaddr) {
-            futures::executor::block_on(async move {
+            task::block_on(async move {
                 let mut tcp = MemoryTransport::default().timeout(Duration::from_secs(1));
                 assert!(tcp.dial(addr.clone()).await.is_err());
             });

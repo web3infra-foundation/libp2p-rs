@@ -18,7 +18,6 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::task;
 use async_trait::async_trait;
 use std::time::Duration;
 #[macro_use]
@@ -28,6 +27,7 @@ use libp2prs_core::identity::Keypair;
 use libp2prs_core::transport::upgrade::TransportUpgrade;
 use libp2prs_core::upgrade::UpgradeInfo;
 use libp2prs_core::{Multiaddr, PeerId, ProtocolId};
+use libp2prs_runtime::task;
 use libp2prs_secio as secio;
 use libp2prs_swarm::identify::IdentifyConfig;
 use libp2prs_swarm::ping::PingConfig;
@@ -40,14 +40,16 @@ use libp2prs_yamux as yamux;
 use std::{collections::VecDeque, error::Error};
 
 fn main() {
-    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    if std::env::args().nth(1) == Some("server".to_string()) {
-        log::info!("Starting server ......");
-        run_server();
-    } else {
-        log::info!("Starting client ......");
-        run_client();
-    }
+    task::block_on(async {
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+        if std::env::args().nth(1) == Some("server".to_string()) {
+            log::info!("Starting server ......");
+            run_server();
+        } else {
+            log::info!("Starting client ......");
+            run_client();
+        }
+    });
 }
 
 lazy_static! {
@@ -158,7 +160,7 @@ fn run_client() {
                     stream.read_exact2(&mut buf).await.expect("C read");
                     assert_eq!(buf, msg);
 
-                    // task::sleep(Duration::from_secs(1)).await;
+                    // runtime::sleep(Duration::from_secs(1)).await;
                 }
                 stream.close2().await.expect("close stream");
             });

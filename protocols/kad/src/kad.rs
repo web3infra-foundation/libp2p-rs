@@ -31,10 +31,8 @@ use futures::{
     select,
 };
 
-use async_std::task;
-use async_std::task::JoinHandle;
-
 use libp2prs_core::{Multiaddr, PeerId, ProtocolId};
+use libp2prs_runtime::task;
 use libp2prs_swarm::Control as SwarmControl;
 
 use crate::control::{Control, ControlCommand, DumpCommand};
@@ -77,11 +75,11 @@ pub struct Kademlia<TStore> {
     /// This is a superset of the connected peers currently in the routing table.
     connected_peers: FnvHashSet<PeerId>,
 
-    /// The timer task handle of Provider cleanup job.
-    provider_timer_handle: Option<JoinHandle<()>>,
+    /// The timer runtime handle of Provider cleanup job.
+    provider_timer_handle: Option<task::TaskHandle<()>>,
 
-    /// The timer task handle of Provider cleanup job.
-    refresh_timer_handle: Option<JoinHandle<()>>,
+    /// The timer runtime handle of Provider cleanup job.
+    refresh_timer_handle: Option<task::TaskHandle<()>>,
 
     /// The periodic interval to cleanup expired provider records.
     cleanup_interval: Duration,
@@ -1196,8 +1194,8 @@ where
     }
 
     fn start_provider_gc_timer(&mut self) {
-        // start timer task, which would generate ProtocolEvent::ProviderCleanupTimer to kad main loop
-        log::info!("starting provider timer task...");
+        // start timer runtime, which would generate ProtocolEvent::ProviderCleanupTimer to kad main loop
+        log::info!("starting provider timer runtime...");
         let interval = self.cleanup_interval;
         let mut poster = self.poster();
         let h = task::spawn(async move {
@@ -1212,8 +1210,8 @@ where
 
     fn start_refresh_timer(&mut self) {
         if let Some(interval) = self.refresh_interval {
-            // start timer task, which would generate ProtocolEvent::RefreshTimer to kad main loop
-            log::info!("starting refresh timer task...");
+            // start timer runtime, which would generate ProtocolEvent::RefreshTimer to kad main loop
+            log::info!("starting refresh timer runtime...");
             let mut poster = self.poster();
             let h = task::spawn(async move {
                 loop {
@@ -1490,7 +1488,7 @@ where
             .map(|n| n.node.key.into_preimage())
             .collect::<Vec<_>>();
 
-        // start a task to do health check
+        // start a runtime to do health check
         task::spawn(async move {
             // run healthy check for all nodes whose aliveness is older than check_kad_peer_interval
             log::debug!("about to health check {} nodes", peers_to_check.len());
@@ -1587,7 +1585,7 @@ where
 
                 let mut control = self.control();
                 let mut poster = self.poster();
-                // start a separate task to do walking random Ids
+                // start a separate runtime to do walking random Ids
                 task::spawn(async move {
                     for peer in peers {
                         log::debug!("bootstrap: walk random node {:?}", peer);

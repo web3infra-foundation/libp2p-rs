@@ -120,10 +120,10 @@ impl Transport for WsConfig {
 #[cfg(test)]
 mod tests {
     use super::WsConfig;
-    use async_std::task;
     use libp2prs_core::transport::ListenerEvent;
     use libp2prs_core::Multiaddr;
     use libp2prs_core::Transport;
+    use libp2prs_runtime::task;
     use libp2prs_traits::{ReadEx, WriteEx};
 
     #[test]
@@ -133,7 +133,7 @@ mod tests {
         let s = task::spawn(async { server(listen_addr).await });
         let c = task::spawn(async { client(dial_addr, false).await });
         task::block_on(async {
-            assert_eq!(futures::join!(s, c), (true, true));
+            assert_eq!(futures::join!(s, c), (Some(true), Some(true)));
         });
     }
 
@@ -144,7 +144,7 @@ mod tests {
         let s = task::spawn(async { server(listen_addr).await });
         let c = task::spawn(async { client(dial_addr, true).await });
         task::block_on(async {
-            assert_eq!(futures::join!(s, c), (true, true));
+            assert_eq!(futures::join!(s, c), (Some(true), Some(true)));
         });
     }
 
@@ -155,7 +155,7 @@ mod tests {
         let s = task::spawn(async { server(listen_addr).await });
         let c = task::spawn(async { client(dial_addr, false).await });
         task::block_on(async {
-            assert_eq!(futures::join!(s, c), (true, true));
+            assert_eq!(futures::join!(s, c), (Some(true), Some(true)));
         });
     }
 

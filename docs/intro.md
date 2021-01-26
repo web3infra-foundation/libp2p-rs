@@ -24,7 +24,7 @@ This repository is not intented to replace `rust-libp2p` but to provide a differ
 - Use Trait Object, dynamic dispatching
 - Use futures::mpsc::channel, avoid Mutex<>
 - Async Trait, to introduce async fn in Trait
-- dependency on async-std for async runtime
+- Package async runtime to support either async-std or tokio
 
 
 ## Content

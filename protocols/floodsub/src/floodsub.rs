@@ -18,7 +18,6 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::task;
 use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
@@ -35,6 +34,7 @@ use crate::{
 };
 use futures::stream::FusedStream;
 use libp2prs_core::PeerId;
+use libp2prs_runtime::task;
 use libp2prs_swarm::substream::Substream;
 use libp2prs_swarm::Control as Swarm_Control;
 use libp2prs_traits::{ReadEx, WriteEx};

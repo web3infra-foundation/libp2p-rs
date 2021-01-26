@@ -26,11 +26,14 @@
 use super::negotiator::Negotiator;
 use super::{NegotiationError, ReadEx, Version, WriteEx};
 
-use async_std::net::{TcpListener, TcpStream};
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::channel::mpsc;
 use futures::prelude::*;
+use libp2prs_runtime::{
+    net::{TcpListener, TcpStream},
+    task,
+};
 use std::io;
 
 #[derive(Debug)]
@@ -113,7 +116,7 @@ fn select_proto_basic() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let listener_addr = listener.local_addr().unwrap();
 
-        let server = async_std::task::spawn(async move {
+        let server = task::spawn(async move {
             let connec = listener.accept().await.unwrap().0;
             let protos = vec!["/proto11", "/proto2"];
             let neg = Negotiator::new_with_protocols(protos);
@@ -129,7 +132,7 @@ fn select_proto_basic() {
             io.flush().await.unwrap();
         });
 
-        let client = async_std::task::spawn(async move {
+        let client = task::spawn(async move {
             let connec = TcpStream::connect(&listener_addr).await.unwrap();
             let protos = vec!["/proto31", "/proto2"];
             let neg = Negotiator::new_with_protocols(protos);
@@ -149,7 +152,7 @@ fn select_proto_basic() {
         client.await;
     }
 
-    async_std::task::block_on(run(Version::V1));
+    task::block_on(run(Version::V1));
 }
 
 #[test]
@@ -158,7 +161,7 @@ fn no_protocol_found() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let listener_addr = listener.local_addr().unwrap();
 
-        let server = async_std::task::spawn(async move {
+        let server = task::spawn(async move {
             let connec = listener.accept().await.unwrap().0;
             let protos = vec![b"/proto1", b"/proto2"];
             let neg = Negotiator::new_with_protocols(protos);
@@ -168,7 +171,7 @@ fn no_protocol_found() {
             assert!(neg.negotiate(connec).await.is_err());
         });
 
-        let client = async_std::task::spawn(async move {
+        let client = task::spawn(async move {
             let connec = TcpStream::connect(&listener_addr).await.unwrap();
             let protos = vec![b"/proto3", b"/proto4"];
             let neg = Negotiator::new_with_protocols(protos);
@@ -183,7 +186,7 @@ fn no_protocol_found() {
         client.await;
     }
 
-    async_std::task::block_on(run(Version::V1));
+    task::block_on(run(Version::V1));
 }
 
 #[test]
@@ -192,7 +195,7 @@ fn select_proto_serial() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let listener_addr = listener.local_addr().unwrap();
 
-        let server = async_std::task::spawn(async move {
+        let server = task::spawn(async move {
             let connec = listener.accept().await.unwrap().0;
             let protos = vec![b"/proto1", b"/proto2"];
             let neg = Negotiator::new_with_protocols(protos);
@@ -200,7 +203,7 @@ fn select_proto_serial() {
             assert_eq!(proto, b"/proto2");
         });
 
-        let client = async_std::task::spawn(async move {
+        let client = task::spawn(async move {
             let connec = TcpStream::connect(&listener_addr).await.unwrap();
             let protos = vec![b"/proto3", b"/proto2"];
             let neg = Negotiator::new_with_protocols(protos);
@@ -212,5 +215,5 @@ fn select_proto_serial() {
         client.await;
     }
 
-    async_std::task::block_on(run(Version::V1));
+    task::block_on(run(Version::V1));
 }

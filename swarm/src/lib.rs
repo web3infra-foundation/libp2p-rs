@@ -71,8 +71,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{error, fmt};
 
-use async_std::task;
-
 use libp2prs_core::peerstore::{PeerStore, ADDRESS_TTL};
 use libp2prs_core::{
     multiaddr::{protocol, Multiaddr},
@@ -80,6 +78,7 @@ use libp2prs_core::{
     transport::{upgrade::ITransportEx, TransportError},
     PeerId, ProtocolId, PublicKey,
 };
+use libp2prs_runtime::task;
 
 use crate::connection::{Connection, ConnectionId, ConnectionLimit, ConnectionView, Direction};
 use crate::control::{DumpCommand, SwarmControlCmd};
@@ -578,7 +577,7 @@ impl Swarm {
         reply: oneshot::Sender<Result<Substream>>,
     ) -> Result<()> {
         if let Some(connection) = self.get_best_conn(&peer_id) {
-            // well, we have a connection, start a task to open the stream
+            // well, we have a connection, start a runtime to open the stream
             log::debug!(
                 "open a stream using the existing connection {:?} for {:?}",
                 connection.id(),
@@ -634,16 +633,16 @@ impl Swarm {
         f(self.get_substream_views(pid));
         Ok(())
     }
-    /// Starts Swarm background task
+    /// Starts Swarm background runtime
     /// handling the internal events and external controls
     pub fn start(self) {
         // well, self 'move' explicitly,
         let mut swarm = self;
 
-        // start GC task for peer store
+        // start GC runtime for peer store
         let peer_store = swarm.peer_store.clone();
         let (mut tx, mut rx) = mpsc::channel::<()>(0);
-        // The GC task is to remove all expired addresses from the peer store
+        // The GC runtime is to remove all expired addresses from the peer store
         task::spawn(async move {
             log::info!("starting Peerstore GC...");
             loop {
@@ -660,7 +659,7 @@ impl Swarm {
             let r = swarm.handle_messages().await;
             log::info!("quitting Swarm main loop, due to {:?}...", r);
 
-            // close peerstore GC task
+            // close peerstore GC runtime
             tx.close_channel();
 
             if let Err(e) = swarm.peer_store.save_data() {
@@ -772,8 +771,8 @@ impl Swarm {
         }
 
         let mut tx = self.event_sender.clone();
-        // start a task for this listener
-        // TODO: remember the task handle of this listener, so that we can 'cancel' it when exiting
+        // start a runtime for this listener
+        // TODO: remember the runtime handle of this listener, so that we can 'cancel' it when exiting
         task::spawn(async move {
             loop {
                 let r = listener.accept().await;
@@ -787,7 +786,7 @@ impl Swarm {
                     Ok(ListenerEvent::Accepted(muxer)) => {
                         // don't have to verify if remote peer id matches its public key
                         // always accept any incoming connection
-                        // send muxer back to Swarm main task
+                        // send muxer back to Swarm main runtime
                         let _ = tx
                             .send(SwarmEvent::ConnectionEstablished {
                                 stream_muxer: muxer,
@@ -990,22 +989,22 @@ impl Swarm {
 
         let mut tx = self.event_sender.clone();
         let cid = connection.id();
-        // clone muxer and move it into the task
+        // clone muxer and move it into the runtime
         let mut muxer = self.muxer.clone();
         let ctrl = self.ctrl_sender.clone();
 
-        // Note we have to use the original copy of the stream muxer to start the task,
-        // instead of the cloned one which doesn't have the task handle at all
+        // Note we have to use the original copy of the stream muxer to start the runtime,
+        // instead of the cloned one which doesn't have the runtime handle at all
         let handle = task::spawn(async move {
             let mut stream_muxer = stream_muxer;
-            // start the background task of the stream_muxer, the handle can be await'ed by us
+            // start the background runtime of the stream_muxer, the handle can be await'ed by us
             let task_handle = stream_muxer.task().map(task::spawn);
             loop {
                 let metric = metric.clone();
                 let ctrl = ctrl.clone();
                 let r = stream_muxer.accept_stream().await;
 
-                // TODO: probably we should spawn a new task for protocol selection
+                // TODO: probably we should spawn a new runtime for protocol selection
                 // As a fact, in go-libp2p, the protocol selection is done in a blocking way...
                 match r {
                     Ok(raw_stream) => {
@@ -1024,12 +1023,12 @@ impl Swarm {
                                 let view = stream.to_view();
                                 let _ = tx.send(SwarmEvent::StreamOpened { view }).await;
 
-                                // anyway, start handler task
+                                // anyway, start handler runtime
                                 task::spawn(async move {
                                     let _ = handler.handle(stream, proto).await;
                                 });
 
-                                // TODO: hook the task handle to the Substream, so that it can wait for exiting the task
+                                // TODO: hook the runtime handle to the Substream, so that it can wait for exiting the runtime
                             }
                             Err(error) => {
                                 log::debug!("failed inbound protocol selection {:?} {:?}", cid, error);
@@ -1051,7 +1050,7 @@ impl Swarm {
                 h.await;
             }
 
-            log::debug!("{:?} accept-task exiting...", stream_muxer);
+            log::debug!("{:?} accept-runtime exiting...", stream_muxer);
         });
 
         // now we have the handle, move it into Connection
@@ -1072,7 +1071,7 @@ impl Swarm {
 
         // insert to the hashmap of connections
         // there might be a race condition:
-        // the spawned connection task might have exited for some reason, before we insert connection
+        // the spawned connection runtime might have exited for some reason, before we insert connection
         // into the hashmap. No problem, the connection will be cleaned up in 'handle_connection_closed'
         // event.
         self.add_connection(connection);
@@ -1094,7 +1093,7 @@ impl Swarm {
 
     /// Handles opening stream
     ///
-    /// Use channel to received message that sent by another task
+    /// Use channel to received message that sent by another runtime
     fn handle_stream_opened(&mut self, view: SubstreamView) -> Result<()> {
         log::debug!("handle_stream_opened: {:?}", view);
         // add stream id to the connection substream list

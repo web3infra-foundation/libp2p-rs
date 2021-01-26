@@ -85,7 +85,7 @@
 // - Loop in handle_coming() is performance bottleneck.  More seriously, it will be block
 //   when two peers echo with mass of data with lot of stream Since they block
 //   on write data and none of them can read data.
-//   One solution is spwan task for reader and writer But depend on async-std/tokio
+//   One solution is spawn runtime for reader and writer But depend on async runtime
 //   is not attractive. See detail from concurrent in tests
 
 pub mod control;

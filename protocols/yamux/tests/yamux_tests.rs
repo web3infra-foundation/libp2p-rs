@@ -9,10 +9,10 @@
 // at https://www.apache.org/licenses/LICENSE-2.0 and a copy of the MIT license
 // at https://opensource.org/licenses/MIT.
 
-use async_std::task;
 use futures::channel::oneshot;
 use futures::io::Error;
 use futures::{channel::mpsc, SinkExt, StreamExt};
+use libp2prs_runtime::task;
 use libp2prs_traits::{copy, ReadEx, SplitEx, WriteEx};
 use libp2prs_yamux::{
     connection::{stream::Stream as yamux_stream, Connection, Mode},
@@ -1254,7 +1254,7 @@ fn prop_stream_reset_read() {
             loop_handle_b.await;
 
             let result = futures::future::join(handle_a, handle_b).await;
-            if result.0.is_failure() || result.1.is_failure() {
+            if result.0.unwrap().is_failure() || result.1.unwrap().is_failure() {
                 TestResult::failed()
             } else {
                 TestResult::passed()
@@ -1386,8 +1386,8 @@ fn prop_closing() {
             // close connection A and B
             mpa_ctrl.close().await.expect("A close connection");
             mpb_ctrl.close().await.expect("A close connection");
-            let na = handle_a.await;
-            let nb = handle_b.await;
+            let na = handle_a.await.unwrap();
+            let nb = handle_b.await.unwrap();
 
             TestResult::from_bool(na == 0 && nb == 0)
         })
@@ -1732,8 +1732,8 @@ fn prop_fuzz_close_stream() {
             // close connection A and B
             mpa_ctrl.close().await.expect("A close connection");
             mpb_ctrl.close().await.expect("B close connection");
-            let na = handle_a.await;
-            let nb = handle_b.await;
+            let na = handle_a.await.unwrap();
+            let nb = handle_b.await.unwrap();
 
             TestResult::from_bool(na == 0 && nb == 0)
         })

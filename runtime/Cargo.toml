@@ -1,0 +1,18 @@
+[package]
+name = "libp2prs-runtime"
+version = "0.2.1"
+license = "MIT"
+description = "Read/Write traits"
+authors = ["Netwarps Technologies admin@paradeum.com"]
+repository = "https://github.com/netwarps/libp2p-rs"
+keywords = ["peer-to-peer", "libp2p", "networking", "task"]
+categories = ["network-programming", "asynchronous"]
+edition = "2018"
+
+[dependencies]
+futures = { version = "0.3", features = ["std"], default-features = false }
+once_cell = "1.5"
+
+async-std = { version = "1.8", optional = true, features = ["default"] }
+tokio = { version = "1.0", optional = true, features = ["rt-multi-thread", "net", "time"] }
+

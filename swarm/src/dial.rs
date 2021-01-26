@@ -25,13 +25,10 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use async_std::{future, task};
 use futures::channel::mpsc;
 use futures::channel::mpsc::UnboundedReceiver;
-use futures::future::{select, Either};
 use futures::lock::Mutex;
 use futures::prelude::*;
-use futures_timer::Delay;
 
 use libp2prs_core::muxing::IStreamMuxer;
 use libp2prs_core::transport::upgrade::ITransportEx;
@@ -39,6 +36,7 @@ use libp2prs_core::{
     multiaddr::{protocol, Multiaddr},
     PeerId,
 };
+use libp2prs_runtime::task;
 
 use crate::connection::Direction;
 use crate::{SwarmError, SwarmEvent, TransactionId, Transports};
@@ -136,7 +134,7 @@ impl DialLimiter {
     async fn execute_dial(&self, mut dj: DialJob) {
         let timeout = self.dial_timeout(&dj.addr);
 
-        let dial_r = future::timeout(timeout, dj.transport.dial(dj.addr.clone())).await;
+        let dial_r = task::timeout(timeout, dj.transport.dial(dj.addr.clone())).await;
         if let Ok(r) = dial_r {
             let _ = dj.tx.send((r.map_err(|e| e.into()), dj.addr)).await;
         } else {
@@ -197,7 +195,7 @@ impl DialBackoff {
     }
 
     /// Let other nodes know that we've entered backoff with peer p, so dialers should not wait unnecessarily.
-    /// We still will attempt to dial with task::spawn, in case we get through.
+    /// We still will attempt to dial with runtime::spawn, in case we get through.
     ///
     /// Backoff is not exponential, it's quadratic and computed according to the following formula:
     ///
@@ -222,25 +220,25 @@ impl DialBackoff {
         }
     }
 
-    // backoff background task
+    // backoff background runtime
     // It cleans up the backoff list periodically, or exits when Dialer is closing the channel
     fn start_cleanup_task(&self) -> mpsc::Sender<()> {
         let (tx, mut rx) = mpsc::channel(0);
 
         let me = self.clone();
         task::spawn(async move {
-            log::info!("[DialBackoff] starting backoff background task...");
+            log::info!("[DialBackoff] starting backoff background runtime...");
 
             let interval = me.max_time.unwrap_or(BACKOFF_MAX);
             loop {
-                let either = select(rx.next(), Delay::new(interval)).await;
-                match either {
-                    Either::Left((_, _)) => {
+                let res = task::timeout(interval, rx.next()).await;
+                match res {
+                    Ok(_) => {
                         // we are closed anyway, break
                         log::info!("[DialBackoff] closed, exiting...");
                         break;
                     }
-                    Either::Right((_, _)) => {
+                    Err(_) => {
                         log::trace!("[DialBackoff] cleaning up backoff...");
                         me.clone().do_cleanup().await;
                     }
@@ -310,7 +308,7 @@ struct DialParam {
 
 impl Drop for AsyncDialer {
     fn drop(&mut self) {
-        log::info!("terminating backoff background task...");
+        log::info!("terminating backoff background runtime...");
         self.handle.close_channel();
     }
 }
@@ -327,7 +325,7 @@ impl AsyncDialer {
         let limiter = DialLimiter::new();
         let backoff = DialBackoff::new();
 
-        // start the background task for backoff
+        // start the background runtime for backoff
         let handle = backoff.start_cleanup_task();
 
         Self {
@@ -408,7 +406,7 @@ impl AsyncDialer {
         }
     }
 
-    /// Starts a dialing task
+    /// Starts a dialing runtime
     async fn dial_addrs(mut param: DialParam) -> Result<IStreamMuxer> {
         let peer_id = param.peer_id.clone();
         log::debug!("[Dialer] dialing for {:?}", peer_id);
@@ -460,7 +458,7 @@ impl AsyncDialer {
                 tx: tx.clone(),
                 transport: r.unwrap(),
             };
-            // spawn a task to dial
+            // spawn a runtime to dial
             let limiter = param.limiter.clone();
             task::spawn(async move {
                 limiter.do_dial_job(dj).await;

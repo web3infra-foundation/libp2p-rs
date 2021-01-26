@@ -9,10 +9,10 @@
 // at https://www.apache.org/licenses/LICENSE-2.0 and a copy of the MIT license
 // at https://opensource.org/licenses/MIT.
 
-use async_std::task;
 use criterion::{criterion_group, criterion_main, Criterion};
 use futures::stream::FusedStream;
 use futures::{channel::mpsc, prelude::*, ready};
+use libp2prs_runtime::task;
 use libp2prs_traits::{ReadEx, WriteEx};
 use libp2prs_yamux::{connection::Connection, connection::Mode, error::ConnectionError, Config};
 use std::collections::VecDeque;
@@ -123,7 +123,7 @@ async fn roundtrip(nstreams: usize, nmessages: usize, data: Bytes, send_all: boo
         }
 
         for handle in handles {
-            handle.await.expect("server stream task");
+            handle.await.expect("server stream runtime");
         }
     });
 

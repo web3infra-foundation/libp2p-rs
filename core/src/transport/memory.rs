@@ -306,6 +306,7 @@ impl ReadWriteEx for Channel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use libp2prs_runtime::task;
     use libp2prs_traits::{ReadEx as _ReadEx, WriteEx as _WriteEx};
 
     #[test]
@@ -333,7 +334,7 @@ mod tests {
 
     #[test]
     fn port_not_in_use() {
-        futures::executor::block_on(async move {
+        task::block_on(async move {
             let mut transport = MemoryTransport::default();
             assert!(transport.dial("/memory/810172461024613".parse().unwrap()).await.is_err());
             let _listener = transport.listen_on("/memory/810172461024613".parse().unwrap()).unwrap();
@@ -346,13 +347,11 @@ mod tests {
         let msg = [1, 2, 3];
 
         // Setup listener.
-
         let rand_port = rand::random::<u64>().saturating_add(1);
         let t1_addr: Multiaddr = format!("/memory/{}", rand_port).parse().unwrap();
         let cloned_t1_addr = t1_addr.clone();
 
         let mut t1 = MemoryTransport::default();
-
         let listener = async move {
             let mut listener = t1.listen_on(t1_addr.clone()).unwrap();
             let mut socket = match listener.accept().await.unwrap() {
@@ -362,12 +361,10 @@ mod tests {
 
             let mut buf = [0; 3];
             socket.read_exact2(&mut buf).await.unwrap();
-
             assert_eq!(buf, msg);
         };
 
         // Setup dialer.
-
         let mut t2 = MemoryTransport::default();
         let dialer = async move {
             let mut socket = t2.dial(cloned_t1_addr).await.unwrap();
@@ -375,7 +372,6 @@ mod tests {
         };
 
         // Wait for both to finish.
-
-        futures::executor::block_on(futures::future::join(listener, dialer));
+        task::block_on(futures::future::join(listener, dialer));
     }
 }

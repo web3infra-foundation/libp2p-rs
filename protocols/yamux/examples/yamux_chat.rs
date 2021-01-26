@@ -18,16 +18,16 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::{
+use libp2prs_runtime::{
     net::{TcpListener, TcpStream},
     task,
 };
 use log::info;
 
-use async_std::io;
-use futures::AsyncWriteExt;
 use libp2prs_traits::{ReadEx, WriteEx};
 use libp2prs_yamux::{connection::Connection, connection::Mode, Config};
+use std::io;
+use std::io::Write;
 
 async fn write_data<C>(mut stream: C)
 where
@@ -35,9 +35,9 @@ where
 {
     loop {
         print!("> ");
-        let _ = io::stdout().flush().await;
+        let _ = io::stdout().flush();
         let mut input = String::new();
-        let n = io::stdin().read_line(&mut input).await.unwrap();
+        let n = io::stdin().read_line(&mut input).unwrap();
         let _ = stream.write_all2(&input.as_bytes()[0..n]).await;
         let _ = stream.flush2().await;
     }
@@ -56,13 +56,13 @@ where
         }
         if str != "\n" {
             print!("\x1b[32m{}\x1b[0m> ", str);
-            let _ = io::stdout().flush().await;
+            let _ = io::stdout();
         }
     }
 }
 
 fn main() {
-    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     if std::env::args().nth(1) == Some("server".to_string()) {
         info!("Starting server ......");
         run_server();

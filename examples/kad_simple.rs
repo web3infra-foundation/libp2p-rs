@@ -18,7 +18,6 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-//use async_std::task;
 #[macro_use]
 extern crate lazy_static;
 
@@ -28,6 +27,7 @@ use libp2prs_core::upgrade::Selector;
 use libp2prs_core::{Multiaddr, PeerId};
 use libp2prs_mplex as mplex;
 use libp2prs_noise::{Keypair, NoiseConfig, X25519Spec};
+use libp2prs_runtime::task;
 use libp2prs_secio as secio;
 use libp2prs_swarm::identify::IdentifyConfig;
 use libp2prs_swarm::Swarm;
@@ -44,7 +44,7 @@ use std::time::Duration;
 use xcli::*;
 
 fn main() {
-    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     if std::env::args().len() == 3 {
         log::info!("Starting server...");
         let a1 = std::env::args().nth(1).unwrap();
@@ -96,25 +96,23 @@ fn run_server(bootstrap_peer: PeerId, bootstrap_addr: Multiaddr) {
 
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
 
-    let mut swarm_control = swarm.control();
-    swarm.listen_on(vec![listen_addr1]).unwrap();
+    task::block_on(async {
+        let mut swarm_control = swarm.control();
+        swarm.listen_on(vec![listen_addr1]).unwrap();
 
-    // build Kad
-    let config = KademliaConfig::default()
-        .with_query_timeout(Duration::from_secs(90))
-        .with_refresh_interval(None);
+        // build Kad
+        let config = KademliaConfig::default().with_query_timeout(Duration::from_secs(90));
 
-    let store = MemoryStore::new(swarm.local_peer_id().clone());
-    let kad = Kademlia::with_config(swarm.local_peer_id().clone(), store, config);
-    let mut kad_control = kad.control();
+        let store = MemoryStore::new(swarm.local_peer_id().clone());
+        let kad = Kademlia::with_config(swarm.local_peer_id().clone(), store, config);
+        let mut kad_control = kad.control();
 
-    // update Swarm to support Kad and Routing
-    swarm = swarm.with_protocol(Box::new(kad.handler())).with_routing(Box::new(kad.control()));
+        // update Swarm to support Kad and Routing
+        swarm = swarm.with_protocol(Box::new(kad.handler())).with_routing(Box::new(kad.control()));
 
-    kad.start(swarm_control.clone());
-    swarm.start();
+        kad.start(swarm_control.clone());
+        swarm.start();
 
-    async_std::task::block_on(async {
         kad_control.add_node(bootstrap_peer, vec![bootstrap_addr]).await;
         kad_control.bootstrap().await;
 
@@ -128,6 +126,6 @@ fn run_server(bootstrap_peer: PeerId, bootstrap_addr: Multiaddr) {
         kad_control.close().await;
         swarm_control.close().await;
 
-        async_std::task::sleep(Duration::from_secs(1)).await;
+        task::sleep(Duration::from_secs(1)).await;
     });
 }

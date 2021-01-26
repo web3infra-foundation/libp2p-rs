@@ -18,20 +18,23 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::task;
-
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::transport::memory::MemoryTransport;
 use libp2prs_core::transport::upgrade::TransportUpgrade;
-use libp2prs_core::transport::{ListenerEvent, TransportError};
+use libp2prs_core::transport::ListenerEvent;
 use libp2prs_core::upgrade::Selector;
 use libp2prs_core::{Multiaddr, Transport};
+use libp2prs_runtime::task;
 use libp2prs_secio as secio;
 use libp2prs_yamux as yamux;
 use std::time::Duration;
 
 fn main() {
-    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    task::block_on(entry())
+}
+
+async fn entry() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     // Setup listener.
     let rand_port = rand::random::<u64>().saturating_add(1);
@@ -57,7 +60,7 @@ fn main() {
                         task::spawn(task);
                     }
 
-                    // spawn a task for handling this connection/stream-muxer
+                    // spawn a runtime for handling this connection/stream-muxer
                     task::spawn(async move {
                         loop {
                             if let Ok(stream) = stream_muxer.accept_stream().await {
@@ -68,7 +71,6 @@ fn main() {
                                     let mut buf = [0; 4096];
                                     let n = stream_r.read2(&mut buf).await.unwrap();
                                     let _ = stream_w.write_all2(&buf[0..n]).await;
-                                    Ok::<(), std::io::Error>(())
                                 });
                             } else {
                                 log::warn!("stream_muxer {:?} closed", stream_muxer);
@@ -104,7 +106,7 @@ fn main() {
                 }
 
                 for j in 0..1u32 {
-                    let mut socket = stream_muxer.open_stream().await?;
+                    let mut socket = stream_muxer.open_stream().await.unwrap();
 
                     log::info!("client{}/{} got a new substream {:?}", i, j, socket);
 
@@ -116,10 +118,8 @@ fn main() {
                 }
 
                 stream_muxer.close().await.expect("close error");
-                Ok::<(), TransportError>(())
             })
-            .await
-            .expect("error");
+            .await;
 
             log::info!("client{} exited", i);
         }

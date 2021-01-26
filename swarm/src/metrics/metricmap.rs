@@ -160,7 +160,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::metrics::metricmap::MetricMap;
-    use async_std::task;
+    use libp2prs_runtime::task;
     use smallvec::alloc::sync::Arc;
     use std::ops::Add;
 

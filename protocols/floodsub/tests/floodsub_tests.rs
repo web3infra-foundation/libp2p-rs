@@ -18,7 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::task;
+use libp2prs_runtime::task;
 use std::time::Duration;
 #[macro_use]
 extern crate lazy_static;
@@ -117,7 +117,7 @@ fn test_floodsub_basic() {
                     .await;
             });
 
-            let data = srv_handle.await;
+            let data = srv_handle.await.unwrap();
             cli_handle.await;
             if data.eq(message) {
                 TestResult::passed()

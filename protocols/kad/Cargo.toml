@@ -2,46 +2,49 @@
 name = "libp2prs-kad"
 edition = "2018"
 description = "Kademlia protocol for libp2p"
-version = "0.1.0"
+version = "0.2.1"
 authors = ["Netwarps Technologies admin@paradeum.com"]
 license = "MIT"
 repository = "https://github.com/netwarps/libp2p-rs"
 keywords = ["peer-to-peer", "libp2p", "kad", "dht"]
 categories = ["network-programming", "asynchronous"]
 
+[features]
+async-std = ["libp2prs-swarm/async-std", "libp2prs-runtime/async-std"]
+tokio = ["libp2prs-swarm/tokio", "libp2prs-runtime/tokio"]
+
 [dependencies]
 arrayvec = "0.5.1"
 bytes = "0.5"
 fnv = "1.0"
-futures = "0.3.1"
+futures = { version = "0.3", features = ["std"], default-features = false }
 log = "0.4"
 multihash = "0.11.3"
-prost = "0.6.1"
-primitive-types = "0.7.3"
-rand = "0.7.2"
+prost = "0.6"
+#uint = "0.8"
+primitive-types = "0.8"
+rand = "0.7"
 sha2 = "0.9.1"
 smallvec = "1.0"
 void = "1.0"
 async-trait = "0.1"
-async-std = "1.6"
-wasm-timer = "0.2"
-futures-timer = "3.0"
+xcli = "0.5"
 #xcli = { git = "https://github.com/kingwel-xie/xcli-rs.git", branch = "master"}
-xcli = "0.5.1"
 
-libp2prs-core = { path = "../../core", version = "0.2.0", package = "libp2prs-core" }
-libp2prs-traits = { path = "../../traits", version = "0.2.0", package = "libp2prs-traits" }
-libp2prs-swarm = { path = "../../swarm", version = "0.2.0", package = "libp2prs-swarm" }
+libp2prs-runtime = { path = "../../runtime", version = "0.2.1", optional = true }
+libp2prs-core = { path = "../../core", version = "0.2.1" }
+libp2prs-traits = { path = "../../traits", version = "0.2.1" }
+libp2prs-swarm = { path = "../../swarm", version = "0.2.1", optional = true }
 
 
 [dev-dependencies]
-env_logger = "0.6.0"
-libp2prs-mplex = { path = "../mplex", version = "0.2.0", package = "libp2prs-mplex" }
-libp2prs-yamux = { path = "../yamux", version = "0.2.0", package = "libp2prs-yamux" }
-libp2prs-secio = { path = "../secio", version = "0.2.0", package = "libp2prs-secio" }
-libp2prs-plaintext = { path = "../plaintext", version = "0.2.0", package = "libp2prs-plaintext" }
+env_logger = "0.8"
+libp2prs-mplex = { path = "../mplex", version = "0.2.1" }
+libp2prs-yamux = { path = "../yamux", version = "0.2.1" }
+libp2prs-secio = { path = "../secio", version = "0.2.1" }
+libp2prs-plaintext = { path = "../plaintext", version = "0.2.1" }
 
-libp2prs-tcp = { path = "../../transports/tcp", version = "0.2.0", package = "libp2prs-tcp" }
+libp2prs-tcp = { path = "../../transports/tcp", version = "0.2.1", features = ["async-std"] }
 lazy_static = "1.4"
 quickcheck = "0.9"
 

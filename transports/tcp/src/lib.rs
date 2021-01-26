@@ -29,7 +29,6 @@
 //! `core` library. See the documentation of `core` and of libp2p in general to learn how to
 //! use the `Transport` trait.
 
-use async_std::net::{TcpListener, TcpStream};
 use async_trait::async_trait;
 use futures::future::Either;
 use futures::prelude::*;
@@ -37,12 +36,6 @@ use futures::FutureExt;
 use if_addrs::{get_if_addrs, IfAddr};
 use if_watch::{IfEvent, IfWatcher};
 use ipnet::{IpNet, Ipv4Net, Ipv6Net};
-use libp2prs_core::transport::{ConnectionInfo, IListener, ITransport, ListenerEvent};
-use libp2prs_core::{
-    multiaddr::{protocol, protocol::Protocol, Multiaddr},
-    transport::{TransportError, TransportListener},
-    Transport,
-};
 use socket2::{Domain, Socket, Type};
 use std::{
     convert::TryFrom,
@@ -52,9 +45,16 @@ use std::{
     task::{Context, Poll},
 };
 
+use libp2prs_core::transport::{ConnectionInfo, IListener, ITransport, ListenerEvent};
+use libp2prs_core::{
+    multiaddr::{protocol, protocol::Protocol, Multiaddr},
+    transport::{TransportError, TransportListener},
+    Transport,
+};
+use libp2prs_runtime::net::{TcpListener, TcpStream};
+
 /// Represents the configuration for a TCP/IP transport capability for libp2p.
 ///
-#[cfg_attr(docsrs, doc(cfg(feature = $feature_name)))]
 #[derive(Debug, Clone, Default)]
 pub struct TcpConfig {
     /// TTL to set for opened sockets, or `None` to keep default.
@@ -176,7 +176,6 @@ impl Transport for TcpConfig {
 }
 
 /// Wraps around a `TcpListener`.
-#[cfg_attr(docsrs, doc(cfg(feature = $feature_name)))]
 #[derive(Debug)]
 pub struct TcpTransListener {
     inner: TcpListener,
@@ -241,9 +240,9 @@ impl TransportListener for TcpTransListener {
         self.listen_address.as_ref()
     }
 }
+
 /// Wraps around a `TcpStream` and adds logging for important events.
-#[cfg_attr(docsrs, doc(cfg(feature = $feature_name)))]
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct TcpTransStream {
     inner: TcpStream,
     la: Multiaddr,
@@ -363,10 +362,15 @@ fn host_addresses(port: u16) -> io::Result<Vec<(IpAddr, IpNet, Multiaddr)>> {
 #[cfg(test)]
 mod tests {
     use super::multiaddr_to_socketaddr;
-    #[cfg(feature = "async-std")]
     use super::TcpConfig;
+    use futures::{AsyncReadExt, AsyncWriteExt};
     use libp2prs_core::multiaddr::Multiaddr;
+    use libp2prs_core::transport::ListenerEvent;
+    use libp2prs_core::Transport;
+    use libp2prs_runtime::task;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::time::Duration;
+
     #[test]
     fn multiaddr_to_tcp_conversion() {
         use std::net::Ipv6Addr;
@@ -399,18 +403,17 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "async-std")]
     fn dialer_and_listener_timeout() {
         fn test1(addr: Multiaddr) {
-            async_std::task::block_on(async move {
+            task::block_on(async move {
                 let mut timeout_listener = TcpConfig::new().timeout(Duration::from_secs(1)).listen_on(addr).unwrap();
                 assert!(timeout_listener.accept().await.is_err());
             });
         }
 
         fn test2(addr: Multiaddr) {
-            async_std::task::block_on(async move {
-                let tcp = TcpConfig::new().timeout(Duration::from_secs(1));
+            task::block_on(async move {
+                let mut tcp = TcpConfig::new().timeout(Duration::from_secs(1));
                 assert!(tcp.dial(addr.clone()).await.is_err());
             });
         }
@@ -420,19 +423,16 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "async-std")]
     fn communicating_between_dialer_and_listener() {
         fn test(addr: Multiaddr) {
-            let (ready_tx, ready_rx) = futures::channel::oneshot::channel();
-            let mut ready_tx = Some(ready_tx);
-
-            async_std::task::spawn(async move {
-                let mut tcp_listener = TcpConfig::new().listen_on(addr).unwrap();
-
-                ready_tx.take().unwrap().send(tcp_listener.multi_addr()).unwrap();
-
+            let mut tcp_listener = TcpConfig::new().listen_on(addr).unwrap();
+            let srv_addr = tcp_listener.multi_addr().cloned().unwrap();
+            task::spawn(async move {
                 loop {
-                    let mut socket = tcp_listener.accept().await.unwrap();
+                    let mut socket = match tcp_listener.accept().await.unwrap() {
+                        ListenerEvent::Accepted(s) => s,
+                        _ => continue,
+                    };
 
                     let mut buf = [0u8; 3];
                     socket.read_exact(&mut buf).await.unwrap();
@@ -441,12 +441,11 @@ mod tests {
                 }
             });
 
-            async_std::task::block_on(async move {
-                let addr = ready_rx.await.unwrap();
-                let tcp = TcpConfig::new();
+            task::block_on(async move {
+                let mut tcp = TcpConfig::new();
 
                 // Obtain a future socket through dialing
-                let mut socket = tcp.dial(addr.clone()).await.unwrap();
+                let mut socket = tcp.dial(srv_addr).await.unwrap();
                 socket.write_all(&[0x1, 0x2, 0x3]).await.unwrap();
 
                 let mut buf = [0u8; 3];

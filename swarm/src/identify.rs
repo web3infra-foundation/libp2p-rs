@@ -302,6 +302,7 @@ mod tests {
         multiaddr::multiaddr,
         transport::{memory::MemoryTransport, Transport},
     };
+    use libp2prs_runtime::task;
     use rand::{thread_rng, Rng};
 
     #[test]
@@ -315,7 +316,7 @@ mod tests {
 
         let (tx, mut rx) = mpsc::channel::<SwarmControlCmd>(0);
 
-        async_std::task::spawn(async move {
+        task::spawn(async move {
             let socket = match listener.accept().await.unwrap() {
                 ListenerEvent::Accepted(socket) => socket,
                 _ => panic!("unreachable"),
@@ -326,7 +327,7 @@ mod tests {
             let _ = handler.handle(socket, handler.protocol_info().first().unwrap().clone()).await;
         });
 
-        async_std::task::spawn(async move {
+        task::spawn(async move {
             let r = rx.next().await.unwrap();
             if let SwarmControlCmd::IdentifyInfo(reply) = r {
                 // a fake IdentifyInfo
@@ -341,7 +342,7 @@ mod tests {
             }
         });
 
-        async_std::task::block_on(async move {
+        task::block_on(async move {
             let socket = MemoryTransport.dial(listener_addr).await.unwrap();
             let socket = Substream::new_with_default(Box::new(socket));
 
@@ -361,7 +362,7 @@ mod tests {
 
         let (tx, mut rx) = mpsc::unbounded::<SwarmEvent>();
 
-        async_std::task::spawn(async move {
+        task::spawn(async move {
             let socket = MemoryTransport.dial(listener_addr).await.unwrap();
             let socket = Substream::new_with_default(Box::new(socket));
 
@@ -376,7 +377,7 @@ mod tests {
             let _ = identify::produce_message(socket, info).await.unwrap();
         });
 
-        async_std::task::block_on(async move {
+        task::block_on(async move {
             let socket = match listener.accept().await.unwrap() {
                 ListenerEvent::Accepted(socket) => socket,
                 _ => panic!("unreachable"),

@@ -114,8 +114,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use async_std::task;
     use async_trait::async_trait;
+    use libp2prs_runtime::task;
 
     use super::super::Memory;
     use super::{BoxStream, Handler, IProtocolHandler, Muxer, Stream};

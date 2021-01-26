@@ -19,11 +19,6 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use crate::control::Control;
-use crate::control::RegId;
-use crate::dns::build_service_discovery_response;
-use crate::{dns, AddrInfo, INotifiee, MdnsConfig, META_QUERY_SERVICE, SERVICE_NAME};
-use async_std::{net::UdpSocket, task};
 use dns_parser::{Packet, RData};
 use futures::{
     channel::{mpsc, oneshot},
@@ -31,9 +26,6 @@ use futures::{
 };
 use futures_timer::Delay;
 use lazy_static::lazy_static;
-use libp2prs_core::multiaddr::protocol::Protocol;
-use libp2prs_core::translation::address_translation;
-use libp2prs_core::{Multiaddr, PeerId};
 use nohash_hasher::IntMap;
 use smallvec::SmallVec;
 use std::{
@@ -44,6 +36,16 @@ use std::{
     time::Duration,
 };
 use std::{error::Error, fmt};
+
+use libp2prs_core::multiaddr::protocol::Protocol;
+use libp2prs_core::translation::address_translation;
+use libp2prs_core::{Multiaddr, PeerId};
+use libp2prs_runtime::{net::UdpSocket, task};
+
+use crate::control::Control;
+use crate::control::RegId;
+use crate::dns::build_service_discovery_response;
+use crate::{dns, AddrInfo, INotifiee, MdnsConfig, META_QUERY_SERVICE, SERVICE_NAME};
 
 const MDNS_RESPONSE_TTL: std::time::Duration = Duration::from_secs(5 * 60);
 
@@ -231,7 +233,6 @@ fn bind() -> io::Result<(UdpSocket, UdpSocket)> {
     let socket = UdpSocket::from(std_socket);
 
     // Given that we pass an IP address to bind, which does not need to be resolved, we can
-    // use std::net::UdpSocket::bind, instead of its async counterpart from async-std.
     let query_socket = UdpSocket::from(std::net::UdpSocket::bind((Ipv4Addr::from([0u8, 0, 0, 0]), 0u16))?);
 
     socket.set_multicast_loop_v4(true).expect("couldn't set multicast loop");
