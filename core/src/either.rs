@@ -19,22 +19,23 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use crate::identity::Keypair;
-use crate::muxing::{IReadWrite, IStreamMuxer, StreamInfo, StreamMuxer, StreamMuxerEx};
-use crate::secure_io::SecureInfo;
-use crate::transport::{ConnectionInfo, TransportError};
-use crate::upgrade::ProtocolName;
-use crate::{Multiaddr, PeerId, PublicKey};
-use async_std::io::Error;
 use async_trait::async_trait;
 use futures::future::BoxFuture;
 use futures::{
     io::{IoSlice, IoSliceMut},
     prelude::*,
 };
-use libp2prs_traits::{ReadEx, SplitEx, WriteEx};
 use pin_project::pin_project;
-use std::{io, io::Error as IoError, pin::Pin, task::Context, task::Poll};
+use std::{io, io::Error, pin::Pin, task::Context, task::Poll};
+
+use libp2prs_traits::{ReadEx, SplitEx, WriteEx};
+
+use crate::identity::Keypair;
+use crate::muxing::{IReadWrite, IStreamMuxer, StreamInfo, StreamMuxer, StreamMuxerEx};
+use crate::secure_io::SecureInfo;
+use crate::transport::{ConnectionInfo, TransportError};
+use crate::upgrade::ProtocolName;
+use crate::{Multiaddr, PeerId, PublicKey};
 
 #[pin_project(project = EitherOutputProj)]
 #[derive(Debug, Copy, Clone)]
@@ -48,14 +49,14 @@ where
     A: AsyncRead,
     B: AsyncRead,
 {
-    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<Result<usize, IoError>> {
+    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<Result<usize, Error>> {
         match self.project() {
             EitherOutputProj::A(a) => AsyncRead::poll_read(a, cx, buf),
             EitherOutputProj::B(b) => AsyncRead::poll_read(b, cx, buf),
         }
     }
 
-    fn poll_read_vectored(self: Pin<&mut Self>, cx: &mut Context<'_>, bufs: &mut [IoSliceMut<'_>]) -> Poll<Result<usize, IoError>> {
+    fn poll_read_vectored(self: Pin<&mut Self>, cx: &mut Context<'_>, bufs: &mut [IoSliceMut<'_>]) -> Poll<Result<usize, Error>> {
         match self.project() {
             EitherOutputProj::A(a) => AsyncRead::poll_read_vectored(a, cx, bufs),
             EitherOutputProj::B(b) => AsyncRead::poll_read_vectored(b, cx, bufs),
@@ -68,28 +69,28 @@ where
     A: AsyncWrite,
     B: AsyncWrite,
 {
-    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, IoError>> {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, Error>> {
         match self.project() {
             EitherOutputProj::A(a) => AsyncWrite::poll_write(a, cx, buf),
             EitherOutputProj::B(b) => AsyncWrite::poll_write(b, cx, buf),
         }
     }
 
-    fn poll_write_vectored(self: Pin<&mut Self>, cx: &mut Context<'_>, bufs: &[IoSlice<'_>]) -> Poll<Result<usize, IoError>> {
+    fn poll_write_vectored(self: Pin<&mut Self>, cx: &mut Context<'_>, bufs: &[IoSlice<'_>]) -> Poll<Result<usize, Error>> {
         match self.project() {
             EitherOutputProj::A(a) => AsyncWrite::poll_write_vectored(a, cx, bufs),
             EitherOutputProj::B(b) => AsyncWrite::poll_write_vectored(b, cx, bufs),
         }
     }
 
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), IoError>> {
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
         match self.project() {
             EitherOutputProj::A(a) => AsyncWrite::poll_flush(a, cx),
             EitherOutputProj::B(b) => AsyncWrite::poll_flush(b, cx),
         }
     }
 
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), IoError>> {
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
         match self.project() {
             EitherOutputProj::A(a) => AsyncWrite::poll_close(a, cx),
             EitherOutputProj::B(b) => AsyncWrite::poll_close(b, cx),

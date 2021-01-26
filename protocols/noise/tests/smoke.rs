@@ -18,41 +18,16 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::task;
 use libp2prs_core::identity;
 use libp2prs_noise::NoiseConfig;
 use libp2prs_noise::{Keypair, X25519};
+use libp2prs_runtime::{
+    net::{TcpListener, TcpStream},
+    task,
+};
 use libp2prs_traits::{ReadEx, WriteEx};
 use log::info;
 
-//
-// use futures::{
-//     future::{self, Either},
-//     prelude::*,
-// };
-// use libp2prs_core::identity;
-// use libp2prs_core::transport::{ListenerEvent, Transport};
-// use libp2prs_core::upgrade::{self, apply_inbound, apply_outbound, Negotiated};
-// use libp2prs_noise::{
-//     Keypair, NoiseConfig, NoiseError, NoiseOutput, RemoteIdentity, X25519Spec, X25519,
-// };
-// use libp2prs_tcp::{TcpConfig, TcpTransStream};
-// use log::info;
-// use quickcheck::QuickCheck;
-// use std::{convert::TryInto, io};
-//
-// #[allow(dead_code)]
-// fn core_upgrade_compat() {
-//     // Tests API compaibility with the libp2p-core upgrade API,
-//     // i.e. if it compiles, the "test" is considered a success.
-//     let id_keys = identity::Keypair::generate_ed25519();
-//     let dh_keys = Keypair::<X25519>::new().into_authentic(&id_keys).unwrap();
-//     let noise = NoiseConfig::xx(dh_keys, id_keys).into_authenticated();
-//     let _ = TcpConfig::new()
-//         .upgrade(upgrade::Version::V1)
-//         .authenticate(noise);
-// }
-//
 #[test]
 fn test_mode_xx() {
     task::block_on(async {
@@ -62,7 +37,7 @@ fn test_mode_xx() {
             let server_auth = Keypair::<X25519>::new().into_authentic(&server_id).unwrap();
             let server_config = NoiseConfig::xx(server_auth, server_id);
 
-            let listener = async_std::net::TcpListener::bind("127.0.0.1:9876").await.unwrap();
+            let listener = TcpListener::bind("127.0.0.1:9876").await.unwrap();
             while let Ok((socket, _)) = listener.accept().await {
                 let cfg = server_config.clone();
                 let (_, mut output) = cfg.handshake(socket, false).await.unwrap();
@@ -82,7 +57,7 @@ fn test_mode_xx() {
         let client_config = NoiseConfig::xx(client_auth, client_id);
 
         //client
-        let client_socket = async_std::net::TcpStream::connect("127.0.0.1:9876").await.unwrap();
+        let client_socket = TcpStream::connect("127.0.0.1:9876").await.unwrap();
         let (_, mut output) = client_config.handshake(client_socket, true).await.unwrap();
         let data = b"hello world";
         let _ = output.write2(data).await;

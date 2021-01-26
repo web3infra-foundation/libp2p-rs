@@ -18,12 +18,12 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::task;
 use log::{error, info};
 
 use libp2prs_core::transport::upgrade::TransportUpgrade;
 use libp2prs_core::{Multiaddr, Transport};
 use libp2prs_dns::DnsConfig;
+use libp2prs_runtime::task;
 use libp2prs_tcp::TcpConfig;
 
 use libp2prs_core::identity::Keypair;
@@ -35,14 +35,16 @@ use libp2prs_secio as secio;
 use libp2prs_yamux as yamux;
 
 fn main() {
-    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    if std::env::args().nth(1) == Some("server".to_string()) {
-        info!("Starting server ......");
-        run_server();
-    } else {
-        info!("Starting client ......");
-        run_client();
-    }
+    task::block_on(async {
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+        if std::env::args().nth(1) == Some("server".to_string()) {
+            info!("Starting server ......");
+            run_server();
+        } else {
+            info!("Starting client ......");
+            run_client();
+        }
+    });
 }
 
 fn run_server() {
@@ -93,7 +95,7 @@ fn run_server() {
 }
 
 fn run_client() {
-    let addr: Multiaddr = "/dns4/localhost/tcp/38086".parse().unwrap();
+    let addr: Multiaddr = "/dns4/localhost/tcp/8086".parse().unwrap();
     let sec = secio::Config::new(Keypair::generate_secp256k1());
     let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
     let mut tu = TransportUpgrade::new(DnsConfig::new(TcpConfig::default()), mux, sec);

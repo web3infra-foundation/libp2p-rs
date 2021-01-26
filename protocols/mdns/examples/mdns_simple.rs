@@ -1,4 +1,4 @@
-use async_std::task;
+use libp2prs_runtime::task;
 
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::Multiaddr;
@@ -15,7 +15,7 @@ impl Notifee for DiscoveryNotifee {
 }
 
 fn main() {
-    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     task::block_on(async {
         let pid = Keypair::generate_ed25519().public().into_peer_id();
         let listen_addr: Multiaddr = "/ip4/0.0.0.0/tcp/0".parse().unwrap();

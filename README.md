@@ -4,7 +4,7 @@
 
 ![Continuous integration](https://github.com/netwarps/libp2p-rs/workflows/Continuous%20integration/badge.svg?branch=master)
 
-This repository is an alternative implementation in `Rust` of the [libp2p](https://libp2p.io) spec. Not like `rust-libp2p`, `libp2p-rs` is written with async/await syntax, and driven by async-std. Even though, many codes are borrowed from `rust-libp2p` and some from `go-libp2p`. We are trying to keep compatible with the two implementations, but it is unfortunately not guaranteed.
+This repository is an alternative implementation in `Rust` of the [libp2p](https://libp2p.io) spec. Not like `rust-libp2p`, `libp2p-rs` is written with async/await syntax, and driven by async runtime. Even though, many codes are borrowed from `rust-libp2p` and some from `go-libp2p`. We are trying to keep compatible with the two implementations, but it is unfortunately not guaranteed.
 
 ## Documentations
 

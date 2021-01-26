@@ -18,7 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::{
+use libp2prs_runtime::{
     net::{TcpListener, TcpStream},
     task,
 };
@@ -29,7 +29,7 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 fn main() {
-    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     if std::env::args().nth(1) == Some("server".to_string()) {
         info!("Starting server ......");
         run_server();
@@ -85,7 +85,7 @@ fn run_client() {
 
         let mut handles = VecDeque::new();
         let data = Arc::new(vec![0x42; 100 * 1024]);
-        for _ in 0..100 {
+        for _ in 0..100usize {
             let mut stream = ctrl.clone().open_stream().await.unwrap();
             let data = data.clone();
             info!("C: opened new stream {}", stream.id());

@@ -35,8 +35,7 @@ use std::{error::Error, fmt};
 use futures::channel::{mpsc, oneshot};
 use futures::prelude::*;
 
-use async_std::task;
-use async_std::task::JoinHandle;
+use libp2prs_runtime::task;
 
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::multistream::Negotiator;
@@ -91,21 +90,21 @@ pub struct Connection {
     substreams: SmallVec<[SubstreamView; 8]>,
     /// Direction of this connection
     dir: Direction,
-    /// Indicates if Ping task is running.
+    /// Indicates if Ping runtime is running.
     ping_running: Arc<AtomicBool>,
     /// Ping failure count.
     ping_failures: u32,
     /// Identity service
     identity: Option<()>,
-    /// The task handle of this connection, returned by task::Spawn
+    /// The runtime handle of this connection, returned by runtime::Spawn
     /// handle.await() when closing a connection
-    handle: Option<JoinHandle<()>>,
-    /// The task handle of the Ping service of this connection
-    ping_handle: Option<JoinHandle<()>>,
-    /// The task handle of the Identify service of this connection
-    identify_handle: Option<JoinHandle<()>>,
-    /// The task handle of the Identify Push service of this connection
-    identify_push_handle: Option<JoinHandle<()>>,
+    handle: Option<task::TaskHandle<()>>,
+    /// The runtime handle of the Ping service of this connection
+    ping_handle: Option<task::TaskHandle<()>>,
+    /// The runtime handle of the Identify service of this connection
+    identify_handle: Option<task::TaskHandle<()>>,
+    /// The runtime handle of the Identify Push service of this connection
+    identify_push_handle: Option<task::TaskHandle<()>>,
     /// Global metrics.
     metric: Arc<Metric>,
 }
@@ -182,8 +181,8 @@ impl Connection {
         &self.stream_muxer
     }
 
-    /// Sets the task handle of the connection.
-    pub(crate) fn set_handle(&mut self, handle: JoinHandle<()>) {
+    /// Sets the runtime handle of the connection.
+    pub(crate) fn set_handle(&mut self, handle: task::TaskHandle<()>) {
         self.handle = Some(handle);
     }
 
@@ -192,9 +191,9 @@ impl Connection {
         &mut self,
         pids: Vec<ProtocolId>,
         f: impl FnOnce(Result<Substream, TransportError>) -> T + Send + 'static,
-    ) -> JoinHandle<T> {
+    ) -> task::TaskHandle<()> {
         let cid = self.id();
-        let stream_muxer = self.stream_muxer().clone();
+        let stream_muxer = self.stream_muxer().box_clone();
         let mut tx = self.tx.clone();
         let ctrl = self.ctrl.clone();
         let metric = self.metric.clone();
@@ -217,25 +216,25 @@ impl Connection {
 
             let _ = tx.send(event).await;
 
-            f(result)
+            f(result);
         })
     }
 
-    /// Closes the inner stream_muxer. Spawn a task to avoid blocking.
+    /// Closes the inner stream_muxer. Spawn a runtime to avoid blocking.
     pub fn close(&self) {
         log::debug!("closing {:?}", self);
 
         let mut stream_muxer = self.stream_muxer.clone();
-        // spawns a task to close the stream_muxer, later connection will cleaned up
+        // spawns a runtime to close the stream_muxer, later connection will cleaned up
         // in 'handle_connection_closed'
         task::spawn(async move {
             let _ = stream_muxer.close().await;
         });
     }
 
-    /// Waits for bg-task & accept-task.
+    /// Waits for bg-runtime & accept-runtime.
     pub(crate) async fn wait(&mut self) -> Result<(), SwarmError> {
-        // wait for accept-task and bg-task to exit
+        // wait for accept-runtime and bg-runtime to exit
         if let Some(h) = self.handle.take() {
             h.await;
         }
@@ -287,7 +286,7 @@ impl Connection {
         self.substreams.len()
     }
 
-    /// Starts the Ping service on this connection. The task handle will be tracked
+    /// Starts the Ping service on this connection. The runtime handle will be tracked
     /// by the connection for later closing the Ping service
     ///
     /// Note that we don't generate StreamOpened/Closed event for Ping/Identify outbound
@@ -355,7 +354,7 @@ impl Connection {
                 }
             }
 
-            log::debug!("ping task exiting...");
+            log::debug!("ping runtime exiting...");
         });
 
         self.ping_handle = Some(handle);
@@ -401,7 +400,7 @@ impl Connection {
                 })
                 .await;
 
-            log::debug!("identify task exiting...");
+            log::debug!("identify runtime exiting...");
         });
 
         self.identify_handle = Some(handle);
@@ -448,7 +447,7 @@ impl Connection {
                 }
             }
 
-            log::debug!("identify push task exiting...");
+            log::debug!("identify push runtime exiting...");
         });
 
         self.identify_push_handle = Some(handle);

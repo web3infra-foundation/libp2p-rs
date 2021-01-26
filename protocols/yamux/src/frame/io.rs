@@ -203,7 +203,7 @@ mod tests {
     #[test]
     fn encode_decode_identity() {
         fn property(f: Frame<()>) -> bool {
-            async_std::task::block_on(async move {
+            libp2prs_runtime::task::block_on(async move {
                 let id = crate::connection::Id::random(crate::connection::Mode::Server);
                 let mut io = Io::new(id, futures::io::Cursor::new(Vec::new()), f.body.len());
                 if io.send_frame(&f).await.is_err() {

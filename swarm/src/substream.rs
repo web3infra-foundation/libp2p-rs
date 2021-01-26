@@ -27,16 +27,18 @@
 use async_trait::async_trait;
 use futures::channel::mpsc;
 use futures::SinkExt;
+use std::sync::Arc;
 use std::{fmt, io};
+
+use libp2prs_core::muxing::IReadWrite;
+use libp2prs_core::{Multiaddr, PeerId};
+use libp2prs_runtime::task;
+use libp2prs_traits::{ReadEx, WriteEx};
 
 use crate::connection::{ConnectionId, Direction};
 use crate::control::SwarmControlCmd;
 use crate::metrics::metric::Metric;
 use crate::ProtocolId;
-use libp2prs_core::muxing::IReadWrite;
-use libp2prs_core::{Multiaddr, PeerId};
-use libp2prs_traits::{ReadEx, WriteEx};
-use std::sync::Arc;
 
 /// The Id of sub stream
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -99,7 +101,7 @@ impl fmt::Debug for Substream {
     }
 }
 
-// Note that we spawn a task to close Substream, since Rust doesn't support Async Destructor yet
+// Note that we spawn a runtime to close Substream, since Rust doesn't support Async Destructor yet
 impl Drop for Substream {
     fn drop(&mut self) {
         let inner = self.inner.take();
@@ -109,7 +111,7 @@ impl Drop for Substream {
             let mut s = self.ctrl.clone();
             log::debug!("garbage collecting stream {:?}/{:?} {:?}", cid, sid, self.protocol());
 
-            async_std::task::spawn(async move {
+            task::spawn(async move {
                 let _ = s.send(SwarmControlCmd::CloseStream(cid, sid)).await;
                 let _ = inner.close2().await;
             });

@@ -20,10 +20,13 @@
 #[macro_use]
 extern crate lazy_static;
 
-use async_std::task;
 use libp2prs_core::secure_io::SecureInfo;
 use libp2prs_core::{identity, PeerId};
 use libp2prs_noise::{Keypair, NoiseConfig, X25519Spec};
+use libp2prs_runtime::{
+    net::{TcpListener, TcpStream},
+    task,
+};
 use libp2prs_traits::{copy, ReadEx, SplitEx, WriteEx};
 use log::info;
 use log::LevelFilter;
@@ -49,7 +52,7 @@ fn run_server() {
         let pid = PeerId::from(SERVER_KEY.public());
         info!("I am {}", pid);
 
-        let listener = async_std::net::TcpListener::bind("127.0.0.1:3214").await.unwrap();
+        let listener = TcpListener::bind("127.0.0.1:3214").await.unwrap();
 
         while let Ok((socket, _)) = listener.accept().await {
             let server_id = SERVER_KEY.clone();
@@ -71,7 +74,7 @@ fn run_server() {
 
 fn run_client() {
     task::block_on(async {
-        let socket = async_std::net::TcpStream::connect("127.0.0.1:3214").await.unwrap();
+        let socket = TcpStream::connect("127.0.0.1:3214").await.unwrap();
         info!("[client] connected to server: {:?}", socket.peer_addr());
 
         let client_id = identity::Keypair::generate_ed25519();

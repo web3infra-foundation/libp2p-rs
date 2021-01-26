@@ -313,21 +313,6 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin> SplitEx for T {
     }
 }
 
-// the other way around to implement SplitEx for T, requires T supports Clone
-// which async-std::TcpStream does
-/*
-impl<T: ReadEx + WriteEx + Unpin + Clone> SplitEx for T {
-    type Reader = T;
-    type Writer = T;
-
-    fn split(self) -> (Self::Reader, Self::Writer) {
-        let r = self.clone();
-        let w = self;
-        (r, w)
-    }
-}
-*/
-
 /// SplittableReadWrite trait for simplifying generic type constraints
 pub trait SplittableReadWrite: ReadEx + WriteEx + SplitEx + Unpin + 'static {}
 
@@ -337,6 +322,7 @@ impl<T: ReadEx + WriteEx + SplitEx + Unpin + 'static> SplittableReadWrite for T 
 mod tests {
     use super::*;
     use futures::io::{self, AsyncReadExt, Cursor};
+    use libp2prs_runtime::task;
 
     struct Test(Cursor<Vec<u8>>);
 
@@ -365,7 +351,7 @@ mod tests {
     /// Read Vec<u8>
     #[test]
     fn test_read() {
-        async_std::task::block_on(async {
+        task::block_on(async {
             let mut reader = Test(Cursor::new(vec![1, 2, 3, 4]));
             let mut output = [0u8; 3];
             let bytes = reader.read2(&mut output[..]).await.unwrap();
@@ -378,7 +364,7 @@ mod tests {
     // Read string
     #[test]
     fn test_read_string() {
-        async_std::task::block_on(async {
+        task::block_on(async {
             let mut reader = Test(Cursor::new(b"hello world".to_vec()));
             let mut output = [0u8; 3];
             let bytes = reader.read2(&mut output[..]).await.unwrap();
@@ -390,7 +376,7 @@ mod tests {
 
     #[test]
     fn test_read_exact() {
-        async_std::task::block_on(async {
+        task::block_on(async {
             let mut reader = Test(Cursor::new(vec![1, 2, 3, 4]));
             let mut output = [0u8; 3];
             let _bytes = reader.read_exact2(&mut output[..]).await;
@@ -401,7 +387,7 @@ mod tests {
 
     #[test]
     fn test_read_fixed_u32() {
-        async_std::task::block_on(async {
+        task::block_on(async {
             let mut reader = Test(Cursor::new(b"hello world".to_vec()));
             let size = reader.read_fixed_u32().await.unwrap();
 
@@ -411,7 +397,7 @@ mod tests {
 
     #[test]
     fn test_read_varint() {
-        async_std::task::block_on(async {
+        task::block_on(async {
             let mut reader = Test(Cursor::new(vec![1, 2, 3, 4, 5, 6]));
             let size = reader.read_varint().await.unwrap();
 
@@ -421,7 +407,7 @@ mod tests {
 
     #[test]
     fn test_read_one() {
-        async_std::task::block_on(async {
+        task::block_on(async {
             let mut reader = Test(Cursor::new(vec![11, 104, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100]));
             let output = match reader.read_one(11).await {
                 Ok(v) => v,
@@ -434,7 +420,7 @@ mod tests {
 
     #[test]
     fn test_write() {
-        async_std::task::block_on(async {
+        task::block_on(async {
             let mut writer = Test(Cursor::new(vec![0u8; 5]));
             let size = writer.write2(&[1, 2, 3, 4]).await.unwrap();
 
@@ -445,7 +431,7 @@ mod tests {
 
     #[test]
     fn test_write_all2() {
-        async_std::task::block_on(async {
+        task::block_on(async {
             let mut writer = Test(Cursor::new(vec![0u8; 4]));
             let output = vec![1, 2, 3, 4, 5];
             let _bytes = writer.write_all2(&output[..]).await.unwrap();
@@ -456,7 +442,7 @@ mod tests {
 
     #[test]
     fn test_write_fixed_u32() {
-        async_std::task::block_on(async {
+        task::block_on(async {
             let mut writer = Test(Cursor::new(b"hello world".to_vec()));
             let _result = writer.write_fixed_u32(1751477356).await.unwrap();
 
@@ -468,7 +454,7 @@ mod tests {
 
     #[test]
     fn test_write_varint() {
-        async_std::task::block_on(async {
+        task::block_on(async {
             let mut writer = Test(Cursor::new(vec![2, 2, 3, 4, 5, 6]));
             let _result = writer.write_varint(1).await.unwrap();
 
@@ -478,7 +464,7 @@ mod tests {
 
     #[test]
     fn test_write_one() {
-        async_std::task::block_on(async {
+        task::block_on(async {
             let mut writer = Test(Cursor::new(vec![0u8; 0]));
             let _result = writer.write_one("hello world".as_ref()).await;
             assert_eq!(writer.0.get_mut(), &[11, 104, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100]);

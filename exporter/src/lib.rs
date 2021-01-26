@@ -20,11 +20,12 @@
 
 pub(crate) mod exporter;
 
-use crate::exporter::Exporter;
-use async_std::task;
-use libp2prs_swarm::Control;
 use prometheus::{register, Encoder, TextEncoder};
 use tide::{Body, Request, Response, Server};
+
+use crate::exporter::Exporter;
+use libp2prs_runtime::task;
+use libp2prs_swarm::Control;
 
 /// Exporter server
 pub struct ExporterServer {
@@ -43,7 +44,10 @@ impl ExporterServer {
     }
 
     pub fn start(self, addr: String) {
-        task::spawn(async move { self.s.listen(addr).await });
+        task::spawn(async move {
+            let r = self.s.listen(addr).await;
+            log::info!("Exporter server started result={:?}", r);
+        });
     }
 }
 

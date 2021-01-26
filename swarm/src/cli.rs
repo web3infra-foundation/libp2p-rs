@@ -18,12 +18,13 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::task;
 use std::convert::TryFrom;
+use xcli::*;
+
+use libp2prs_core::PeerId;
+use libp2prs_runtime::task;
 
 use crate::Control;
-use libp2prs_core::PeerId;
-use xcli::*;
 
 const SWRM: &str = "swarm";
 

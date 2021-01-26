@@ -33,7 +33,6 @@
 //! `/dns/`, `/dns4/`, or `/dns6/` component, a DNS resolve will be performed and the component
 //! will be replaced with `/ip4/` and/or `/ip6/` components.
 
-use async_std::net::ToSocketAddrs;
 use async_trait::async_trait;
 use libp2prs_core::transport::{IListener, ITransport};
 use libp2prs_core::{
@@ -41,6 +40,7 @@ use libp2prs_core::{
     transport::TransportError,
     Transport,
 };
+use libp2prs_runtime::net;
 use log::{error, trace};
 use std::{error, fmt, io};
 
@@ -85,7 +85,7 @@ where
     }
 
     async fn dial(&mut self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
-        // one step complete all task
+        // one step complete all runtime
         let mut iter = addr.iter();
         let proto = iter.find_map(|x| match x {
             Protocol::Dns(name) => Some((name, true, true)),
@@ -109,7 +109,7 @@ where
         let name = name.to_string();
         let to_resolve = format!("{}:0", name);
 
-        let list = to_resolve[..].to_socket_addrs().await.map_err(|_| {
+        let list = net::resolve_host(to_resolve).await.map_err(|_| {
             error!("DNS resolver crashed");
             TransportError::ResolveFail(name.clone())
         })?;
@@ -186,10 +186,10 @@ impl error::Error for DnsErr {
 #[cfg(test)]
 mod tests {
     use super::DnsConfig;
-    use async_std::task;
     use libp2prs_core::transport::ListenerEvent;
     use libp2prs_core::Transport;
     use libp2prs_multiaddr::Multiaddr;
+    use libp2prs_runtime::task;
     use libp2prs_tcp::TcpConfig;
     use libp2prs_traits::{ReadEx, WriteEx};
 
@@ -203,8 +203,8 @@ mod tests {
 
             let msg = b"Hello World";
 
+            let mut listener = transport.listen_on(listen_addr).unwrap();
             let handle = task::spawn(async move {
-                let mut listener = transport.listen_on(listen_addr).unwrap();
                 let mut conn = match listener.accept().await.unwrap() {
                     ListenerEvent::Accepted(s) => s,
                     _ => panic!("unreachable"),
@@ -236,8 +236,8 @@ mod tests {
 
             let msg = b"Hello World";
 
+            let mut listener = transport.listen_on(listen_addr).expect("S listen");
             let handle = task::spawn(async move {
-                let mut listener = transport.listen_on(listen_addr).expect("S listen");
                 let mut conn = match listener.accept().await.unwrap() {
                     ListenerEvent::Accepted(s) => s,
                     _ => panic!("unreachable"),

@@ -143,9 +143,12 @@ impl HandshakeContext<Local> {
 mod tests {
     use crate::PlainTextConfig;
 
-    use async_std::task;
     use bytes::BytesMut;
     use futures::channel;
+    use libp2prs_runtime::{
+        net::{TcpListener, TcpStream},
+        task,
+    };
     //use futures::prelude::*;
     use libp2prs_core::identity::Keypair;
     use libp2prs_traits::{ReadEx, WriteEx};
@@ -155,7 +158,7 @@ mod tests {
         let (addr_sender, addr_receiver) = channel::oneshot::channel::<::std::net::SocketAddr>();
 
         task::spawn(async move {
-            let listener = async_std::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let listener_addr = listener.local_addr().unwrap();
             let _res = addr_sender.send(listener_addr);
             let (connect, _) = listener.accept().await.unwrap();
@@ -167,7 +170,7 @@ mod tests {
 
         task::spawn(async move {
             let listener_addr = addr_receiver.await.unwrap();
-            let connect = async_std::net::TcpStream::connect(&listener_addr).await.unwrap();
+            let connect = TcpStream::connect(&listener_addr).await.unwrap();
             let (mut handle, _) = config_2.handshake(connect).await.unwrap();
             handle.write2(data).await.unwrap();
             let mut data = [0u8; 11];

@@ -18,17 +18,17 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::{
+use libp2prs_mplex::connection::Connection;
+use libp2prs_runtime::{
     net::{TcpListener, TcpStream},
     task,
 };
-use libp2prs_mplex::connection::Connection;
 use libp2prs_traits::{copy, ReadEx, WriteEx};
 use log::info;
 use std::collections::VecDeque;
 
 fn main() {
-    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     if std::env::args().nth(1) == Some("server".to_string()) {
         info!("Starting server ......");
         run_server();
@@ -96,7 +96,7 @@ fn run_client() {
                 stream.close2().await.expect("close stream");
 
                 // wait for stream to send and recv close frame
-                // task::sleep(Duration::from_secs(1)).await;
+                // runtime::sleep(Duration::from_secs(1)).await;
             });
             handles.push_back(handle);
         }

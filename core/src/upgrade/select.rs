@@ -98,7 +98,7 @@ mod tests {
     fn verify_basic() {
         let m = Selector::new(DummyUpgrader::new(), DummyUpgrader::new());
 
-        async_std::task::block_on(async move {
+        libp2prs_runtime::task::block_on(async move {
             let output = m.upgrade_outbound(100u32, EitherName::A(b"")).await.unwrap();
 
             let mut _o = match output {

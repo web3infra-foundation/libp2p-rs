@@ -18,7 +18,6 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::{io, task};
 use log::{error, info};
 #[macro_use]
 extern crate lazy_static;
@@ -30,6 +29,7 @@ use libp2prs_core::{
     transport::protector::ProtectorTransport,
     Multiaddr, PeerId,
 };
+use libp2prs_runtime::task;
 use libp2prs_tcp::TcpConfig;
 
 use libp2prs_core::identity::Keypair;
@@ -102,7 +102,11 @@ lazy_static! {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    task::block_on(entry())
+}
+
+async fn entry() -> Result<(), Box<dyn Error>> {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let listen_addr: Multiaddr = "/ip4/127.0.0.1/tcp/38087".parse().unwrap();
 
     let mut local_key = SERVER_KEY.clone();
@@ -193,7 +197,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         // publish
         loop {
             let mut line = String::new();
-            let _ = io::stdin().read_line(&mut line).await;
+            let _ = std::io::stdin().read_line(&mut line);
             let x: &[_] = &['\r', '\n'];
             let msg = line.trim_end_matches(x);
             floodsub_control.clone().publish(Topic::new(FLOODSUB_TOPIC.clone()), msg).await;

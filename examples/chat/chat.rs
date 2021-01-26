@@ -18,14 +18,13 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::task;
 use async_trait::async_trait;
+use libp2prs_runtime::task;
 use std::time::Duration;
 
 #[macro_use]
 extern crate lazy_static;
 
-use async_std::io;
 use std::{error::Error, io::Write};
 
 use libp2prs_core::identity::Keypair;
@@ -57,7 +56,7 @@ struct Config {
 }
 
 fn main() {
-    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let options = Config::from_args();
     if options.client_or_server == "server" && options.source_port.is_some() {
         log::info!("Starting server ......");
@@ -83,7 +82,7 @@ where
         print!("> ");
         let _ = std::io::stdout().flush();
         let mut input = String::new();
-        let n = io::stdin().read_line(&mut input).await.unwrap();
+        let n = std::io::stdin().read_line(&mut input).unwrap();
         let _ = stream.write_all2(&input.as_bytes()[0..n]).await;
         let _ = stream.flush2().await;
     }

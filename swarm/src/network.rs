@@ -43,14 +43,14 @@ pub struct NetworkInfo {
 
 /// The (optional) configuration for a [`Network`].
 ///
-/// The default configuration specifies no dedicated task executor, no
+/// The default configuration specifies no dedicated runtime executor, no
 /// connection limits, a connection event buffer size of 32, and a
 /// `notify_handler` buffer size of 8.
 #[derive(Default)]
 #[allow(dead_code)]
 pub struct NetworkConfig {
-    /// Note that the `ManagerConfig`s task command buffer always provides
-    /// one "free" slot per task. Thus the given total `notify_handler_buffer_size`
+    /// Note that the `ManagerConfig`s runtime command buffer always provides
+    /// one "free" slot per runtime. Thus the given total `notify_handler_buffer_size`
     /// exposed for configuration on the `Network` is reduced by one.
     //manager_config: ManagerConfig,
     max_outgoing: Option<usize>,

@@ -18,7 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::{
+use libp2prs_runtime::{
     net::{TcpListener, TcpStream},
     task,
 };
@@ -28,7 +28,7 @@ use libp2prs_traits::{copy, ReadEx, WriteEx};
 use libp2prs_yamux::{connection::Connection, connection::Mode, Config};
 
 fn main() {
-    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     if std::env::args().nth(1) == Some("server".to_string()) {
         info!("Starting server ......");
         run_server();

@@ -18,8 +18,8 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::task;
 use libp2prs_core::PeerId;
+use libp2prs_runtime::task;
 use libp2prs_swarm::Control;
 use serde::{Deserialize, Serialize};
 use tide::http::mime;
@@ -122,7 +122,10 @@ impl InfoServer {
     }
 
     pub fn start(self, addr: String) {
-        task::spawn(async move { self.monitor.listen(addr).await });
+        task::spawn(async move {
+            let r = self.monitor.listen(addr).await;
+            log::info!("Info server started result={:?}", r);
+        });
     }
 }
 

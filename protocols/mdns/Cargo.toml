@@ -1,35 +1,30 @@
 [package]
 name = "libp2prs-mdns"
+version = "0.2.1"
+authors = ["zhongxh <zhong_xiaohong@yeah.net>"]
 edition = "2018"
-description = "mdns protocol for libp2p"
-version = "0.1.0"
-authors = ["Netwarps Technologies admin@paradeum.com"]
-license = "MIT"
-repository = "https://github.com/netwarps/libp2p-rs"
-keywords = ["peer-to-peer", "libp2p"]
-categories = ["network-programming", "asynchronous"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+async-std = ["libp2prs-runtime/async-std"]
+tokio = ["libp2prs-runtime/tokio"]
+
 [dependencies]
-async-std = "1.6"
 data-encoding = "2.0"
 dns-parser = "0.8"
 either = "1.5.3"
+futures = { version = "0.3", features = ["std"], default-features = false }
 futures-timer = "3.0.2"
 lazy_static = "1.4"
-log = "0.4.1"
+log = "0.4"
 net2 = "0.2"
 nohash-hasher = "0.2"
 rand = "0.7"
 smallvec = "1.0"
-libp2prs-core = { path = "../../core", version = "0.2.0", package = "libp2prs-core" }
+libp2prs-core = { path = "../../core", version = "0.2.1" }
+libp2prs-runtime = { path = "../../runtime", version = "0.2.1", optional = true }
 
 [dev-dependencies]
-env_logger = "0.6.0"
+env_logger = "0.8"
 quickcheck = "0.9"
-
-[dependencies.futures]
-version = "0.3.4"
-features = ["std"]
-default-features = false

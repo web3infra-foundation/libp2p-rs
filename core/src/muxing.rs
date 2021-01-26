@@ -115,7 +115,7 @@ pub trait StreamMuxer {
     async fn open_stream(&mut self) -> Result<IReadWrite, TransportError>;
     /// Accepts a new incoming substream.
     async fn accept_stream(&mut self) -> Result<IReadWrite, TransportError>;
-    /// Closes the stream muxer, the task of stream muxer will then exit.
+    /// Closes the stream muxer, the runtime of stream muxer will then exit.
     async fn close(&mut self) -> Result<(), TransportError>;
     /// Returns a Future which represents the main loop of the stream muxer.
     fn task(&mut self) -> Option<BoxFuture<'static, ()>>;

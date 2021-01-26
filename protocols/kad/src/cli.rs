@@ -18,12 +18,13 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::task;
 use std::str::FromStr;
+use xcli::*;
+
+use libp2prs_core::{Multiaddr, PeerId};
+use libp2prs_runtime::task;
 
 use crate::Control;
-use libp2prs_core::{Multiaddr, PeerId};
-use xcli::*;
 
 const DHT: &str = "dht";
 

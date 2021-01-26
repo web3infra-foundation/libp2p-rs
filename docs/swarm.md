@@ -112,4 +112,4 @@ The code grabs a swarm controller and then starts the swarm main task loop.
     });
 ```
 
-The code is using async-std to spawn a task to handle connection and substream. Note the substream is specified with protocol id "/my/1.0.0", which means the remote peer has to support this protocol so that a substream can be opened by both peers.
+The code is using async runtime to spawn a task to handle connection and substream. Note the substream is specified with protocol id "/my/1.0.0", which means the remote peer has to support this protocol so that a substream can be opened by both peers.

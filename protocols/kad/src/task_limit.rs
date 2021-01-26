@@ -22,15 +22,15 @@ use futures::{channel::mpsc, SinkExt, StreamExt};
 use std::future::Future;
 use std::num::NonZeroUsize;
 
-use async_std::task;
+use libp2prs_runtime::task;
 
-/// The task limiter could be used to limit the maximum count of running task
+/// The runtime limiter could be used to limit the maximum count of running runtime
 /// in parallel.
 pub(crate) struct TaskLimiter {
     parallelism: NonZeroUsize,
     tx: mpsc::Sender<()>,
     rx: mpsc::Receiver<()>,
-    handles: Vec<task::JoinHandle<()>>,
+    handles: Vec<task::TaskHandle<()>>,
 }
 
 impl TaskLimiter {

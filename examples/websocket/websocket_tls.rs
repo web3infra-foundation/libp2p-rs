@@ -18,9 +18,14 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::task;
-use async_trait::async_trait;
 use std::error::Error;
+use std::fs::File;
+use std::io;
+use std::io::BufReader;
+use std::path::{Path, PathBuf};
+use structopt::StructOpt;
+
+use async_trait::async_trait;
 #[macro_use]
 extern crate lazy_static;
 
@@ -30,6 +35,7 @@ use libp2prs_core::upgrade::UpgradeInfo;
 use libp2prs_core::{Multiaddr, PeerId, ProtocolId};
 use libp2prs_mplex as mplex;
 use libp2prs_plaintext as plaintext;
+use libp2prs_runtime::task;
 use libp2prs_swarm::identify::IdentifyConfig;
 use libp2prs_swarm::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandler};
 use libp2prs_swarm::substream::Substream;
@@ -37,13 +43,8 @@ use libp2prs_swarm::Swarm;
 use libp2prs_traits::{ReadEx, WriteEx};
 use libp2prs_websocket::{tls, WsConfig};
 
-use async_std::io;
 use rustls::internal::pemfile::{certs, rsa_private_keys};
 use rustls::{Certificate, PrivateKey};
-use std::fs::File;
-use std::io::BufReader;
-use std::path::{Path, PathBuf};
-use structopt::StructOpt;
 
 /// run server:
 /// RUST_LOG=trace cargo run --example websocket_tls server
@@ -165,8 +166,12 @@ impl ProtocolHandler for MyProtocolHandler {
     }
 }
 
-fn main() -> io::Result<()> {
-    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
+fn main() {
+    let _ = task::block_on(entry());
+}
+
+async fn entry() -> io::Result<()> {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     if std::env::args().nth(1) == Some("server".to_string()) {
         log::info!("Starting server ......");
         run_server()

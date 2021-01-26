@@ -81,7 +81,7 @@ pub trait Notifiee {
 pub trait ProtocolHandler: UpgradeInfo + Notifiee {
     /// After we have determined that the remote supports one of the protocols we support, this
     /// method is called to start handling the inbound. Swarm will start invoking this method
-    /// in a newly spawned task.
+    /// in a newly spawned runtime.
     ///
     /// The `info` is the identifier of the protocol, as produced by `protocol_info`.
     async fn handle(&mut self, stream: Substream, info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn Error>>;

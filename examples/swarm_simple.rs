@@ -18,7 +18,6 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::task;
 use async_trait::async_trait;
 use std::{error::Error, time::Duration};
 #[macro_use]
@@ -33,6 +32,7 @@ use libp2prs_core::{Multiaddr, PeerId, ProtocolId};
 use libp2prs_exporter::ExporterServer;
 use libp2prs_infoserver::InfoServer;
 use libp2prs_mplex as mplex;
+use libp2prs_runtime::task;
 use libp2prs_secio as secio;
 use libp2prs_swarm::identify::IdentifyConfig;
 use libp2prs_swarm::ping::PingConfig;
@@ -45,14 +45,17 @@ use libp2prs_websocket::WsConfig;
 use libp2prs_yamux as yamux;
 
 fn main() {
-    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    if std::env::args().nth(1) == Some("server".to_string()) {
-        log::info!("Starting server ......");
-        run_server();
-    } else {
-        log::info!("Starting client ......");
-        run_client();
-    }
+    task::block_on(async {
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
+        if std::env::args().nth(1) == Some("server".to_string()) {
+            log::info!("Starting server ......");
+            run_server();
+        } else {
+            log::info!("Starting client ......");
+            run_client();
+        }
+    });
 }
 
 lazy_static! {

@@ -50,6 +50,7 @@ use std::{error::Error, io};
 
 use libp2prs_core::transport::TransportError;
 use libp2prs_core::upgrade::UpgradeInfo;
+use libp2prs_runtime::task;
 use libp2prs_traits::{ReadEx, WriteEx};
 
 use crate::connection::Connection;
@@ -189,8 +190,9 @@ pub async fn ping<T: ReadEx + WriteEx + Send + std::fmt::Debug>(mut stream: T, t
         }
     };
 
-    // TODO: problematic, drop stream without closing, if it got timeout first
-    async_std::io::timeout(timeout, ping).await.map_err(|e| e.into())
+    task::timeout(timeout, ping)
+        .await
+        .map_or(Err(TransportError::Timeout), |r| r.map_err(|e| e.into()))
 }
 
 /// Protocol handler that handles pinging the remote at a regular period
@@ -276,6 +278,7 @@ mod tests {
         multiaddr::multiaddr,
         transport::{memory::MemoryTransport, Transport},
     };
+    use libp2prs_runtime::task;
     use rand::{thread_rng, Rng};
     use std::time::Duration;
 
@@ -285,7 +288,7 @@ mod tests {
         let listener_addr = mem_addr.clone();
         let mut listener = MemoryTransport.listen_on(mem_addr).unwrap();
 
-        async_std::task::spawn(async move {
+        task::spawn(async move {
             let socket = match listener.accept().await.unwrap() {
                 ListenerEvent::Accepted(socket) => socket,
                 _ => panic!("unreachable"),
@@ -296,7 +299,7 @@ mod tests {
             let _ = handler.handle(socket, handler.protocol_info().first().unwrap().clone()).await;
         });
 
-        async_std::task::block_on(async move {
+        task::block_on(async move {
             let socket = MemoryTransport.dial(listener_addr).await.unwrap();
 
             let rtt = ping(socket, Duration::from_secs(3)).await.unwrap();

@@ -318,7 +318,7 @@ impl<C: SplittableReadWrite> StreamMuxer for Yamux<C> {
             return Some(
                 async move {
                     while conn.next_stream().await.is_ok() {}
-                    debug!("{:?} background-task exiting...", conn.id());
+                    debug!("{:?} background-runtime exiting...", conn.id());
                 }
                 .boxed(),
             );

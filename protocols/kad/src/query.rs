@@ -24,10 +24,9 @@ use futures::{FutureExt, SinkExt, StreamExt};
 use std::collections::BTreeMap;
 use std::{num::NonZeroUsize, time::Duration, time::Instant};
 
-use async_std::task;
-
 use libp2prs_core::peerstore::{PROVIDER_ADDR_TTL, TEMP_ADDR_TTL};
 use libp2prs_core::{Multiaddr, PeerId};
+use libp2prs_runtime::task;
 use libp2prs_swarm::Control as SwarmControl;
 
 use crate::kbucket::{Distance, Key};
@@ -128,7 +127,7 @@ impl FixedQuery {
                                 _ => panic!("BUG"),
                             }
 
-                            // otherwise, ms will be dropped here, a task will be spawned to close
+                            // otherwise, ms will be dropped here, a runtime will be spawned to close
                             // the inner substream...
                         }
                     })
@@ -658,7 +657,7 @@ impl IterativeQuery {
             log::info!("iterative query timeout");
         };
 
-        // a task for query
+        // a runtime for query
         let query = async move {
             let seeds = me
                 .seeds

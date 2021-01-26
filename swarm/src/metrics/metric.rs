@@ -159,8 +159,8 @@ impl Metric {
 mod tests {
     use crate::metrics::metric::Metric;
     use crate::ProtocolId;
-    use async_std::task;
     use libp2prs_core::PeerId;
+    use libp2prs_runtime::task;
     use std::sync::Arc;
 
     fn generate_metrics() -> Metric {

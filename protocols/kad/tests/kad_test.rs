@@ -18,7 +18,6 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_std::task;
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::multiaddr::protocol::Protocol;
 use libp2prs_core::transport::memory::MemoryTransport;
@@ -27,6 +26,7 @@ use libp2prs_core::{Multiaddr, PeerId};
 use libp2prs_kad::store::MemoryStore;
 use libp2prs_kad::{kad::Kademlia, Control as kad_control};
 use libp2prs_plaintext as plaintext;
+use libp2prs_runtime::task;
 use libp2prs_swarm::identify::IdentifyConfig;
 use libp2prs_swarm::{Control as swarm_control, Swarm};
 use libp2prs_yamux as yamux;

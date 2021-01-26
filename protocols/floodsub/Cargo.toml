@@ -1,6 +1,6 @@
 [package]
 name = "libp2prs-floodsub"
-version = "0.1.0"
+version = "0.2.1"
 license = "MIT"
 description = "Floodsub protocol for libp2p"
 authors = ["Netwarps Technologies admin@paradeum.com"]
@@ -11,31 +11,31 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+async-std = ["libp2prs-swarm/async-std", "libp2prs-runtime/async-std"]
+tokio = ["libp2prs-swarm/tokio", "libp2prs-runtime/tokio"]
+
 [dependencies]
 async-trait = "0.1"
-async-std = "1.6"
-libp2prs-core = { path = "../../core", version = "0.2.0", package = "libp2prs-core" }
-libp2prs-traits = { path = "../../traits", version = "0.2.0", package = "libp2prs-traits" }
-libp2prs-swarm = { path = "../../swarm", version = "0.2.0", package = "libp2prs-swarm" }
-log = "0.4.1"
-prost = "0.6.1"
+futures = { version = "0.3", features = ["std"], default-features = false }
+libp2prs-runtime = { path = "../../runtime", version = "0.2.1", optional = true }
+libp2prs-core = { path = "../../core", version = "0.2.1" }
+libp2prs-traits = { path = "../../traits", version = "0.2.1" }
+libp2prs-swarm = { path = "../../swarm", version = "0.2.1", optional = true }
+log = "0.4"
+prost = "0.6"
 rand = "0.7"
 smallvec = "1.0"
 nohash-hasher = "0.2"
 
 [dev-dependencies]
-env_logger = "0.6.0"
-libp2prs-mplex = { path = "../mplex", version = "0.2.0", package = "libp2prs-mplex" }
-libp2prs-yamux = { path = "../yamux", version = "0.2.0", package = "libp2prs-yamux" }
-libp2prs-secio = { path = "../secio", version = "0.2.0", package = "libp2prs-secio" }
-libp2prs-tcp = { path = "../../transports/tcp", version = "0.2.0", package = "libp2prs-tcp" }
+env_logger = "0.8"
+libp2prs-mplex = { path = "../mplex", version = "0.2.1" }
+libp2prs-yamux = { path = "../yamux", version = "0.2.1" }
+libp2prs-secio = { path = "../secio", version = "0.2.1" }
+libp2prs-tcp = { path = "../../transports/tcp", version = "0.2.1", features = ["async-std"] }
 lazy_static = "1.4"
 quickcheck = "0.9"
-
-[dependencies.futures]
-version = "0.3.4"
-features = ["std"]
-default-features = false
 
 [build-dependencies]
 prost-build = "0.6.1"

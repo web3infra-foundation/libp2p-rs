@@ -1,6 +1,6 @@
 [package]
 name = "libp2p-rs"
-version = "0.2.0"
+version = "0.2.1"
 license = "MIT"
 description = "Minimal implementation for a multiplexed p2p network framework"
 authors = ["Netwarps Technologies admin@paradeum.com"]
@@ -9,38 +9,118 @@ keywords = ["peer-to-peer", "libp2p", "networking"]
 categories = ["network-programming", "asynchronous"]
 edition = "2018"
 
-[package.metadata.docs.rs]
-all-features = false
-no-default-features = true
+[features]
+default = [
+  "dns-async-std",
+  "exporter-async-std",
+  "floodsub-async-std",
+  "infoserver-async-std",
+  "kad-async-std",
+  "rt-async-std",
+  "mdns-async-std",
+  "mplex",
+  "noise",
+  "plaintext",
+  "secio",
+  "swarm-async-std",
+  "tcp-async-std",
+  "websocket-async-std",
+  "yamux",
+]
+simple-async-std = [
+  "noise",
+  "mplex",
+  "rt-async-std",
+  "swarm-async-std",
+  "tcp-async-std",
+]
+simple-tokio = [
+  "noise",
+  "mplex",
+  "rt-tokio",
+  "swarm-tokio",
+  "tcp-tokio",
+]
+routed-async-std = [
+  "kad-async-std",
+  "noise",
+  "mplex",
+  "rt-async-std",
+  "swarm-async-std",
+  "tcp-async-std",
+]
+routed-tokio = [
+  "kad-tokio",
+  "noise",
+  "mplex",
+  "rt-tokio",
+  "swarm-tokio",
+  "tcp-tokio",
+]
+
+rt-tokio = ["libp2prs-runtime/tokio"]
+rt-async-std = ["libp2prs-runtime/async-std"]
+
+dns-async-std = ["libp2prs-dns/async-std"]
+dns-tokio = ["libp2prs-dns/tokio"]
+
+floodsub-async-std = ["libp2prs-floodsub/async-std"]
+floodsub-tokio = ["libp2prs-floodsub/tokio"]
+
+infoserver-async-std = ["libp2prs-infoserver/async-std"]
+infoserver-tokio = ["libp2prs-infoserver/tokio"]
+
+exporter-async-std = ["libp2prs-exporter/async-std"]
+exporter-tokio = ["libp2prs-exporter/tokio"]
+
+kad-async-std = ["libp2prs-kad/async-std"]
+kad-tokio = ["libp2prs-kad/tokio"]
+
+mdns-async-std = ["libp2prs-mdns/async-std"]
+mdns-tokio = ["libp2prs-mdns/tokio"]
+
+mplex = ["libp2prs-mplex"]
+noise = ["libp2prs-noise"]
+plaintext = ["libp2prs-plaintext"]
+runtime = ["libp2prs-runtime"]
+secio = ["libp2prs-secio"]
+
+swarm-async-std = ["libp2prs-swarm/async-std"]
+swarm-tokio = ["libp2prs-swarm/tokio"]
+
+tcp-async-std = ["libp2prs-tcp/async-std"]
+tcp-tokio = ["libp2prs-tcp/tokio"]
+
+websocket-async-std = ["libp2prs-websocket/async-std"]
+websocket-tokio = ["libp2prs-websocket/tokio"]
+
+yamux = ["libp2prs-yamux"]
+
 
 [dependencies]
-libp2prs-traits = { path = "traits", version = "0.2.0", package = "libp2prs-traits" }
-libp2prs-multiaddr = { path = "multiaddr", version = "0.2.0", package = "libp2prs-multiaddr"}
-libp2prs-core = { path = "core", version = "0.2.0", package = "libp2prs-core" }
-libp2prs-yamux = { path = "protocols/yamux", version = "0.2.0", package = "libp2prs-yamux" }
-libp2prs-mplex = { path = "protocols/mplex", version = "0.2.0", package = "libp2prs-mplex" }
-libp2prs-secio = { path = "protocols/secio", version = "0.2.0", package = "libp2prs-secio" }
-libp2prs-plaintext = { path = "protocols/plaintext", version = "0.2.0", package = "libp2prs-plaintext" }
-libp2prs-noise = { path = "protocols/noise", version = "0.2.0", package = "libp2prs-noise" }
-libp2prs-floodsub = { path = "protocols/floodsub", version = "0.1.0", package = "libp2prs-floodsub" }
-libp2prs-mdns = { path = "protocols/mdns", version = "0.1.0", package = "libp2prs-mdns" }
-libp2prs-tcp = { path = "transports/tcp", version = "0.2.0", package = "libp2prs-tcp" }
-libp2prs-dns = { path = "transports/dns", version = "0.2.0", package = "libp2prs-dns" }
-libp2prs-websocket = { path = "transports/websocket", version = "0.2.0", package = "libp2prs-websocket" }
-libp2prs-swarm = { path = "swarm", version = "0.2.0", package = "libp2prs-swarm" }
-libp2prs-kad = { path = "protocols/kad", version = "0.1.0", package = "libp2prs-kad" }
-libp2prs-infoserver = { path="infoserver", version = "0.1.0", package = "libp2prs-infoserver" }
-libp2prs-exporter = { path="exporter", version = "0.1.0", package = "libp2prs-exporter" }
+libp2prs-runtime = { path = "runtime", version = "0.2.1", optional = true }
+libp2prs-traits = { path = "traits", version = "0.2.1" }
+libp2prs-multiaddr = { path = "multiaddr", version = "0.2.1" }
+libp2prs-core = { path = "core", version = "0.2.1" }
+libp2prs-yamux = { path = "protocols/yamux", version = "0.2.1", optional = true }
+libp2prs-mplex = { path = "protocols/mplex", version = "0.2.1", optional = true }
+libp2prs-secio = { path = "protocols/secio", version = "0.2.1", optional = true }
+libp2prs-plaintext = { path = "protocols/plaintext", version = "0.2.1", optional = true }
+libp2prs-noise = { path = "protocols/noise", version = "0.2.1", optional = true }
+libp2prs-floodsub = { path = "protocols/floodsub", version = "0.2.1", optional = true }
+libp2prs-mdns = { path = "protocols/mdns", version = "0.2.1", optional = true }
+libp2prs-tcp = { path = "transports/tcp", version = "0.2.1", optional = true }
+libp2prs-dns = { path = "transports/dns", version = "0.2.1", optional = true }
+libp2prs-websocket = { path = "transports/websocket", version = "0.2.1", optional = true }
+libp2prs-swarm = { path = "swarm", version = "0.2.1", optional = true }
+libp2prs-kad = { path = "protocols/kad", version = "0.2.1", optional = true }
+libp2prs-infoserver = { path="infoserver", version = "0.2.1", optional = true }
+libp2prs-exporter = { path="exporter", version = "0.2.1", optional = true }
 
-async-std = { version = "1.6", features = ["attributes", "unstable"] }
 async-trait = "0.1"
-futures = { version = "0.3.5" }
-pin-project-lite = "0.1"
 log = "0.4"
-bytes = "0.5.0"
-igd = "0.9"
+xcli = "0.5"
 #xcli = { git = "https://github.com/kingwel-xie/xcli-rs.git", branch = "master"}
-xcli = "0.5.1"
 
 [target.'cfg(unix)'.dependencies.libc]
 version = "0.2"
@@ -50,19 +130,15 @@ version = "0.3.7"
 features = ["minwindef", "ws2def", "winerror", "heapapi"]
 
 [dev-dependencies]
-env_logger = "0.6.0"
+env_logger = "0.8"
 crossbeam-channel = "0.3.6"
 systemstat = "0.1.3"
+futures = { version = "0.3", features = ["std"], default-features = false }
 futures-test = "0.3.5"
-secp256k1 = "0.17"
 rand = "0.7"
 lazy_static = "1.4"
-
-async-tls="0.8"
-rustls = "0.18.0"
+rustls = "0.19"
 structopt = "0.3.9"
-async-std = "1.6"
-webpki = "0.21.2"
 
 
 [target.'cfg(unix)'.dev-dependencies]
@@ -71,6 +147,7 @@ nix = "0.13.0"
 [workspace]
 members = [
   "traits",
+  "runtime",
   "protocols/yamux",
   "protocols/mplex",
   "protocols/secio",
