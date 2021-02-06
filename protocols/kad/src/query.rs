@@ -154,7 +154,7 @@ impl QueryJob {
         let startup = Instant::now();
 
         let mut messenger = me.messengers.get_messenger(&me.peer).await?;
-        let peer = me.peer.clone();
+        let peer = me.peer;
         match me.qt {
             QueryType::GetClosestPeers | QueryType::FindPeer => {
                 let closer = messenger.send_find_node(me.key).await?;
@@ -302,7 +302,7 @@ impl ClosestPeers {
     fn add_peers(&mut self, peers: Vec<KadPeer>) {
         // Incorporate the reported peers into the btree map.
         for peer in peers {
-            let distance = self.distance(peer.node_id.clone());
+            let distance = self.distance(peer.node_id);
             self.closest_peers.entry(distance).or_insert_with(|| PeerWithState::new(peer));
         }
     }
@@ -330,12 +330,12 @@ impl ClosestPeers {
     }
 
     fn get_peer_state(&self, peer_id: &PeerId) -> Option<PeerState> {
-        let distance = self.distance(peer_id.clone());
+        let distance = self.distance(*peer_id);
         self.closest_peers.get(&distance).map(|peer| peer.state)
     }
 
     fn set_peer_state(&mut self, peer_id: &PeerId, state: PeerState) {
-        let distance = self.distance(peer_id.clone());
+        let distance = self.distance(*peer_id);
         if let Some(peer) = self.closest_peers.get_mut(&distance) {
             peer.state = state
         }
@@ -490,7 +490,7 @@ impl IterativeQuery {
                 me.stats.success += 1;
 
                 // note we don't add myself
-                closer.retain(|p| p.node_id != me.local_id.clone());
+                closer.retain(|p| p.node_id != me.local_id);
 
                 // update the PeerStore for the multiaddr, add all multiaddr of Closer peers
                 // to PeerStore
@@ -504,7 +504,7 @@ impl IterativeQuery {
                 closest_peers.set_peer_state(&source, PeerState::Succeeded);
 
                 // signal the k-buckets for new peer found
-                let _ = me.poster.post(ProtocolEvent::KadPeerFound(source.clone(), true)).await;
+                let _ = me.poster.post(ProtocolEvent::KadPeerFound(source, true)).await;
 
                 // handle different query type, check if we are done querying
                 match me.query_type {
@@ -575,7 +575,7 @@ impl IterativeQuery {
                                     .peers_filter(k_value, |p| {
                                         p.state != PeerState::Unreachable && !peers_have_value.contains(&&p.peer.node_id)
                                     })
-                                    .map(|p| p.peer.node_id.clone())
+                                    .map(|p| p.peer.node_id)
                                     .collect::<Vec<_>>();
 
                                 log::debug!("GetValue, got peers which don't have the value, {:?}", peers);
@@ -674,7 +674,7 @@ impl IterativeQuery {
             // deliver the seeds to kick off the initial query
             let _ = tx
                 .send(QueryUpdate::Queried {
-                    source: me.local_id.clone(),
+                    source: me.local_id,
                     closer: seeds,
                     provider: None,
                     record: None,
@@ -715,7 +715,7 @@ impl IterativeQuery {
                 for peer in peer_iter {
                     //closest_peers.set_peer_state(&peer, PeerState::Waiting);
                     peer.state = PeerState::Waiting;
-                    let peer_id = peer.peer.node_id.clone();
+                    let peer_id = peer.peer.node_id;
 
                     log::debug!("creating query job for {:?}", peer_id);
 
@@ -725,7 +725,7 @@ impl IterativeQuery {
                         key: me.key.clone(),
                         qt: me.query_type.clone(),
                         messengers: me.messengers.clone(),
-                        peer: peer_id.clone(),
+                        peer: peer_id,
                         tx: tx.clone(),
                     };
 
@@ -806,7 +806,7 @@ mod test_closest_peers {
     #[test]
     fn test_closest_peers_distance() {
         let peer = PeerId::random();
-        let peer_cloned = peer.clone();
+        let peer_cloned = peer;
 
         let mut closest_peers = ClosestPeers::new(peer.into());
 
@@ -829,7 +829,7 @@ mod test_closest_peers {
         assert!(closest_peers.is_starved());
 
         let kad_peer = KadPeer {
-            node_id: peer.clone(),
+            node_id: peer,
             multiaddrs: vec![],
             connection_ty: KadConnectionType::NotConnected,
         };
@@ -858,7 +858,7 @@ mod test_closest_peers {
 
         let peer1 = PeerId::random();
         let kad_peer1 = KadPeer {
-            node_id: peer1.clone(),
+            node_id: peer1,
             multiaddrs: vec![],
             connection_ty: KadConnectionType::NotConnected,
         };

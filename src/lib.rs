@@ -36,13 +36,16 @@
 //! - UDP: `/ip4/127.0.0.1/udp/1234`
 //!
 
+// re-export xCLI
+pub use xcli;
+
 #[doc(inline)]
 pub use libp2prs_core as core;
-#[cfg(feature = "dns")]
-#[cfg_attr(docsrs, doc(cfg(feature = "dns")))]
+#[cfg(any(feature = "dns-async-std", feature = "dns-tokio"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "dns-async-std", feature = "dns-tokio"))))]
 #[doc(inline)]
 pub use libp2prs_dns as dns;
-#[cfg(any(feature = "exporter-async-std", feature = "exporter-tokio"))]
+#[cfg(feature = "exporter")]
 #[cfg_attr(docsrs, doc(cfg(any(feature = "exporter-async-std", feature = "exporter-tokio"))))]
 #[doc(inline)]
 pub use libp2prs_exporter as exporter;
@@ -50,7 +53,7 @@ pub use libp2prs_exporter as exporter;
 #[cfg_attr(docsrs, doc(cfg(any(feature = "floodsub-async-std", feature = "floodsub-tokio"))))]
 #[doc(inline)]
 pub use libp2prs_floodsub as floodsub;
-#[cfg(any(feature = "infoserver-async-std", feature = "infoserver-tokio"))]
+#[cfg(feature = "infoserver")]
 #[cfg_attr(docsrs, doc(cfg(any(feature = "infoserver-async-std", feature = "infoserver-tokio"))))]
 #[doc(inline)]
 pub use libp2prs_infoserver as infoserver;

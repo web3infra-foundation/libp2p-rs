@@ -1,6 +1,6 @@
 [package]
 name = "libp2prs-core"
-version = "0.2.1"
+version = "0.2.2"
 license = "MIT"
 description = "Core traits and structs of libp2p"
 authors = ["Netwarps Technologies admin@paradeum.com"]
@@ -11,7 +11,7 @@ edition = "2018"
 
 [dependencies]
 asn1_der = "0.6.1"
-bs58 = "0.3.0"
+bs58 = "0.4.0"
 ed25519-dalek ={ version="1.0.0-pre.4"}
 fnv = "1.0"
 futures = { version = "0.3", features = ["std"], default-features = false }
@@ -19,13 +19,13 @@ futures-timer = "3"
 lazy_static = "1.2"
 libsecp256k1 = { version = "0.3.1", optional = true }
 log = "0.4"
-multihash = "0.11.0"
+multihash = { version = "0.13", default-features = false, features = ["std", "multihash-impl", "identity", "sha2"] }
 prost = "0.6.1"
 rand = "0.7"
 sha2 = "0.8.0"
 smallvec = "1.0"
 thiserror = "1.0"
-unsigned-varint = "0.3"
+unsigned-varint = "0.4"
 zeroize = "1"
 async-trait = "0.1"
 parking_lot = "0.10.0"
@@ -34,17 +34,18 @@ bytes = "0.5"
 pin-project = "0.4"
 
 ring = { version = "0.16.9", features = ["alloc", "std"], default-features = true }
-salsa20 = "0.3.0"
+salsa20 = "0.7"
 sha3 = "0.8"
 serde = { version = "1.0.117", features = ["derive"] }
 serde_json = "1.0.59"
 
-libp2prs-multiaddr = { path = "../multiaddr", version = "0.2.1" }
+libp2prs-multiaddr = { path = "../multiaddr", version = "0.2.2" }
 libp2prs-traits = { path = "../traits", version = "0.2.1" }
 
 [dev-dependencies]
 quickcheck = "0.9.0"
 libp2prs-runtime = { path = "../runtime", version = "0.2.1", features = ["async-std"] }
+multihash = { version = "0.13", default-features = false, features = ["arb"] }
 
 [build-dependencies]
 prost-build = "0.6"

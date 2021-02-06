@@ -33,7 +33,7 @@ use libp2prs_core::transport::upgrade::TransportUpgrade;
 use libp2prs_core::upgrade::UpgradeInfo;
 use libp2prs_core::{Multiaddr, PeerId, ProtocolId};
 use libp2prs_secio as secio;
-use libp2prs_swarm::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandler};
+use libp2prs_swarm::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandler, ProtocolImpl};
 use libp2prs_swarm::substream::Substream;
 use libp2prs_swarm::Swarm;
 use libp2prs_tcp::TcpConfig;
@@ -106,6 +106,14 @@ where
     }
 }
 
+struct Chat;
+
+impl ProtocolImpl for Chat {
+    fn handler(&self) -> IProtocolHandler {
+        Box::new(ChatHandler)
+    }
+}
+
 #[derive(Clone)]
 struct ChatHandler;
 
@@ -150,9 +158,7 @@ fn run_server() {
     let mux = yamux::Config::new();
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
 
-    let mut swarm = Swarm::new(keys.public())
-        .with_transport(Box::new(tu))
-        .with_protocol(Box::new(ChatHandler {}));
+    let mut swarm = Swarm::new(keys.public()).with_transport(Box::new(tu)).with_protocol(Chat);
 
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
 
@@ -186,7 +192,7 @@ fn run_client() {
     swarm.start();
 
     task::block_on(async move {
-        control.connect_with_addrs(remote_peer_id.clone(), vec![dial_addr]).await.unwrap();
+        control.connect_with_addrs(remote_peer_id, vec![dial_addr]).await.unwrap();
         let stream = control.new_stream(remote_peer_id, vec![PROTO_NAME.into()]).await.unwrap();
 
         log::info!("stream {:?} opened, writing something...", stream);

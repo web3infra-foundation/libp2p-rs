@@ -22,13 +22,11 @@
 use prost::Message;
 use std::{error::Error, fmt, io};
 
-use crate::floodsub::PeerEvent;
 use crate::{rpc_proto, Topic, FLOOD_SUB_ID};
 use async_trait::async_trait;
 use futures::{channel::mpsc, SinkExt};
 use libp2prs_core::upgrade::UpgradeInfo;
 use libp2prs_core::{PeerId, ProtocolId};
-use libp2prs_runtime::task;
 use libp2prs_swarm::protocol_handler::Notifiee;
 use libp2prs_swarm::{
     connection::Connection,
@@ -37,15 +35,20 @@ use libp2prs_swarm::{
 };
 use libp2prs_traits::{ReadEx, WriteEx};
 
+pub(crate) enum PeerEvent {
+    NewPeer(PeerId),
+    DeadPeer(PeerId),
+}
+
 #[derive(Clone)]
 pub struct Handler {
     incoming_tx: mpsc::UnboundedSender<RPC>,
-    new_peer: mpsc::UnboundedSender<PeerEvent>,
+    peer_tx: mpsc::UnboundedSender<PeerEvent>,
 }
 
 impl Handler {
-    pub(crate) fn new(incoming_tx: mpsc::UnboundedSender<RPC>, new_peer: mpsc::UnboundedSender<PeerEvent>) -> Self {
-        Handler { incoming_tx, new_peer }
+    pub(crate) fn new(incoming_tx: mpsc::UnboundedSender<RPC>, peer_tx: mpsc::UnboundedSender<PeerEvent>) -> Self {
+        Handler { incoming_tx, peer_tx }
     }
 }
 
@@ -60,10 +63,12 @@ impl UpgradeInfo for Handler {
 impl Notifiee for Handler {
     fn connected(&mut self, conn: &mut Connection) {
         let peer_id = conn.remote_peer();
-        let mut new_peers = self.new_peer.clone();
-        task::spawn(async move {
-            let _ = new_peers.send(PeerEvent::NewPeer(peer_id)).await;
-        });
+        let _ = self.peer_tx.unbounded_send(PeerEvent::NewPeer(peer_id));
+    }
+
+    fn disconnected(&mut self, conn: &mut Connection) {
+        let peer_id = conn.remote_peer();
+        let _ = self.peer_tx.unbounded_send(PeerEvent::DeadPeer(peer_id));
     }
 }
 
@@ -87,7 +92,7 @@ impl ProtocolHandler for Handler {
             let mut messages = Vec::with_capacity(rpc.publish.len());
             for publish in rpc.publish.into_iter() {
                 messages.push(FloodsubMessage {
-                    source: PeerId::from_bytes(publish.from.unwrap_or_default()).map_err(|_| FloodsubDecodeError::InvalidPeerId)?,
+                    source: PeerId::from_bytes(&publish.from.unwrap_or_default()).map_err(|_| FloodsubDecodeError::InvalidPeerId)?,
                     data: publish.data.unwrap_or_default(),
                     sequence_number: publish.seqno.unwrap_or_default(),
                     topics: publish.topic_ids.into_iter().map(Topic::new).collect(),
@@ -187,7 +192,7 @@ impl FloodsubRpc {
                 .messages
                 .into_iter()
                 .map(|msg| rpc_proto::Message {
-                    from: Some(msg.source.into_bytes()),
+                    from: Some(msg.source.to_bytes()),
                     data: Some(msg.data),
                     seqno: Some(msg.sequence_number),
                     topic_ids: msg.topics.into_iter().map(|topic| topic.into()).collect(),

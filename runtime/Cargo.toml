@@ -2,7 +2,7 @@
 name = "libp2prs-runtime"
 version = "0.2.1"
 license = "MIT"
-description = "Read/Write traits"
+description = "runtime which support async-std and tokio"
 authors = ["Netwarps Technologies admin@paradeum.com"]
 repository = "https://github.com/netwarps/libp2p-rs"
 keywords = ["peer-to-peer", "libp2p", "networking", "task"]

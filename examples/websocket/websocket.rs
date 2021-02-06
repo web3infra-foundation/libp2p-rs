@@ -31,9 +31,9 @@ use libp2prs_mplex as mplex;
 use libp2prs_runtime::task;
 use libp2prs_secio as secio;
 use libp2prs_swarm::identify::IdentifyConfig;
-use libp2prs_swarm::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandler};
+use libp2prs_swarm::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandler, ProtocolImpl};
 use libp2prs_swarm::substream::Substream;
-use libp2prs_swarm::{DummyProtocolHandler, Swarm};
+use libp2prs_swarm::{DummyProtocol, Swarm};
 use libp2prs_traits::{ReadEx, WriteEx};
 use libp2prs_websocket::WsConfig;
 
@@ -65,6 +65,14 @@ fn run_server() {
     let sec = secio::Config::new(keys.clone());
     let mux = mplex::Config::new();
     let tu = TransportUpgrade::new(WsConfig::new(), mux, sec);
+
+    struct MyProtocol;
+
+    impl ProtocolImpl for MyProtocol {
+        fn handler(&self) -> IProtocolHandler {
+            Box::new(MyProtocolHandler)
+        }
+    }
 
     #[derive(Clone)]
     struct MyProtocolHandler;
@@ -99,8 +107,8 @@ fn run_server() {
 
     let mut swarm = Swarm::new(keys.public())
         .with_transport(Box::new(tu))
-        .with_protocol(Box::new(DummyProtocolHandler::new()))
-        .with_protocol(Box::new(MyProtocolHandler))
+        .with_protocol(DummyProtocol::new())
+        .with_protocol(MyProtocol)
         .with_identify(IdentifyConfig::new(false));
 
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
@@ -140,7 +148,7 @@ fn run_client() {
     swarm.start();
 
     task::block_on(async move {
-        control.connect_with_addrs(remote_peer_id.clone(), vec![addr]).await.unwrap();
+        control.connect_with_addrs(remote_peer_id, vec![addr]).await.unwrap();
         let mut stream = control.new_stream(remote_peer_id, vec![PROTO_NAME.into()]).await.unwrap();
         log::info!("stream {:?} opened, writing something...", stream);
         let msg = b"hello";

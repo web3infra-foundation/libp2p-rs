@@ -1,6 +1,6 @@
 [package]
 name = "libp2prs-noise"
-version = "0.2.1"
+version = "0.2.2"
 license = "MIT"
 description = "Cryptographic handshake protocol using the noise framework."
 authors = ["Netwarps Technologies admin@paradeum.com"]
@@ -14,14 +14,14 @@ bytes = "0.5"
 curve25519-dalek = "2.0.0"
 futures = { version = "0.3", features = ["std"], default-features = false }
 lazy_static = "1.2"
-libp2prs-core = { path = "../../core", version = "0.2.1" }
+libp2prs-core = { path = "../../core", version = "0.2.2" }
 libp2prs-traits = { path = "../../traits", version = "0.2.1" }
 log = "0.4"
 prost = "0.6"
 rand = "0.7"
 sha2 = "0.8.0"
 static_assertions = "1"
-x25519-dalek = "0.6.0"
+x25519-dalek = "1.1.0"
 zeroize = "1"
 async-trait = "0.1"
 

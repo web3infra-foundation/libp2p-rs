@@ -31,9 +31,9 @@ use libp2prs_runtime::task;
 use libp2prs_secio as secio;
 use libp2prs_swarm::identify::IdentifyConfig;
 use libp2prs_swarm::ping::PingConfig;
-use libp2prs_swarm::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandler};
+use libp2prs_swarm::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandler, ProtocolImpl};
 use libp2prs_swarm::substream::Substream;
-use libp2prs_swarm::{DummyProtocolHandler, Swarm, SwarmError};
+use libp2prs_swarm::{DummyProtocol, Swarm, SwarmError};
 use libp2prs_tcp::TcpConfig;
 use libp2prs_traits::{copy, ReadEx, WriteEx};
 use libp2prs_yamux as yamux;
@@ -67,8 +67,15 @@ fn run_server() {
     let mux = yamux::Config::new();
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
 
+    struct MyProtocol;
     #[derive(Clone)]
     struct MyProtocolHandler;
+
+    impl ProtocolImpl for MyProtocol {
+        fn handler(&self) -> IProtocolHandler {
+            Box::new(MyProtocolHandler)
+        }
+    }
 
     impl UpgradeInfo for MyProtocolHandler {
         type Info = ProtocolId;
@@ -101,8 +108,8 @@ fn run_server() {
 
     let mut swarm = Swarm::new(keys.public())
         .with_transport(Box::new(tu))
-        .with_protocol(Box::new(DummyProtocolHandler::new()))
-        .with_protocol(Box::new(MyProtocolHandler))
+        .with_protocol(DummyProtocol::new())
+        .with_protocol(MyProtocol)
         .with_ping(PingConfig::new().with_unsolicited(true).with_interval(Duration::from_secs(1)))
         .with_identify(IdentifyConfig::new(false));
 
@@ -142,12 +149,12 @@ fn run_client() {
 
     task::block_on(async move {
         control
-            .connect_with_addrs(remote_peer_id.clone(), vec!["/ip4/127.0.0.1/tcp/8086".parse().unwrap()])
+            .connect_with_addrs(remote_peer_id, vec!["/ip4/127.0.0.1/tcp/8086".parse().unwrap()])
             .await
             .unwrap();
         let mut handles = VecDeque::default();
         for _ in 0..100u32 {
-            let mut stream = control.new_stream(remote_peer_id.clone(), vec![PROTO_NAME.into()]).await.unwrap();
+            let mut stream = control.new_stream(remote_peer_id, vec![PROTO_NAME.into()]).await.unwrap();
             log::info!("stream {:?} opened, writing something...", stream);
 
             let handle = task::spawn(async move {

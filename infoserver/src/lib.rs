@@ -22,6 +22,7 @@ use libp2prs_core::PeerId;
 use libp2prs_runtime::task;
 use libp2prs_swarm::Control;
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use tide::http::mime;
 use tide::{Body, Request, Response, Server};
 
@@ -183,16 +184,20 @@ async fn get_connection_info(req: Request<Control>) -> tide::Result {
         log::error!("{:?}", e);
         tide::Error::new(500, e)
     })?;
+    let cis = control.dump_connections(None).await.map_err(|e| {
+        log::error!("{:?}", e);
+        tide::Error::new(500, e)
+    })?;
 
     let mut connection_info = Vec::new();
-    for item in network_info.connection_info.iter() {
+    for item in cis {
         let info = NetworkConnectionInfo {
-            la: item.la.to_vec(),
-            ra: item.ra.to_vec(),
-            local_peer_id: item.local_peer_id.to_string(),
-            remote_peer_id: item.remote_peer_id.to_string(),
-            num_inbound_streams: item.num_inbound_streams,
-            num_outbound_streams: item.num_outbound_streams,
+            la: item.info.la.to_vec(),
+            ra: item.info.ra.to_vec(),
+            local_peer_id: item.info.local_peer_id.to_string(),
+            remote_peer_id: item.info.remote_peer_id.to_string(),
+            num_inbound_streams: item.info.num_inbound_streams,
+            num_outbound_streams: item.info.num_outbound_streams,
         };
         connection_info.push(info);
     }
@@ -274,24 +279,12 @@ async fn get_protocol_info(req: Request<Control>) -> tide::Result {
 /// Get sent&received package bytes by peer_id
 async fn get_peer_info(req: Request<Control>) -> tide::Result {
     let peer = req.param("peer_id")?;
-    let b58_pid = match PeerId::from_base58(peer.as_bytes().to_vec()) {
+    let peer_id = match PeerId::from_str(peer) {
         Ok(info) => info,
         Err(e) => {
             let err_body = Body::from_json(&ResponseBody {
                 status: 1,
-                message: e.to_string(),
-                result: vec![],
-            })?;
-            return Ok(Response::builder(400).body(err_body).build());
-        }
-    };
-
-    let peer_id = match PeerId::from_bytes(b58_pid) {
-        Ok(info) => info,
-        Err(e) => {
-            let err_body = Body::from_json(&ResponseBody {
-                status: 1,
-                message: format!("Cannot pause {:?}", e),
+                message: format!("Cannot parse : {:?}", e),
                 result: vec![],
             })?;
             return Ok(Response::builder(400).body(err_body).build());

@@ -47,23 +47,19 @@ fn build_node() -> (Swarm, PeerId, Multiaddr, Floodsub_Control) {
 
     let local_peer_id = public_key.clone().into_peer_id();
     let floodsub = FloodSub::new(FloodsubConfig::new(local_peer_id));
-    let handler = floodsub.handler();
+    let floodsub_control = floodsub.control();
 
     let mut swarm = Swarm::new(public_key)
         .with_transport(Box::new(tu))
-        .with_protocol(Box::new(handler))
+        .with_protocol(floodsub)
         .with_ping(PingConfig::new().with_unsolicited(true).with_interval(Duration::from_secs(1)))
         .with_identify(IdentifyConfig::new(false));
-
-    // run floodsub message process main loop
-    let floodsub_control = floodsub.control();
-    floodsub.start(swarm.control());
 
     let port = 1 + random::<u64>();
     let addr: Multiaddr = Protocol::Memory(port).into();
     swarm.listen_on(vec![addr.clone()]).unwrap();
 
-    let lpid = swarm.local_peer_id().clone();
+    let lpid = *swarm.local_peer_id();
     (swarm, lpid, addr, floodsub_control)
 }
 
@@ -86,7 +82,7 @@ impl Graph {
                 .collect::<Vec<(Swarm, PeerId, Multiaddr, Floodsub_Control)>>();
 
         let connected_node = not_connected_nodes.pop().unwrap();
-        let lpid = connected_node.1.clone();
+        let lpid = connected_node.1;
         let addr = connected_node.2.clone();
         let floodsub_ctrl = connected_node.3.clone();
 
@@ -102,13 +98,13 @@ impl Graph {
             not_connected_nodes.shuffle(&mut rng);
 
             let next = not_connected_nodes.pop().unwrap();
-            let connected_pid = connected_nodes[0].0.clone();
+            let connected_pid = connected_nodes[0].0;
             let connected_addr = connected_nodes[0].1.clone();
 
             log::info!("Connect: {} -> {}", next.2.clone().pop().unwrap(), connected_addr);
 
             let mut swarm_ctrl = next.0.control();
-            let lpid = next.1.clone();
+            let lpid = next.1;
             let addr = next.2.clone();
             let floodsub_ctrl = next.3.clone();
 
@@ -151,7 +147,7 @@ fn multi_hop_propagation() {
                 let mut sub = ctrl.subscribe(topic.clone()).await.unwrap();
                 task::spawn(async move {
                     loop {
-                        if let Some(msg) = sub.ch.next().await {
+                        if let Some(msg) = sub.next().await {
                             tx.unbounded_send(msg.data.len()).expect("unbounded_send");
                         }
                     }
@@ -162,7 +158,7 @@ fn multi_hop_propagation() {
             task::sleep(Duration::from_secs(1)).await;
 
             // publish
-            graph.ctrls[0].publish(Topic::new(topic.clone()), message.to_vec()).await;
+            graph.ctrls[0].publish(Topic::new(topic.clone()), message.to_vec()).await.unwrap();
 
             let n = rx.take(number_nodes - 1).fold(0, |acc, n| future::ready(acc + n)).await;
             if n == (number_nodes - 1) * message.len() {

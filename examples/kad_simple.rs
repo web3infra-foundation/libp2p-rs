@@ -103,14 +103,13 @@ fn run_server(bootstrap_peer: PeerId, bootstrap_addr: Multiaddr) {
         // build Kad
         let config = KademliaConfig::default().with_query_timeout(Duration::from_secs(90));
 
-        let store = MemoryStore::new(swarm.local_peer_id().clone());
-        let kad = Kademlia::with_config(swarm.local_peer_id().clone(), store, config);
+        let store = MemoryStore::new(*swarm.local_peer_id());
+        let kad = Kademlia::with_config(*swarm.local_peer_id(), store, config);
         let mut kad_control = kad.control();
 
         // update Swarm to support Kad and Routing
-        swarm = swarm.with_protocol(Box::new(kad.handler())).with_routing(Box::new(kad.control()));
+        swarm = swarm.with_protocol(kad).with_routing(Box::new(kad_control.clone()));
 
-        kad.start(swarm_control.clone());
         swarm.start();
 
         kad_control.add_node(bootstrap_peer, vec![bootstrap_addr]).await;
@@ -123,9 +122,7 @@ fn run_server(bootstrap_peer: PeerId, bootstrap_addr: Multiaddr) {
 
         app.run();
 
-        kad_control.close().await;
-        swarm_control.close().await;
-
-        task::sleep(Duration::from_secs(1)).await;
+        kad_control.close();
+        swarm_control.close();
     });
 }
