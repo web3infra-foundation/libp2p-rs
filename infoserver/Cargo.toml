@@ -9,6 +9,10 @@ keywords = ["peer-to-peer", "libp2p", "networking"]
 categories = ["network-programming", "asynchronous"]
 edition = "2018"
 
+[features]
+async-std = ["libp2prs-swarm/async-std", "libp2prs-runtime/async-std"]
+tokio = ["libp2prs-swarm/tokio", "libp2prs-runtime/tokio"]
+
 [dependencies]
 log = "0.4"
 tide = "0.15.0"

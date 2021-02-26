@@ -27,6 +27,7 @@ use async_trait::async_trait;
 use futures::{channel::mpsc, SinkExt};
 use libp2prs_core::upgrade::UpgradeInfo;
 use libp2prs_core::{PeerId, ProtocolId};
+use libp2prs_runtime::task;
 use libp2prs_swarm::protocol_handler::Notifiee;
 use libp2prs_swarm::{
     connection::Connection,

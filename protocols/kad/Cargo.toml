@@ -29,12 +29,10 @@ void = "1.0"
 async-trait = "0.1"
 xcli = "0.5"
 #xcli = { git = "https://github.com/kingwel-xie/xcli-rs.git", branch = "master"}
-
 libp2prs-runtime = { path = "../../runtime", version = "0.2.1" }
 libp2prs-core = { path = "../../core", version = "0.2.2" }
 libp2prs-traits = { path = "../../traits", version = "0.2.1" }
 libp2prs-swarm = { path = "../../swarm", version = "0.2.2" }
-
 
 [dev-dependencies]
 env_logger = "0.8"
@@ -42,7 +40,6 @@ libp2prs-mplex = { path = "../mplex", version = "0.2.2" }
 libp2prs-yamux = { path = "../yamux", version = "0.2.2" }
 libp2prs-secio = { path = "../secio", version = "0.2.2" }
 libp2prs-plaintext = { path = "../plaintext", version = "0.2.2" }
-
 libp2prs-tcp = { path = "../../transports/tcp", version = "0.2.2", features = ["async-std"] }
 lazy_static = "1.4"
 quickcheck = "0.9"
