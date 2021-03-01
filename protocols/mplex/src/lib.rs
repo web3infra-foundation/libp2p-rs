@@ -93,9 +93,9 @@ impl<C: SplitEx> Clone for Mplex<C> {
             la: self.la.clone(),
             ra: self.ra.clone(),
             local_priv_key: self.local_priv_key.clone(),
-            local_peer_id: self.local_peer_id.clone(),
+            local_peer_id: self.local_peer_id,
             remote_pub_key: self.remote_pub_key.clone(),
-            remote_peer_id: self.remote_peer_id.clone(),
+            remote_peer_id: self.remote_peer_id,
         }
     }
 }
@@ -148,11 +148,11 @@ impl<C: SplitEx> ConnectionInfo for Mplex<C> {
 
 impl<C: SplitEx> SecureInfo for Mplex<C> {
     fn local_peer(&self) -> PeerId {
-        self.local_peer_id.clone()
+        self.local_peer_id
     }
 
     fn remote_peer(&self) -> PeerId {
-        self.remote_peer_id.clone()
+        self.remote_peer_id
     }
 
     fn local_priv_key(&self) -> Keypair {

@@ -36,9 +36,9 @@ use libp2prs_runtime::task;
 use libp2prs_secio as secio;
 use libp2prs_swarm::identify::IdentifyConfig;
 use libp2prs_swarm::ping::PingConfig;
-use libp2prs_swarm::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandler};
+use libp2prs_swarm::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandler, ProtocolImpl};
 use libp2prs_swarm::substream::Substream;
-use libp2prs_swarm::{DummyProtocolHandler, Swarm};
+use libp2prs_swarm::{DummyProtocol, Swarm};
 use libp2prs_tcp::TcpConfig;
 use libp2prs_traits::{ReadEx, WriteEx};
 use libp2prs_websocket::WsConfig;
@@ -77,6 +77,13 @@ fn run_server() {
     let tu2 = TransportUpgrade::new(MemoryTransport::default(), mux.clone(), sec.clone());
     let tu3 = TransportUpgrade::new(WsConfig::new(), mux, sec);
 
+    struct MyProtocol;
+    impl ProtocolImpl for MyProtocol {
+        fn handler(&self) -> IProtocolHandler {
+            Box::new(MyProtocolHandler)
+        }
+    }
+
     #[derive(Clone)]
     struct MyProtocolHandler;
 
@@ -94,7 +101,7 @@ fn run_server() {
     impl ProtocolHandler for MyProtocolHandler {
         async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn Error>> {
             let mut stream = stream;
-            log::trace!("MyProtocolHandler handling inbound {:?}", stream);
+            log::trace!("MyProtocol handling inbound {:?}", stream);
             let mut msg = vec![0; 4096];
             loop {
                 let n = stream.read2(&mut msg).await?;
@@ -112,8 +119,8 @@ fn run_server() {
         .with_transport(Box::new(tu))
         .with_transport(Box::new(tu2))
         .with_transport(Box::new(tu3))
-        .with_protocol(Box::new(DummyProtocolHandler::new()))
-        .with_protocol(Box::new(MyProtocolHandler))
+        .with_protocol(DummyProtocol::new())
+        .with_protocol(MyProtocol)
         .with_ping(PingConfig::new().with_unsolicited(true).with_interval(Duration::from_secs(1)))
         .with_identify(IdentifyConfig::new(false));
 
@@ -172,7 +179,7 @@ fn run_client() {
             //let mut stream = connection.open_stream(vec![b"/my/1.0.0"], |r| r.unwrap()).await;
 
             // method 2
-            let mut stream = control.new_stream(remote_peer_id.clone(), vec![PROTO_NAME.into()]).await.unwrap();
+            let mut stream = control.new_stream(remote_peer_id, vec![PROTO_NAME.into()]).await.unwrap();
             log::info!("stream {:?} opened, writing something...", stream);
             let _ = stream.write_all2(b"hello").await;
 
@@ -190,6 +197,6 @@ fn run_client() {
         }
 
         // close the swarm explicitly
-        let _ = control.close().await;
+        control.close();
     });
 }

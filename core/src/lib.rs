@@ -41,6 +41,8 @@ pub mod keys_proto {
 
 // re-export multiaddr
 pub use libp2prs_multiaddr as multiaddr;
+// re-export multihash
+pub use multihash;
 
 pub mod identity;
 mod peer_id;

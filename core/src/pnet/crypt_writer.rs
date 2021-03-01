@@ -25,7 +25,8 @@ use async_trait::async_trait;
 use futures::io;
 use libp2prs_traits::WriteEx;
 use log::trace;
-use salsa20::{stream_cipher::SyncStreamCipher, XSalsa20};
+use salsa20::cipher::SyncStreamCipher;
+use salsa20::XSalsa20;
 use std::fmt;
 
 /// A writer that encrypts and forwards to an inner writer

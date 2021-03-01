@@ -18,8 +18,8 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use libp2prs_multiaddr::protocol::Protocol;
 use libp2prs_multiaddr::Multiaddr;
+use libp2prs_multiaddr::Protocol;
 
 /// Perform IP address translation.
 ///

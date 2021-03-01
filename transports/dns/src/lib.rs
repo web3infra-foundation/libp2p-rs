@@ -148,7 +148,9 @@ where
     }
 
     fn protocols(&self) -> Vec<u32> {
-        vec![protocol::DNS]
+        let mut p = self.inner.protocols();
+        p.push(protocol::DNS);
+        p
     }
 }
 

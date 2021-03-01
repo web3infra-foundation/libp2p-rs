@@ -107,6 +107,8 @@ pub struct Connection {
     identify_push_handle: Option<task::TaskHandle<()>>,
     /// Global metrics.
     metric: Arc<Metric>,
+    /// Flag, means that current connection is closed or not.
+    closing: bool,
 }
 
 impl PartialEq for Connection {
@@ -155,6 +157,7 @@ impl Connection {
             identify_handle: None,
             identify_push_handle: None,
             metric,
+            closing: false,
         }
     }
 
@@ -220,13 +223,18 @@ impl Connection {
         })
     }
 
+    pub fn is_closing(&self) -> bool {
+        self.closing
+    }
+
     /// Closes the inner stream_muxer. Spawn a runtime to avoid blocking.
-    pub fn close(&self) {
+    pub fn close(&mut self) {
         log::debug!("closing {:?}", self);
 
         let mut stream_muxer = self.stream_muxer.clone();
         // spawns a runtime to close the stream_muxer, later connection will cleaned up
         // in 'handle_connection_closed'
+        self.closing = true;
         task::spawn(async move {
             let _ = stream_muxer.close().await;
         });

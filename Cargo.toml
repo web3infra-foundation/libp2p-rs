@@ -1,6 +1,6 @@
 [package]
 name = "libp2p-rs"
-version = "0.2.1"
+version = "0.2.2"
 license = "MIT"
 description = "Minimal implementation for a multiplexed p2p network framework"
 authors = ["Netwarps Technologies admin@paradeum.com"]
@@ -12,9 +12,9 @@ edition = "2018"
 [features]
 default = [
   "dns-async-std",
-  "exporter-async-std",
+  "exporter",
   "floodsub-async-std",
-  "infoserver-async-std",
+  "infoserver",
   "kad-async-std",
   "rt-async-std",
   "mdns-async-std",
@@ -67,11 +67,8 @@ dns-tokio = ["libp2prs-dns/tokio"]
 floodsub-async-std = ["libp2prs-floodsub/async-std"]
 floodsub-tokio = ["libp2prs-floodsub/tokio"]
 
-infoserver-async-std = ["libp2prs-infoserver/async-std"]
-infoserver-tokio = ["libp2prs-infoserver/tokio"]
-
-exporter-async-std = ["libp2prs-exporter/async-std"]
-exporter-tokio = ["libp2prs-exporter/tokio"]
+infoserver = ["libp2prs-infoserver"]
+exporter = ["libp2prs-exporter"]
 
 kad-async-std = ["libp2prs-kad/async-std"]
 kad-tokio = ["libp2prs-kad/tokio"]
@@ -100,22 +97,22 @@ yamux = ["libp2prs-yamux"]
 [dependencies]
 libp2prs-runtime = { path = "runtime", version = "0.2.1", optional = true }
 libp2prs-traits = { path = "traits", version = "0.2.1" }
-libp2prs-multiaddr = { path = "multiaddr", version = "0.2.1" }
-libp2prs-core = { path = "core", version = "0.2.1" }
-libp2prs-yamux = { path = "protocols/yamux", version = "0.2.1", optional = true }
-libp2prs-mplex = { path = "protocols/mplex", version = "0.2.1", optional = true }
-libp2prs-secio = { path = "protocols/secio", version = "0.2.1", optional = true }
-libp2prs-plaintext = { path = "protocols/plaintext", version = "0.2.1", optional = true }
-libp2prs-noise = { path = "protocols/noise", version = "0.2.1", optional = true }
-libp2prs-floodsub = { path = "protocols/floodsub", version = "0.2.1", optional = true }
-libp2prs-mdns = { path = "protocols/mdns", version = "0.2.1", optional = true }
-libp2prs-tcp = { path = "transports/tcp", version = "0.2.1", optional = true }
-libp2prs-dns = { path = "transports/dns", version = "0.2.1", optional = true }
-libp2prs-websocket = { path = "transports/websocket", version = "0.2.1", optional = true }
-libp2prs-swarm = { path = "swarm", version = "0.2.1", optional = true }
-libp2prs-kad = { path = "protocols/kad", version = "0.2.1", optional = true }
-libp2prs-infoserver = { path="infoserver", version = "0.2.1", optional = true }
-libp2prs-exporter = { path="exporter", version = "0.2.1", optional = true }
+libp2prs-multiaddr = { path = "multiaddr", version = "0.2.2" }
+libp2prs-core = { path = "core", version = "0.2.2" }
+libp2prs-yamux = { path = "protocols/yamux", version = "0.2.2", optional = true }
+libp2prs-mplex = { path = "protocols/mplex", version = "0.2.2", optional = true }
+libp2prs-secio = { path = "protocols/secio", version = "0.2.2", optional = true }
+libp2prs-plaintext = { path = "protocols/plaintext", version = "0.2.2", optional = true }
+libp2prs-noise = { path = "protocols/noise", version = "0.2.2", optional = true }
+libp2prs-floodsub = { path = "protocols/floodsub", version = "0.2.2", optional = true }
+libp2prs-mdns = { path = "protocols/mdns", version = "0.2.2", optional = true }
+libp2prs-tcp = { path = "transports/tcp", version = "0.2.2", optional = true }
+libp2prs-dns = { path = "transports/dns", version = "0.2.2", optional = true }
+libp2prs-websocket = { path = "transports/websocket", version = "0.2.2", optional = true }
+libp2prs-swarm = { path = "swarm", version = "0.2.2" }
+libp2prs-kad = { path = "protocols/kad", version = "0.2.2", optional = true }
+libp2prs-infoserver = { path="infoserver", version = "0.2.2", optional = true }
+libp2prs-exporter = { path="exporter", version = "0.2.2", optional = true }
 
 async-trait = "0.1"
 log = "0.4"

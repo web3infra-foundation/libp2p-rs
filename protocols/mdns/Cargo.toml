@@ -2,7 +2,7 @@
 name = "libp2prs-mdns"
 edition = "2018"
 description = "mdns protocol for libp2p"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Netwarps Technologies admin@paradeum.com"]
 license = "MIT"
 repository = "https://github.com/netwarps/libp2p-rs"
@@ -27,8 +27,8 @@ net2 = "0.2"
 nohash-hasher = "0.2"
 rand = "0.7"
 smallvec = "1.0"
-libp2prs-core = { path = "../../core", version = "0.2.1" }
-libp2prs-runtime = { path = "../../runtime", version = "0.2.1", optional = true }
+libp2prs-core = { path = "../../core", version = "0.2.2" }
+libp2prs-runtime = { path = "../../runtime", version = "0.2.1" }
 
 [dev-dependencies]
 env_logger = "0.8"

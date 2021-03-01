@@ -87,7 +87,8 @@ where
 
             let owned = Owned::new(new_hash);
 
-            match self.data.compare_and_set(shared, owned, SeqCst, &guard) {
+            match self.data.compare_exchange(shared, owned, SeqCst, SeqCst, &guard) {
+                // match self.data.compare_and_set(shared, owned, SeqCst, &guard) {
                 Ok(_) => {
                     unsafe {
                         guard.defer_destroy(shared);
@@ -132,7 +133,7 @@ where
 
             let owned = Owned::new(new_hash);
 
-            match self.data.compare_and_set(shared, owned, SeqCst, &guard) {
+            match self.data.compare_exchange(shared, owned, SeqCst, SeqCst, &guard) {
                 Ok(_) => unsafe {
                     guard.defer_destroy(shared);
                     break;

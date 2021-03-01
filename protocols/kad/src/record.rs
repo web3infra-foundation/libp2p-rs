@@ -24,12 +24,11 @@
 pub mod store;
 
 use bytes::Bytes;
-use multihash::Multihash;
 use std::borrow::Borrow;
 use std::hash::{Hash, Hasher};
 use std::time::Instant;
 
-use libp2prs_core::PeerId;
+use libp2prs_core::{multihash::Multihash, PeerId};
 
 /// The (opaque) key of a record.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -67,13 +66,13 @@ impl From<Vec<u8>> for Key {
 
 impl From<Multihash> for Key {
     fn from(m: Multihash) -> Key {
-        Key::from(m.into_bytes())
+        Key::from(m.to_bytes())
     }
 }
 
 impl From<PeerId> for Key {
     fn from(m: PeerId) -> Key {
-        Key::from(m.into_bytes())
+        Key::from(m.to_bytes())
     }
 }
 
@@ -153,7 +152,7 @@ impl ProviderRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use multihash::{wrap, Code};
+    use libp2prs_core::multihash::{Code, Multihash};
     use quickcheck::*;
     use rand::Rng;
     use std::time::Duration;
@@ -161,7 +160,7 @@ mod tests {
     impl Arbitrary for Key {
         fn arbitrary<G: Gen>(_: &mut G) -> Key {
             let hash = rand::thread_rng().gen::<[u8; 32]>();
-            Key::from(wrap(Code::Sha2_256, &hash))
+            Key::from(Multihash::wrap(Code::Sha2_256.into(), &hash).unwrap())
         }
     }
 

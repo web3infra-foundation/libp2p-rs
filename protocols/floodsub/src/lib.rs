@@ -22,10 +22,12 @@
 pub mod control;
 pub mod floodsub;
 pub mod protocol;
-mod subscription;
+pub mod subscription;
 
+use futures::channel::{mpsc, oneshot};
 use libp2prs_core::PeerId;
 use std::{
+    error,
     fmt::{Display, Result},
     io,
 };
@@ -91,6 +93,15 @@ pub enum FloodsubError {
     Closed,
 }
 
+impl error::Error for FloodsubError {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match self {
+            FloodsubError::Io(err) => Some(err),
+            FloodsubError::Closed => None,
+        }
+    }
+}
+
 impl Display for FloodsubError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result {
         match self {
@@ -103,5 +114,17 @@ impl Display for FloodsubError {
 impl From<io::Error> for FloodsubError {
     fn from(e: io::Error) -> Self {
         FloodsubError::Io(e)
+    }
+}
+
+impl From<mpsc::SendError> for FloodsubError {
+    fn from(_: mpsc::SendError) -> Self {
+        FloodsubError::Closed
+    }
+}
+
+impl From<oneshot::Canceled> for FloodsubError {
+    fn from(_: oneshot::Canceled) -> Self {
+        FloodsubError::Closed
     }
 }

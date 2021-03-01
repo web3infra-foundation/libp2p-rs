@@ -191,7 +191,7 @@ impl Substream {
     }
     /// Returns the remote multiaddr of the sub stream.
     pub fn remote_peer(&self) -> PeerId {
-        self.info.ci.rpid.clone()
+        self.info.ci.rpid
     }
     /// Returns the info of the sub stream.
     pub fn info(&self) -> SubstreamInfo {

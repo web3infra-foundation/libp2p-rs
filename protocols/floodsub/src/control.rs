@@ -18,14 +18,20 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use crate::floodsub::ControlCommand;
 use crate::protocol::FloodsubMessage;
 use crate::subscription::Subscription;
-use crate::FloodsubConfig;
 use crate::Topic;
+use crate::{FloodsubConfig, FloodsubError};
 use futures::channel::{mpsc, oneshot};
 use futures::SinkExt;
 use libp2prs_core::PeerId;
+
+pub(crate) enum ControlCommand {
+    Publish(FloodsubMessage, oneshot::Sender<()>),
+    Subscribe(Topic, oneshot::Sender<Subscription>),
+    Ls(oneshot::Sender<Vec<Topic>>),
+    GetPeers(Topic, oneshot::Sender<Vec<PeerId>>),
+}
 
 #[derive(Clone)]
 pub struct Control {
@@ -33,15 +39,21 @@ pub struct Control {
     control_sender: mpsc::UnboundedSender<ControlCommand>,
 }
 
+type Result<T> = std::result::Result<T, FloodsubError>;
+
 impl Control {
     pub(crate) fn new(control_sender: mpsc::UnboundedSender<ControlCommand>, config: FloodsubConfig) -> Self {
         Control { control_sender, config }
     }
+    /// Closes the floodsub main loop.
+    pub fn close(&mut self) {
+        self.control_sender.close_channel();
+    }
 
     /// Publish publishes data to a given topic.
-    pub async fn publish(&mut self, topic: Topic, data: impl Into<Vec<u8>>) {
+    pub async fn publish(&mut self, topic: Topic, data: impl Into<Vec<u8>>) -> Result<()> {
         let msg = FloodsubMessage {
-            source: self.config.local_peer_id.clone(),
+            source: self.config.local_peer_id,
             data: data.into(),
             // If the sequence numbers are predictable, then an attacker could flood the network
             // with packets with the predetermined sequence numbers and absorb our legitimate
@@ -51,40 +63,29 @@ impl Control {
         };
 
         let (tx, rx) = oneshot::channel();
-        self.control_sender
-            .send(ControlCommand::Publish(msg, tx))
-            .await
-            .expect("control send publish");
-        rx.await.expect("publish");
+        self.control_sender.send(ControlCommand::Publish(msg, tx)).await?;
+
+        Ok(rx.await?)
     }
 
     /// Subscribe to messages on a given topic.
-    pub async fn subscribe(&mut self, topic: Topic) -> Option<Subscription> {
+    pub async fn subscribe(&mut self, topic: Topic) -> Result<Subscription> {
         let (tx, rx) = oneshot::channel();
-        self.control_sender
-            .send(ControlCommand::Subscribe(topic, tx))
-            .await
-            .expect("control send subscribe");
-        rx.await.expect("Subscribe")
+        self.control_sender.send(ControlCommand::Subscribe(topic, tx)).await?;
+        Ok(rx.await?)
     }
 
     /// List subscribed topics by name.
-    pub async fn ls(&mut self) -> Vec<Topic> {
+    pub async fn ls(&mut self) -> Result<Vec<Topic>> {
         let (tx, rx) = oneshot::channel();
-        self.control_sender
-            .send(ControlCommand::Ls(tx))
-            .await
-            .expect("control send subscribe");
-        rx.await.expect("Subscribe")
+        self.control_sender.send(ControlCommand::Ls(tx)).await?;
+        Ok(rx.await?)
     }
 
     /// List peers we are currently pubsubbing with.
-    pub async fn get_peers(&mut self, topic: Topic) -> Vec<PeerId> {
+    pub async fn get_peers(&mut self, topic: Topic) -> Result<Vec<PeerId>> {
         let (tx, rx) = oneshot::channel();
-        self.control_sender
-            .send(ControlCommand::GetPeers(topic, tx))
-            .await
-            .expect("control send subscribe");
-        rx.await.expect("Subscribe")
+        self.control_sender.send(ControlCommand::GetPeers(topic, tx)).await?;
+        Ok(rx.await?)
     }
 }

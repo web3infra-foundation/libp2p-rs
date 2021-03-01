@@ -144,7 +144,7 @@ impl MdnsService {
                     log::debug!("Query from {:?}", query.remote_addr());
                     let resp = dns::build_query_response(
                         query.query_id,
-                        self.config.local_peer.clone(),
+                        self.config.local_peer,
                         self.config.listened_addrs.clone().into_iter(),
                         MDNS_RESPONSE_TTL,
                     )
@@ -175,7 +175,7 @@ impl MdnsService {
                         }
 
                         for addr in addrs {
-                            discovered.push((peer.id().clone(), addr));
+                            discovered.push((*peer.id(), addr));
                         }
                     }
 
@@ -387,7 +387,7 @@ impl MdnsResponse {
                 peer_name.retain(|c| c != '.');
 
                 let peer_id = match data_encoding::BASE32_DNSCURVE.decode(peer_name.as_bytes()) {
-                    Ok(bytes) => match PeerId::from_bytes(bytes) {
+                    Ok(bytes) => match PeerId::from_bytes(&bytes) {
                         Ok(id) => id,
                         Err(_) => return None,
                     },

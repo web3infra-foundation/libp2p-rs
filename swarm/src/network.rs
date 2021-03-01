@@ -19,7 +19,6 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use crate::connection::ConnectionInfo;
 use libp2prs_core::PeerId;
 
 /// Information about the network obtained by [`Network::info()`].
@@ -37,8 +36,6 @@ pub struct NetworkInfo {
     pub num_connections_established: usize,
     /// The total number of active sub streams.
     pub num_active_streams: usize,
-    /// The information of all established connections.
-    pub connection_info: Vec<ConnectionInfo>,
 }
 
 /// The (optional) configuration for a [`Network`].

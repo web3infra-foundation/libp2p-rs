@@ -47,6 +47,7 @@ use crate::query::{FixedQuery, IterativeQuery, PeerRecord, QueryConfig, QuerySta
 use crate::store::RecordStore;
 use crate::{kbucket, record, KadError, ProviderRecord, Record};
 use libp2prs_core::peerstore::{ADDRESS_TTL, PROVIDER_ADDR_TTL};
+use libp2prs_swarm::protocol_handler::{IProtocolHandler, ProtocolImpl};
 
 type Result<T> = std::result::Result<T, KadError>;
 
@@ -367,6 +368,10 @@ impl KadPoster {
         self.0.send(event).await?;
         Ok(())
     }
+    pub(crate) fn unbounded_post(&mut self, event: ProtocolEvent) -> Result<()> {
+        self.0.unbounded_send(event).map_err(|e| e.into_send_error())?;
+        Ok(())
+    }
 }
 
 impl<TStore> Kademlia<TStore>
@@ -385,7 +390,7 @@ where
 
     /// Creates a new `Kademlia` network behaviour with the given configuration.
     pub fn with_config(id: PeerId, store: TStore, config: KademliaConfig) -> Self {
-        let local_key = kbucket::Key::new(id);
+        let local_key = kbucket::Key::from(id);
 
         let (event_tx, event_rx) = mpsc::unbounded();
         let (control_tx, control_rx) = mpsc::unbounded();
@@ -543,7 +548,7 @@ where
     fn try_add_peer(&mut self, peer: PeerId, queried: bool) {
         let timeout = self.check_kad_peer_interval;
         let now = Instant::now();
-        let key = kbucket::Key::new(peer.clone());
+        let key = kbucket::Key::from(peer);
 
         log::debug!(
             "trying to add a peer: {:?} bucket-index={:?}, query={}",
@@ -605,7 +610,7 @@ where
     /// Returns `None` if the peer was not in the routing table,
     /// not even pending insertion.
     fn try_remove_peer(&mut self, peer: PeerId) -> Option<kbucket::EntryView<kbucket::Key<PeerId>, PeerInfo>> {
-        let key = kbucket::Key::new(peer.clone());
+        let key = kbucket::Key::from(peer);
 
         log::debug!(
             "trying to remove a peer: {:?} bucket-index={:?}",
@@ -632,7 +637,7 @@ where
     /// reason of this approach is we'd keep an inactive node as long as the
     /// bucket is not full.
     fn try_deactivate_peer(&mut self, peer: PeerId) {
-        let key = kbucket::Key::new(peer.clone());
+        let key = kbucket::Key::from(peer);
 
         log::debug!(
             "trying to deactivate a peer: {:?} bucket-index={:?}",
@@ -668,7 +673,7 @@ where
 
     // prepare and generate a IterativeQuery for iterative query.
     fn prepare_iterative_query(&mut self, qt: QueryType, key: record::Key) -> IterativeQuery {
-        let local_id = self.kbuckets.self_key().preimage().clone();
+        let local_id = *self.kbuckets.self_key().preimage();
         let target = kbucket::Key::new(key.clone());
         let seeds = self
             .kbuckets
@@ -830,7 +835,7 @@ where
             expires: None,
         };
 
-        record.publisher = Some(self.kbuckets.self_key().preimage().clone());
+        record.publisher = Some(*self.kbuckets.self_key().preimage());
         if let Err(e) = self.store.put(record.clone()) {
             f(Err(e));
             return;
@@ -878,12 +883,16 @@ where
     /// refreshed by initiating an additional bootstrapping query for each such
     /// bucket with random keys.
     ///
-    /// > **Note**: Bootstrapping requires at least one node of the DHT to be known.
-    async fn bootstrap(&mut self) {
+    /// > **Note**: Bootstrapping requires at least one node in the `boot` list or at
+    /// least one node of the DHT to be known.
+    fn bootstrap(&mut self, boot: Vec<(PeerId, Multiaddr)>) {
+        for (node, addr) in boot {
+            self.add_node(node, vec![addr]);
+        }
         if !self.refreshing {
             log::debug!("bootstrapping...");
             let mut poster = self.poster();
-            let _ = poster.post(ProtocolEvent::Refresh(RefreshStage::Start)).await;
+            let _ = poster.unbounded_post(ProtocolEvent::Refresh(RefreshStage::Start));
         }
     }
 
@@ -922,7 +931,7 @@ where
                 let bucket = k
                     .iter()
                     .map(|n| {
-                        let id = n.node.key.preimage().clone();
+                        let id = *n.node.key.preimage();
                         let aliveness = n.node.value.get_aliveness();
                         let connected = connected.contains(&id);
                         let addresses = swarm.get_addrs(&id).unwrap_or_else(Vec::new);
@@ -965,7 +974,7 @@ where
     where
         F: FnOnce(Result<()>) + Send + 'static,
     {
-        let provider = ProviderRecord::new(key.clone(), self.kbuckets.self_key().preimage().clone(), None);
+        let provider = ProviderRecord::new(key.clone(), *self.kbuckets.self_key().preimage(), None);
         if let Err(e) = self.store.add_provider(provider.clone()) {
             f(Err(e));
             return;
@@ -1000,7 +1009,7 @@ where
     fn find_closest<T: Clone>(&mut self, target: &kbucket::Key<T>, source: &PeerId) -> Vec<KadPeer> {
         if target == self.kbuckets.self_key() {
             vec![KadPeer {
-                node_id: self.kbuckets.self_key().preimage().clone(),
+                node_id: *self.kbuckets.self_key().preimage(),
                 multiaddrs: vec![], // don't bother, they must have our addresses
                 connection_ty: KadConnectionType::Connected,
             }]
@@ -1184,10 +1193,6 @@ where
         }
     }
 
-    /// Get the protocol handler of Kademlia, swarm will call "handle" func after stream negotiation.
-    pub fn handler(&self) -> KadProtocolHandler {
-        KadProtocolHandler::new(self.protocol_config.clone(), self.poster())
-    }
     /// Get the controller of Kademlia, which can be used to manipulate the Kad-DHT.
     pub fn control(&self) -> Control {
         Control::new(self.control_tx.clone())
@@ -1224,46 +1229,15 @@ where
         }
     }
 
-    /// Start the main message loop of Kademlia.
-    pub fn start(mut self, swarm: SwarmControl) {
-        self.messengers = Some(MessengerManager::new(swarm.clone(), self.protocol_config.clone()));
-        self.swarm = Some(swarm);
-
-        // start provider gc timer
-        self.start_provider_gc_timer();
-        // start refresh timer
-        self.start_refresh_timer();
-
-        // well, self 'move' explicitly,
-        let mut kad = self;
-        task::spawn(async move {
-            // // As we get Swarm control, try getting Swarm self addresses
-            // let swarm = kad.swarm.as_mut().expect("must be Some");
-            // kad.local_addrs = swarm.self_addrs().await.expect("listen addrs > 0");
-            let r = kad.process_loop().await;
-            assert!(r.is_err());
-            log::info!("Kad main loop closed, quitting due to {:?}", r);
-
-            if let Some(h) = kad.refresh_timer_handle.take() {
-                h.cancel().await;
-            }
-            if let Some(h) = kad.provider_timer_handle.take() {
-                h.cancel().await;
-            }
-
-            log::info!("Kad main loop exited");
-        });
-    }
-
     /// Message Process Loop.
     async fn process_loop(&mut self) -> Result<()> {
         loop {
             select! {
                 evt = self.event_rx.next() => {
-                    self.on_events(evt).await?;
+                    self.on_events(evt)?;
                 }
                 cmd = self.control_rx.next() => {
-                    self.on_control_command(cmd).await?;
+                    self.on_control_command(cmd)?;
                 }
             }
         }
@@ -1339,7 +1313,7 @@ where
     }
 
     // Handle Kad events sent from protocol handler.
-    async fn on_events(&mut self, msg: Option<ProtocolEvent>) -> Result<()> {
+    fn on_events(&mut self, msg: Option<ProtocolEvent>) -> Result<()> {
         log::debug!("handle kad event: {:?}", msg);
         match msg {
             Some(ProtocolEvent::PeerConnected(peer_id)) => {
@@ -1390,7 +1364,7 @@ where
         log::debug!("handle Kad request message from {:?}, {:?} ", source, request);
 
         // Obviously we found a Kad peer
-        self.try_add_peer(source.clone(), true);
+        self.try_add_peer(source, true);
 
         let response = match request {
             KadRequestMsg::Ping => {
@@ -1495,7 +1469,7 @@ where
             let mut count: u32 = 0;
             for peer in peers_to_check {
                 log::debug!("health checking {}", peer);
-                let r = swarm.new_connection(peer.clone()).await;
+                let r = swarm.new_connection(peer).await;
                 if r.is_err() {
                     log::debug!("health checking failed at {}, removing from Kbuckets", peer);
                     count += 1;
@@ -1513,6 +1487,15 @@ where
     fn handle_refresh_stage(&mut self, stage: RefreshStage) {
         match stage {
             RefreshStage::Start => {
+                // check if there is any node in the RT. Do NOTHING if not.
+                // This might happen when address change notifications come from
+                // Notifiee trait, when Kad is initializing while Swarm is listening
+                // on a multiaddr
+                if self.kbuckets.num_entries() == 0 {
+                    log::debug!("Don't refresh when RT has nothing yet");
+                    return;
+                }
+
                 // check if we are running a refresh. do NOT run again if yes
                 if self.refreshing {
                     return;
@@ -1524,7 +1507,7 @@ where
                 // and increase the counter
                 self.stats.total_refreshes += 1;
 
-                let local_id = self.kbuckets.self_key().preimage().clone();
+                let local_id = *self.kbuckets.self_key().preimage();
                 let mut poster = self.poster();
 
                 self.get_closest_peers(local_id.into(), |r| {
@@ -1569,14 +1552,14 @@ where
                         // Pr(bucket-253) = 1 - (7/8)^16   ~= 0.88
                         // Pr(bucket-252) = 1 - (15/16)^16 ~= 0.64
                         // ...
-                        let mut target = kbucket::Key::new(PeerId::random());
+                        let mut target = kbucket::Key::from(PeerId::random());
                         for _ in 0..16 {
                             let d = self_key.distance(&target);
                             if b.contains(&d) {
                                 log::trace!("random Id generated for bucket-index={:?}", d.ilog2());
                                 break;
                             }
-                            target = kbucket::Key::new(PeerId::random());
+                            target = kbucket::Key::from(PeerId::random());
                         }
                         target.into_preimage()
                     }).collect::<Vec<_>>();
@@ -1604,10 +1587,10 @@ where
     }
 
     // Process publish or subscribe command.
-    async fn on_control_command(&mut self, cmd: Option<ControlCommand>) -> Result<()> {
+    fn on_control_command(&mut self, cmd: Option<ControlCommand>) -> Result<()> {
         match cmd {
-            Some(ControlCommand::Bootstrap) => {
-                self.bootstrap().await;
+            Some(ControlCommand::Bootstrap(boot)) => {
+                self.bootstrap(boot);
             }
             Some(ControlCommand::AddNode(peer, addresses)) => {
                 self.add_node(peer, addresses);
@@ -1635,6 +1618,9 @@ where
                     let _ = reply.send(r);
                 });
             }
+            Some(ControlCommand::Unprovide(key)) => {
+                self.stop_providing(&key);
+            }
             Some(ControlCommand::PutValue(key, value, reply)) => {
                 self.put_record(key, value, |r| {
                     let _ = reply.send(r);
@@ -1661,6 +1647,48 @@ where
             }
         }
         Ok(())
+    }
+}
+
+impl<TStore> ProtocolImpl for Kademlia<TStore>
+where
+    for<'a> TStore: RecordStore<'a> + Send + 'static,
+{
+    fn handler(&self) -> IProtocolHandler {
+        Box::new(KadProtocolHandler::new(self.protocol_config.clone(), self.poster()))
+    }
+
+    fn start(mut self, swarm: SwarmControl) -> Option<task::TaskHandle<()>>
+    where
+        Self: Sized,
+    {
+        self.messengers = Some(MessengerManager::new(swarm.clone(), self.protocol_config.clone()));
+        self.swarm = Some(swarm);
+
+        // start provider gc timer
+        self.start_provider_gc_timer();
+        // start refresh timer
+        self.start_refresh_timer();
+
+        // well, self 'move' explicitly,
+        let mut kad = self;
+        Some(task::spawn(async move {
+            // // As we get Swarm control, try getting Swarm self addresses
+            // let swarm = kad.swarm.as_mut().expect("must be Some");
+            // kad.local_addrs = swarm.self_addrs().await.expect("listen addrs > 0");
+            let r = kad.process_loop().await;
+            assert!(r.is_err());
+            log::info!("Kad main loop closed, quitting due to {:?}", r);
+
+            if let Some(h) = kad.refresh_timer_handle.take() {
+                h.cancel().await;
+            }
+            if let Some(h) = kad.provider_timer_handle.take() {
+                h.cancel().await;
+            }
+
+            log::info!("Kad main loop exited");
+        }))
     }
 }
 
@@ -1701,7 +1729,7 @@ impl MessengerManager {
             Some(sender) => Ok(sender),
             None => {
                 // make a new sender
-                KadMessenger::build(self.swarm.clone(), peer.clone(), self.config.clone()).await
+                KadMessenger::build(self.swarm.clone(), *peer, self.config.clone()).await
             }
         }
     }
@@ -1713,7 +1741,7 @@ impl MessengerManager {
 
             // perhaps there is a messenger in the hashmap already
             if !cache.contains_key(peer) {
-                cache.insert(peer.clone(), messenger);
+                cache.insert(*peer, messenger);
             }
         }
     }

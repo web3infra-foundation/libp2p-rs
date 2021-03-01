@@ -1,6 +1,6 @@
 [package]
 name = "libp2prs-yamux"
-version = "0.2.1"
+version = "0.2.2"
 license = "MIT"
 description = "Yamux multiplexing protocol for libp2p"
 authors = ["Netwarps Technologies admin@paradeum.com"]
@@ -12,7 +12,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 libp2prs-traits = { path = "../../traits", version = "0.2.1" }
-libp2prs-core = { path = "../../core", version = "0.2.1"  }
+libp2prs-core = { path = "../../core", version = "0.2.2"  }
 nohash-hasher = "0.2"
 unsigned-varint = "0.4"
 async-trait = "0.1"
