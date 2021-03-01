@@ -51,11 +51,12 @@
 use async_trait::async_trait;
 use libp2prs_core::upgrade::UpgradeInfo;
 use libp2prs_core::{Multiaddr, PeerId};
+use libp2prs_runtime::task;
 use std::error::Error;
 
 use crate::connection::Connection;
 use crate::substream::Substream;
-use crate::ProtocolId;
+use crate::{Control, ProtocolId};
 
 /// Notifiee is an trait for an object wishing to receive notifications from swarm.
 pub trait Notifiee {
@@ -74,9 +75,23 @@ pub trait Notifiee {
     fn address_changed(&mut self, _addrs: Vec<Multiaddr>) {}
 }
 
-/// Common trait for upgrades that can be applied on inbound substreams, outbound substreams,
-/// or both.
-/// Possible upgrade on a connection or substream.
+/// Common trait for describing a Swarm friendly protocol.
+pub trait ProtocolImpl {
+    /// Returns the trait object of the ProtocolHandler, which can be used by Swarm
+    /// to construct the protocol muxer.
+    fn handler(&self) -> IProtocolHandler;
+    /// start() will consume the ownership and start the protocol. An optional
+    /// task handle might be returned by start(), and it could be used to track
+    /// the lifetime of the protocol.
+    fn start(self, _swarm: Control) -> Option<task::TaskHandle<()>>
+    where
+        Self: Sized,
+    {
+        None
+    }
+}
+
+/// Common trait for handling protocol inbound sub-stream.
 #[async_trait]
 pub trait ProtocolHandler: UpgradeInfo + Notifiee {
     /// After we have determined that the remote supports one of the protocols we support, this
@@ -100,14 +115,23 @@ impl Clone for IProtocolHandler {
 /// Dummy protocol handler, test purpose
 ///
 /// Implementation of `ProtocolHandler` that doesn't handle anything.
-#[derive(Clone, Default)]
-pub struct DummyProtocolHandler {}
+pub struct DummyProtocol;
 
-impl DummyProtocolHandler {
+#[allow(clippy::new_without_default)]
+impl DummyProtocol {
     pub fn new() -> Self {
-        DummyProtocolHandler {}
+        DummyProtocol
     }
 }
+
+impl ProtocolImpl for DummyProtocol {
+    fn handler(&self) -> IProtocolHandler {
+        Box::new(DummyProtocolHandler)
+    }
+}
+
+#[derive(Clone)]
+struct DummyProtocolHandler;
 
 impl UpgradeInfo for DummyProtocolHandler {
     type Info = ProtocolId;

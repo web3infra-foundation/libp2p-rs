@@ -219,7 +219,7 @@ mod tests {
             let mut t = Vec::new();
             for i in 0..16 {
                 let m = metric.clone();
-                let pid = peer_id.clone();
+                let pid = peer_id;
                 let protocol = protocol.clone();
                 t.push(task::spawn(async move {
                     m.log_sent_stream(&protocol, i, &pid);

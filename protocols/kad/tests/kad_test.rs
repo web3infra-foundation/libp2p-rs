@@ -46,14 +46,12 @@ fn setup_kad(keys: Keypair, listen_addr: Multiaddr) -> (swarm_control, kad_contr
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
 
     // start kad protocol
-    let store = MemoryStore::new(swarm.local_peer_id().clone());
-    let kad = Kademlia::new(swarm.local_peer_id().clone(), store);
-    let kad_handler = kad.handler();
+    let store = MemoryStore::new(*swarm.local_peer_id());
+    let kad = Kademlia::new(*swarm.local_peer_id(), store);
     let kad_ctrl = kad.control();
-    kad.start(swarm.control());
 
     // register handler to swarm
-    swarm = swarm.with_protocol(Box::new(kad_handler)).with_routing(Box::new(kad_ctrl.clone()));
+    swarm = swarm.with_protocol(kad).with_routing(Box::new(kad_ctrl.clone()));
 
     swarm.listen_on(vec![listen_addr]).expect("listen on");
     let swarm_ctrl = swarm.control();
@@ -92,10 +90,7 @@ fn setup_kads(n: usize) -> Vec<PeerInfo> {
 }
 
 async fn connect(a: &mut PeerInfo, b: &mut PeerInfo) {
-    a.swarm_ctrl
-        .connect_with_addrs(b.pid.clone(), vec![b.addr.clone()])
-        .await
-        .expect("connect");
+    a.swarm_ctrl.connect_with_addrs(b.pid, vec![b.addr.clone()]).await.expect("connect");
 }
 
 #[test]
@@ -114,7 +109,7 @@ fn test_bootstrap() {
             task::sleep(Duration::from_millis(200)).await;
 
             // expect node2 find node0 via node1
-            node0.swarm_ctrl.new_connection(node2.pid.clone()).await.expect("new connection");
+            node0.swarm_ctrl.new_connection(node2.pid).await.expect("new connection");
 
             TestResult::passed()
         })

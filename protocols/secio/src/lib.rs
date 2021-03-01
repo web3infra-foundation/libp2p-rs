@@ -226,11 +226,11 @@ impl<S: ConnectionInfo + SplitEx> ConnectionInfo for SecioOutput<S> {
 
 impl<S: SplitEx> SecureInfo for SecioOutput<S> {
     fn local_peer(&self) -> PeerId {
-        self.local_peer_id.clone()
+        self.local_peer_id
     }
 
     fn remote_peer(&self) -> PeerId {
-        self.remote_peer_id.clone()
+        self.remote_peer_id
     }
 
     fn local_priv_key(&self) -> Keypair {

@@ -32,8 +32,9 @@ use crate::identify::IdentifyInfo;
 use crate::metrics::metric::Metric;
 use crate::network::NetworkInfo;
 use crate::substream::{StreamId, Substream, SubstreamView};
-use crate::SwarmError;
+use crate::{SwarmError, SWARM_EXIT_FLAG};
 use std::collections::hash_map::IntoIter;
+use std::sync::atomic::Ordering;
 
 type Result<T> = std::result::Result<T, SwarmError>;
 
@@ -234,10 +235,14 @@ impl Control {
     }
 
     /// Close the swarm.
-    pub async fn close(&mut self) {
+    pub fn close(&mut self) {
         // simply close the tx, then exit the main loop
         // TODO: wait for the main loop to exit before returning
         self.sender.close_channel();
+
+        while !SWARM_EXIT_FLAG.load(Ordering::Relaxed) {}
+
+        log::info!("!!!Swarm shutdown!!!")
     }
 
     /// Pins the peer Id so that GC wouldn't recycle the multiaddr of the peer.

@@ -38,4 +38,24 @@
 - An interactive debugging shell, integrated with Swarm and Kad
 - Copyright notice updated to conform with MIT license
 
- 
+## 0.2.1 release (2021.1.26)
+
+- libp2prs_runtime added to support both async-std and tokio 1.0
+- feature sets refactored
+
+## 0.2.2 release (2021.3.1)
+
+### Changes
+
+-Swarm:
+    * Must implement ProtocolImpl trait for all protocols
+        + ProtocolImpl includes two methods: handler() & start()
+    * Protocols main loop(if any) are started by Swarm  
+- Floodsub 
+    * move .await to independent tasks
+    * API: Arc<FloodsubMessage> to avoid cloning messages for multiple subscribers
+- Kad API changed
+    * bootstrap() allow an initial boot node list
+    * unprovide() to remove provider from local store
+- Other minor changes    
+    

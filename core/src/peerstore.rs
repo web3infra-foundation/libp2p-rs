@@ -216,7 +216,7 @@ impl PeerStore {
         } else {
             // Peer_id non-exists, create a new PeerRecord and fill with a new AddrBookRecord.
             let vec = addrs.into_iter().map(|addr| AddrBookRecord::new(addr, ttl)).collect();
-            guard.insert(peer_id.clone(), PeerRecord::new(vec, None, Default::default()));
+            guard.insert(*peer_id, PeerRecord::new(vec, None, Default::default()));
         }
     }
 
@@ -256,7 +256,7 @@ impl PeerStore {
                 // delete this peer if no addr at all
                 if pr.addrs.is_empty() {
                     log::debug!("remove {:?} from peerstore", peer);
-                    to_remove.push(peer.clone());
+                    to_remove.push(*peer);
                 }
             }
         }
@@ -274,7 +274,7 @@ impl PeerStore {
         } else {
             let mut s = HashSet::new();
             s.extend(protos);
-            guard.insert(peer_id.clone(), PeerRecord::new(Default::default(), None, s));
+            guard.insert(*peer_id, PeerRecord::new(Default::default(), None, s));
         }
     }
 

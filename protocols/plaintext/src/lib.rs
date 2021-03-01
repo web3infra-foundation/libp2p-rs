@@ -134,11 +134,11 @@ pub struct PlainTextOutput<T: SplitEx> {
 
 impl<T: SplitEx> SecureInfo for PlainTextOutput<T> {
     fn local_peer(&self) -> PeerId {
-        self.local_peer_id.clone()
+        self.local_peer_id
     }
 
     fn remote_peer(&self) -> PeerId {
-        self.remote_peer_id.clone()
+        self.remote_peer_id
     }
 
     fn local_priv_key(&self) -> Keypair {

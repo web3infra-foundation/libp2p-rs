@@ -90,14 +90,14 @@ fn handler(app: &App) -> Control {
 
 fn cli_close_kad(app: &App, _args: &[&str]) -> XcliResult {
     let mut kad = handler(app);
-    task::block_on(kad.close());
+    kad.close();
     Ok(CmdExeCode::Ok)
 }
 
 fn cli_bootstrap(app: &App, _args: &[&str]) -> XcliResult {
     let mut kad = handler(app);
     task::block_on(async {
-        kad.bootstrap().await;
+        kad.bootstrap(vec![]).await;
         println!("start to bootstrap");
     });
 

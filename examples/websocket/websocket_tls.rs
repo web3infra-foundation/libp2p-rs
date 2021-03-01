@@ -37,7 +37,7 @@ use libp2prs_mplex as mplex;
 use libp2prs_plaintext as plaintext;
 use libp2prs_runtime::task;
 use libp2prs_swarm::identify::IdentifyConfig;
-use libp2prs_swarm::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandler};
+use libp2prs_swarm::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandler, ProtocolImpl};
 use libp2prs_swarm::substream::Substream;
 use libp2prs_swarm::Swarm;
 use libp2prs_traits::{ReadEx, WriteEx};
@@ -135,8 +135,15 @@ fn build_server_tls_config(options: &ServerTlsConfig) -> tls::Config {
     tls::Config::new(tls::PrivateKey::new(pk.0), cert_iter).unwrap()
 }
 
+struct MyProtocol;
 #[derive(Clone)]
 struct MyProtocolHandler;
+
+impl ProtocolImpl for MyProtocol {
+    fn handler(&self) -> IProtocolHandler {
+        Box::new(MyProtocolHandler)
+    }
+}
 
 impl UpgradeInfo for MyProtocolHandler {
     type Info = ProtocolId;
@@ -203,7 +210,7 @@ fn run_server() -> io::Result<()> {
 
     let mut swarm = Swarm::new(keys.public())
         .with_transport(Box::new(tu))
-        .with_protocol(Box::new(MyProtocolHandler))
+        .with_protocol(MyProtocol)
         .with_identify(IdentifyConfig::new(false));
 
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
@@ -244,7 +251,7 @@ fn run_client() -> io::Result<()> {
     swarm.start();
 
     task::block_on(async move {
-        control.connect_with_addrs(remote_peer_id.clone(), vec![addr]).await.unwrap();
+        control.connect_with_addrs(remote_peer_id, vec![addr]).await.unwrap();
         let mut stream = control.new_stream(remote_peer_id, vec![PROTO_NAME.into()]).await.unwrap();
         log::info!("stream {:?} opened, writing something...", stream);
 

@@ -22,7 +22,8 @@
 use async_trait::async_trait;
 use futures::io::Error;
 use libp2prs_traits::ReadEx;
-use salsa20::{stream_cipher::SyncStreamCipher, XSalsa20};
+use salsa20::cipher::SyncStreamCipher;
+use salsa20::XSalsa20;
 
 pub struct CryptReader<R> {
     inner: R,

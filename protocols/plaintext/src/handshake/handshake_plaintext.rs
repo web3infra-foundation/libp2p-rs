@@ -90,7 +90,7 @@ impl HandshakeContext<Local> {
         let public_key = config.key.public();
         let local_id = public_key.clone().into_peer_id();
         let local = Exchange {
-            id: Some(local_id.into_bytes()),
+            id: Some(local_id.to_bytes()),
             pubkey: Some(public_key.into_protobuf_encoding()),
         };
         let mut buf = Vec::with_capacity(local.encoded_len());
@@ -123,7 +123,7 @@ impl HandshakeContext<Local> {
                 return Err(PlaintextError::HandshakeParsingFailure);
             }
         };
-        let peer_id = match PeerId::from_bytes(prop.id.unwrap_or_default()) {
+        let peer_id = match PeerId::from_bytes(&prop.id.unwrap_or_default()) {
             Ok(id) => id,
             Err(_) => {
                 return Err(PlaintextError::HandshakeParsingFailure);

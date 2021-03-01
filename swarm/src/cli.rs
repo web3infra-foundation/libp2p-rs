@@ -18,7 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use std::convert::TryFrom;
+use std::str::FromStr;
 use xcli::*;
 
 use libp2prs_core::PeerId;
@@ -33,12 +33,7 @@ pub fn swarm_cli_commands<'a>() -> Command<'a> {
         .about("Swarm")
         .usage("swarm")
         .subcommand(Command::new("close").about("close swarm").usage("close").action(cli_close_swarm))
-        .subcommand(
-            Command::new("show")
-                .about("show basic information")
-                .usage("show")
-                .action(cli_show_basic),
-        )
+        .subcommand(Command::new("id").about("show id information").usage("id").action(cli_show_id))
         .subcommand(
             Command::new_with_alias("connection", "con")
                 .about("display connection information")
@@ -65,17 +60,23 @@ fn handler(app: &App) -> Control {
     swarm
 }
 
-fn cli_show_basic(app: &App, _args: &[&str]) -> XcliResult {
+fn cli_show_id(app: &App, _args: &[&str]) -> XcliResult {
     let mut swarm = handler(app);
     task::block_on(async {
-        let r = swarm.retrieve_networkinfo().await.unwrap();
-        println!("NetworkInfo: {:?}", r);
+        if let Ok(id) = swarm.retrieve_networkinfo().await {
+            println!("Id                : {}", id.id);
+            println!("Total Peers       : {:?}", id.num_peers);
+            println!("Total Connections : {:?}", id.num_connections);
+            println!("Total Substreams  : {:?}", id.num_active_streams);
+        }
 
-        let r = swarm.retrieve_identify_info().await.unwrap();
-        println!("IdentifyInfo: {:?}", r);
-
-        let addresses = swarm.self_addrs().await.unwrap();
-        println!("Addresses: {:?}", addresses);
+        if let Ok(identify) = swarm.retrieve_identify_info().await {
+            println!("PublicKey         : {:?}", identify.public_key);
+            println!("Protocol Version  : {:?}", identify.protocol_version);
+            println!("Agent Version     : {:?}", identify.agent_version);
+            println!("Support Protocols : {:?}", identify.protocols);
+            println!("Listening address : {:?}", identify.listen_addrs);
+        }
 
         println!(
             "Metric: {:?} {:?}",
@@ -90,7 +91,7 @@ fn cli_show_basic(app: &App, _args: &[&str]) -> XcliResult {
 fn cli_close_swarm(app: &App, _args: &[&str]) -> XcliResult {
     let mut swarm = handler(app);
 
-    task::block_on(swarm.close());
+    swarm.close();
     Ok(CmdExeCode::Ok)
 }
 
@@ -99,7 +100,7 @@ fn cli_show_connections(app: &App, args: &[&str]) -> XcliResult {
 
     let peer = match args.len() {
         0 => None,
-        1 => Some(PeerId::try_from(args[0]).map_err(|e| XcliError::BadArgument(e.to_string()))?),
+        1 => Some(PeerId::from_str(args[0]).map_err(|e| XcliError::BadArgument(e.to_string()))?),
         _ => return Err(XcliError::MismatchArgument(1, args.len())),
     };
 
@@ -127,7 +128,7 @@ fn cli_show_peers(app: &App, args: &[&str]) -> XcliResult {
 
     let pid = match args.len() {
         0 => None,
-        1 => Some(PeerId::try_from(args[0]).map_err(|e| XcliError::BadArgument(e.to_string()))?),
+        1 => Some(PeerId::from_str(args[0]).map_err(|e| XcliError::BadArgument(e.to_string()))?),
         _ => return Err(XcliError::MismatchArgument(1, args.len())),
     };
 
@@ -149,13 +150,13 @@ fn cli_connect(app: &App, args: &[&str]) -> XcliResult {
     let mut swarm = handler(app);
 
     let peer_id = if args.len() == 1 {
-        PeerId::try_from(args[0]).map_err(|e| XcliError::BadArgument(e.to_string()))?
+        PeerId::from_str(args[0]).map_err(|e| XcliError::BadArgument(e.to_string()))?
     } else {
         return Err(XcliError::MismatchArgument(1, args.len()));
     };
 
     task::block_on(async {
-        let r = swarm.new_connection(peer_id.clone()).await;
+        let r = swarm.new_connection(peer_id).await;
         println!("Connecting to {}: {:?}", peer_id, r);
     });
 
