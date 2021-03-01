@@ -23,7 +23,6 @@ use std::time::Duration;
 #[macro_use]
 extern crate lazy_static;
 
-use futures::StreamExt;
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::multiaddr::protocol::Protocol;
 use libp2prs_core::transport::memory::MemoryTransport;
@@ -51,19 +50,15 @@ fn setup_swarm(keys: Keypair) -> (Swarm, Floodsub_Control) {
 
     let local_peer_id = keys.public().into_peer_id();
     let floodsub = FloodSub::new(FloodsubConfig::new(local_peer_id));
-    let handler = floodsub.handler();
+    let floodsub_control = floodsub.control();
 
     let swarm = Swarm::new(keys.public())
         .with_transport(Box::new(tu))
-        .with_protocol(Box::new(handler))
+        .with_protocol(floodsub)
         .with_ping(PingConfig::new().with_unsolicited(true).with_interval(Duration::from_secs(1)))
         .with_identify(IdentifyConfig::new(false));
 
     // log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
-
-    // run floodsub message process main loop
-    let floodsub_control = floodsub.control();
-    floodsub.start(swarm.control());
 
     (swarm, floodsub_control)
 }
@@ -85,10 +80,10 @@ fn test_floodsub_basic() {
             let mut sub = srv_fs_ctrl.subscribe(FLOODSUB_TOPIC.clone()).await.unwrap();
 
             let srv_handle = task::spawn(async move {
-                match sub.ch.next().await {
+                match sub.next().await {
                     Some(msg) => {
                         log::info!("server recived: {:?}", msg.data);
-                        msg.data
+                        msg.data.clone()
                     }
                     None => Vec::<u8>::new(),
                 }
@@ -114,7 +109,8 @@ fn test_floodsub_basic() {
                 cli_fs_ctrl
                     .clone()
                     .publish(Topic::new(FLOODSUB_TOPIC.clone()), message.to_vec())
-                    .await;
+                    .await
+                    .unwrap();
             });
 
             let data = srv_handle.await.unwrap();

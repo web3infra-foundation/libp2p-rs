@@ -19,7 +19,6 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use multihash::Multihash;
 use sha2::digest::generic_array::{typenum::U32, GenericArray};
 use sha2::{Digest, Sha256};
 use std::borrow::Borrow;
@@ -27,7 +26,7 @@ use std::hash::{Hash, Hasher};
 // use uint::*;
 use primitive_types::U256;
 
-use libp2prs_core::PeerId;
+use libp2prs_core::{multihash::Multihash, PeerId};
 
 // construct_uint! {
 //     pub(super) struct U256(4);
@@ -96,13 +95,15 @@ impl<T> Into<KeyBytes> for Key<T> {
 
 impl From<Multihash> for Key<Multihash> {
     fn from(m: Multihash) -> Self {
-        Key::new(m)
+        let bytes = KeyBytes(Sha256::digest(&m.to_bytes()));
+        Key { preimage: m, bytes }
     }
 }
 
 impl From<PeerId> for Key<PeerId> {
     fn from(p: PeerId) -> Self {
-        Key::new(p)
+        let bytes = KeyBytes(Sha256::digest(&p.to_bytes()));
+        Key { preimage: p, bytes }
     }
 }
 
@@ -183,7 +184,7 @@ impl Distance {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use multihash::{wrap, Code};
+    use libp2prs_core::multihash::{Code, Multihash};
     use quickcheck::*;
     use rand::Rng;
 
@@ -196,7 +197,7 @@ mod tests {
     impl Arbitrary for Key<Multihash> {
         fn arbitrary<G: Gen>(_: &mut G) -> Key<Multihash> {
             let hash = rand::thread_rng().gen::<[u8; 32]>();
-            Key::from(wrap(Code::Sha2_256, &hash))
+            Key::from(Multihash::wrap(Code::Sha2_256.into(), &hash).unwrap())
         }
     }
 

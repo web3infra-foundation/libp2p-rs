@@ -24,10 +24,10 @@
 //! method..
 //!
 
-use crate::transport::TransportError;
-use crate::PeerId;
 use async_trait::async_trait;
-use libp2prs_multiaddr::Multiaddr;
+
+use crate::transport::TransportError;
+use crate::{Multiaddr, PeerId};
 
 /// `routing` trait for finding a peer.
 #[async_trait]
@@ -37,6 +37,12 @@ pub trait Routing: Send {
     /// Any types supporting this trait can be used to search network for the
     /// addresses, f.g., Kad-DHT.
     async fn find_peer(&mut self, peer_id: &PeerId) -> Result<Vec<Multiaddr>, TransportError>;
+
+    /// Retrieves the providers for the given key.
+    async fn find_providers(&mut self, key: Vec<u8>, count: usize) -> Result<Vec<PeerId>, TransportError>;
+
+    /// Starts announcing the given key to the content routing network.
+    async fn provide(&mut self, key: Vec<u8>) -> Result<(), TransportError>;
 
     fn box_clone(&self) -> IRouting;
 }

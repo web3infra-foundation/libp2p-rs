@@ -1,4 +1,4 @@
-use crate::{protocol::Protocol, Multiaddr};
+use crate::{Multiaddr, Protocol};
 use std::{error, fmt, iter, net::IpAddr};
 
 /// Attempts to parse an URL into a multiaddress.
@@ -6,6 +6,9 @@ use std::{error, fmt, iter, net::IpAddr};
 /// This function will return an error if some information in the URL cannot be retained in the
 /// generated multiaddress. This includes a username, password, path (if not supported by the
 /// multiaddr), and query string.
+///
+/// This function is only present if the `url` feature is enabled, and it is
+/// enabled by default.
 ///
 /// The supported URL schemes are:
 ///
@@ -30,6 +33,9 @@ pub fn from_url(url: &str) -> std::result::Result<Multiaddr, FromUrlErr> {
 ///
 /// This function is similar to [`from_url`], except that we don't return an error if some
 /// information in the URL cannot be retain in the generated multiaddres.
+///
+/// This function is only present if the `url` feature is enabled, and it is
+/// enabled by default.
 ///
 /// # Example
 ///
@@ -115,7 +121,7 @@ pub enum FromUrlErr {
 }
 
 impl fmt::Display for FromUrlErr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             FromUrlErr::BadUrl => write!(f, "Bad URL"),
             FromUrlErr::UnsupportedScheme => write!(f, "Unrecognized URL scheme"),

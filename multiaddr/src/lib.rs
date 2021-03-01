@@ -2,15 +2,15 @@
 pub use multihash;
 
 mod errors;
-mod from_url;
 mod onion_addr;
 pub mod protocol;
 
-pub use self::errors::{Error, Result};
-pub use self::from_url::{from_url, from_url_lossy, FromUrlErr};
-pub use self::onion_addr::Onion3Addr;
-use self::protocol::Protocol;
+#[cfg(feature = "url")]
+mod from_url;
 
+pub use self::errors::{Error, Result};
+pub use self::onion_addr::Onion3Addr;
+pub use self::protocol::Protocol;
 use serde::{
     de::{self, Error as DeserializerError},
     Deserialize, Deserializer, Serialize, Serializer,
@@ -25,6 +25,8 @@ use std::{
     sync::Arc,
 };
 
+#[cfg(feature = "url")]
+pub use self::from_url::{from_url, from_url_lossy, FromUrlErr};
 static_assertions::const_assert! {
     // This check is most certainly overkill right now, but done here
     // anyway to ensure the `as u64` casts in this crate are safe.
@@ -32,8 +34,8 @@ static_assertions::const_assert! {
 }
 
 /// Representation of a Multiaddr.
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
 #[allow(clippy::rc_buffer)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
 pub struct Multiaddr {
     bytes: Arc<Vec<u8>>,
 }
@@ -58,7 +60,7 @@ impl Multiaddr {
         self.bytes.len()
     }
 
-    /// is empty
+    /// Returns true if the length of this multiaddress is 0.
     pub fn is_empty(&self) -> bool {
         self.bytes.len() == 0
     }

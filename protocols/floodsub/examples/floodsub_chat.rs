@@ -23,7 +23,6 @@ use std::time::Duration;
 #[macro_use]
 extern crate lazy_static;
 
-use futures::StreamExt;
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::transport::upgrade::TransportUpgrade;
 use libp2prs_core::{Multiaddr, PeerId};
@@ -53,19 +52,15 @@ fn setup_swarm(keys: Keypair) -> (Swarm, Floodsub_Config) {
 
     let local_peer_id = keys.public().into_peer_id();
     let floodsub = FloodSub::new(FloodsubConfig::new(local_peer_id));
-    let handler = floodsub.handler();
+    let floodsub_control = floodsub.control();
 
     let swarm = Swarm::new(keys.public())
         .with_transport(Box::new(tu))
-        .with_protocol(Box::new(handler))
+        .with_protocol(floodsub)
         .with_ping(PingConfig::new().with_unsolicited(true).with_interval(Duration::from_secs(1)))
         .with_identify(IdentifyConfig::new(false));
 
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
-
-    // run floodsub message process main loop
-    let floodsub_control = floodsub.control();
-    floodsub.start(swarm.control());
 
     (swarm, floodsub_control)
 }
@@ -90,12 +85,10 @@ fn run_server() {
         // subscribe "chat"
         let mut control = floodsub_control.clone();
         task::spawn(async move {
-            let sub = control.subscribe(FLOODSUB_TOPIC.clone()).await;
-            if let Some(mut sub) = sub {
-                loop {
-                    if let Some(msg) = sub.ch.next().await {
-                        log::info!("recived: {:?}", msg.data)
-                    }
+            let mut sub = control.subscribe(FLOODSUB_TOPIC.clone()).await.unwrap();
+            loop {
+                if let Some(msg) = sub.next().await {
+                    log::info!("recived: {:?}", msg.data)
                 }
             }
         });
@@ -106,7 +99,11 @@ fn run_server() {
             let _ = std::io::stdin().read_line(&mut line);
             let x: &[_] = &['\r', '\n'];
             let msg = line.trim_end_matches(x);
-            floodsub_control.clone().publish(Topic::new(FLOODSUB_TOPIC.clone()), msg).await;
+            floodsub_control
+                .clone()
+                .publish(Topic::new(FLOODSUB_TOPIC.clone()), msg)
+                .await
+                .unwrap();
         }
     });
 }
@@ -126,19 +123,17 @@ fn run_client() {
     task::block_on(async {
         // dial
         swarm_control
-            .connect_with_addrs(remote_peer_id.clone(), vec!["/ip4/127.0.0.1/tcp/8086".parse().unwrap()])
+            .connect_with_addrs(remote_peer_id, vec!["/ip4/127.0.0.1/tcp/8086".parse().unwrap()])
             .await
             .unwrap();
 
         // subscribe "chat"
         let mut control = floodsub_control.clone();
         task::spawn(async move {
-            let sub = control.subscribe(FLOODSUB_TOPIC.clone()).await;
-            if let Some(mut sub) = sub {
-                loop {
-                    if let Some(msg) = sub.ch.next().await {
-                        log::info!("recived: {:?}", msg.data)
-                    }
+            let mut sub = control.subscribe(FLOODSUB_TOPIC.clone()).await.unwrap();
+            loop {
+                if let Some(msg) = sub.next().await {
+                    log::info!("recived: {:?}", msg.data)
                 }
             }
         });
@@ -149,7 +144,11 @@ fn run_client() {
             let _ = std::io::stdin().read_line(&mut line);
             let x: &[_] = &['\r', '\n'];
             let msg = line.trim_end_matches(x);
-            floodsub_control.clone().publish(Topic::new(FLOODSUB_TOPIC.clone()), msg).await;
+            floodsub_control
+                .clone()
+                .publish(Topic::new(FLOODSUB_TOPIC.clone()), msg)
+                .await
+                .unwrap();
         }
     });
 }

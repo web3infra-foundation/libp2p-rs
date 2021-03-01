@@ -24,19 +24,19 @@ use futures::SinkExt;
 use async_trait::async_trait;
 
 use libp2prs_core::routing::{IRouting, Routing};
+use libp2prs_core::transport::TransportError;
 use libp2prs_core::{Multiaddr, PeerId};
 
 use crate::kad::{KBucketView, KademliaStats};
 use crate::protocol::{KadMessengerView, KadPeer};
 use crate::query::PeerRecord;
 use crate::{record, KadError};
-use libp2prs_core::transport::TransportError;
 
 type Result<T> = std::result::Result<T, KadError>;
 
 pub(crate) enum ControlCommand {
     /// Initiates bootstrapping to join the Kad DHT network.
-    Bootstrap,
+    Bootstrap(Vec<(PeerId, Multiaddr)>),
     /// Lookups the closer peers with given ID, returns a list of peer Id.
     Lookup(record::Key, oneshot::Sender<Result<Vec<KadPeer>>>),
     /// Searches for a peer with given ID, returns a list of peer info
@@ -45,9 +45,15 @@ pub(crate) enum ControlCommand {
     /// Lookups peers who are able to provide a given key.
     FindProviders(record::Key, usize, oneshot::Sender<Result<Vec<KadPeer>>>),
     /// Adds the given key to the content routing system.
+    ///
     /// It also announces it, otherwise it is just kept in the local
     /// accounting of which objects are being provided.
     Providing(record::Key, oneshot::Sender<Result<()>>),
+    /// Removes the give key from the local provider store.
+    ///
+    /// This is a local operation. The local node will still be considered as a
+    /// provider for the key by other nodes until these provider records expire.
+    Unprovide(record::Key),
     /// Adds value corresponding to given Key.
     PutValue(record::Key, Vec<u8>, oneshot::Sender<Result<()>>),
     /// Searches value corresponding to given Key.
@@ -82,8 +88,7 @@ impl Control {
     }
 
     /// Closes the Kad main loop and tasks.
-    pub async fn close(&mut self) {
-        // TODO: wait for the main loop to quit
+    pub fn close(&mut self) {
         self.control_sender.close_channel();
     }
 
@@ -118,8 +123,8 @@ impl Control {
     /// Initiate bootstrapping.
     ///
     /// In general it should be done only once upon Kad startup.
-    pub async fn bootstrap(&mut self) {
-        let _ = self.control_sender.send(ControlCommand::Bootstrap).await;
+    pub async fn bootstrap(&mut self, boot: Vec<(PeerId, Multiaddr)>) {
+        let _ = self.control_sender.send(ControlCommand::Bootstrap(boot)).await;
     }
 
     /// Lookup the closer peers with the given key.
@@ -131,7 +136,7 @@ impl Control {
 
     pub async fn find_peer(&mut self, peer_id: &PeerId) -> Result<KadPeer> {
         let (tx, rx) = oneshot::channel();
-        self.control_sender.send(ControlCommand::FindPeer(peer_id.clone(), tx)).await?;
+        self.control_sender.send(ControlCommand::FindPeer(*peer_id, tx)).await?;
         rx.await?
     }
 
@@ -156,14 +161,17 @@ impl Control {
         rx.await?
     }
 
-    pub async fn find_providers(&mut self, key: Vec<u8>, count: usize) -> Option<Vec<KadPeer>> {
+    pub async fn unprovide(&mut self, key: Vec<u8>) -> Result<()> {
+        let key = record::Key::from(key);
+        self.control_sender.send(ControlCommand::Unprovide(key)).await?;
+        Ok(())
+    }
+
+    pub async fn find_providers(&mut self, key: Vec<u8>, count: usize) -> Result<Vec<KadPeer>> {
         let (tx, rx) = oneshot::channel();
         let key = record::Key::from(key);
-        self.control_sender
-            .send(ControlCommand::FindProviders(key, count, tx))
-            .await
-            .expect("control send find_providers");
-        rx.await.expect("find_providers").ok()
+        self.control_sender.send(ControlCommand::FindProviders(key, count, tx)).await?;
+        rx.await?
     }
 }
 
@@ -172,10 +180,21 @@ impl Control {
 #[async_trait]
 impl Routing for Control {
     async fn find_peer(&mut self, peer_id: &PeerId) -> std::result::Result<Vec<Multiaddr>, TransportError> {
-        self.find_peer(peer_id)
+        let kad_peer = self.find_peer(peer_id).await.map_err(|e| TransportError::Routing(e.into()))?;
+        Ok(kad_peer.multiaddrs)
+    }
+
+    async fn find_providers(&mut self, key: Vec<u8>, count: usize) -> std::result::Result<Vec<PeerId>, TransportError> {
+        let addrs = self
+            .find_providers(key, count)
             .await
-            .map(|p| p.multiaddrs)
-            .map_err(|e| TransportError::Routing(e.to_string()))
+            .map_err(|e| TransportError::Routing(e.into()))?;
+        Ok(addrs.into_iter().map(|peer| peer.node_id).collect())
+    }
+
+    async fn provide(&mut self, key: Vec<u8>) -> std::result::Result<(), TransportError> {
+        let _ = self.provide(key).await.map_err(|e| TransportError::Routing(e.into()))?;
+        Ok(())
     }
 
     fn box_clone(&self) -> IRouting {

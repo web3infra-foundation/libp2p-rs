@@ -204,7 +204,7 @@ impl DialBackoff {
     /// Where PriorBackoffs is the number of previous backoffs.
     async fn add_peer(&self, peer_id: PeerId, ma: Multiaddr) {
         let mut lock = self.entries.lock().await;
-        let peer_map = lock.entry(peer_id.clone()).or_insert_with(Default::default);
+        let peer_map = lock.entry(peer_id).or_insert_with(Default::default);
         if let Some(backoff) = peer_map.get_mut(&ma.to_string()) {
             let mut backoff_time = BACKOFF_BASE + BACKOFF_COEF * (backoff.tries * backoff.tries);
             if backoff_time > BACKOFF_MAX {
@@ -269,7 +269,7 @@ impl DialBackoff {
                     }
                 }
                 if !good {
-                    clean_peer_ids.push(p.clone());
+                    clean_peer_ids.push(*p);
                 }
             }
             clean_peer_ids
@@ -356,7 +356,7 @@ impl AsyncDialer {
 
         task::spawn(async move {
             let tid = dial_param.tid;
-            let peer_id = dial_param.peer_id.clone();
+            let peer_id = dial_param.peer_id;
 
             let r = AsyncDialer::start_dialing(dial_param).await;
             match r {
@@ -408,7 +408,7 @@ impl AsyncDialer {
 
     /// Starts a dialing runtime
     async fn dial_addrs(mut param: DialParam) -> Result<IStreamMuxer> {
-        let peer_id = param.peer_id.clone();
+        let peer_id = param.peer_id;
         log::debug!("[Dialer] dialing for {:?}", peer_id);
 
         let addrs_origin = match &mut param.addrs {
@@ -454,7 +454,7 @@ impl AsyncDialer {
 
             let dj = DialJob {
                 addr,
-                peer: peer_id.clone(),
+                peer: peer_id,
                 tx: tx.clone(),
                 transport: r.unwrap(),
             };
@@ -477,7 +477,7 @@ impl AsyncDialer {
         param: DialParam,
     ) -> Result<IStreamMuxer> {
         for i in 0..jobs {
-            let peer_id = param.peer_id.clone();
+            let peer_id = param.peer_id;
             let r = rx.next().await;
             log::debug!("[Dialer] job for {:?} finished, seq={} ...", peer_id, i);
             match r {
@@ -573,7 +573,7 @@ mod tests {
         let peer_id = PeerId::from_str("12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN").unwrap();
         let dial_addr = Multiaddr::from_str("/ip4/127.0.0.1/tcp/8086").unwrap();
         let r = task::block_on(async {
-            ab.add_peer(peer_id.clone(), dial_addr.clone()).await;
+            ab.add_peer(peer_id, dial_addr.clone()).await;
             ab.find_peer(&peer_id, &dial_addr).await
         });
         assert_eq!(r, true);
@@ -585,7 +585,7 @@ mod tests {
         let peer_id = PeerId::from_str("12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN").unwrap();
         let dial_addr = Multiaddr::from_str("/ip4/127.0.0.1/tcp/8086").unwrap();
         let r = task::block_on(async {
-            ab.add_peer(peer_id.clone(), dial_addr.clone()).await;
+            ab.add_peer(peer_id, dial_addr.clone()).await;
             let backoff_time = {
                 let lock = ab.entries.lock().await;
                 let backoff_addr = lock.get(&peer_id).unwrap().get(&dial_addr.to_string()).unwrap();
@@ -606,7 +606,7 @@ mod tests {
         let dial_addr = Multiaddr::from_str("/ip4/127.0.0.1/tcp/8086").unwrap();
         let ab_clone = ab.clone();
         let r1 = task::block_on(async {
-            ab_clone.add_peer(peer_id.clone(), dial_addr.clone()).await;
+            ab_clone.add_peer(peer_id, dial_addr.clone()).await;
             ab_clone.find_peer(&peer_id, &dial_addr).await
         });
         let r2 = task::block_on(async {
@@ -629,7 +629,7 @@ mod tests {
         let dial_addr = Multiaddr::from_str("/ip4/127.0.0.1/tcp/8086").unwrap();
         let ab_clone = ab.clone();
         let r1 = task::block_on(async {
-            ab_clone.add_peer(peer_id.clone(), dial_addr.clone()).await;
+            ab_clone.add_peer(peer_id, dial_addr.clone()).await;
             ab_clone.find_peer(&peer_id, &dial_addr).await
         });
 

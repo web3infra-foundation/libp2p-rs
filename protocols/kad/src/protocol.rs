@@ -37,7 +37,6 @@ use async_trait::async_trait;
 
 use libp2prs_core::upgrade::UpgradeInfo;
 use libp2prs_core::{Multiaddr, PeerId, ProtocolId};
-use libp2prs_runtime::task;
 use libp2prs_swarm::connection::Connection;
 use libp2prs_swarm::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandler};
 use libp2prs_swarm::substream::{Substream, SubstreamView};
@@ -113,7 +112,7 @@ impl TryFrom<proto::message::Peer> for KadPeer {
     fn try_from(peer: proto::message::Peer) -> Result<KadPeer, Self::Error> {
         // TODO: this is in fact a CID; not sure if this should be handled in `from_bytes` or
         //       as a special case here
-        let node_id = PeerId::from_bytes(peer.id).map_err(|_| invalid_data("invalid peer id"))?;
+        let node_id = PeerId::from_bytes(&peer.id).map_err(|_| invalid_data("invalid peer id"))?;
 
         let mut addrs = Vec::with_capacity(peer.addrs.len());
         for addr in peer.addrs.into_iter() {
@@ -137,7 +136,7 @@ impl TryFrom<proto::message::Peer> for KadPeer {
 impl Into<proto::message::Peer> for KadPeer {
     fn into(self) -> proto::message::Peer {
         proto::message::Peer {
-            id: self.node_id.into_bytes(),
+            id: self.node_id.to_bytes(),
             addrs: self.multiaddrs.into_iter().map(|a| a.to_vec()).collect(),
             connection: {
                 let ct: proto::message::ConnectionType = self.connection_ty.into();
@@ -238,29 +237,17 @@ impl UpgradeInfo for KadProtocolHandler {
 impl Notifiee for KadProtocolHandler {
     fn connected(&mut self, conn: &mut Connection) {
         let peer_id = conn.remote_peer();
-        let mut tx = self.poster.clone();
-        task::spawn(async move {
-            let _ = tx.post(ProtocolEvent::PeerConnected(peer_id)).await;
-        });
+        let _ = self.poster.unbounded_post(ProtocolEvent::PeerConnected(peer_id));
     }
     fn disconnected(&mut self, conn: &mut Connection) {
         let peer_id = conn.remote_peer();
-        let mut tx = self.poster.clone();
-        task::spawn(async move {
-            let _ = tx.post(ProtocolEvent::PeerDisconnected(peer_id)).await;
-        });
+        let _ = self.poster.unbounded_post(ProtocolEvent::PeerDisconnected(peer_id));
     }
     fn identified(&mut self, peer_id: PeerId) {
-        let mut tx = self.poster.clone();
-        task::spawn(async move {
-            let _ = tx.post(ProtocolEvent::PeerIdentified(peer_id)).await;
-        });
+        let _ = self.poster.unbounded_post(ProtocolEvent::PeerIdentified(peer_id));
     }
     fn address_changed(&mut self, addrs: Vec<Multiaddr>) {
-        let mut tx = self.poster.clone();
-        task::spawn(async move {
-            let _ = tx.post(ProtocolEvent::AddressChanged(addrs)).await;
-        });
+        let _ = self.poster.unbounded_post(ProtocolEvent::AddressChanged(addrs));
     }
 }
 
@@ -280,7 +267,7 @@ impl ProtocolHandler for KadProtocolHandler {
             let (tx, rx) = oneshot::channel();
             let evt = ProtocolEvent::KadRequest {
                 request,
-                source: source.clone(),
+                source,
                 reply: tx,
             };
             self.poster.post(evt).await?;
@@ -328,9 +315,7 @@ pub struct KadMessengerView {
 impl KadMessenger {
     pub(crate) async fn build(mut swarm: SwarmControl, peer: PeerId, config: KademliaProtocolConfig) -> Result<Self, KadError> {
         // open a new stream, without routing, so that Swarm wouldn't do routing for us
-        let stream = swarm
-            .new_stream_no_routing(peer.clone(), vec![config.protocol_name().to_owned()])
-            .await?;
+        let stream = swarm.new_stream_no_routing(peer, vec![config.protocol_name().to_owned()]).await?;
         Ok(Self {
             stream,
             config,
@@ -341,7 +326,7 @@ impl KadMessenger {
 
     pub(crate) fn to_view(&self) -> KadMessengerView {
         KadMessengerView {
-            peer: self.peer.clone(),
+            peer: self.peer,
             stream: self.stream.to_view(),
             reuse: self.reuse,
         }
@@ -710,7 +695,7 @@ fn record_from_proto(record: proto::Record) -> Result<Record, io::Error> {
     let value = record.value;
 
     let publisher = if !record.publisher.is_empty() {
-        PeerId::from_bytes(record.publisher)
+        PeerId::from_bytes(&record.publisher)
             .map(Some)
             .map_err(|_| invalid_data("Invalid publisher peer ID."))?
     } else {
@@ -735,7 +720,7 @@ fn record_to_proto(record: Record) -> proto::Record {
     proto::Record {
         key: record.key.to_vec(),
         value: record.value,
-        publisher: record.publisher.map(PeerId::into_bytes).unwrap_or_default(),
+        publisher: record.publisher.map(|id| id.to_bytes()).unwrap_or_default(),
         ttl: record
             .expires
             .map(|t| {

@@ -1,6 +1,6 @@
 [package]
 name = "libp2prs-infoserver"
-version = "0.2.1"
+version = "0.2.2"
 license = "MIT"
 description = "The libp2p info server"
 authors = ["Netwarps Technologies admin@paradeum.com"]
@@ -9,19 +9,15 @@ keywords = ["peer-to-peer", "libp2p", "networking"]
 categories = ["network-programming", "asynchronous"]
 edition = "2018"
 
-[features]
-async-std = ["libp2prs-swarm/async-std", "libp2prs-runtime/async-std"]
-tokio = ["libp2prs-swarm/tokio", "libp2prs-runtime/tokio"]
-
 [dependencies]
 log = "0.4"
 tide = "0.15.0"
 serde = { version = "1.0.117", features = ["derive"] }
 serde_json = "1.0.59"
 lazy_static = "1.4.0"
-libp2prs-runtime = { path = "../runtime", version = "0.2.1", optional = true }
-libp2prs-swarm = { path = "../swarm", version = "0.2.1", optional = true }
-libp2prs-core = { path = "../core", version = "0.2.1" }
+libp2prs-runtime = { path = "../runtime", version = "0.2.2", features = ["async-std"] }
+libp2prs-swarm = { path = "../swarm", version = "0.2.2" }
+libp2prs-core = { path = "../core", version = "0.2.2" }
 
 [dev-dependencies]
 quickcheck = "0.9.0"

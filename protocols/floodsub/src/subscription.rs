@@ -21,7 +21,9 @@
 use crate::protocol::FloodsubMessage;
 use crate::Topic;
 use futures::channel::mpsc;
+use futures::StreamExt;
 use std::fmt;
+use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, Eq, PartialOrd, Ord)]
 pub struct SubId(u32);
@@ -54,19 +56,33 @@ impl std::hash::Hash for SubId {
 impl nohash_hasher::IsEnabled for SubId {}
 
 pub struct Subscription {
-    pub id: SubId,
-    pub topic: Topic,
-    pub ch: mpsc::UnboundedReceiver<FloodsubMessage>,
-    pub cancel: mpsc::UnboundedSender<Subscription>,
+    id: SubId,
+    topic: Topic,
+    rx: mpsc::UnboundedReceiver<Arc<FloodsubMessage>>,
+    cancel: mpsc::UnboundedSender<(Topic, SubId)>,
 }
 
 impl Subscription {
     pub fn new(
         id: SubId,
         topic: Topic,
-        ch: mpsc::UnboundedReceiver<FloodsubMessage>,
-        cancel: mpsc::UnboundedSender<Subscription>,
+        rx: mpsc::UnboundedReceiver<Arc<FloodsubMessage>>,
+        cancel: mpsc::UnboundedSender<(Topic, SubId)>,
     ) -> Self {
-        Subscription { id, topic, ch, cancel }
+        Subscription { id, topic, rx, cancel }
+    }
+
+    pub async fn next(&mut self) -> Option<Arc<FloodsubMessage>> {
+        self.rx.next().await
+    }
+
+    pub fn cancel(&self) {
+        let _ = self.cancel.unbounded_send((self.topic.clone(), self.id));
+    }
+}
+
+impl Drop for Subscription {
+    fn drop(&mut self) {
+        let _ = self.cancel.unbounded_send((self.topic.clone(), self.id));
     }
 }

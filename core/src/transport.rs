@@ -274,11 +274,11 @@ pub enum TransportError {
     /// The memory transport is unreachable.
     Unreachable,
 
-    /// Routing to the peer is not available.
-    Routing(String),
-
     /// Internal error
     Internal,
+
+    /// Routing error.
+    Routing(Box<dyn Error + Send + Sync>),
 
     /// Any IO error that a [`Transport`] may produce.
     IoError(std::io::Error),
@@ -326,9 +326,9 @@ impl fmt::Display for TransportError {
         match self {
             TransportError::MultiaddrNotSupported(addr) => write!(f, "Multiaddr is not supported: {}", addr),
             TransportError::Timeout => write!(f, "Operation timeout"),
-            TransportError::Routing(s) => write!(f, "Routing not available {}", s),
             TransportError::Unreachable => write!(f, "Memory transport unreachable"),
             TransportError::Internal => write!(f, "Internal error"),
+            TransportError::Routing(err) => write!(f, "Routing layer error {:?}", err),
             TransportError::IoError(err) => write!(f, "IO error {}", err),
             TransportError::ResolveFail(name) => write!(f, "resolve dns {} failed", name),
             TransportError::NegotiationError(err) => write!(f, "Negotiation error {:?}", err),
@@ -346,8 +346,8 @@ impl Error for TransportError {
             TransportError::MultiaddrNotSupported(_) => None,
             TransportError::Timeout => None,
             TransportError::Unreachable => None,
-            TransportError::Routing(_) => None,
             TransportError::Internal => None,
+            TransportError::Routing(err) => Some(&**err),
             TransportError::IoError(err) => Some(err),
             TransportError::ResolveFail(_) => None,
             TransportError::NegotiationError(err) => Some(err),

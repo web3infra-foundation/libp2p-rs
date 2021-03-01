@@ -43,7 +43,7 @@ use libp2prs_swarm::ping::PingConfig;
 use libp2prs_swarm::Swarm;
 use libp2prs_yamux as yamux;
 
-use futures::StreamExt;
+// use futures::StreamExt;
 use std::path::PathBuf;
 use std::{env, error::Error, fs, path::Path, str::FromStr, time::Duration};
 
@@ -154,18 +154,16 @@ async fn entry() -> Result<(), Box<dyn Error>> {
     let tu = TransportUpgrade::new(tpt, mux, sec);
 
     let floodsub = FloodSub::new(FloodsubConfig::new(local_peer_id));
-    let handler = floodsub.handler();
+    let floodsub_control = floodsub.control();
 
     let mut swarm = Swarm::new(local_key.public())
         .with_transport(Box::new(tu))
-        .with_protocol(Box::new(handler))
+        .with_protocol(floodsub)
         .with_ping(PingConfig::new().with_unsolicited(true).with_interval(Duration::from_secs(1)))
         .with_identify(IdentifyConfig::new(true));
 
     // run floodsub mainloop
     let mut swarm_control = swarm.control();
-    let floodsub_control = floodsub.control();
-    floodsub.start(swarm_control.clone());
 
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
 
@@ -184,12 +182,10 @@ async fn entry() -> Result<(), Box<dyn Error>> {
         // subscribe "chat"
         let mut control = floodsub_control.clone();
         task::spawn(async move {
-            let sub = control.subscribe(FLOODSUB_TOPIC.clone()).await;
-            if let Some(mut sub) = sub {
-                loop {
-                    if let Some(msg) = sub.ch.next().await {
-                        log::info!("recived: {:?}", msg.data)
-                    }
+            let mut sub = control.subscribe(FLOODSUB_TOPIC.clone()).await.unwrap();
+            loop {
+                if let Some(msg) = sub.next().await {
+                    log::info!("recived: {:?}", msg.data)
                 }
             }
         });
@@ -200,7 +196,11 @@ async fn entry() -> Result<(), Box<dyn Error>> {
             let _ = std::io::stdin().read_line(&mut line);
             let x: &[_] = &['\r', '\n'];
             let msg = line.trim_end_matches(x);
-            floodsub_control.clone().publish(Topic::new(FLOODSUB_TOPIC.clone()), msg).await;
+            floodsub_control
+                .clone()
+                .publish(Topic::new(FLOODSUB_TOPIC.clone()), msg)
+                .await
+                .unwrap();
         }
     });
 

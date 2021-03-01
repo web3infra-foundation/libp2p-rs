@@ -27,7 +27,7 @@ use pin_project::pin_project;
 use std::{collections::hash_map::Entry, fmt, io, num::NonZeroU64, pin::Pin};
 
 use lazy_static::lazy_static;
-use libp2prs_multiaddr::{protocol, protocol::Protocol, Multiaddr};
+use libp2prs_multiaddr::{protocol, Multiaddr, Protocol};
 use parking_lot::Mutex;
 use rw_stream_sink::RwStreamSink;
 

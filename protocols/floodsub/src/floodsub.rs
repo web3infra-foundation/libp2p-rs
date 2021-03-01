@@ -18,47 +18,33 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use futures::{
-    channel::{mpsc, oneshot},
-    prelude::*,
-    select,
-};
+use futures::{channel::mpsc, prelude::*, select};
 use nohash_hasher::IntMap;
 
-use crate::protocol::FloodsubMessage;
-use crate::subscription::{SubId, Subscription};
 use crate::{
-    control::Control,
-    protocol::{FloodsubRpc, FloodsubSubscription, FloodsubSubscriptionAction, Handler, RPC},
+    control::{Control, ControlCommand},
+    protocol::{FloodsubMessage, FloodsubRpc, FloodsubSubscription, FloodsubSubscriptionAction, Handler, PeerEvent, RPC},
+    subscription::{SubId, Subscription},
     FloodsubConfig, FloodsubError, Topic, FLOOD_SUB_ID,
 };
-use futures::stream::FusedStream;
+use futures::channel::mpsc::UnboundedReceiver;
 use libp2prs_core::PeerId;
 use libp2prs_runtime::task;
+use libp2prs_swarm::protocol_handler::{IProtocolHandler, ProtocolImpl};
 use libp2prs_swarm::substream::Substream;
-use libp2prs_swarm::Control as Swarm_Control;
-use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_swarm::Control as SwarmControl;
+use libp2prs_traits::WriteEx;
 use std::collections::HashMap;
-
-pub(crate) enum ControlCommand {
-    Publish(FloodsubMessage, oneshot::Sender<()>),
-    Subscribe(Topic, oneshot::Sender<Option<Subscription>>),
-    Ls(oneshot::Sender<Vec<Topic>>),
-    GetPeers(Topic, oneshot::Sender<Vec<PeerId>>),
-}
-
-pub(crate) enum PeerEvent {
-    NewPeer(PeerId),
-    DeadPeer(PeerId),
-}
+use std::sync::Arc;
 
 type Result<T> = std::result::Result<T, FloodsubError>;
 
+#[allow(clippy::rc_buffer)]
 pub struct FloodSub {
     config: FloodsubConfig,
 
     // Used to open stream.
-    control: Option<Swarm_Control>,
+    swarm: Option<SwarmControl>,
 
     // New peer is connected or peer is dead.
     peer_tx: mpsc::UnboundedSender<PeerEvent>,
@@ -73,17 +59,17 @@ pub struct FloodSub {
     control_rx: mpsc::UnboundedReceiver<ControlCommand>,
 
     // Connected peer.
-    peers: HashMap<PeerId, mpsc::UnboundedSender<FloodsubRpc>>,
+    connected_peers: HashMap<PeerId, mpsc::UnboundedSender<Arc<Vec<u8>>>>,
 
     // Topics tracks which topics each of our peers are subscribed to.
     topics: HashMap<Topic, HashMap<PeerId, ()>>,
 
     // The set of topics we are subscribed to.
-    my_topics: HashMap<Topic, IntMap<SubId, mpsc::UnboundedSender<FloodsubMessage>>>,
+    my_topics: HashMap<Topic, IntMap<SubId, mpsc::UnboundedSender<Arc<FloodsubMessage>>>>,
 
     // Cancel subscription.
-    cancel_tx: mpsc::UnboundedSender<Subscription>,
-    cancel_rx: mpsc::UnboundedReceiver<Subscription>,
+    cancel_tx: mpsc::UnboundedSender<(Topic, SubId)>,
+    cancel_rx: mpsc::UnboundedReceiver<(Topic, SubId)>,
 }
 
 impl FloodSub {
@@ -95,14 +81,14 @@ impl FloodSub {
         let (cancel_tx, cancel_rx) = mpsc::unbounded();
         FloodSub {
             config,
-            control: None,
+            swarm: None,
             peer_tx,
             peer_rx,
             incoming_tx,
             incoming_rx,
             control_tx,
             control_rx,
-            peers: HashMap::default(),
+            connected_peers: HashMap::default(),
             my_topics: HashMap::default(),
             topics: HashMap::default(),
             cancel_tx,
@@ -110,75 +96,18 @@ impl FloodSub {
         }
     }
 
-    /// Get handler of floodsub, swarm will call "handle" func after muxer negotiate success.
-    pub fn handler(&self) -> Handler {
-        Handler::new(self.incoming_tx.clone(), self.peer_tx.clone())
-    }
-
     /// Get control of floodsub, which can be used to publish or subscribe.
     pub fn control(&self) -> Control {
         Control::new(self.control_tx.clone(), self.config.clone())
     }
 
-    /// Start message process loop.
-    pub fn start(mut self, control: Swarm_Control) {
-        self.control = Some(control);
-
-        // well, self 'move' explicitly,
-        let mut floodsub = self;
-        task::spawn(async move {
-            let _ = floodsub.process_loop().await;
-        });
-    }
-
     /// Message Process Loop.
-    pub async fn process_loop(&mut self) -> Result<()> {
+    async fn process_loop(&mut self) -> Result<()> {
         let result = self.next().await;
 
-        if !self.peer_rx.is_terminated() {
-            self.peer_rx.close();
-            while self.peer_rx.next().await.is_some() {
-                // just drain
-            }
-        }
-
-        if !self.incoming_rx.is_terminated() {
-            self.incoming_rx.close();
-            while self.incoming_rx.next().await.is_some() {
-                // just drain
-            }
-        }
-
-        if !self.control_rx.is_terminated() {
-            self.control_rx.close();
-            while let Some(cmd) = self.control_rx.next().await {
-                match cmd {
-                    ControlCommand::Publish(_, reply) => {
-                        let _ = reply.send(());
-                    }
-                    ControlCommand::Subscribe(_, reply) => {
-                        let _ = reply.send(None);
-                    }
-                    ControlCommand::Ls(reply) => {
-                        let _ = reply.send(Vec::new());
-                    }
-                    ControlCommand::GetPeers(_, reply) => {
-                        let _ = reply.send(Vec::new());
-                    }
-                }
-            }
-        }
-
-        if !self.cancel_rx.is_terminated() {
-            self.cancel_rx.close();
-            while self.cancel_rx.next().await.is_some() {
-                // just drain
-            }
-        }
-
         self.drop_all_peers();
-        self.drop_all_my_topics();
         self.drop_all_topics();
+        self.drop_all_my_topics();
 
         result
     }
@@ -187,23 +116,24 @@ impl FloodSub {
         loop {
             select! {
                 cmd = self.peer_rx.next() => {
-                    self.handle_peer_event(cmd).await;
+                    self.handle_peer_event(cmd);
                 }
                 rpc = self.incoming_rx.next() => {
-                    self.handle_incoming_rpc(rpc).await?;
+                    self.handle_incoming_rpc(rpc);
                 }
                 cmd = self.control_rx.next() => {
-                    self.on_control_command(cmd).await?;
+                    self.on_control_command(cmd)?;
                 }
                 sub = self.cancel_rx.next() => {
-                    self.un_subscribe(sub).await?;
+                    self.un_subscribe(sub);
                 }
             }
         }
     }
 
     // Tell new peer my subscribed topics.
-    fn get_hello_packet(&self) -> FloodsubRpc {
+    #[allow(clippy::rc_buffer)]
+    fn get_hello_packet(&self) -> Arc<Vec<u8>> {
         // We need to send our subscriptions to the newly-connected node.
         let mut rpc = FloodsubRpc {
             messages: vec![],
@@ -216,100 +146,70 @@ impl FloodSub {
             };
             rpc.subscriptions.push(subscription);
         }
-        rpc
+        Arc::new(rpc.into_bytes())
     }
 
     // Always wait to send message.
-    async fn handle_sending_message(&mut self, rpid: PeerId, mut writer: Substream) {
-        let (mut tx, mut rx) = mpsc::unbounded();
+    fn handle_new_peer(&mut self, rpid: PeerId) {
+        let mut swarm = self.swarm.clone().expect("swarm??");
+        let peer_dead_tx = self.peer_tx.clone();
+        let (tx, rx) = mpsc::unbounded();
 
-        let _ = tx.send(self.get_hello_packet()).await;
+        let _ = tx.unbounded_send(self.get_hello_packet());
 
-        self.peers.insert(rpid.clone(), tx);
+        self.connected_peers.insert(rpid, tx);
 
         task::spawn(async move {
-            loop {
-                match rx.next().await {
-                    Some(rpc) => {
-                        log::trace!("send rpc msg: {:?}", rpc);
-                        // if failed, should reset?
-                        let _ = writer.write_one(rpc.into_bytes().as_slice()).await;
+            let stream = swarm.new_stream(rpid, vec![FLOOD_SUB_ID.into()]).await;
+
+            match stream {
+                Ok(stream) => {
+                    if handle_send_message(rx, stream).await.is_err() {
+                        // write failed
+                        let _ = peer_dead_tx.unbounded_send(PeerEvent::DeadPeer(rpid));
                     }
-                    None => return,
+                }
+                Err(_) => {
+                    // new stream failed
+                    let _ = peer_dead_tx.unbounded_send(PeerEvent::DeadPeer(rpid));
                 }
             }
         });
     }
 
     // If remote peer is dead, remove it from peers and topics.
-    async fn handle_remove_dead_peer(&mut self, rpid: PeerId) {
-        let tx = self.peers.remove(&rpid);
-        match tx {
-            Some(mut tx) => {
-                let _ = tx.close().await;
-            }
-            None => return,
-        }
-
+    fn handle_remove_dead_peer(&mut self, rpid: PeerId) {
+        self.connected_peers.remove(&rpid);
         for ps in self.topics.values_mut() {
             ps.remove(&rpid);
         }
     }
 
-    // Check if stream / connection is closed.
-    async fn handle_peer_eof(&mut self, rpid: PeerId, mut reader: Substream) {
-        let mut peer_dead_tx = self.peer_tx.clone();
-        task::spawn(async move {
-            loop {
-                if reader.read_one(2048).await.is_err() {
-                    let _ = peer_dead_tx.send(PeerEvent::DeadPeer(rpid.clone())).await;
-                    return;
-                }
-            }
-        });
-    }
-
-    // Handle when new peer connect.
-    async fn handle_new_peer(&mut self, pid: PeerId) {
-        let stream = self
-            .control
-            .as_mut()
-            .unwrap()
-            .new_stream(pid.clone(), vec![FLOOD_SUB_ID.into()])
-            .await;
-
-        // if new stream failed, ignore it Since some peer don's support floodsub protocol
-        if let Ok(stream) = stream {
-            let writer = stream.clone();
-
-            log::trace!("open stream to {}", pid);
-
-            self.handle_sending_message(pid.clone(), writer).await;
-            self.handle_peer_eof(pid.clone(), stream).await;
-        }
-    }
-
     // Handle peer event, include new peer event and peer dead event
-    async fn handle_peer_event(&mut self, cmd: Option<PeerEvent>) {
+    fn handle_peer_event(&mut self, cmd: Option<PeerEvent>) {
         match cmd {
             Some(PeerEvent::NewPeer(rpid)) => {
-                self.handle_new_peer(rpid).await;
+                log::trace!("new peer {} has connected", rpid);
+                self.handle_new_peer(rpid);
             }
             Some(PeerEvent::DeadPeer(rpid)) => {
-                self.handle_remove_dead_peer(rpid).await;
+                log::trace!("peer {} has disconnected", rpid);
+                self.handle_remove_dead_peer(rpid);
             }
-            None => {}
+            None => {
+                unreachable!()
+            }
         }
     }
 
     // Check if I subscribe these topics.
-    fn subscribed_to_msg(&self, msg: FloodsubMessage) -> bool {
+    fn subscribed_to_msg(&self, topics: &[Topic]) -> bool {
         if self.my_topics.is_empty() {
             return false;
         }
 
-        for topic in msg.topics {
-            if self.my_topics.contains_key(&topic) {
+        for topic in topics {
+            if self.my_topics.contains_key(topic) {
                 return true;
             }
         }
@@ -318,75 +218,73 @@ impl FloodSub {
     }
 
     // Send message to all local subscribers of these topic.
-    async fn notify_subs(&mut self, from: PeerId, msg: FloodsubMessage) -> Result<()> {
+    fn notify_subs(&mut self, from: PeerId, msg: FloodsubMessage) {
         if !self.config.subscribe_local_messages && self.config.local_peer_id == from {
-            return Ok(());
+            return;
         }
 
+        let msg = Arc::new(msg);
         for topic in &msg.topics {
-            let subs = self.my_topics.get_mut(topic);
-            if let Some(subs) = subs {
-                for sender in subs.values_mut() {
-                    sender.send(msg.clone()).await.or(Err(FloodsubError::Closed))?;
-                }
-            }
+            let _ = self.my_topics.get(topic).map(|subs| {
+                subs.values().for_each(|sender| {
+                    // TODO: remove sender if send failed
+                    let _ = sender.unbounded_send(msg.clone());
+                })
+            });
         }
-
-        Ok(())
     }
 
     // Publish message to all remote subscriber of topics.
-    async fn publish(&mut self, from: PeerId, msg: FloodsubMessage) -> Result<()> {
+    fn publish(&mut self, from: PeerId, msg: FloodsubMessage) {
+        let source = msg.source;
         let mut to_send = Vec::new();
         for topic in &msg.topics {
             let subs = self.topics.get(topic);
             if let Some(subs) = subs {
                 for pid in subs.keys() {
-                    to_send.push(pid.clone());
+                    to_send.push(pid);
                 }
             }
         }
 
-        let rpc = FloodsubRpc {
-            messages: vec![msg.clone()],
-            subscriptions: vec![],
-        };
+        let rpc = Arc::new(
+            FloodsubRpc {
+                messages: vec![msg],
+                subscriptions: vec![],
+            }
+            .into_bytes(),
+        );
 
         for pid in to_send {
-            if pid == from || pid == msg.source {
+            if *pid == from || *pid == source {
                 continue;
             }
 
-            let sender = self.peers.get_mut(&pid);
-            if let Some(sender) = sender {
-                sender.send(rpc.clone()).await.or(Err(FloodsubError::Closed))?;
-            }
+            self.connected_peers.get(&pid).map(|tx| tx.unbounded_send(rpc.clone()));
         }
-
-        Ok(())
     }
 
     // Publish message to all subscriber include local and remote.
-    async fn publish_message(&mut self, from: PeerId, msg: FloodsubMessage) -> Result<()> {
+    fn publish_message(&mut self, from: PeerId, msg: FloodsubMessage) {
         // TODO: reject unsigned messages when strict before we even process the id
 
-        self.notify_subs(from.clone(), msg.clone()).await?;
-        self.publish(from, msg).await
+        self.notify_subs(from, msg.clone());
+        self.publish(from, msg);
     }
 
     // Handle incoming rpc message received by Handler.
-    async fn handle_incoming_rpc(&mut self, rpc: Option<RPC>) -> Result<()> {
+    fn handle_incoming_rpc(&mut self, rpc: Option<RPC>) {
         match rpc {
             Some(rpc) => {
                 log::trace!("recv rpc {:?}", rpc);
 
-                let from = rpc.from.clone();
+                let from = rpc.from;
                 for sub in rpc.rpc.subscriptions {
                     match sub.action {
                         FloodsubSubscriptionAction::Subscribe => {
                             log::trace!("handle topic {:?}", sub.topic.clone());
                             let subs = self.topics.entry(sub.topic.clone()).or_insert_with(HashMap::<PeerId, ()>::default);
-                            subs.insert(from.clone(), ());
+                            subs.insert(from, ());
                         }
                         FloodsubSubscriptionAction::Unsubscribe => {
                             let subs = self.topics.get_mut(&sub.topic.clone());
@@ -398,46 +296,47 @@ impl FloodSub {
                 }
 
                 for msg in rpc.rpc.messages {
-                    if !self.subscribed_to_msg(msg.clone()) {
+                    if !self.subscribed_to_msg(&msg.topics) {
                         log::trace!("received message we didn't subscribe to. Dropping.");
                         continue;
                     }
 
-                    self.publish_message(from.clone(), msg.clone()).await?;
+                    self.publish_message(from, msg);
                 }
-
-                Ok(())
             }
-            None => Err(FloodsubError::Closed),
+            None => {
+                unreachable!()
+            }
         }
     }
 
     // Announce my new subscribed topic to all connected peer.
-    async fn announce(&mut self, topic: Topic, sub: FloodsubSubscriptionAction) -> Result<()> {
-        let rpc = FloodsubRpc {
-            messages: vec![],
-            subscriptions: vec![FloodsubSubscription { action: sub, topic }],
-        };
+    fn announce(&mut self, topic: Topic, sub: FloodsubSubscriptionAction) {
+        let rpc = Arc::new(
+            FloodsubRpc {
+                messages: vec![],
+                subscriptions: vec![FloodsubSubscription { action: sub, topic }],
+            }
+            .into_bytes(),
+        );
 
-        for sender in self.peers.values_mut() {
-            sender.send(rpc.clone()).await.or(Err(FloodsubError::Closed))?;
+        for tx in self.connected_peers.values() {
+            let _ = tx.unbounded_send(rpc.clone());
         }
-
-        Ok(())
     }
 
     // Process publish or subscribe command.
-    async fn on_control_command(&mut self, cmd: Option<ControlCommand>) -> Result<()> {
+    fn on_control_command(&mut self, cmd: Option<ControlCommand>) -> Result<()> {
         match cmd {
             Some(ControlCommand::Publish(msg, reply)) => {
-                let lpid = self.config.local_peer_id.clone();
-                self.publish_message(lpid, msg).await?;
+                let lpid = self.config.local_peer_id;
+                self.publish_message(lpid, msg);
 
                 let _ = reply.send(());
             }
             Some(ControlCommand::Subscribe(topic, reply)) => {
-                let sub = self.subscribe(topic).await?;
-                let _ = reply.send(Some(sub));
+                let sub = self.subscribe(topic);
+                let _ = reply.send(sub);
             }
             Some(ControlCommand::Ls(reply)) => {
                 let mut topics = Vec::new();
@@ -449,81 +348,65 @@ impl FloodSub {
             Some(ControlCommand::GetPeers(topic, reply)) => {
                 let mut peers = Vec::new();
                 if topic.is_empty() {
-                    for pid in self.peers.keys() {
-                        peers.push(pid.clone());
+                    for pid in self.connected_peers.keys() {
+                        peers.push(*pid);
                     }
                 } else {
                     let subs = self.topics.get(&topic);
                     if let Some(subs) = subs {
                         for pid in subs.keys() {
-                            peers.push(pid.clone());
+                            peers.push(*pid);
                         }
                     }
                 }
                 let _ = reply.send(peers);
             }
-            None => {}
+            None => return Err(FloodsubError::Closed),
         }
 
         Ok(())
     }
 
     // Subscribe one topic.
-    async fn subscribe(&mut self, topic: Topic) -> Result<Subscription> {
-        let subs = self
-            .my_topics
-            .entry(topic.clone())
-            .or_insert_with(IntMap::<SubId, mpsc::UnboundedSender<FloodsubMessage>>::default);
-
-        let mut announce = false;
+    fn subscribe(&mut self, topic: Topic) -> Subscription {
+        let mut subs = self.my_topics.remove(&topic).unwrap_or_default();
         if subs.is_empty() {
-            announce = true;
+            self.announce(topic.clone(), FloodsubSubscriptionAction::Subscribe);
         }
 
         let sub_id = SubId::random();
         let (tx, rx) = mpsc::unbounded();
         subs.insert(sub_id, tx);
+        self.my_topics.insert(topic.clone(), subs);
 
-        if announce {
-            self.announce(topic.clone(), FloodsubSubscriptionAction::Subscribe).await?;
-        }
-
-        Ok(Subscription::new(sub_id, topic, rx, self.cancel_tx.clone()))
+        Subscription::new(sub_id, topic, rx, self.cancel_tx.clone())
     }
 
     // Unsubscribe one topic.
-    async fn un_subscribe(&mut self, sub: Option<Subscription>) -> Result<()> {
-        if let Some(sub) = sub {
-            let topic = sub.topic.clone();
-            let subs = self.my_topics.get_mut(&topic);
-            let mut delete = false;
-            let mut announce = false;
-            if let Some(subs) = subs {
-                if subs.remove(&sub.id).is_some() {
-                    announce = true;
-                }
-                if subs.is_empty() {
-                    delete = true;
+    fn un_subscribe(&mut self, sub: Option<(Topic, SubId)>) {
+        match sub {
+            Some((topic, id)) => {
+                let subs = self.my_topics.remove(&topic);
+                if let Some(mut subs) = subs {
+                    if subs.remove(&id).is_some() {
+                        self.announce(topic.clone(), FloodsubSubscriptionAction::Unsubscribe);
+                    }
+
+                    if !subs.is_empty() {
+                        self.my_topics.insert(topic, subs);
+                    }
                 }
             }
-
-            if delete {
-                self.my_topics.remove(&topic);
-            }
-
-            if announce {
-                self.announce(topic, FloodsubSubscriptionAction::Unsubscribe).await?;
+            None => {
+                unreachable!()
             }
         }
-
-        Ok(())
     }
 }
 
 impl FloodSub {
     fn drop_all_peers(&mut self) {
-        for (p, tx) in self.peers.drain().take(1) {
-            tx.close_channel();
+        for (p, _tx) in self.connected_peers.drain().take(1) {
             log::trace!("drop peer {}", p);
         }
     }
@@ -541,6 +424,40 @@ impl FloodSub {
         for (t, mut subs) in self.topics.drain().take(1) {
             for (p, _) in subs.drain().take(1) {
                 log::trace!("drop peer {} in topic {:?}", p, t.clone());
+            }
+        }
+    }
+}
+
+impl ProtocolImpl for FloodSub {
+    fn handler(&self) -> IProtocolHandler {
+        Box::new(Handler::new(self.incoming_tx.clone(), self.peer_tx.clone()))
+    }
+
+    fn start(mut self, swarm: SwarmControl) -> Option<task::TaskHandle<()>> {
+        self.swarm = Some(swarm);
+
+        // well, self 'move' explicitly,
+        let mut floodsub = self;
+        let task = task::spawn(async move {
+            let _ = floodsub.process_loop().await;
+        });
+
+        Some(task)
+    }
+}
+
+#[allow(clippy::rc_buffer)]
+async fn handle_send_message(mut rx: UnboundedReceiver<Arc<Vec<u8>>>, mut writer: Substream) -> Result<()> {
+    loop {
+        match rx.next().await {
+            Some(rpc) => {
+                log::trace!("send rpc msg: {:?}", rpc);
+                writer.write_one(rpc.as_slice()).await?
+            }
+            None => {
+                log::trace!("peer had been removed from floodsub");
+                return Ok(());
             }
         }
     }

@@ -1,6 +1,6 @@
 [package]
 name = "libp2prs-traits"
-version = "0.2.1"
+version = "0.2.2"
 license = "MIT"
 description = "Read/Write traits"
 authors = ["Netwarps Technologies admin@paradeum.com"]
@@ -17,6 +17,6 @@ futures = { version = "0.3", features = ["default", "bilock", "unstable"] }
 [dev-dependencies]
 env_logger = "0.6"
 criterion = "0.3"
-libp2prs-runtime = { path = "../runtime", version = "0.2.1", features = ["async-std"] }
+libp2prs-runtime = { path = "../runtime", version = "0.2.2", features = ["async-std"] }
 
 

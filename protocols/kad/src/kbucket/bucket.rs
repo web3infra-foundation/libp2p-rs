@@ -145,7 +145,7 @@ mod tests {
             let mut bucket = KBucket::<Key<PeerId>, ()>::default();
             let num_nodes = g.gen_range(1, K_VALUE.get() + 1);
             for _ in 0..num_nodes {
-                let key = Key::new(PeerId::random());
+                let key = Key::from(PeerId::random());
                 let node = Node {
                     key: key.clone(),
                     value: (),
@@ -168,7 +168,7 @@ mod tests {
     fn fill_bucket(bucket: &mut KBucket<Key<PeerId>, ()>) {
         let num_entries_start = bucket.num_entries();
         for i in 0..K_VALUE.get() - num_entries_start {
-            let key = Key::new(PeerId::random());
+            let key = Key::from(PeerId::random());
             let node = Node { key, value: () };
             assert_eq!(true, bucket.insert(node));
             assert_eq!(bucket.num_entries(), num_entries_start + i + 1);
@@ -183,7 +183,7 @@ mod tests {
         fill_bucket(&mut bucket);
 
         // Trying to insert another disconnected node fails.
-        let key = Key::new(PeerId::random());
+        let key = Key::from(PeerId::random());
         let node = Node { key, value: () };
         if bucket.insert(node) {
             panic!("")
@@ -196,7 +196,7 @@ mod tests {
     fn remove_bucket() {
         let mut bucket = KBucket::<Key<PeerId>, ()>::default();
 
-        let key = Key::new(PeerId::random());
+        let key = Key::from(PeerId::random());
         let node = Node {
             key: key.clone(),
             value: (),
