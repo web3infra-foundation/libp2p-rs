@@ -97,8 +97,9 @@ fn cli_close_kad(app: &App, _args: &[&str]) -> XcliResult {
 fn cli_bootstrap(app: &App, _args: &[&str]) -> XcliResult {
     let mut kad = handler(app);
     task::block_on(async {
-        kad.bootstrap(vec![]).await;
-        println!("start to bootstrap");
+        println!("start bootstrapping...");
+        let r = kad.bootstrap_wait(vec![]).await;
+        println!("bootstrap done {:?}", r);
     });
 
     Ok(CmdExeCode::Ok)

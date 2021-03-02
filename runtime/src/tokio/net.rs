@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use std::io;
-use std::net::{SocketAddr, Ipv6Addr, Ipv4Addr};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -36,7 +36,7 @@ pub struct TcpListener(net::TcpListener);
 impl TcpStream {
     /// Creates a new TCP stream connected to the specified address.
     pub async fn connect<A: ToSocketAddrs>(addrs: A) -> io::Result<TcpStream> {
-        net::TcpStream::connect(addrs).await.map(|s| TcpStream(s))
+        net::TcpStream::connect(addrs).await.map(TcpStream)
     }
 
     /// Gets the inner mutable TcpStream.
@@ -78,7 +78,7 @@ impl TcpStream {
 impl TcpListener {
     /// Creates a new `TcpListener` which will be bound to the specified address.
     pub async fn bind<A: ToSocketAddrs>(addrs: A) -> io::Result<TcpListener> {
-        net::TcpListener::bind(addrs).await.map(|l| TcpListener(l))
+        net::TcpListener::bind(addrs).await.map(TcpListener)
     }
 
     /// Accepts a new incoming connection to this listener.
@@ -144,7 +144,7 @@ pub struct UdpSocket(net::UdpSocket);
 impl UdpSocket {
     /// Creates a UDP socket from the given address.
     pub async fn bind<A: ToSocketAddrs>(addrs: A) -> io::Result<UdpSocket> {
-        net::UdpSocket::bind(addrs).await.map(|u|UdpSocket(u))
+        net::UdpSocket::bind(addrs).await.map(UdpSocket)
     }
 
     /// Returns the peer address that this listener is connected to.
@@ -190,7 +190,7 @@ impl UdpSocket {
 
     /// Receives data from the socket without removing it from the queue.
     pub async fn peek(&self, buf: &mut [u8]) -> io::Result<usize> {
-        self.0.peek_from(buf).await.map(|r|r.0)
+        self.0.peek_from(buf).await.map(|r| r.0)
     }
 
     /// Gets the value of the `SO_BROADCAST` option for this socket.
@@ -283,8 +283,8 @@ impl From<std::net::UdpSocket> for UdpSocket {
 /// as an alternative for covering both async-std and tokio use cases.
 
 pub async fn resolve_host<T>(host: T) -> io::Result<impl Iterator<Item = SocketAddr>>
-    where
-        T: ToSocketAddrs
+where
+    T: ToSocketAddrs,
 {
     net::lookup_host(host).await
 }

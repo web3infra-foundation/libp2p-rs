@@ -31,16 +31,16 @@ pub struct PeerInfo {
     /// The time this peer was added to the routing table.
     added_at: Instant,
 
-    /// reserved for future use?
-    replaceable: bool,
+    /// Permanent entry, never replaced by health check.  
+    permanent: bool,
 }
 
 impl PeerInfo {
-    pub(crate) fn new(aliveness: bool) -> Self {
+    pub(crate) fn new(aliveness: bool, permanent: bool) -> Self {
         Self {
             aliveness: if aliveness { Some(Instant::now()) } else { None },
             added_at: Instant::now(),
-            replaceable: true,
+            permanent,
         }
     }
 
@@ -50,5 +50,9 @@ impl PeerInfo {
 
     pub(crate) fn get_aliveness(&self) -> Option<Instant> {
         self.aliveness
+    }
+
+    pub(crate) fn is_permanent(&self) -> bool {
+        self.permanent
     }
 }
