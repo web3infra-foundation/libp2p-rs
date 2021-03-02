@@ -839,8 +839,8 @@ mod tests {
 
 #[derive(Debug)]
 pub enum RefreshStage {
-    Start,
-    SelfQueryDone,
+    Start(Option<oneshot::Sender<Result<(), KadError>>>),
+    SelfQueryDone(Option<oneshot::Sender<Result<(), KadError>>>),
     Completed,
 }
 

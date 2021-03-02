@@ -545,16 +545,22 @@ where
     ///        whose aliveness is older than the current time by the maximum allowed check_interval,
     ///        with the new peer.
     ///    2.2 if there is no such peer exists in that bucket, do nothing -> ignore adding peer
-    fn try_add_peer(&mut self, peer: PeerId, queried: bool) {
+    ///
+    /// queried: it is for sure the node is alive at this moment, so a aliveness
+    ///         timestamp will be generated for the node.
+    /// permanent: node will be added as permanent node, which can not be removed by health check.  
+    ///
+    fn try_add_peer(&mut self, peer: PeerId, queried: bool, permanent: bool) {
         let timeout = self.check_kad_peer_interval;
         let now = Instant::now();
         let key = kbucket::Key::from(peer);
 
         log::debug!(
-            "trying to add a peer: {:?} bucket-index={:?}, query={}",
+            "trying to add a peer: {:?} bucket-index={:?}, query={}, permanent={}",
             peer,
             self.kbuckets.bucket_index(&key),
-            queried
+            queried,
+            permanent
         );
 
         match self.kbuckets.entry(&key) {
@@ -566,7 +572,7 @@ where
                 }
             }
             kbucket::Entry::Absent(mut entry) => {
-                let info = PeerInfo::new(queried);
+                let info = PeerInfo::new(queried, permanent);
                 if entry.insert(info.clone()) {
                     log::debug!("Peer added to routing table: {} {:?}", peer, info);
                     // pin this peer in PeerStore to prevent GC from recycling multiaddr
@@ -609,22 +615,28 @@ where
     ///
     /// Returns `None` if the peer was not in the routing table,
     /// not even pending insertion.
-    fn try_remove_peer(&mut self, peer: PeerId) -> Option<kbucket::EntryView<kbucket::Key<PeerId>, PeerInfo>> {
+    fn try_remove_peer(&mut self, peer: PeerId, forced: bool) -> Option<kbucket::EntryView<kbucket::Key<PeerId>, PeerInfo>> {
         let key = kbucket::Key::from(peer);
 
         log::debug!(
-            "trying to remove a peer: {:?} bucket-index={:?}",
+            "trying to remove a peer: {:?} bucket-index={:?}, forced={}",
             peer,
-            self.kbuckets.bucket_index(&key)
+            self.kbuckets.bucket_index(&key),
+            forced
         );
 
         match self.kbuckets.entry(&key) {
-            kbucket::Entry::Present(entry) => {
-                // unpin the peer, so GC can run normally
-                if let Some(s) = self.swarm.as_ref() {
-                    s.unpin(&peer)
+            kbucket::Entry::Present(mut entry) => {
+                if forced || !entry.value().is_permanent() {
+                    // unpin the peer, so GC can run normally
+                    if let Some(s) = self.swarm.as_ref() {
+                        s.unpin(&peer)
+                    }
+                    Some(entry.remove())
+                } else {
+                    entry.value().set_aliveness(None);
+                    None
                 }
-                Some(entry.remove())
             }
             kbucket::Entry::Absent(..) | kbucket::Entry::SelfEntry => None,
         }
@@ -885,29 +897,28 @@ where
     ///
     /// > **Note**: Bootstrapping requires at least one node in the `boot` list or at
     /// least one node of the DHT to be known.
-    fn bootstrap(&mut self, boot: Vec<(PeerId, Multiaddr)>) {
+    fn bootstrap(&mut self, boot: Vec<(PeerId, Multiaddr)>, reply: Option<oneshot::Sender<Result<()>>>) {
+        // add bootstrap nodes to RT, and marked as Permanent
         for (node, addr) in boot {
             self.add_node(node, vec![addr]);
         }
-        if !self.refreshing {
-            log::debug!("bootstrapping...");
-            let mut poster = self.poster();
-            let _ = poster.unbounded_post(ProtocolEvent::Refresh(RefreshStage::Start));
-        }
+        log::debug!("bootstrapping...");
+        let mut poster = self.poster();
+        let _ = poster.unbounded_post(ProtocolEvent::Refresh(RefreshStage::Start(reply)));
     }
 
     fn add_node(&mut self, peer: PeerId, addresses: Vec<Multiaddr>) {
         if let Some(s) = self.swarm.as_ref() {
             s.add_addrs(&peer, addresses, ADDRESS_TTL)
         }
-        self.try_add_peer(peer, false);
+        self.try_add_peer(peer, false, true);
     }
 
     fn remove_node(&mut self, peer: PeerId) {
         if let Some(s) = self.swarm.as_ref() {
             s.clear_addrs(&peer)
         }
-        self.try_remove_peer(peer);
+        self.try_remove_peer(peer, true);
     }
 
     fn dump_messengers(&mut self) -> Vec<KadMessengerView> {
@@ -1272,7 +1283,7 @@ where
                 .is_some()
             {
                 log::debug!("A peer identified as a qualified Kad peer: {:}", peer_id);
-                self.try_add_peer(peer_id, false);
+                self.try_add_peer(peer_id, false, false);
             }
         }
     }
@@ -1282,18 +1293,18 @@ where
         log::debug!("address changed: {:?}, starting refresh...", addrs);
         self.local_addrs = addrs;
         // TODO: probably we should start a timer to trigger refreshing, to avoid refreshing too often
-        self.handle_refresh_stage(RefreshStage::Start);
+        self.handle_refresh_stage(RefreshStage::Start(None));
     }
 
     // handle a new Kad peer is found.
     fn handle_peer_found(&mut self, peer_id: PeerId, queried: bool) {
-        self.try_add_peer(peer_id, queried);
+        self.try_add_peer(peer_id, queried, false);
     }
 
     // handle a Kad peer is dead.
     fn handle_peer_stopped(&mut self, peer_id: PeerId) {
         //self.try_remove_peer(peer_id);
-        self.try_remove_peer(peer_id);
+        self.try_remove_peer(peer_id, false);
     }
 
     // handle iterative query completion
@@ -1364,7 +1375,7 @@ where
         log::debug!("handle Kad request message from {:?}, {:?} ", source, request);
 
         // Obviously we found a Kad peer
-        self.try_add_peer(source, true);
+        self.try_add_peer(source, true, false);
 
         let response = match request {
             KadRequestMsg::Ping => {
@@ -1458,7 +1469,9 @@ where
         let peers_to_check = self
             .kbuckets
             .closest(&self_key)
-            .filter(|n| n.node.value.get_aliveness().map_or(true, |a| now.duration_since(a) > interval))
+            .filter(|n| {
+                !n.node.value.is_permanent() && n.node.value.get_aliveness().map_or(true, |a| now.duration_since(a) > interval)
+            })
             .map(|n| n.node.key.into_preimage())
             .collect::<Vec<_>>();
 
@@ -1478,7 +1491,7 @@ where
             }
 
             log::info!("Kad refresh restarted, total {} nodes removed from Kbuckets", count);
-            let _ = poster.post(ProtocolEvent::Refresh(RefreshStage::Start)).await;
+            let _ = poster.post(ProtocolEvent::Refresh(RefreshStage::Start(None))).await;
         });
     }
 
@@ -1486,20 +1499,28 @@ where
     // it will trigger the periodic bootstrap procedure in a fixed interval.
     fn handle_refresh_stage(&mut self, stage: RefreshStage) {
         match stage {
-            RefreshStage::Start => {
+            RefreshStage::Start(reply) => {
+                // check if we are in refreshing. do NOT run again if yes
+                if self.refreshing {
+                    log::debug!("Don't refresh when RT is being refreshed");
+                    if let Some(tx) = reply {
+                        let _ = tx.send(Err(KadError::Bootstrap));
+                    }
+                    return;
+                }
+
                 // check if there is any node in the RT. Do NOTHING if not.
                 // This might happen when address change notifications come from
                 // Notifiee trait, when Kad is initializing while Swarm is listening
                 // on a multiaddr
                 if self.kbuckets.num_entries() == 0 {
                     log::debug!("Don't refresh when RT has nothing yet");
+                    if let Some(tx) = reply {
+                        let _ = tx.send(Err(KadError::Bootstrap));
+                    }
                     return;
                 }
 
-                // check if we are running a refresh. do NOT run again if yes
-                if self.refreshing {
-                    return;
-                }
                 log::debug!("start refreshing kbuckets...");
 
                 // always mark refreshing as true if we step into this stage
@@ -1515,11 +1536,11 @@ where
                         log::info!("refresh get_closest_peers failed: {:?}", r);
                     }
                     task::spawn(async move {
-                        let _ = poster.post(ProtocolEvent::Refresh(RefreshStage::SelfQueryDone)).await;
+                        let _ = poster.post(ProtocolEvent::Refresh(RefreshStage::SelfQueryDone(reply))).await;
                     });
                 });
             }
-            RefreshStage::SelfQueryDone => {
+            RefreshStage::SelfQueryDone(reply) => {
                 log::debug!("bootstrap: self-query done, proceeding with random walk...");
                 log::debug!("kbuckets entries={}", self.kbuckets.num_entries());
 
@@ -1575,6 +1596,11 @@ where
                         let _ = control.lookup(peer.into()).await;
                     }
                     let _ = poster.post(ProtocolEvent::Refresh(RefreshStage::Completed)).await;
+
+                    // reply to API client
+                    if let Some(tx) = reply {
+                        let _ = tx.send(Ok(()));
+                    }
                 });
             }
             RefreshStage::Completed => {
@@ -1589,8 +1615,8 @@ where
     // Process publish or subscribe command.
     fn on_control_command(&mut self, cmd: Option<ControlCommand>) -> Result<()> {
         match cmd {
-            Some(ControlCommand::Bootstrap(boot)) => {
-                self.bootstrap(boot);
+            Some(ControlCommand::Bootstrap(boot, reply)) => {
+                self.bootstrap(boot, reply);
             }
             Some(ControlCommand::AddNode(peer, addresses)) => {
                 self.add_node(peer, addresses);

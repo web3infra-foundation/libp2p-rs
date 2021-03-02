@@ -36,7 +36,9 @@ type Result<T> = std::result::Result<T, KadError>;
 
 pub(crate) enum ControlCommand {
     /// Initiates bootstrapping to join the Kad DHT network.
-    Bootstrap(Vec<(PeerId, Multiaddr)>),
+    ///
+    /// The optional channel could be used to return the result of bootstrapping.
+    Bootstrap(Vec<(PeerId, Multiaddr)>, Option<oneshot::Sender<Result<()>>>),
     /// Lookups the closer peers with given ID, returns a list of peer Id.
     Lookup(record::Key, oneshot::Sender<Result<Vec<KadPeer>>>),
     /// Searches for a peer with given ID, returns a list of peer info
@@ -120,11 +122,18 @@ impl Control {
         Ok(rx.await?)
     }
 
-    /// Initiate bootstrapping.
+    /// Initiates bootstrapping.
     ///
-    /// In general it should be done only once upon Kad startup.
+    /// Most likely it should be invoked once upon Kad startup.
     pub async fn bootstrap(&mut self, boot: Vec<(PeerId, Multiaddr)>) {
-        let _ = self.control_sender.send(ControlCommand::Bootstrap(boot)).await;
+        let _ = self.control_sender.send(ControlCommand::Bootstrap(boot, None)).await;
+    }
+
+    /// Initiates bootstrapping and waits for the result.
+    pub async fn bootstrap_wait(&mut self, boot: Vec<(PeerId, Multiaddr)>) -> Result<()> {
+        let (tx, rx) = oneshot::channel();
+        let _ = self.control_sender.send(ControlCommand::Bootstrap(boot, Some(tx))).await;
+        rx.await?
     }
 
     /// Lookup the closer peers with the given key.
