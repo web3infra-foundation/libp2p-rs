@@ -20,11 +20,10 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::error::PlaintextError;
-use crate::secure_stream::SecureStream;
 use crate::structs_proto::Exchange;
 use crate::PlainTextConfig;
-use libp2prs_core::{PeerId, PublicKey};
-use libp2prs_traits::{ReadEx, SplittableReadWrite, WriteEx};
+use futures::{AsyncRead, AsyncWrite};
+use libp2prs_core::{PeerId, PublicKey, ReadEx, WriteEx};
 use log::error;
 use prost::Message;
 use std::io;
@@ -52,20 +51,16 @@ pub struct Remote {
 ///
 /// If remote peer_id is the same as local, it means connected to self, throws error.
 /// Otherwise, returns an object that implements the `WriteEx` and `ReadEx` trait.
-pub(crate) async fn handshake<T>(
-    socket: T,
-    config: PlainTextConfig,
-) -> Result<(SecureStream<T::Reader, T::Writer>, Remote), PlaintextError>
+pub(crate) async fn handshake<T>(mut socket: T, config: PlainTextConfig) -> Result<(T, Remote), PlaintextError>
 where
-    T: SplittableReadWrite,
+    T: AsyncRead + AsyncWrite + Send + Unpin + 'static,
 {
     let max_frame_len = config.max_frame_length;
-    let (mut reader, mut writer) = socket.split();
     let local_context = HandshakeContext::new(config.clone())?;
 
-    writer.write_one_fixed(local_context.state.exchange_bytes.as_ref()).await?;
+    socket.write_one_fixed(local_context.state.exchange_bytes.as_ref()).await?;
 
-    let buf = reader.read_one_fixed(max_frame_len).await?;
+    let buf = socket.read_one_fixed(max_frame_len).await?;
     let remote_context = local_context.with_remote(buf)?;
 
     let local_id = config.clone().key.public().into_peer_id();
@@ -80,9 +75,7 @@ where
         return Err(PlaintextError::ConnectSelf);
     }
 
-    let secure_stream = SecureStream::new(reader, writer, max_frame_len);
-
-    Ok((secure_stream, remote_state))
+    Ok((socket, remote_state))
 }
 
 impl HandshakeContext<Local> {
@@ -144,14 +137,14 @@ mod tests {
     use crate::PlainTextConfig;
 
     use bytes::BytesMut;
-    use futures::channel;
+    use futures::{channel, AsyncReadExt, AsyncWriteExt};
     use libp2prs_runtime::{
         net::{TcpListener, TcpStream},
         task,
     };
     //use futures::prelude::*;
     use libp2prs_core::identity::Keypair;
-    use libp2prs_traits::{ReadEx, WriteEx};
+    // use libp2prs_traits::{ReadEx, WriteEx};
 
     fn handshake_with_self_success(config_1: PlainTextConfig, config_2: PlainTextConfig, data: &'static [u8]) {
         let (sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();
@@ -164,17 +157,17 @@ mod tests {
             let (connect, _) = listener.accept().await.unwrap();
             let (mut handle, _) = config_1.handshake(connect).await.unwrap();
             let mut data = [0u8; 11];
-            handle.read2(&mut data).await.unwrap();
-            handle.write2(&data).await.unwrap();
+            handle.read(&mut data).await.unwrap();
+            handle.write(&data).await.unwrap();
         });
 
         task::spawn(async move {
             let listener_addr = addr_receiver.await.unwrap();
             let connect = TcpStream::connect(&listener_addr).await.unwrap();
             let (mut handle, _) = config_2.handshake(connect).await.unwrap();
-            handle.write2(data).await.unwrap();
+            handle.write(data).await.unwrap();
             let mut data = [0u8; 11];
-            handle.read2(&mut data).await.unwrap();
+            handle.read(&mut data).await.unwrap();
             let _res = sender.send(BytesMut::from(&data[..]));
         });
 

@@ -72,15 +72,15 @@ pub struct MdnsService {
 
 impl MdnsService {
     /// Create a new 'MdnsService'.
-    pub fn new(config: MdnsConfig) -> io::Result<Self> {
+    pub fn new(config: MdnsConfig) -> Self {
         let (control_tx, control_rx) = mpsc::channel(32);
 
-        Ok(MdnsService {
+        MdnsService {
             config,
             control_tx,
             control_rx,
             notifees: IntMap::default(),
-        })
+        }
     }
 
     /// Get control of mdns service, which can be used to register and unregister notifiee.

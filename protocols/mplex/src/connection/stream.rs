@@ -22,12 +22,12 @@ use crate::{
     connection::{Id, StreamCommand},
     frame::{Frame, StreamID},
 };
-use async_trait::async_trait;
 use bytes::{Buf, BufMut};
 use futures::channel::oneshot;
 use futures::lock::Mutex;
-use futures::{channel::mpsc, SinkExt, StreamExt};
-use libp2prs_traits::{ReadEx, WriteEx};
+use futures::task::{Context, Poll};
+use futures::{channel::mpsc, AsyncRead, AsyncWrite, FutureExt, Sink, SinkExt};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::{fmt, io};
 
@@ -107,69 +107,6 @@ impl Stream {
         self.id.id()
     }
 
-    /// read data from receiver. If data is not drain, store in inner buffer
-    pub(crate) async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if self.read_buffer.has_remaining() {
-            let len = std::cmp::min(self.read_buffer.remaining(), buf.len());
-            buf[..len].copy_from_slice(&self.read_buffer[..len]);
-            self.read_buffer.advance(len);
-            return Ok(len);
-        }
-
-        let mut receiver = self.receiver.lock().await;
-        if let Some(data) = receiver.next().await {
-            let dlen = data.len();
-            let len = std::cmp::min(data.len(), buf.len());
-            buf[..len].copy_from_slice(&data[..len]);
-
-            if len < dlen {
-                self.read_buffer.reserve(dlen - len);
-                self.read_buffer.put(&data[len..dlen]);
-            }
-            return Ok(len);
-        }
-
-        Err(io::ErrorKind::UnexpectedEof.into())
-    }
-
-    /// Write stream. If stream has closed, return err
-    pub(crate) async fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if self.sender.is_closed() {
-            return Err(self.closed_err());
-        }
-
-        let (tx, rx) = oneshot::channel();
-        let frame = Frame::message_frame(self.id, buf);
-        let n = buf.len();
-        log::trace!("{}/{}: write {} bytes", self.conn_id, self.id, n);
-
-        let cmd = StreamCommand::SendFrame(frame, tx);
-        self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
-
-        rx.await.map_err(|_| self.closed_err())?;
-
-        Ok(n)
-    }
-
-    /// close stream, sender will be closed and state will turn to SendClosed
-    /// If stream has closed, return ()
-    async fn close(&mut self) -> io::Result<()> {
-        if self.sender.is_closed() {
-            return Ok(());
-        }
-
-        let (tx, rx) = oneshot::channel();
-        let frame = Frame::close_frame(self.id);
-        let cmd = StreamCommand::CloseStream(frame, tx);
-        self.sender.send(cmd).await.map_err(|_| self.write_zero_err())?;
-        rx.await.map_err(|_| self.closed_err())?;
-
-        // step3: close channel
-        self.sender.close().await.expect("send err");
-
-        Ok(())
-    }
-
     /// reset stream, sender will be closed and state will turn to Closed
     /// If stream has reset, return ()
     pub async fn reset(&mut self) -> io::Result<()> {
@@ -201,24 +138,69 @@ impl Stream {
     }
 }
 
-#[async_trait]
-impl ReadEx for Stream {
-    async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.read(buf).await
+impl AsyncRead for Stream {
+    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<io::Result<usize>> {
+        if self.read_buffer.has_remaining() {
+            let len = std::cmp::min(self.read_buffer.remaining(), buf.len());
+            buf[..len].copy_from_slice(&self.read_buffer[..len]);
+            self.read_buffer.advance(len);
+            return Poll::Ready(Ok(len));
+        }
+
+        let this = self.get_mut();
+
+        let mut receiver = futures::ready!(this.receiver.lock().poll_unpin(cx));
+
+        let x = futures::Stream::poll_next(Pin::new(&mut *receiver), cx);
+        if let Some(data) = futures::ready!(x) {
+            let dlen = data.len();
+            let len = std::cmp::min(data.len(), buf.len());
+            buf[..len].copy_from_slice(&data[..len]);
+
+            if len < dlen {
+                this.read_buffer.reserve(dlen - len);
+                this.read_buffer.put(&data[len..dlen]);
+            }
+            return Poll::Ready(Ok(len));
+        }
+        Poll::Ready(Err(io::ErrorKind::UnexpectedEof.into()))
     }
 }
 
-#[async_trait]
-impl WriteEx for Stream {
-    async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.write(buf).await
+impl AsyncWrite for Stream {
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
+        if self.sender.is_closed() {
+            return Poll::Ready(Err(self.closed_err()));
+        }
+
+        futures::ready!(self.sender.poll_ready(cx).map_err(|_| self.write_zero_err())?);
+
+        let frame = Frame::message_frame(self.id, buf);
+        let n = buf.len();
+        log::trace!("{}/{}: write {} bytes", self.conn_id, self.id, n);
+
+        let cmd = StreamCommand::SendFrame(frame);
+        self.sender.start_send(cmd).map_err(|_| self.write_zero_err())?;
+        Poll::Ready(Ok(n))
     }
 
-    async fn flush2(&mut self) -> io::Result<()> {
-        Ok(())
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        Pin::new(&mut this.sender).poll_flush(cx).map_err(|_| this.write_zero_err())
     }
 
-    async fn close2(&mut self) -> io::Result<()> {
-        self.close().await
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        if self.sender.is_closed() {
+            return Poll::Ready(Ok(()));
+        }
+
+        futures::ready!(self.sender.poll_ready(cx).map_err(|_| self.write_zero_err())?);
+
+        let frame = Frame::close_frame(self.id);
+        let cmd = StreamCommand::CloseStream(frame);
+        self.sender.start_send(cmd).map_err(|_| self.write_zero_err())?;
+
+        let this = self.get_mut();
+        Pin::new(&mut this.sender).poll_close(cx).map_err(|_| this.closed_err())
     }
 }

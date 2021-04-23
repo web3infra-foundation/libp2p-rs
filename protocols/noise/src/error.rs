@@ -18,13 +18,13 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use libp2prs_core::identity;
-use libp2prs_core::transport::TransportError;
+use libp2prs_core::{identity, transport::TransportError};
 use snow::error::Error as SnowError;
 use std::{error::Error, fmt, io};
 
 /// libp2p_noise error type.
 #[derive(Debug)]
+#[allow(clippy::manual_non_exhaustive)]
 pub enum NoiseError {
     /// An I/O error has been encountered.
     Io(io::Error),
@@ -39,8 +39,8 @@ pub enum NoiseError {
     InvalidPayload(prost::DecodeError),
     /// A signature was required and could not be created.
     SigningError(identity::error::SigningError),
-    // #[doc(hidden)]
-    // __Nonexhaustive,
+    #[doc(hidden)]
+    __Nonexhaustive,
 }
 
 impl fmt::Display for NoiseError {
@@ -52,7 +52,7 @@ impl fmt::Display for NoiseError {
             NoiseError::InvalidPayload(e) => write!(f, "{}", e),
             NoiseError::AuthenticationFailed => f.write_str("Authentication failed"),
             NoiseError::SigningError(e) => write!(f, "{}", e),
-            // NoiseError::__Nonexhaustive => f.write_str("__Nonexhaustive"),
+            NoiseError::__Nonexhaustive => f.write_str("__Nonexhaustive"),
         }
     }
 }
@@ -61,12 +61,12 @@ impl Error for NoiseError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             NoiseError::Io(e) => Some(e),
-            NoiseError::Noise(e) => Some(e),
+            NoiseError::Noise(_) => None, // TODO: `SnowError` should implement `Error`.
             NoiseError::InvalidKey => None,
             NoiseError::AuthenticationFailed => None,
             NoiseError::InvalidPayload(e) => Some(e),
             NoiseError::SigningError(e) => Some(e),
-            // NoiseError::__Nonexhaustive => None,
+            NoiseError::__Nonexhaustive => None,
         }
     }
 }
@@ -74,15 +74,6 @@ impl Error for NoiseError {
 impl From<io::Error> for NoiseError {
     fn from(e: io::Error) -> Self {
         NoiseError::Io(e)
-    }
-}
-
-impl Into<io::Error> for NoiseError {
-    fn into(self) -> io::Error {
-        match self {
-            NoiseError::Io(e) => e,
-            e => io::Error::new(io::ErrorKind::BrokenPipe, e.to_string()),
-        }
     }
 }
 

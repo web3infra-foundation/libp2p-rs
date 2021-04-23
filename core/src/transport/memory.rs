@@ -307,7 +307,6 @@ impl ReadWriteEx for Channel {
 mod tests {
     use super::*;
     use libp2prs_runtime::task;
-    use libp2prs_traits::{ReadEx as _ReadEx, WriteEx as _WriteEx};
 
     #[test]
     fn parse_memory_addr_works() {
@@ -360,7 +359,7 @@ mod tests {
             };
 
             let mut buf = [0; 3];
-            socket.read_exact2(&mut buf).await.unwrap();
+            socket.read_exact(&mut buf).await.unwrap();
             assert_eq!(buf, msg);
         };
 
@@ -368,7 +367,7 @@ mod tests {
         let mut t2 = MemoryTransport::default();
         let dialer = async move {
             let mut socket = t2.dial(cloned_t1_addr).await.unwrap();
-            socket.write_all2(&msg).await.unwrap();
+            socket.write_all(&msg).await.unwrap();
         };
 
         // Wait for both to finish.

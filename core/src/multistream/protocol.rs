@@ -27,9 +27,9 @@
 //! `MessageReader`.
 
 use super::length_delimited::LengthDelimited;
-use super::{ReadEx, WriteEx};
 
 use bytes::{BufMut, Bytes, BytesMut};
+use futures::{AsyncRead, AsyncWrite};
 use std::{convert::TryFrom, error::Error, fmt, io};
 use unsigned_varint as uvi;
 
@@ -274,7 +274,7 @@ pub struct MessageIO<R> {
 
 impl<R> MessageIO<R>
 where
-    R: ReadEx + WriteEx,
+    R: AsyncRead + AsyncWrite + Unpin,
 {
     /// Constructs a new `MessageIO` resource wrapping the given I/O stream.
     pub fn new(inner: R) -> MessageIO<R> {

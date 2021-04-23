@@ -25,8 +25,8 @@ use libp2prs_runtime::{
 };
 use log::{info, LevelFilter};
 
+use futures::{AsyncReadExt, AsyncWriteExt};
 use libp2prs_plaintext::PlainTextConfig;
-use libp2prs_traits::{ReadEx, WriteEx};
 
 fn main() {
     env_logger::builder().filter_level(LevelFilter::Info).init();
@@ -56,15 +56,15 @@ fn server() {
 
                 let mut buf = [0u8; 100];
 
-                while let Ok(n) = handle.read2(&mut buf).await {
+                while let Ok(n) = handle.read(&mut buf).await {
                     buf[11] = b"!"[0];
-                    if handle.write_all2(&buf[..n + 1]).await.is_err() {
+                    if handle.write_all(&buf[..n + 1]).await.is_err() {
                         break;
                     }
                 }
 
                 info!("session closed!");
-                let _ = handle.close2().await;
+                let _ = handle.close().await;
             });
         }
     });
@@ -79,13 +79,13 @@ fn client() {
     task::block_on(async move {
         let stream = TcpStream::connect("127.0.0.1:1337").await.unwrap();
         let (mut handle, _) = config.handshake(stream).await.unwrap();
-        match handle.write_all2(data.as_ref()).await {
+        match handle.write_all(data.as_ref()).await {
             Ok(_) => info!("send all"),
             Err(e) => info!("err: {:?}", e),
         }
 
         let mut buf = [0; 100];
-        let n = handle.read2(&mut buf).await.unwrap();
+        let n = handle.read(&mut buf).await.unwrap();
         info!("receive: {:?}", &buf[..n]);
     });
 }

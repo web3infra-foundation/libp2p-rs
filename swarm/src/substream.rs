@@ -24,21 +24,22 @@
 //! specified protocols.
 //!
 
-use async_trait::async_trait;
 use futures::channel::mpsc;
 use futures::SinkExt;
 use std::sync::Arc;
 use std::{fmt, io};
 
+use futures::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use libp2prs_core::muxing::IReadWrite;
 use libp2prs_core::{Multiaddr, PeerId};
 use libp2prs_runtime::task;
-use libp2prs_traits::{ReadEx, WriteEx};
 
 use crate::connection::{ConnectionId, Direction};
 use crate::control::SwarmControlCmd;
 use crate::metrics::metric::Metric;
 use crate::ProtocolId;
+use futures::task::{Context, Poll};
+use std::pin::Pin;
 
 /// The Id of sub stream
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -78,7 +79,7 @@ struct SubstreamMeta {
 /// Substream is the logical channel for the p2p connection.
 /// SubstreamMeta contains the meta information of the substream and IReadWrite
 /// provides the I/O operation to Substream.
-#[derive(Clone)]
+// #[derive(Clone)]
 pub struct Substream {
     /// The inner sub stream, created by the StreamMuxer
     inner: Option<IReadWrite>,
@@ -113,7 +114,7 @@ impl Drop for Substream {
 
             task::spawn(async move {
                 let _ = s.send(SwarmControlCmd::CloseStream(cid, sid)).await;
-                let _ = inner.close2().await;
+                let _ = inner.close().await;
             });
         }
     }
@@ -202,42 +203,51 @@ impl Substream {
     }
 }
 
-#[async_trait]
-impl ReadEx for Substream {
-    async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
-        self.inner.as_mut().expect("already closed?").read2(buf).await.map(|n| {
-            self.metric.log_recv_msg(n);
-            self.metric.log_recv_stream(self.protocol(), n, &self.info.ci.rpid);
+impl AsyncRead for Substream {
+    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<io::Result<usize>> {
+        let this = &mut *self;
+        let inner = this.inner.as_mut().expect("already closed?");
+        Poll::Ready(futures::ready!(AsyncRead::poll_read(Pin::new(inner), cx, buf)).map(|n| {
+            this.metric.log_recv_msg(n);
+            this.metric.log_recv_stream(this.protocol(), n, &this.info.ci.rpid);
             n
-        })
+        }))
     }
 }
 
-#[async_trait]
-impl WriteEx for Substream {
-    async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
-        self.inner.as_mut().expect("already closed?").write2(buf).await.map(|n| {
-            self.metric.log_sent_msg(n);
-            self.metric.log_sent_stream(self.protocol(), n, &self.info.ci.rpid);
+impl AsyncWrite for Substream {
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
+        let this = &mut *self;
+        let inner = this.inner.as_mut().expect("already closed?");
+        Poll::Ready(futures::ready!(AsyncWrite::poll_write(Pin::new(inner), cx, buf)).map(|n| {
+            this.metric.log_sent_msg(n);
+            this.metric.log_sent_stream(this.protocol(), n, &this.info.ci.rpid);
             n
-        })
+        }))
     }
 
-    async fn flush2(&mut self) -> Result<(), io::Error> {
-        self.inner.as_mut().expect("already closed?").flush2().await
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(self.inner.as_mut().expect("already closed?")).poll_flush(cx)
     }
 
-    // try to send a CloseStream command to Swarm, then close inner stream
-    async fn close2(&mut self) -> Result<(), io::Error> {
-        let inner = self.inner.take();
-        if let Some(mut inner) = inner {
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let this = &mut *self;
+
+        if let Some(mut inner) = this.inner.take() {
+            match this.ctrl.poll_ready(cx) {
+                Poll::Pending => {
+                    this.inner = Some(inner);
+                    return Poll::Pending;
+                }
+                Poll::Ready(_) => {}
+            }
             // to ask Swarm to remove myself
-            let cid = self.cid();
+            let cid = this.cid();
             let sid = StreamId(inner.id());
-            let _ = self.ctrl.send(SwarmControlCmd::CloseStream(cid, sid)).await;
-            inner.close2().await
+            let _ = this.ctrl.start_send(SwarmControlCmd::CloseStream(cid, sid));
+            Pin::new(&mut inner).poll_close(cx)
         } else {
-            Ok(())
+            Poll::Ready(Ok(()))
         }
     }
 }

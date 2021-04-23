@@ -172,13 +172,13 @@ pub trait Upgrader<C>: UpgradeInfo + Clone {
     /// method is called to start the handshake.
     ///
     /// The `info` is the identifier of the protocol, as produced by `protocol_info`.
-    async fn upgrade_inbound(self, socket: C, info: Self::Info) -> Result<Self::Output, TransportError>;
+    async fn upgrade_inbound(self, socket: C, info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError>;
 
     /// After we have determined that the remote supports one of the protocols we support, this
     /// method is called to start the handshake.
     ///
     /// The `info` is the identifier of the protocol, as produced by `protocol_info`.
-    async fn upgrade_outbound(self, socket: C, info: Self::Info) -> Result<Self::Output, TransportError>;
+    async fn upgrade_outbound(self, socket: C, info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError>;
 }
 
 #[cfg(test)]

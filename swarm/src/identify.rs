@@ -39,15 +39,14 @@
 
 use async_trait::async_trait;
 use futures::channel::{mpsc, oneshot};
-use futures::SinkExt;
+use futures::{AsyncWriteExt, SinkExt};
 use prost::Message;
 use std::convert::TryFrom;
 use std::{error::Error, io};
 
 use libp2prs_core::transport::TransportError;
 use libp2prs_core::upgrade::UpgradeInfo;
-use libp2prs_core::{Multiaddr, ProtocolId, PublicKey};
-use libp2prs_traits::{ReadEx, WriteEx};
+use libp2prs_core::{Multiaddr, ProtocolId, PublicKey, ReadEx, WriteEx};
 
 use crate::connection::Connection;
 use crate::control::SwarmControlCmd;
@@ -132,7 +131,7 @@ fn parse_proto_msg(msg: impl AsRef<[u8]>) -> Result<(IdentifyInfo, Multiaddr), i
 
 pub(crate) async fn process_message(mut stream: Substream) -> Result<(IdentifyInfo, Multiaddr), TransportError> {
     let buf = stream.read_one(4096).await?;
-    stream.close2().await?;
+    stream.close().await?;
 
     parse_proto_msg(&buf).map_err(io::Error::into)
 }
@@ -158,7 +157,7 @@ pub(crate) async fn produce_message(mut stream: Substream, info: IdentifyInfo) -
 
     stream.write_one(&bytes).await?;
 
-    stream.close2().await.map_err(io::Error::into)
+    stream.close().await.map_err(io::Error::into)
 }
 
 /// Represents a prototype for the identify protocol.

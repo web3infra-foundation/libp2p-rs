@@ -46,18 +46,35 @@ pub fn dht_cli_commands<'a>() -> Command<'a> {
         .usage("rm [<peer>] [<multi_address>]")
         .action(cli_rm_node);
 
-    let find_peer_cmd = Command::new_with_alias("findpeer", "fp")
-        .about("find peer through dht")
-        .usage("findpeer <peerid>")
-        .action(find_peer);
+    let find_peer_cmd = Command::new_with_alias("findnode", "fn")
+        .about("find node via dht")
+        .usage("findnode <peerid>")
+        .action(cli_find_peer);
     let get_value_cmd = Command::new_with_alias("getvalue", "gv")
-        .about("get value through dht")
+        .about("get value via dht")
         .usage("getvalue <key>")
-        .action(get_value);
+        .action(cli_get_value);
+    let put_value_cmd = Command::new_with_alias("putvalue", "pv")
+        .about("put value to dht")
+        .usage("putvalue <key> <value>")
+        .action(cli_put_value);
 
-    let dump_kbucket_cmd = Command::new_with_alias("dump", "dp")
+    let find_providers_cmd = Command::new_with_alias("findprov", "fp")
+        .about("find providers via dht")
+        .usage("findprov <key>")
+        .action(cli_find_providers);
+    let providing_cmd = Command::new_with_alias("provide", "pr")
+        .about("providing key to dht")
+        .usage("provide <key>")
+        .action(cli_providing);
+
+    let dump_providers_cmd = Command::new_with_alias("local-store", "ls")
+        .about("dump local-store")
+        .usage("local-store")
+        .action(cli_dump_storage);
+    let dump_kbucket_cmd = Command::new_with_alias("k-bucket", "kb")
         .about("dump k-buckets")
-        .usage("dump")
+        .usage("k-bucket")
         .action(cli_dump_kbuckets);
     let dump_messenger_cmd = Command::new_with_alias("messenger", "ms")
         .about("dump messengers")
@@ -75,11 +92,15 @@ pub fn dht_cli_commands<'a>() -> Command<'a> {
         .subcommand(bootstrap_cmd)
         .subcommand(add_node_cmd)
         .subcommand(rm_node_cmd)
+        .subcommand(dump_providers_cmd)
         .subcommand(dump_kbucket_cmd)
         .subcommand(dump_messenger_cmd)
         .subcommand(dump_stats_cmd)
         .subcommand(find_peer_cmd)
         .subcommand(get_value_cmd)
+        .subcommand(put_value_cmd)
+        .subcommand(find_providers_cmd)
+        .subcommand(providing_cmd)
 }
 
 fn handler(app: &App) -> Control {
@@ -98,8 +119,7 @@ fn cli_bootstrap(app: &App, _args: &[&str]) -> XcliResult {
     let mut kad = handler(app);
     task::block_on(async {
         println!("start bootstrapping...");
-        let r = kad.bootstrap_wait(vec![]).await;
-        println!("bootstrap done {:?}", r);
+        let _ = kad.bootstrap(vec![]).await;
     });
 
     Ok(CmdExeCode::Ok)
@@ -144,6 +164,30 @@ fn cli_rm_node(app: &App, args: &[&str]) -> XcliResult {
     Ok(CmdExeCode::Ok)
 }
 
+fn cli_dump_storage(app: &App, args: &[&str]) -> XcliResult {
+    let mut kad = handler(app);
+
+    let _verbose = !args.is_empty();
+
+    task::block_on(async {
+        let storage_stat = kad.dump_storage().await.unwrap();
+        println!("Providers: ");
+        for provider in storage_stat.provider {
+            println!("{} {:?} {:?}", provider.provider, provider.time_received, provider.key);
+        }
+        // println!("Key Value Publisher Expire");
+        println!("Records: ");
+        for record in storage_stat.record {
+            println!(
+                "{:?}, {:?}, {:?}, {:?}",
+                record.key, record.value, record.time_received, record.publisher
+            );
+        }
+    });
+
+    Ok(CmdExeCode::Ok)
+}
+
 fn cli_dump_kbuckets(app: &App, args: &[&str]) -> XcliResult {
     let mut kad = handler(app);
 
@@ -171,11 +215,20 @@ fn cli_dump_statistics(app: &App, _args: &[&str]) -> XcliResult {
 
     task::block_on(async {
         let stats = kad.dump_statistics().await.unwrap();
-        println!("Total refreshes : {}", stats.total_refreshes);
-        println!("Successful queries   : {}", stats.successful_queries);
-        println!("Timeout queries   : {}", stats.timeout_queries);
-        println!("Query details   : {:?}", stats.query);
-        println!("Kad rx messages : {:?}", stats.message_rx);
+        println!("Total refreshes        : {}", stats.total_refreshes);
+        println!("Iter query executed    : {}", stats.query.iter_query_executed);
+        println!("Iter query completed   : {}", stats.query.iter_query_completed);
+        println!("Iter query timeout     : {}", stats.query.iter_query_timeout);
+        println!("Fixed query executed   : {}", stats.query.fixed_query_executed);
+        println!("Fixed query completed  : {}", stats.query.fixed_query_completed);
+        let running = stats.query.iter_query_executed - stats.query.iter_query_completed - stats.query.iter_query_timeout;
+        println!("Iter query in progress : {}", running);
+        let running = stats.query.fixed_query_executed - stats.query.fixed_query_completed;
+        println!("Fixed query in progress: {}", running);
+        println!("Iter query details     : {:?}", stats.query.iterative);
+        println!("Fixed query tx error   : {}", stats.query.fixed_tx_error);
+        println!("Kad tx messages        : {:?}", stats.query.message_tx);
+        println!("Kad rx messages        : {:?}", stats.message_rx);
     });
 
     Ok(CmdExeCode::Ok)
@@ -195,7 +248,7 @@ fn cli_dump_messengers(app: &App, _args: &[&str]) -> XcliResult {
     Ok(CmdExeCode::Ok)
 }
 
-fn get_value(app: &App, args: &[&str]) -> XcliResult {
+fn cli_get_value(app: &App, args: &[&str]) -> XcliResult {
     let mut kad = handler(app);
 
     if args.len() != 1 {
@@ -212,7 +265,25 @@ fn get_value(app: &App, args: &[&str]) -> XcliResult {
     Ok(CmdExeCode::Ok)
 }
 
-fn find_peer(app: &App, args: &[&str]) -> XcliResult {
+fn cli_put_value(app: &App, args: &[&str]) -> XcliResult {
+    let mut kad = handler(app);
+
+    if args.len() != 2 {
+        return Err(XcliError::MismatchArgument(2, args.len()));
+    }
+
+    let key = args.get(0).cloned().unwrap();
+    let value = args.get(1).cloned().unwrap();
+
+    task::block_on(async {
+        let r = kad.put_value(Vec::from(key), Vec::from(value)).await;
+        println!("put value: {:?}", r.is_ok());
+    });
+
+    Ok(CmdExeCode::Ok)
+}
+
+fn cli_find_peer(app: &App, args: &[&str]) -> XcliResult {
     let mut kad = handler(app);
 
     if args.len() != 1 {
@@ -224,7 +295,41 @@ fn find_peer(app: &App, args: &[&str]) -> XcliResult {
 
     task::block_on(async {
         let r = kad.find_peer(&peer).await;
-        println!("FindPeer: {:?}", r);
+        println!("Find Node: {:?}", r);
+    });
+
+    Ok(CmdExeCode::Ok)
+}
+
+fn cli_find_providers(app: &App, args: &[&str]) -> XcliResult {
+    let mut kad = handler(app);
+
+    if args.len() != 1 {
+        return Err(XcliError::MismatchArgument(1, args.len()));
+    }
+
+    let key = args.get(0).unwrap();
+
+    task::block_on(async {
+        let r = kad.find_providers(key.as_bytes().into(), 0).await;
+        println!("Find Providers: {:?}", r);
+    });
+
+    Ok(CmdExeCode::Ok)
+}
+
+fn cli_providing(app: &App, args: &[&str]) -> XcliResult {
+    let mut kad = handler(app);
+
+    if args.len() != 1 {
+        return Err(XcliError::MismatchArgument(1, args.len()));
+    }
+
+    let key = args.get(0).unwrap();
+
+    task::block_on(async {
+        let r = kad.provide(key.as_bytes().into()).await;
+        println!("Providing: {:?}", r);
     });
 
     Ok(CmdExeCode::Ok)

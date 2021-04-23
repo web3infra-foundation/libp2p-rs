@@ -26,11 +26,11 @@
 //!
 
 use smallvec::SmallVec;
+use std::fmt;
 use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use std::{error::Error, fmt};
 
 use futures::channel::{mpsc, oneshot};
 use futures::prelude::*;
@@ -213,6 +213,7 @@ impl Connection {
                 }
                 Err(_) => SwarmEvent::StreamError {
                     cid,
+                    dir: Direction::Outbound,
                     error: TransportError::Internal,
                 },
             };
@@ -345,7 +346,15 @@ impl Connection {
                     }
                     Err(err) => {
                         // looks like the peer doesn't support the protocol
-                        log::info!("Ping protocol not supported: {:?}", err);
+                        log::info!("Ping protocol not supported: {:?} {:?}", cid, err);
+                        let _ = tx
+                            .send(SwarmEvent::StreamError {
+                                cid,
+                                dir: Direction::Outbound,
+                                error: TransportError::Internal,
+                            })
+                            .await;
+
                         Err(err)
                     }
                 };
@@ -397,7 +406,15 @@ impl Connection {
                 }
                 Err(err) => {
                     // looks like the peer doesn't support the protocol
-                    log::info!("Identify protocol not supported: {:?}", err);
+                    log::info!("Identify protocol not supported: {:?} {:?}", cid, err);
+                    let _ = tx
+                        .send(SwarmEvent::StreamError {
+                            cid,
+                            dir: Direction::Outbound,
+                            error: TransportError::Internal,
+                        })
+                        .await;
+
                     Err(err)
                 }
             };
@@ -450,8 +467,14 @@ impl Connection {
                 }
                 Err(err) => {
                     // looks like the peer doesn't support the protocol
-                    log::info!("Identify push protocol not supported: {:?}", err);
-                    //Err(err)
+                    log::info!("Identify push protocol not supported: {:?} {:?}", cid, err);
+                    let _ = tx
+                        .send(SwarmEvent::StreamError {
+                            cid,
+                            dir: Direction::Outbound,
+                            error: TransportError::Internal,
+                        })
+                        .await;
                 }
             }
 
@@ -542,24 +565,6 @@ async fn open_stream_internal(
         }
     }
 }
-
-/// Information about a connection limit.
-#[derive(Debug, Clone)]
-pub struct ConnectionLimit {
-    /// The maximum number of connections.
-    pub limit: usize,
-    /// The current number of connections.
-    pub current: usize,
-}
-
-impl fmt::Display for ConnectionLimit {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}/{}", self.current, self.limit)
-    }
-}
-
-/// A `ConnectionLimit` can represent an error if it has been exceeded.
-impl Error for ConnectionLimit {}
 
 /// Information about the network obtained by [`Network::info()`].
 #[derive(Debug)]

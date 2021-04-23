@@ -27,6 +27,7 @@ extern crate lazy_static;
 
 use std::{error::Error, io::Write};
 
+use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::multiaddr::protocol::Protocol;
 use libp2prs_core::transport::upgrade::TransportUpgrade;
@@ -37,7 +38,6 @@ use libp2prs_swarm::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandl
 use libp2prs_swarm::substream::Substream;
 use libp2prs_swarm::Swarm;
 use libp2prs_tcp::TcpConfig;
-use libp2prs_traits::{ReadEx, WriteEx};
 use libp2prs_yamux as yamux;
 use std::str::FromStr;
 use structopt::StructOpt;
@@ -60,9 +60,12 @@ fn main() {
     let options = Config::from_args();
     if options.client_or_server == "server" && options.source_port.is_some() {
         log::info!("Starting server ......");
+        // cargo run --color=always --package libp2p-rs --example chat -- -s 8787 server
         run_server();
     } else if options.client_or_server == "client" && options.dest_multiaddr.is_some() {
         log::info!("Starting client ......");
+        // cargo run --color=always --package libp2p-rs --example chat -- \
+        // -d /ip4/127.0.0.1/tcp/8787/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN client
         run_client();
     } else {
         panic!("param error")
@@ -76,25 +79,25 @@ const PROTO_NAME: &[u8] = b"/chat/1.0.0";
 
 async fn write_data<C>(mut stream: C)
 where
-    C: ReadEx + WriteEx,
+    C: AsyncWrite + Unpin,
 {
     loop {
         print!("> ");
         let _ = std::io::stdout().flush();
         let mut input = String::new();
         let n = std::io::stdin().read_line(&mut input).unwrap();
-        let _ = stream.write_all2(&input.as_bytes()[0..n]).await;
-        let _ = stream.flush2().await;
+        let _ = stream.write_all(&input.as_bytes()[0..n]).await;
+        let _ = stream.flush().await;
     }
 }
 
 async fn read_data<C>(mut stream: C)
 where
-    C: ReadEx + WriteEx,
+    C: AsyncRead + Unpin,
 {
     loop {
         let mut buf = [0; 4096];
-        let n = stream.read2(&mut buf).await.unwrap();
+        let n = stream.read(&mut buf).await.unwrap();
         let str = String::from_utf8_lossy(&buf[0..n]);
         if str == "" {
             return;
@@ -130,16 +133,15 @@ impl Notifiee for ChatHandler {}
 #[async_trait]
 impl ProtocolHandler for ChatHandler {
     async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn Error>> {
-        let stream = stream;
         log::trace!("ChatHandler handling inbound {:?}", stream);
-        let s1 = stream.clone();
+        let (r, w) = stream.split();
 
         task::spawn(async {
-            read_data(stream).await;
+            read_data(r).await;
         });
 
         task::spawn(async {
-            write_data(s1).await;
+            write_data(w).await;
         });
         Ok(())
     }
@@ -155,7 +157,7 @@ fn run_server() {
     let options = Config::from_args();
     let listen_addr = format!("/ip4/127.0.0.1/tcp/{}", &(options.source_port.unwrap())).parse().unwrap();
     let sec = secio::Config::new(keys.clone());
-    let mux = yamux::Config::new();
+    let mux = yamux::Config::server();
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
 
     let mut swarm = Swarm::new(keys.public()).with_transport(Box::new(tu)).with_protocol(Chat);
@@ -180,7 +182,7 @@ fn run_client() {
         _ => panic!("expect p2p protocol"),
     };
     let sec = secio::Config::new(keys.clone());
-    let mux = yamux::Config::new();
+    let mux = yamux::Config::client();
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
 
     let swarm = Swarm::new(keys.public()).with_transport(Box::new(tu));
@@ -196,14 +198,13 @@ fn run_client() {
         let stream = control.new_stream(remote_peer_id, vec![PROTO_NAME.into()]).await.unwrap();
 
         log::info!("stream {:?} opened, writing something...", stream);
-        let s1 = stream.clone();
-        let s2 = stream.clone();
+        let (r, w) = stream.split();
         task::spawn(async {
-            read_data(s1).await;
+            read_data(r).await;
         });
 
         task::spawn(async {
-            write_data(s2).await;
+            write_data(w).await;
         });
 
         loop {

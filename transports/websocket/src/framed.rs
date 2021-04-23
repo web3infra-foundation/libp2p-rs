@@ -28,7 +28,7 @@ use futures::prelude::*;
 use libp2prs_core::transport::{ConnectionInfo, ListenerEvent};
 use libp2prs_core::transport::{IListener, ITransport};
 use libp2prs_core::{
-    either::AsyncEitherOutput,
+    either::EitherOutput,
     multiaddr::{protocol, protocol::Protocol, Multiaddr},
     transport::{TransportError, TransportListener},
     Transport,
@@ -171,11 +171,11 @@ impl TransportListener for WsTransListener {
                 WsError::Tls(tls::Error::from(e))
             })?;
 
-            let stream: TlsOrPlain<_> = AsyncEitherOutput::A(AsyncEitherOutput::B(TlsServerStream(stream)));
+            let stream: TlsOrPlain<_> = EitherOutput::A(EitherOutput::B(TlsServerStream(stream)));
             stream
         } else {
             // continue with plain stream
-            AsyncEitherOutput::B(raw_stream)
+            EitherOutput::B(raw_stream)
         };
 
         trace!("[Server] receiving websocket handshake request from {}", remote2);
@@ -283,7 +283,8 @@ impl Transport for WsConfig {
 impl WsConfig {
     /// Attempty to dial the given address and perform a websocket handshake.
     async fn dial_once(&mut self, address: Multiaddr) -> Result<Either<String, Connection<TlsOrPlain<TcpTransStream>>>, WsError> {
-        trace!("[Client] dial address: {}", address);
+        // trace!("[Client] dial address: {}", address);
+        debug!("[Client] dial address: {}", address);
         let (host_port, dns_name) = host_and_dnsname(&address)?;
         if dns_name.is_some() {
             trace!("[Client] host_port: {:?}  dns_name:{:?}", host_port, dns_name.clone().unwrap());
@@ -306,7 +307,8 @@ impl WsConfig {
         };
 
         let raw_stream = self.transport.dial(inner_addr).await.map_err(WsError::Transport)?;
-        trace!("[Client] connected to {}", address);
+        // trace!("[Client] connected to {}", address);
+        debug!("[Client] connected to {}", address);
         let local_addr = raw_stream.local_multiaddr();
         let remote_addr = raw_stream.remote_multiaddr();
         let stream = if use_tls {
@@ -326,14 +328,15 @@ impl WsConfig {
 
             let stream = TlsClientStream(stream);
 
-            let stream: TlsOrPlain<_> = AsyncEitherOutput::A(AsyncEitherOutput::A(stream));
+            let stream: TlsOrPlain<_> = EitherOutput::A(EitherOutput::A(stream));
             stream
         } else {
             // continue with plain stream
-            AsyncEitherOutput::B(raw_stream)
+            EitherOutput::B(raw_stream)
         };
 
-        trace!("[Client] sending websocket handshake request to {}", address);
+        // trace!("[Client] sending websocket handshake request to {}", address);
+        debug!("[Client] sending websocket handshake request to {}", address);
 
         let mut client = handshake::Client::new(stream, &host_port, path.as_ref());
 

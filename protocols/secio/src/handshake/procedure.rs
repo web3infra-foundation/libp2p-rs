@@ -26,6 +26,8 @@
 use log::{debug, trace};
 use std::cmp::Ordering;
 
+use futures::{AsyncRead, AsyncWrite, AsyncWriteExt};
+
 use crate::{
     codec::{secure_stream::SecureStream, Hmac},
     crypto::{cipher::CipherType, new_stream, BoxStreamCipher, CryptoMode},
@@ -37,9 +39,8 @@ use crate::{
 };
 
 use libp2prs_core::identity::*;
-use libp2prs_core::PublicKey;
+use libp2prs_core::{PublicKey, ReadEx, WriteEx};
 
-use libp2prs_traits::{ReadEx, SplittableReadWrite, WriteEx};
 use prost::Message;
 
 /// Performs a handshake on the given socket.
@@ -51,27 +52,23 @@ use prost::Message;
 /// On success, returns an object that implements the `WriteEx` and `ReadEx` trait,
 /// plus the public key of the remote, plus the ephemeral public key used during
 /// negotiation.
-pub(crate) async fn handshake<T>(
-    socket: T,
-    config: Config,
-) -> Result<(SecureStream<T::Reader, T::Writer>, PublicKey, EphemeralPublicKey), SecioError>
+pub(crate) async fn handshake<T>(mut socket: T, config: Config) -> Result<(SecureStream<T>, PublicKey, EphemeralPublicKey), SecioError>
 where
-    T: SplittableReadWrite,
+    T: AsyncRead + AsyncWrite + Send + Unpin + 'static,
 {
     let max_frame_len = config.max_frame_length;
     // The handshake messages all start with a 4-bytes message length prefix.
     // let mut socket = LengthPrefixSocket::new(socket, config.max_frame_length);
-    let (mut reader, mut writer) = socket.split();
 
     // Generate our nonce.
     let local_context = HandshakeContext::new(config).with_local();
     trace!("starting handshake; local nonce = {:?}", local_context.state.nonce);
 
     trace!("sending proposition to remote");
-    writer.write_one_fixed(&local_context.state.proposition_bytes).await?;
+    socket.write_one_fixed(&local_context.state.proposition_bytes).await?;
 
     // Receive the remote's proposition.
-    let remote_proposition = reader.read_one_fixed(max_frame_len).await?;
+    let remote_proposition = socket.read_one_fixed(max_frame_len).await?;
     let remote_context = local_context.with_remote(remote_proposition)?;
 
     trace!(
@@ -114,10 +111,10 @@ where
     // Send our local `Exchange`.
     trace!("sending exchange to remote");
 
-    writer.write_one_fixed(&local_exchanges).await?;
+    socket.write_one_fixed(&local_exchanges).await?;
 
     // Receive the remote's `Exchange`.
-    let raw_exchanges = reader.read_one_fixed(max_frame_len).await?;
+    let raw_exchanges = socket.read_one_fixed(max_frame_len).await?;
     let remote_exchanges = match Exchange::decode(&raw_exchanges[..]) {
         Ok(e) => e,
         Err(err) => {
@@ -196,8 +193,7 @@ where
     );
 
     let mut secure_stream = SecureStream::new(
-        reader,
-        writer,
+        socket,
         max_frame_len,
         decode_cipher,
         decode_hmac,
@@ -208,7 +204,8 @@ where
 
     // We send back their nonce to check if the connection works.
     trace!("checking encryption by sending back remote's nonce");
-    secure_stream.write2(&pub_ephemeral_context.state.remote.nonce).await?;
+    secure_stream.write_all(&pub_ephemeral_context.state.remote.nonce).await?;
+    secure_stream.flush().await?;
     secure_stream.verify_nonce().await?;
 
     trace!(
@@ -275,14 +272,13 @@ mod tests {
     use crate::{codec::Hmac, Config, Digest};
 
     use bytes::BytesMut;
-    use futures::channel;
+    use futures::{channel, AsyncReadExt, AsyncWriteExt};
     use libp2prs_runtime::{
         net::{TcpListener, TcpStream},
         task,
     };
     //use futures::prelude::*;
     use libp2prs_core::identity::Keypair;
-    use libp2prs_traits::{ReadEx, WriteEx};
 
     fn handshake_with_self_success(config_1: Config, config_2: Config, data: &'static [u8]) {
         let (sender, receiver) = channel::oneshot::channel::<bytes::BytesMut>();
@@ -295,17 +291,19 @@ mod tests {
             let (connect, _) = listener.accept().await.unwrap();
             let (mut handle, _, _) = config_1.handshake(connect).await.unwrap();
             let mut data = [0u8; 11];
-            handle.read2(&mut data).await.unwrap();
-            handle.write2(&data).await.unwrap();
+            handle.read_exact(&mut data).await.unwrap();
+            handle.write_all(&data).await.unwrap();
+            handle.flush().await.unwrap();
         });
 
         task::spawn(async move {
             let listener_addr = addr_receiver.await.unwrap();
             let connect = TcpStream::connect(&listener_addr).await.unwrap();
             let (mut handle, _, _) = config_2.handshake(connect).await.unwrap();
-            handle.write2(data).await.unwrap();
+            handle.write_all(data).await.unwrap();
+            handle.flush().await.unwrap();
             let mut data = [0u8; 11];
-            handle.read2(&mut data).await.unwrap();
+            handle.read_exact(&mut data).await.unwrap();
             let _res = sender.send(BytesMut::from(&data[..]));
         });
 

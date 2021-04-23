@@ -105,7 +105,7 @@ use crate::{
     pause::Pausable,
 };
 use control::Control;
-use libp2prs_traits::{SplitEx, SplittableReadWrite};
+use futures::io::WriteHalf;
 use nohash_hasher::IntMap;
 use std::collections::VecDeque;
 use std::fmt;
@@ -128,9 +128,9 @@ pub enum ControlCommand {
 #[derive(Debug)]
 pub(crate) enum StreamCommand {
     /// A new frame should be sent to the remote.
-    SendFrame(Frame, oneshot::Sender<()>),
+    SendFrame(Frame),
     /// Close a stream.
-    CloseStream(Frame, oneshot::Sender<()>),
+    CloseStream(Frame),
     /// Reset a stream.
     ResetStream(Frame, oneshot::Sender<()>),
 }
@@ -195,10 +195,10 @@ const RECEIVE_TIMEOUT: Duration = Duration::from_secs(5);
 
 type Result<T> = std::result::Result<T, ConnectionError>;
 
-pub struct Connection<T: SplitEx> {
+pub struct Connection<T> {
     id: Id,
     reader: Pin<Box<dyn FusedStream<Item = std::result::Result<Frame, FrameDecodeError>> + Send>>,
-    writer: io::IO<T::Writer>,
+    writer: io::IO<WriteHalf<T>>,
     is_closed: bool,
     shutdown: Shutdown,
     next_stream_id: u32,
@@ -212,7 +212,7 @@ pub struct Connection<T: SplitEx> {
     pending_streams: VecDeque<stream::Stream>,
 }
 
-impl<T: SplittableReadWrite> Connection<T> {
+impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> Connection<T> {
     /// Create a new `Connection` from the given I/O resource.
     pub fn new(socket: T) -> Self {
         let id = Id::random();
@@ -303,16 +303,8 @@ impl<T: SplittableReadWrite> Connection<T> {
             self.stream_receiver.close();
             while self.stream_receiver.next().await.is_some() {
                 while let Some(cmd) = self.stream_receiver.next().await {
-                    match cmd {
-                        StreamCommand::SendFrame(_, reply) => {
-                            let _ = reply.send(());
-                        }
-                        StreamCommand::CloseStream(_, reply) => {
-                            let _ = reply.send(());
-                        }
-                        StreamCommand::ResetStream(_, reply) => {
-                            let _ = reply.send(());
-                        }
+                    if let StreamCommand::ResetStream(_, reply) = cmd {
+                        let _ = reply.send(());
                     }
                     // drop it
                     log::debug!("drop stream receiver frame");
@@ -445,21 +437,18 @@ impl<T: SplittableReadWrite> Connection<T> {
     /// Process a command from one of our `Stream`s.
     async fn on_stream_command(&mut self, cmd: Option<StreamCommand>) -> Result<()> {
         match cmd {
-            Some(StreamCommand::SendFrame(frame, reply)) => {
+            Some(StreamCommand::SendFrame(frame)) => {
                 let stream_id = frame.stream_id();
                 if let Some(stat) = self.streams_stat.get(&stream_id) {
                     if stat.can_write() {
                         log::trace!("{}: sending: {}", self.id, frame.header());
                         self.writer.send_frame(&frame).await.or(Err(ConnectionError::Closed))?;
-
-                        let _ = reply.send(());
                     } else {
                         log::trace!("{}: stream {} have been removed", self.id, stream_id);
-                        drop(reply);
                     }
                 }
             }
-            Some(StreamCommand::CloseStream(frame, reply)) => {
+            Some(StreamCommand::CloseStream(frame)) => {
                 let stream_id = frame.stream_id();
                 log::debug!("{}: closing stream {} of {}", self.id, stream_id, self);
                 // flag to remove stat from streams_stat
@@ -480,7 +469,6 @@ impl<T: SplittableReadWrite> Connection<T> {
                 if rm {
                     self.streams_stat.remove(&stream_id);
                 }
-                let _ = reply.send(());
             }
             Some(StreamCommand::ResetStream(frame, reply)) => {
                 let stream_id = frame.stream_id();
@@ -593,13 +581,13 @@ where
     }
 }
 
-impl<T: SplitEx> fmt::Display for Connection<T> {
+impl<T> fmt::Display for Connection<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "(Connection {} (streams {}))", self.id, self.streams.len())
     }
 }
 
-impl<T: SplitEx> Connection<T> {
+impl<T> Connection<T> {
     // next_stream_id is only used to get stream id when open stream
     fn next_stream_id(&mut self) -> Result<StreamID> {
         let proposed = StreamID::new(self.next_stream_id, true);

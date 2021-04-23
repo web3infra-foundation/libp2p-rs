@@ -52,17 +52,16 @@
 //! implementation of `StreamMuxer` to control everything that happens on the wire.
 //!
 //! The `Output` associated type of the `StreamMuxer` is a trait object `IReadWrite`, which is
-//! in fact ReadEx + WriteEx + StreamInfo + Unpin.
+//! in fact AsyncRead + AsyncWrite + StreamInfo + Unpin.
 //!
 //! IStreamMuxer is the trait object of StreamMuxer.
 
 use async_trait::async_trait;
 use futures::future::BoxFuture;
-use libp2prs_traits::{ReadEx, WriteEx};
 
 use crate::secure_io::SecureInfo;
 use crate::transport::{ConnectionInfo, TransportError};
-use futures::io::Error;
+use futures::{AsyncRead, AsyncWrite};
 
 /// StreamInfo returns the information of a substream opened by stream muxer.
 ///
@@ -76,38 +75,41 @@ pub trait StreamInfo: Send {
 /// by Swarm Substream.
 /// `StreamInfo` must be supported.
 #[async_trait]
-pub trait ReadWriteEx: ReadEx + WriteEx + StreamInfo + Unpin + std::fmt::Debug {
+pub trait ReadWriteEx: AsyncRead + AsyncWrite + StreamInfo + Unpin + std::fmt::Debug {
     fn box_clone(&self) -> IReadWrite;
 }
 
 pub type IReadWrite = Box<dyn ReadWriteEx>;
 
+/*
 impl Clone for IReadWrite {
     fn clone(&self) -> Self {
         self.box_clone()
     }
 }
+ */
 
-#[async_trait]
-impl ReadEx for IReadWrite {
-    async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
-        ReadEx::read2(&mut **self, buf).await
+/*
+impl AsyncRead for IReadWrite {
+    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<io::Result<usize>> {
+        AsyncRead::poll_read(Pin::new(&mut **self), cx, buf)
     }
 }
-#[async_trait]
-impl WriteEx for IReadWrite {
-    async fn write2(&mut self, buf: &[u8]) -> Result<usize, Error> {
-        WriteEx::write2(&mut **self, buf).await
+
+impl AsyncWrite for IReadWrite {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
+        AsyncWrite::poll_write(Pin::new(&mut **self), cx, buf)
     }
 
-    async fn flush2(&mut self) -> Result<(), Error> {
-        WriteEx::flush2(&mut **self).await
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        AsyncWrite::poll_flush(Pin::new(&mut **self), cx)
     }
 
-    async fn close2(&mut self) -> Result<(), Error> {
-        WriteEx::close2(&mut **self).await
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        AsyncWrite::poll_close(Pin::new(&mut **self), cx)
     }
 }
+ */
 
 #[async_trait]
 pub trait StreamMuxer {

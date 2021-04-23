@@ -19,6 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use async_trait::async_trait;
+use futures::{AsyncReadExt, AsyncWriteExt};
 use std::{error::Error, time::Duration};
 #[macro_use]
 extern crate lazy_static;
@@ -40,7 +41,6 @@ use libp2prs_swarm::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandl
 use libp2prs_swarm::substream::Substream;
 use libp2prs_swarm::{DummyProtocol, Swarm};
 use libp2prs_tcp::TcpConfig;
-use libp2prs_traits::{ReadEx, WriteEx};
 use libp2prs_websocket::WsConfig;
 use libp2prs_yamux as yamux;
 
@@ -104,9 +104,9 @@ fn run_server() {
             log::trace!("MyProtocol handling inbound {:?}", stream);
             let mut msg = vec![0; 4096];
             loop {
-                let n = stream.read2(&mut msg).await?;
+                let n = stream.read(&mut msg).await?;
                 log::info!("received: {:?}", &msg[..n]);
-                stream.write2(&msg[..n]).await?;
+                stream.write(&msg[..n]).await?;
             }
         }
 
@@ -181,17 +181,17 @@ fn run_client() {
             // method 2
             let mut stream = control.new_stream(remote_peer_id, vec![PROTO_NAME.into()]).await.unwrap();
             log::info!("stream {:?} opened, writing something...", stream);
-            let _ = stream.write_all2(b"hello").await;
+            let _ = stream.write_all(b"hello").await;
 
             let mut buf = [0; 4096];
-            let n = stream.read2(&mut buf).await.unwrap();
+            let n = stream.read(&mut buf).await.unwrap();
             let str = String::from_utf8_lossy(&buf[0..n]);
 
             log::info!("======================{}", str);
 
             task::sleep(Duration::from_secs(1)).await;
 
-            let _ = stream.close2().await;
+            let _ = stream.close().await;
 
             log::info!("shutdown is completed");
         }

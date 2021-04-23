@@ -1,6 +1,6 @@
 [package]
 name = "libp2prs-multiaddr"
-version = "0.2.2"
+version = "0.3.0"
 license = "MIT"
 description = "Implementation of the multiaddr format"
 authors = ["Netwarps Technologies admin@paradeum.com"]

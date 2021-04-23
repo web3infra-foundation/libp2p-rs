@@ -21,18 +21,22 @@
 
 mod error;
 mod handshake;
-mod secure_stream;
+// mod secure_stream;
 
 use crate::error::PlaintextError;
 use crate::handshake::handshake_plaintext::Remote;
-use crate::secure_stream::{SecureStream, SecureStreamReader, SecureStreamWriter};
+// use crate::secure_stream::{SecureStream, SecureStreamReader, SecureStreamWriter};
+use futures::{AsyncRead, AsyncWrite};
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::secure_io::SecureInfo;
 use libp2prs_core::transport::{ConnectionInfo, TransportError};
 use libp2prs_core::upgrade::{UpgradeInfo, Upgrader};
 use libp2prs_core::{Multiaddr, PeerId, PublicKey};
-use libp2prs_traits::{ReadEx, SplitEx, SplittableReadWrite, WriteEx};
-use std::io;
+use std::{
+    io,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use async_trait::async_trait;
 
@@ -62,9 +66,9 @@ impl PlainTextConfig {
     ///
     /// On success, produces a `SecureStream` that can then be used to encode/decode
     /// communications, plus the remote info that contains public key and peer_id
-    pub async fn handshake<T>(self, socket: T) -> Result<(SecureStream<T::Reader, T::Writer>, Remote), PlaintextError>
+    pub async fn handshake<T>(self, socket: T) -> Result<(T, Remote), PlaintextError>
     where
-        T: SplittableReadWrite,
+        T: AsyncRead + AsyncWrite + Send + Unpin + 'static,
     {
         handshake::handshake_plaintext::handshake(socket, self).await
     }
@@ -81,7 +85,7 @@ impl UpgradeInfo for PlainTextConfig {
 #[async_trait]
 impl<T> Upgrader<T> for PlainTextConfig
 where
-    T: ConnectionInfo + SplittableReadWrite,
+    T: ConnectionInfo + AsyncRead + AsyncWrite + Send + Unpin + 'static,
 {
     type Output = PlainTextOutput<T>;
 
@@ -96,7 +100,7 @@ where
 
 async fn make_secure_output<T>(config: PlainTextConfig, socket: T) -> Result<PlainTextOutput<T>, TransportError>
 where
-    T: ConnectionInfo + SplittableReadWrite,
+    T: ConnectionInfo + AsyncRead + AsyncWrite + Send + Unpin + 'static,
 {
     let pri_key = config.key.clone();
     let la = socket.local_multiaddr();
@@ -115,9 +119,11 @@ where
 }
 
 /// Output of the plaintext protocol. It implements the SecureStream trait
-pub struct PlainTextOutput<T: SplitEx> {
+#[pin_project::pin_project]
+pub struct PlainTextOutput<T> {
     /// The encrypted stream, actually not any encrypt action.
-    pub stream: SecureStream<T::Reader, T::Writer>,
+    #[pin]
+    pub stream: T,
     /// The private key of the local
     pub local_priv_key: Keypair,
     /// For convenience, the local peer ID, generated from local pub key
@@ -132,7 +138,7 @@ pub struct PlainTextOutput<T: SplitEx> {
     ra: Multiaddr,
 }
 
-impl<T: SplitEx> SecureInfo for PlainTextOutput<T> {
+impl<T> SecureInfo for PlainTextOutput<T> {
     fn local_peer(&self) -> PeerId {
         self.local_peer_id
     }
@@ -150,7 +156,7 @@ impl<T: SplitEx> SecureInfo for PlainTextOutput<T> {
     }
 }
 
-impl<T: SplitEx> ConnectionInfo for PlainTextOutput<T> {
+impl<T: Send> ConnectionInfo for PlainTextOutput<T> {
     fn local_multiaddr(&self) -> Multiaddr {
         self.la.clone()
     }
@@ -159,35 +165,27 @@ impl<T: SplitEx> ConnectionInfo for PlainTextOutput<T> {
     }
 }
 
-#[async_trait]
-impl<S: SplittableReadWrite> ReadEx for PlainTextOutput<S> {
-    async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
-        self.stream.read2(buf).await
+impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> AsyncRead for PlainTextOutput<T> {
+    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<io::Result<usize>> {
+        let this = self.project();
+        this.stream.poll_read(cx, buf)
     }
 }
 
-#[async_trait]
-impl<S: SplittableReadWrite> WriteEx for PlainTextOutput<S> {
-    async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
-        self.stream.write2(buf).await
+impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> AsyncWrite for PlainTextOutput<T> {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
+        let this = self.project();
+        this.stream.poll_write(cx, buf)
     }
 
-    async fn flush2(&mut self) -> Result<(), io::Error> {
-        self.stream.flush2().await
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let this = self.project();
+        this.stream.poll_flush(cx)
     }
 
-    async fn close2(&mut self) -> Result<(), io::Error> {
-        self.stream.close2().await
-    }
-}
-
-impl<S: SplittableReadWrite> SplitEx for PlainTextOutput<S> {
-    type Reader = SecureStreamReader<S::Reader>;
-    type Writer = SecureStreamWriter<S::Writer>;
-
-    fn split(self) -> (Self::Reader, Self::Writer) {
-        let (r, w) = self.stream.split();
-        (r, w)
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let this = self.project();
+        this.stream.poll_close(cx)
     }
 }
 

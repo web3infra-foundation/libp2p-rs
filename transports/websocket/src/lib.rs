@@ -21,17 +21,20 @@
 
 //! Implementation of the libp2p `Transport` trait for Websockets.
 
+// pub mod connection;
 pub mod connection;
 pub mod error;
 pub mod framed;
 pub mod tls;
 
-use crate::connection::TlsOrPlain;
 use async_trait::async_trait;
+
 use libp2prs_core::transport::{IListener, ITransport};
 use libp2prs_core::{multiaddr::Multiaddr, transport::TransportError, Transport};
 use libp2prs_dns::DnsConfig;
 use libp2prs_tcp::{TcpConfig, TcpTransStream};
+
+use crate::connection::TlsOrPlain;
 
 /// A Websocket transport.
 #[derive(Clone)]
@@ -120,14 +123,15 @@ impl Transport for WsConfig {
 #[cfg(test)]
 mod tests {
     use super::WsConfig;
+    use futures::{AsyncReadExt, AsyncWriteExt};
     use libp2prs_core::transport::ListenerEvent;
     use libp2prs_core::Multiaddr;
     use libp2prs_core::Transport;
     use libp2prs_runtime::task;
-    use libp2prs_traits::{ReadEx, WriteEx};
 
     #[test]
     fn dialer_connects_to_listener_ipv4() {
+        env_logger::builder().is_test(true).filter_level(log::LevelFilter::Debug).init();
         let listen_addr = "/ip4/127.0.0.1/tcp/38099/ws".parse().unwrap();
         let dial_addr = "/ip4/127.0.0.1/tcp/38099/ws".parse().unwrap();
         let s = task::spawn(async { server(listen_addr).await });
@@ -172,7 +176,9 @@ mod tests {
             _ => panic!("unreachable"),
         };
         let mut buf = vec![0_u8; 3];
-        stream.read_exact2(&mut buf).await.expect("read_exact");
+
+        stream.read_exact(&mut buf).await.expect("read_exact");
+        log::info!("{:?}", buf);
         vec![1, 23, 5] == buf
     }
 
@@ -188,7 +194,8 @@ mod tests {
         let mut conn = conn.expect("");
         let data = vec![1_u8, 23, 5];
         log::debug!("[Client] write data {:?}", data);
-        let r = conn.write_all2(&data).await;
+        conn.write_all(&data).await.expect("write all");
+        let r = conn.close().await;
         r.is_ok()
     }
 }

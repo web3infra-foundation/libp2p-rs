@@ -18,13 +18,11 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+use futures::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use std::convert::TryFrom as _;
 use std::{fmt, io};
 
-use super::{
-    protocol::{Message, MessageIO, Protocol, ProtocolError, Version},
-    ReadEx, WriteEx,
-};
+use super::protocol::{Message, MessageIO, Protocol, ProtocolError, Version};
 
 pub struct Negotiator<TProto> {
     protocols: Vec<(TProto, Protocol)>,
@@ -67,7 +65,7 @@ impl<TProto: AsRef<[u8]> + Clone + fmt::Debug> Negotiator<TProto> {
 
     pub async fn negotiate<TSocket>(&self, socket: TSocket) -> Result<(TProto, TSocket), NegotiationError>
     where
-        TSocket: ReadEx + WriteEx + Unpin,
+        TSocket: AsyncRead + AsyncWrite + Unpin,
     {
         let mut io = MessageIO::new(socket);
         let msg = io.recv_message().await?;
@@ -117,7 +115,7 @@ impl<TProto: AsRef<[u8]> + Clone + fmt::Debug> Negotiator<TProto> {
 
     pub async fn select_one<TSocket>(&self, socket: TSocket) -> Result<(TProto, TSocket), NegotiationError>
     where
-        TSocket: ReadEx + WriteEx + Unpin,
+        TSocket: AsyncRead + AsyncWrite + Unpin,
     {
         let mut io = MessageIO::new(socket);
 
@@ -125,6 +123,7 @@ impl<TProto: AsRef<[u8]> + Clone + fmt::Debug> Negotiator<TProto> {
         io.send_message(Message::Header(version)).await?;
 
         let msg = io.recv_message().await?;
+
         if msg != Message::Header(version) {
             return Err(ProtocolError::InvalidMessage.into());
         }
@@ -150,6 +149,7 @@ impl<TProto: AsRef<[u8]> + Clone + fmt::Debug> Negotiator<TProto> {
                 _ => return Err(ProtocolError::InvalidMessage.into()),
             }
         }
+        let _ = io.into_inner().close().await;
         Err(NegotiationError::Failed(cause))
     }
 }

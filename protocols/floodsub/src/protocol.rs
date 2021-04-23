@@ -19,6 +19,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+use futures::AsyncWriteExt;
 use prost::Message;
 use std::{error::Error, fmt, io};
 
@@ -26,14 +27,13 @@ use crate::{rpc_proto, Topic, FLOOD_SUB_ID};
 use async_trait::async_trait;
 use futures::{channel::mpsc, SinkExt};
 use libp2prs_core::upgrade::UpgradeInfo;
-use libp2prs_core::{PeerId, ProtocolId};
+use libp2prs_core::{PeerId, ProtocolId, ReadEx};
 use libp2prs_swarm::protocol_handler::Notifiee;
 use libp2prs_swarm::{
     connection::Connection,
     protocol_handler::{IProtocolHandler, ProtocolHandler},
     substream::Substream,
 };
-use libp2prs_traits::{ReadEx, WriteEx};
 
 pub(crate) enum PeerEvent {
     NewPeer(PeerId),
@@ -81,7 +81,7 @@ impl ProtocolHandler for Handler {
                 Ok(p) => p,
                 Err(e) => {
                     if e.kind() == io::ErrorKind::UnexpectedEof {
-                        stream.close2().await?;
+                        stream.close().await?;
                     }
                     return Err(Box::new(e));
                 }

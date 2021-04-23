@@ -18,6 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+use futures::{AsyncReadExt, AsyncWriteExt};
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::transport::memory::MemoryTransport;
 use libp2prs_core::transport::upgrade::TransportUpgrade;
@@ -65,12 +66,11 @@ async fn entry() {
                         loop {
                             if let Ok(stream) = stream_muxer.accept_stream().await {
                                 log::info!("server accepted a new substream {:?}", stream);
-                                let mut stream_r = stream.clone();
-                                let mut stream_w = stream.clone();
+                                let (mut stream_r, mut stream_w) = stream.split();
                                 task::spawn(async move {
                                     let mut buf = [0; 4096];
-                                    let n = stream_r.read2(&mut buf).await.unwrap();
-                                    let _ = stream_w.write_all2(&buf[0..n]).await;
+                                    let n = stream_r.read(&mut buf).await.unwrap();
+                                    let _ = stream_w.write_all(&buf[0..n]).await;
                                 });
                             } else {
                                 log::warn!("stream_muxer {:?} closed", stream_muxer);
@@ -110,11 +110,11 @@ async fn entry() {
 
                     log::info!("client{}/{} got a new substream {:?}", i, j, socket);
 
-                    socket.write_all2(&msg).await.unwrap();
-                    socket.read_exact2(&mut msg).await.unwrap();
+                    socket.write_all(&msg).await.unwrap();
+                    socket.read_exact(&mut msg).await.unwrap();
                     log::info!("client{}/{} got {:?}", i, j, msg);
 
-                    socket.close2().await.unwrap();
+                    socket.close().await.unwrap();
                 }
 
                 stream_muxer.close().await.expect("close error");

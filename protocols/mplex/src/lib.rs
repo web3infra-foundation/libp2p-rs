@@ -24,14 +24,13 @@ mod frame;
 mod pause;
 
 use async_trait::async_trait;
-use futures::FutureExt;
+use futures::{AsyncRead, AsyncWrite, FutureExt};
 use log::{info, trace};
 use std::fmt;
 
 use libp2prs_core::muxing::{IReadWrite, IStreamMuxer, ReadWriteEx, StreamInfo, StreamMuxer, StreamMuxerEx};
 use libp2prs_core::transport::{ConnectionInfo, TransportError};
 use libp2prs_core::upgrade::{UpgradeInfo, Upgrader};
-use libp2prs_traits::{SplitEx, SplittableReadWrite};
 
 use crate::connection::Connection;
 use connection::{control::Control, stream::Stream, Id};
@@ -40,6 +39,8 @@ use futures::future::BoxFuture;
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::secure_io::SecureInfo;
 use libp2prs_core::{Multiaddr, PeerId, PublicKey};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct Config {}
@@ -60,9 +61,9 @@ impl Default for Config {
 ///
 /// This implementation isn't capable of detecting when the underlying socket changes its address,
 /// and no [`StreamMuxerEvent::AddressChange`] event is ever emitted.
-pub struct Mplex<C: SplitEx> {
+pub struct Mplex<C> {
     /// The [`futures::stream::Stream`] of incoming substreams.
-    conn: Option<Connection<C>>,
+    conn: Arc<Mutex<Option<Connection<C>>>>,
     /// Handle to control the connection.
     ctrl: Control,
     /// For debug purpose
@@ -84,10 +85,10 @@ pub struct Mplex<C: SplitEx> {
     pub remote_peer_id: PeerId,
 }
 
-impl<C: SplitEx> Clone for Mplex<C> {
+impl<C> Clone for Mplex<C> {
     fn clone(&self) -> Self {
         Mplex {
-            conn: None,
+            conn: self.conn.clone(),
             ctrl: self.ctrl.clone(),
             id: self.id,
             la: self.la.clone(),
@@ -100,7 +101,7 @@ impl<C: SplitEx> Clone for Mplex<C> {
     }
 }
 
-impl<C: SplitEx> fmt::Debug for Mplex<C> {
+impl<C> fmt::Debug for Mplex<C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Mplex")
             .field("Id", &self.id)
@@ -110,7 +111,7 @@ impl<C: SplitEx> fmt::Debug for Mplex<C> {
     }
 }
 
-impl<C: ConnectionInfo + SecureInfo + SplittableReadWrite> Mplex<C> {
+impl<C: ConnectionInfo + SecureInfo + AsyncRead + AsyncWrite + Send + Unpin + 'static> Mplex<C> {
     pub fn new(io: C) -> Self {
         // `io` will be moved into Connection soon, make a copy of the connection & secure info
         let la = io.local_multiaddr();
@@ -124,7 +125,7 @@ impl<C: ConnectionInfo + SecureInfo + SplittableReadWrite> Mplex<C> {
         let id = conn.id();
         let ctrl = conn.control();
         Mplex {
-            conn: Some(conn),
+            conn: Arc::new(Mutex::new(Some(conn))),
             ctrl,
             id,
             la,
@@ -137,7 +138,7 @@ impl<C: ConnectionInfo + SecureInfo + SplittableReadWrite> Mplex<C> {
     }
 }
 
-impl<C: SplitEx> ConnectionInfo for Mplex<C> {
+impl<C: Send> ConnectionInfo for Mplex<C> {
     fn local_multiaddr(&self) -> Multiaddr {
         self.la.clone()
     }
@@ -146,7 +147,7 @@ impl<C: SplitEx> ConnectionInfo for Mplex<C> {
     }
 }
 
-impl<C: SplitEx> SecureInfo for Mplex<C> {
+impl<C> SecureInfo for Mplex<C> {
     fn local_peer(&self) -> PeerId {
         self.local_peer_id
     }
@@ -178,10 +179,10 @@ impl ReadWriteEx for Stream {
     }
 }
 
-impl<C: SplittableReadWrite> StreamMuxerEx for Mplex<C> {}
+impl<C: AsyncRead + AsyncWrite + Send + Unpin + 'static> StreamMuxerEx for Mplex<C> {}
 
 #[async_trait]
-impl<C: SplittableReadWrite> StreamMuxer for Mplex<C> {
+impl<C: AsyncRead + AsyncWrite + Send + Unpin + 'static> StreamMuxer for Mplex<C> {
     async fn open_stream(&mut self) -> Result<IReadWrite, TransportError> {
         trace!("opening a new outbound substream for mplex...");
         let s = self.ctrl.open_stream().await?;
@@ -200,7 +201,7 @@ impl<C: SplittableReadWrite> StreamMuxer for Mplex<C> {
     }
 
     fn task(&mut self) -> Option<BoxFuture<'static, ()>> {
-        if let Some(mut conn) = self.conn.take() {
+        if let Some(mut conn) = self.conn.lock().take() {
             return Some(
                 async move {
                     while conn.next_stream().await.is_ok() {}
@@ -228,7 +229,7 @@ impl UpgradeInfo for Config {
 #[async_trait]
 impl<T> Upgrader<T> for Config
 where
-    T: ConnectionInfo + SecureInfo + SplittableReadWrite,
+    T: ConnectionInfo + SecureInfo + AsyncRead + AsyncWrite + Send + Unpin + 'static,
 {
     type Output = Mplex<T>;
 

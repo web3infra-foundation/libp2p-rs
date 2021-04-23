@@ -1,6 +1,6 @@
 [package]
 name = "libp2prs-yamux"
-version = "0.2.2"
+version = "0.3.0"
 license = "MIT"
 description = "Yamux multiplexing protocol for libp2p"
 authors = ["Netwarps Technologies admin@paradeum.com"]
@@ -11,22 +11,18 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-libp2prs-traits = { path = "../../traits", version = "0.2.2" }
-libp2prs-core = { path = "../../core", version = "0.2.2"  }
-nohash-hasher = "0.2"
-unsigned-varint = "0.4"
+libp2prs-core = { path = "../../core", version = "0.3.0"  }
 async-trait = "0.1"
-bytes = "0.5.6"
 futures = { version = "0.3", features = ["std"], default-features = false }
 log = "0.4"
-rand = "0.7"
+yamux = "0.9.0"
+parking_lot = "0.11"
+pin-project = "1"
 
 [dev-dependencies]
 env_logger = "0.8"
 criterion = "0.3"
 quickcheck = "0.9"
-libp2prs-runtime = { path = "../../runtime", version = "0.2.2", features = ["async-std"] }
-
-[[bench]]
-name = "yamux_concurrent_bench"
-harness = false
+libp2prs-runtime = { path = "../../runtime", version = "0.3.0", features = ["async-std"] }
+libp2prs-tcp = { path = "../../transports/tcp", version = "0.3.0" }
+libp2prs-secio = { path = "../../protocols/secio", version = "0.3.0" }

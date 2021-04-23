@@ -1,181 +1,56 @@
-// Copyright (c) 2018-2019 Parity Technologies (UK) Ltd.
+// Copyright 2018 Parity Technologies (UK) Ltd.
 // Copyright 2020 Netwarps Ltd.
 //
-// Licensed under the Apache License, Version 2.0 or MIT license, at your option.
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom the
+// Software is furnished to do so, subject to the following conditions:
 //
-// A copy of the Apache License, Version 2.0 is included in the software as
-// LICENSE-APACHE and a copy of the MIT license is included in the software
-// as LICENSE-MIT. You may also obtain a copy of the Apache License, Version 2.0
-// at https://www.apache.org/licenses/LICENSE-2.0 and a copy of the MIT license
-// at https://opensource.org/licenses/MIT.
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
 
-pub mod connection;
-pub mod error;
-mod frame;
-mod pause;
+//! Implements the Yamux multiplexing protocol for libp2p, see also the
+//! [specification](https://github.com/hashicorp/yamux/blob/master/spec.md).
 
-use async_trait::async_trait;
-use futures::FutureExt;
-use log::{debug, trace};
-use std::fmt;
-
-use crate::connection::Connection;
-use connection::{control::Control, stream::Stream, Id, Mode};
-use error::ConnectionError;
+use futures::channel::mpsc;
 use futures::future::BoxFuture;
-use libp2prs_core::identity::Keypair;
+use futures::{prelude::*, stream::StreamExt, FutureExt, SinkExt};
+use libp2prs_core::identity::{Keypair, PublicKey};
 use libp2prs_core::muxing::{IReadWrite, IStreamMuxer, ReadWriteEx, StreamInfo, StreamMuxer, StreamMuxerEx};
 use libp2prs_core::secure_io::SecureInfo;
 use libp2prs_core::transport::{ConnectionInfo, TransportError};
 use libp2prs_core::upgrade::{UpgradeInfo, Upgrader};
-use libp2prs_core::{Multiaddr, PeerId, PublicKey};
-use libp2prs_traits::{SplitEx, SplittableReadWrite};
+use libp2prs_core::{Multiaddr, PeerId};
+use parking_lot::Mutex;
+use std::sync::Arc;
+use std::{
+    fmt, io,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
-const DEFAULT_CREDIT: u32 = 256 * 1024; // as per yamux specification
-const MAX_MSG_SIZE: usize = 64 * 1024; // max message size
-
-/// Specifies when window update frames are sent.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum WindowUpdateMode {
-    /// Send window updates as soon as a [`Stream`]'s receive window drops to 0.
-    ///
-    /// This ensures that the sender can resume sending more data as soon as possible
-    /// but a slow reader on the receiving side may be overwhelmed, i.e. it accumulates
-    /// data in its buffer which may reach its limit (see `set_max_buffer_size`).
-    /// In this mode, window updates merely prevent head of line blocking but do not
-    /// effectively exercise back pressure on senders.
-    OnReceive,
-
-    /// Send window updates only when data is read on the receiving end.
-    ///
-    /// This ensures that senders do not overwhelm receivers and keeps buffer usage
-    /// low. However, depending on the protocol, there is a risk of deadlock, namely
-    /// if both endpoints want to send data larger than the receivers window and they
-    /// do not read before finishing their writes. Use this mode only if you are sure
-    /// that this will never happen, i.e. if
-    ///
-    /// - Endpoints *A* and *B* never write at the same time, *or*
-    /// - Endpoints *A* and *B* write at most *n* frames concurrently such that the sum
-    ///   of the frame lengths is less or equal to the available credit of *A* and *B*
-    ///   respectively.
-    OnRead,
-}
-
-/// Yamux configuration.
-///
-/// The default configuration values are as follows:
-///
-/// - receive window = 256 KiB
-/// - max. buffer size (per stream) = 1 MiB
-/// - max. number of streams = 8192
-/// - window update mode = on receive
-/// - read after close = true
-/// - lazy open = false
-#[derive(Debug, Clone)]
-pub struct Config {
-    receive_window: u32,
-    max_buffer_size: usize,
-    max_num_streams: usize,
-    max_message_size: usize,
-    window_update_mode: WindowUpdateMode,
-    read_after_close: bool,
-    lazy_open: bool,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Config {
-            receive_window: DEFAULT_CREDIT,
-            max_buffer_size: 1024 * 1024,
-            max_num_streams: 8192,
-            max_message_size: MAX_MSG_SIZE,
-            window_update_mode: WindowUpdateMode::OnReceive,
-            read_after_close: true,
-            lazy_open: false,
-        }
-    }
-}
-
-impl Config {
-    /// make a default yamux config
-    ///
-    pub fn new() -> Self {
-        Config::default()
-    }
-    /// Set the receive window (must be >= 256 KiB).
-    ///
-    /// # Panics
-    ///
-    /// If the given receive window is < 256 KiB.
-    pub fn set_receive_window(&mut self, n: u32) -> &mut Self {
-        assert!(n >= DEFAULT_CREDIT);
-        self.receive_window = n;
-        self
-    }
-
-    /// Set the max. buffer size per stream.
-    pub fn set_max_buffer_size(&mut self, n: usize) -> &mut Self {
-        self.max_buffer_size = n;
-        self
-    }
-
-    /// Set the max. number of streams.
-    pub fn set_max_num_streams(&mut self, n: usize) -> &mut Self {
-        self.max_num_streams = n;
-        self
-    }
-
-    /// Set the max. number of streams.
-    pub fn set_max_message_size(&mut self, n: usize) -> &mut Self {
-        self.max_message_size = n;
-        self
-    }
-
-    /// Set the window update mode to use.
-    pub fn set_window_update_mode(&mut self, m: WindowUpdateMode) -> &mut Self {
-        self.window_update_mode = m;
-        self
-    }
-
-    /// Allow or disallow streams to read from buffered data after
-    /// the connection has been closed.
-    pub fn set_read_after_close(&mut self, b: bool) -> &mut Self {
-        self.read_after_close = b;
-        self
-    }
-
-    /// Enable or disable the sending of an initial window update frame
-    /// when opening outbound streams.
-    ///
-    /// When enabled, opening a new outbound stream will not result in an
-    /// immediate send of a frame, instead the first outbound data frame
-    /// will be marked as opening a stream.
-    ///
-    /// When disabled (the current default), opening a new outbound
-    /// stream will result in a window update frame being sent immediately
-    /// to the remote. This allows opening a stream with a custom receive
-    /// window size (cf. [`Config::set_receive_window`]) which the remote
-    /// can directly make use of.
-    pub fn set_lazy_open(&mut self, b: bool) -> &mut Self {
-        self.lazy_open = b;
-        self
-    }
-}
+type YRet = Result<yamux::Stream, yamux::ConnectionError>;
 
 /// A Yamux connection.
-///
-/// This implementation isn't capable of detecting when the underlying socket changes its address,
-/// and no [`StreamMuxerEvent::AddressChange`] event is ever emitted.
-pub struct Yamux<C: SplitEx> {
-    /// The [`futures::stream::Stream`] of incoming substreams.
-    connection: Option<Connection<C>>,
-    /// Handle to control the connection.
-    control: Control,
-    /// For debug purpose
-    id: Id,
-    /// The secure&connection info provided by underlying socket.
-    /// The socket is moved into Connection, so we have to make a copy of these information
+// #[derive(Clone)]
+#[allow(clippy::type_complexity)]
+pub struct Yamux<T> {
     ///
+    incoming: Arc<Mutex<Option<(yamux::Connection<T>, mpsc::UnboundedSender<YRet>)>>>,
+    ///
+    accepted: Arc<futures::lock::Mutex<mpsc::UnboundedReceiver<YRet>>>,
+    /// Handle to control the connection.
+    control: yamux::Control,
     /// The local multiaddr of this connection
     pub la: Multiaddr,
     /// The remote multiaddr of this connection
@@ -190,12 +65,12 @@ pub struct Yamux<C: SplitEx> {
     pub remote_peer_id: PeerId,
 }
 
-impl<C: SplitEx> Clone for Yamux<C> {
+impl<T> Clone for Yamux<T> {
     fn clone(&self) -> Self {
         Yamux {
-            connection: None,
+            incoming: self.incoming.clone(),
+            accepted: self.accepted.clone(),
             control: self.control.clone(),
-            id: self.id,
             la: self.la.clone(),
             ra: self.ra.clone(),
             local_priv_key: self.local_priv_key.clone(),
@@ -206,36 +81,35 @@ impl<C: SplitEx> Clone for Yamux<C> {
     }
 }
 
-impl<C: SplitEx> fmt::Debug for Yamux<C> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Yamux")
-            .field("Id", &self.id)
-            .field("Ra", &self.ra)
-            .field("Rid", &self.remote_peer_id)
-            .finish()
+impl<S> fmt::Debug for Yamux<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Yamux")
     }
 }
 
-impl<C: ConnectionInfo + SecureInfo + SplittableReadWrite> Yamux<C> {
+impl<T> Yamux<T>
+where
+    T: ConnectionInfo + SecureInfo + AsyncRead + AsyncWrite + Send + Unpin + 'static,
+{
     /// Create a new Yamux connection.
-    pub fn new(io: C, mut cfg: Config, mode: Mode) -> Self {
+    fn new(io: T, mut cfg: yamux::Config, mode: yamux::Mode) -> Self {
         cfg.set_read_after_close(false);
 
-        // `io` will be moved into Connection soon, make a copy of the secure info
         let local_priv_key = io.local_priv_key();
-        let local_peer_id = io.local_peer();
         let remote_pub_key = io.remote_pub_key();
+        let local_peer_id = io.local_peer();
         let remote_peer_id = io.remote_peer();
         let la = io.local_multiaddr();
         let ra = io.remote_multiaddr();
 
-        let conn = Connection::new(io, cfg, mode);
-        let id = conn.id();
-        let control = conn.control();
+        let conn = yamux::Connection::new(io, cfg, mode);
+        let (sender, accepted) = mpsc::unbounded();
+
+        let ctrl = conn.control();
         Yamux {
-            connection: Some(conn),
-            control,
-            id,
+            incoming: Arc::new(Mutex::new(Some((conn, sender)))),
+            accepted: Arc::new(futures::lock::Mutex::new(accepted)),
+            control: ctrl,
             la,
             ra,
             local_priv_key,
@@ -246,7 +120,7 @@ impl<C: ConnectionInfo + SecureInfo + SplittableReadWrite> Yamux<C> {
     }
 }
 
-impl<C: SplitEx> SecureInfo for Yamux<C> {
+impl<T> SecureInfo for Yamux<T> {
     fn local_peer(&self) -> PeerId {
         self.local_peer_id
     }
@@ -264,7 +138,7 @@ impl<C: SplitEx> SecureInfo for Yamux<C> {
     }
 }
 
-impl<C: SplitEx> ConnectionInfo for Yamux<C> {
+impl<T: Send> ConnectionInfo for Yamux<T> {
     fn local_multiaddr(&self) -> Multiaddr {
         self.la.clone()
     }
@@ -273,61 +147,218 @@ impl<C: SplitEx> ConnectionInfo for Yamux<C> {
     }
 }
 
-/// StreamInfo for Yamux::Stream
-impl StreamInfo for Stream {
-    fn id(&self) -> usize {
-        self.id() as usize
-    }
-}
+impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> StreamMuxerEx for Yamux<T> {}
 
-#[async_trait]
-impl ReadWriteEx for Stream {
-    fn box_clone(&self) -> IReadWrite {
-        Box::new(self.clone())
-    }
-}
-
-impl<C: SplittableReadWrite> StreamMuxerEx for Yamux<C> {}
-
-#[async_trait]
-impl<C: SplittableReadWrite> StreamMuxer for Yamux<C> {
+#[async_trait::async_trait]
+impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> StreamMuxer for Yamux<T> {
     async fn open_stream(&mut self) -> Result<IReadWrite, TransportError> {
-        let s = self.control.open_stream().await?;
-        trace!("a new outbound substream {:?} opened for yamux... ", s);
-        Ok(Box::new(s))
+        let s = self.control.open_stream().await.map_err(map_yamux_err)?;
+        log::trace!("a new outbound substream {:?} opened for yamux... ", s);
+        Ok(Box::new(Stream(s)))
     }
 
     async fn accept_stream(&mut self) -> Result<IReadWrite, TransportError> {
-        let s = self.control.accept_stream().await?;
-        trace!("a new inbound substream {:?} accepted for yamux...", s);
-        Ok(Box::new(s))
+        if let Some(s) = self.accepted.lock().await.next().await {
+            let stream = s.map_err(map_yamux_err)?;
+            log::trace!("a new inbound substream {:?} accepted for yamux...", stream);
+            return Ok(Box::new(Stream(stream)));
+        }
+        Err(TransportError::StreamMuxerError(Box::new(yamux::ConnectionError::Closed)))
     }
 
     async fn close(&mut self) -> Result<(), TransportError> {
-        self.control.close().await?;
-        Ok(())
+        self.control.close().await.map_err(map_yamux_err)
     }
 
-    // fn take_inner_stream(&mut self) -> Option<BoxStream<'static, Result<Self::Substream, TransportError>>> {
-    //     let stream = self.0.incoming.take();
-    //     stream
-    // }
-
     fn task(&mut self) -> Option<BoxFuture<'static, ()>> {
-        if let Some(mut conn) = self.connection.take() {
-            return Some(
-                async move {
-                    while conn.next_stream().await.is_ok() {}
-                    debug!("{:?} background-runtime exiting...", conn.id());
+        self.incoming.lock().take().map(|(mut conn, mut sender)| {
+            async move {
+                loop {
+                    match conn.next_stream().await {
+                        Ok(Some(s)) => {
+                            if let Err(e) = sender.send(Ok(s)).await {
+                                if e.is_disconnected() {
+                                    break;
+                                }
+                                log::warn!("{:?}", e);
+                            }
+                        }
+                        Ok(None) => {
+                            log::info!("{:?} background-task exiting...", conn);
+                            if let Err(e) = sender.send(Err(yamux::ConnectionError::Closed)).await {
+                                log::warn!("{:?}", e);
+                            }
+                            break;
+                        }
+                        Err(e) => {
+                            if let Err(err) = sender.send(Err(e)).await {
+                                log::warn!("{:?}", err);
+                            }
+                            break;
+                        }
+                    }
                 }
-                .boxed(),
-            );
-        }
-        None
+            }
+            .boxed()
+        })
     }
 
     fn box_clone(&self) -> IStreamMuxer {
-        Box::new(self.clone())
+        Box::new(Clone::clone(self))
+    }
+}
+
+#[pin_project::pin_project]
+#[derive(Debug)]
+pub struct Stream(#[pin] yamux::Stream);
+
+#[async_trait::async_trait]
+impl ReadWriteEx for Stream {
+    fn box_clone(&self) -> IReadWrite {
+        unimplemented!()
+    }
+}
+
+impl StreamInfo for Stream {
+    fn id(&self) -> usize {
+        self.0.id().val() as usize
+    }
+}
+
+impl AsyncRead for Stream {
+    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<io::Result<usize>> {
+        // poll_read returns Poll:Ready(Ok(0)) means that the stream is closed,
+        // we converted to an Eof error return
+        match futures::ready!(self.project().0.poll_read(cx, buf)) {
+            Ok(n) => {
+                if n == 0 {
+                    Poll::Ready(Err(io::ErrorKind::UnexpectedEof.into()))
+                } else {
+                    Poll::Ready(Ok(n))
+                }
+            }
+            Err(e) => Poll::Ready(Err(e)),
+        }
+    }
+}
+
+impl AsyncWrite for Stream {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
+        self.project().0.poll_write(cx, buf)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.project().0.poll_flush(cx)
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.project().0.poll_close(cx)
+    }
+}
+
+/// The yamux configuration.
+#[derive(Clone)]
+pub struct Config {
+    inner: yamux::Config,
+    mode: Option<yamux::Mode>,
+}
+
+/// The window update mode determines when window updates are
+/// sent to the remote, giving it new credit to send more data.
+pub struct WindowUpdateMode(yamux::WindowUpdateMode);
+
+impl WindowUpdateMode {
+    /// The window update mode whereby the remote is given
+    /// new credit via a window update whenever the current
+    /// receive window is exhausted when data is received,
+    /// i.e. this mode cannot exert back-pressure from application
+    /// code that is slow to read from a substream.
+    ///
+    /// > **Note**: The receive buffer may overflow with this
+    /// > strategy if the receiver is too slow in reading the
+    /// > data from the buffer. The maximum receive buffer
+    /// > size must be tuned appropriately for the desired
+    /// > throughput and level of tolerance for (temporarily)
+    /// > slow receivers.
+    pub fn on_receive() -> Self {
+        WindowUpdateMode(yamux::WindowUpdateMode::OnReceive)
+    }
+
+    /// The window update mode whereby the remote is given new
+    /// credit only when the current receive window is exhausted
+    /// when data is read from the substream's receive buffer,
+    /// i.e. application code that is slow to read from a substream
+    /// exerts back-pressure on the remote.
+    ///
+    /// > **Note**: If the receive window of a substream on
+    /// > both peers is exhausted and both peers are blocked on
+    /// > sending data before reading from the stream, a deadlock
+    /// > occurs. To avoid this situation, reading from a substream
+    /// > should never be blocked on writing to the same substream.
+    ///
+    /// > **Note**: With this strategy, there is usually no point in the
+    /// > receive buffer being larger than the window size.
+    pub fn on_read() -> Self {
+        WindowUpdateMode(yamux::WindowUpdateMode::OnRead)
+    }
+}
+
+impl Config {
+    /// Creates a new Yamux `Config` do not specify mode, regardless of whether
+    /// it will be used for an inbound or outbound upgrade.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Creates a new Yamux `Config` in client mode, regardless of whether
+    /// it will be used for an inbound or outbound upgrade.
+    pub fn client() -> Self {
+        let mut cfg = Self::default();
+        cfg.mode = Some(yamux::Mode::Client);
+        cfg
+    }
+
+    /// Creates a new Yamux `Config` in server mode, regardless of whether
+    /// it will be used for an inbound or outbound upgrade.
+    pub fn server() -> Self {
+        let mut cfg = Self::default();
+        cfg.mode = Some(yamux::Mode::Server);
+        cfg
+    }
+
+    /// Sets the size (in bytes) of the receive window per substream.
+    pub fn set_receive_window_size(&mut self, num_bytes: u32) -> &mut Self {
+        self.inner.set_receive_window(num_bytes);
+        self
+    }
+
+    /// Sets the maximum size (in bytes) of the receive buffer per substream.
+    pub fn set_max_buffer_size(&mut self, num_bytes: usize) -> &mut Self {
+        self.inner.set_max_buffer_size(num_bytes);
+        self
+    }
+
+    /// Sets the maximum number of concurrent substreams.
+    pub fn set_max_num_streams(&mut self, num_streams: usize) -> &mut Self {
+        self.inner.set_max_num_streams(num_streams);
+        self
+    }
+
+    /// Sets the window update mode that determines when the remote
+    /// is given new credit for sending more data.
+    pub fn set_window_update_mode(&mut self, mode: WindowUpdateMode) -> &mut Self {
+        self.inner.set_window_update_mode(mode.0);
+        self
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        let mut inner = yamux::Config::default();
+        // For conformity with mplex, read-after-close on a multiplexed
+        // connection is never permitted and not configurable.
+        inner.set_read_after_close(false);
+        Config { inner, mode: None }
     }
 }
 
@@ -339,27 +370,24 @@ impl UpgradeInfo for Config {
     }
 }
 
-#[async_trait]
-impl<T> Upgrader<T> for Config
+#[async_trait::async_trait]
+impl<C> Upgrader<C> for Config
 where
-    T: ConnectionInfo + SecureInfo + SplittableReadWrite,
+    C: ConnectionInfo + SecureInfo + AsyncRead + AsyncWrite + Send + Unpin + 'static,
 {
-    type Output = Yamux<T>;
+    type Output = Yamux<C>;
 
-    async fn upgrade_inbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
-        trace!("upgrading yamux inbound");
-        Ok(Yamux::new(socket, self, Mode::Server))
+    async fn upgrade_inbound(self, socket: C, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
+        let mode = self.mode.unwrap_or(yamux::Mode::Server);
+        Ok(Yamux::new(socket, self.inner, mode))
     }
 
-    async fn upgrade_outbound(self, socket: T, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
-        trace!("upgrading yamux outbound");
-        Ok(Yamux::new(socket, self, Mode::Client))
+    async fn upgrade_outbound(self, socket: C, _info: <Self as UpgradeInfo>::Info) -> Result<Self::Output, TransportError> {
+        let mode = self.mode.unwrap_or(yamux::Mode::Client);
+        Ok(Yamux::new(socket, self.inner, mode))
     }
 }
 
-impl From<ConnectionError> for TransportError {
-    fn from(e: ConnectionError) -> Self {
-        // TODO: make a mux error catalog for secio
-        TransportError::StreamMuxerError(Box::new(e))
-    }
+fn map_yamux_err(e: yamux::ConnectionError) -> TransportError {
+    TransportError::StreamMuxerError(Box::new(e))
 }

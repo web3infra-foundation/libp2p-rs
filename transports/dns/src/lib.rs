@@ -188,12 +188,12 @@ impl error::Error for DnsErr {
 #[cfg(test)]
 mod tests {
     use super::DnsConfig;
+    use futures::{AsyncReadExt, AsyncWriteExt};
     use libp2prs_core::transport::ListenerEvent;
     use libp2prs_core::Transport;
     use libp2prs_multiaddr::Multiaddr;
     use libp2prs_runtime::task;
     use libp2prs_tcp::TcpConfig;
-    use libp2prs_traits::{ReadEx, WriteEx};
 
     #[test]
     fn basic_resolve_v4() {
@@ -213,16 +213,16 @@ mod tests {
                 };
 
                 let mut buf = vec![0; msg.len()];
-                conn.read_exact2(&mut buf).await.expect("server read exact");
+                conn.read_exact(&mut buf).await.expect("server read exact");
 
                 assert_eq!(&msg[..], &buf[..]);
 
-                conn.close2().await.expect("server close connection");
+                conn.close().await.expect("server close connection");
             });
 
             let mut conn = client.dial(addr).await.expect("client dial");
-            conn.write_all2(&msg[..]).await.expect("client write all");
-            conn.close2().await.expect("client close connection");
+            conn.write_all(&msg[..]).await.expect("client write all");
+            conn.close().await.expect("client close connection");
 
             handle.await;
         });
@@ -246,16 +246,16 @@ mod tests {
                 };
 
                 let mut buf = vec![0; msg.len()];
-                conn.read_exact2(&mut buf).await.expect("S read exact");
+                conn.read_exact(&mut buf).await.expect("S read exact");
 
                 assert_eq!(&msg[..], &buf[..]);
 
-                conn.close2().await.expect("S close connection");
+                conn.close().await.expect("S close connection");
             });
 
             let mut conn = client.dial(addr).await.expect("C dial");
-            conn.write_all2(&msg[..]).await.expect("C write all");
-            conn.close2().await.expect("C close connection");
+            conn.write_all(&msg[..]).await.expect("C write all");
+            conn.close().await.expect("C close connection");
 
             handle.await;
         });

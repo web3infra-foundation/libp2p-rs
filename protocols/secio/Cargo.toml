@@ -1,6 +1,6 @@
 [package]
 name = "libp2prs-secio"
-version = "0.2.2"
+version = "0.3.0"
 license = "MIT"
 description = "Secio encryption protocol for libp2p"
 authors = ["Netwarps Technologies admin@paradeum.com"]
@@ -10,13 +10,13 @@ categories = ["network-programming", "asynchronous"]
 edition = "2018"
 
 [dependencies]
-libp2prs-core = { path = "../../core", version = "0.2.2" }
-libp2prs-traits = { path = "../../traits", version = "0.2.2" }
+libp2prs-core = { path = "../../core", version = "0.3.0" }
 bytes = "0.5"
 futures = { version = "0.3", features = ["std"], default-features = false }
 log = "0.4"
 async-trait = "0.1"
-
+quicksink = "0.1"
+pin-project = "1"
 secp256k1 = "0.20"
 rand = "0.7"
 ring = "0.16.5"
@@ -32,7 +32,7 @@ prost-build = "0.6.1"
 [dev-dependencies]
 env_logger = "0.8"
 criterion = "0.3"
-libp2prs-runtime = { path = "../../runtime", version = "0.2.2", features = ["async-std"] }
+libp2prs-runtime = { path = "../../runtime", version = "0.3.0", features = ["async-std"] }
 
 [[bench]]
 name = "bench"

@@ -20,8 +20,8 @@
 
 use fnv::FnvHashMap;
 use smallvec::SmallVec;
-use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU32, AtomicUsize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -45,7 +45,7 @@ use libp2prs_core::routing::IRouting;
 type Result<T> = std::result::Result<T, SwarmError>;
 
 /// CONCURRENT_DIALS_LIMIT  is the number of concurrent outbound dials
-const CONCURRENT_DIALS_LIMIT: u32 = 100;
+const CONCURRENT_DIALS_LIMIT: u32 = 500;
 
 /// DIAL_TIMEOUT is the maximum duration a Dial is allowed to take.This includes the time between dialing the raw network connection,protocol selection as well the handshake, if applicable.
 const DIAL_TIMEOUT: Duration = Duration::from_secs(20);
@@ -65,11 +65,57 @@ const BACKOFF_COEF: Duration = Duration::from_secs(1);
 /// BACKOFF_MAX is the maximum backoff time (default: 300s).
 const BACKOFF_MAX: Duration = Duration::from_secs(300);
 
+/// Statistics of dialer.
+#[derive(Default)]
+struct DialerStats {
+    total_attempts: AtomicUsize,
+    total_success: AtomicUsize,
+    no_address: AtomicUsize,
+    no_transport: AtomicUsize,
+    dialing_backoff: AtomicUsize,
+    total_jobs: AtomicUsize,
+    dialing_success: AtomicUsize,
+    dialing_limit: AtomicUsize,
+    dialing_timeout: AtomicUsize,
+    mismatch_peer_id: AtomicUsize,
+    transport_error: AtomicUsize,
+}
+
+#[derive(Debug)]
+pub struct DialerStatsView {
+    /// Dialing in progress.
+    pub in_progress: usize,
+    /// The total dialing attempts.
+    pub total_attempts: usize,
+    /// The total successful dialing attempts.
+    pub total_success: usize,
+    /// Addresses not found via DHT.
+    pub no_address: usize,
+    /// No suitable transport found for the peer to be dialed.
+    pub no_transport: usize,
+    /// All addresses of the peer are in backoff.
+    pub dialing_backoff: usize,
+    /// Total dialing jobs.
+    pub total_jobs: usize,
+    /// Successful jobs.
+    pub dialing_success: usize,
+    /// Reaches to the concurrent dialing limit.
+    pub dialing_limit: usize,
+    /// Dialing not finished in a give deadline.
+    pub dialing_timeout: usize,
+    /// Got a tranport error when dialing.
+    pub transport_error: usize,
+    /// Remote peer reports a mismatched peer ID.
+    /// Note: this counter is counted into dialing_success.
+    pub mismatch_peer_id: usize,
+}
+
 #[derive(Clone)]
 struct DialJob {
     transport: ITransportEx,
     addr: Multiaddr,
     peer: PeerId,
+    stats: Arc<DialerStats>,
     // here we send the maddr back for dialer-backoff
     tx: mpsc::UnboundedSender<(Result<IStreamMuxer>, Multiaddr)>,
 }
@@ -114,6 +160,7 @@ impl DialLimiter {
                 self.dial_consuming,
                 self.dial_limit,
             );
+            dj.stats.dialing_limit.fetch_add(1, Ordering::SeqCst);
             let _ = dj.tx.send((Err(SwarmError::ConcurrentDialLimit(self.dial_limit)), dj.addr)).await;
             return;
         }
@@ -136,8 +183,14 @@ impl DialLimiter {
 
         let dial_r = task::timeout(timeout, dj.transport.dial(dj.addr.clone())).await;
         if let Ok(r) = dial_r {
+            if r.is_err() {
+                dj.stats.transport_error.fetch_add(1, Ordering::SeqCst);
+            } else {
+                dj.stats.dialing_success.fetch_add(1, Ordering::SeqCst);
+            }
             let _ = dj.tx.send((r.map_err(|e| e.into()), dj.addr)).await;
         } else {
+            dj.stats.dialing_timeout.fetch_add(1, Ordering::SeqCst);
             let _ = dj
                 .tx
                 .send((Err(SwarmError::DialTimeout(dj.addr.clone(), timeout.as_secs())), dj.addr))
@@ -291,6 +344,7 @@ pub(crate) enum EitherDialAddr {
 pub(crate) struct AsyncDialer {
     limiter: DialLimiter,
     backoff: DialBackoff,
+    stats: Arc<DialerStats>,
     handle: mpsc::Sender<()>,
     attempts: u32,
 }
@@ -303,6 +357,7 @@ struct DialParam {
     tid: TransactionId,
     limiter: DialLimiter,
     backoff: DialBackoff,
+    stats: Arc<DialerStats>,
     attempts: u32,
 }
 
@@ -333,6 +388,7 @@ impl AsyncDialer {
             backoff,
             attempts,
             handle,
+            stats: Arc::new(Default::default()),
         }
     }
 
@@ -351,16 +407,21 @@ impl AsyncDialer {
             tid,
             limiter: self.limiter.clone(),
             backoff: self.backoff.clone(),
+            stats: self.stats.clone(),
             attempts: self.attempts,
         };
+
+        self.stats.total_attempts.fetch_add(1, Ordering::SeqCst);
 
         task::spawn(async move {
             let tid = dial_param.tid;
             let peer_id = dial_param.peer_id;
+            let stats = dial_param.stats.clone();
 
             let r = AsyncDialer::start_dialing(dial_param).await;
             match r {
                 Ok(stream_muxer) => {
+                    stats.total_success.fetch_add(1, Ordering::SeqCst);
                     let _ = event_sender
                         .send(SwarmEvent::ConnectionEstablished {
                             stream_muxer,
@@ -376,6 +437,23 @@ impl AsyncDialer {
                 }
             }
         });
+    }
+
+    pub(crate) fn stats(&self) -> DialerStatsView {
+        DialerStatsView {
+            in_progress: self.limiter.dial_consuming.load(Ordering::SeqCst) as usize,
+            total_attempts: self.stats.total_attempts.load(Ordering::SeqCst),
+            total_success: self.stats.total_success.load(Ordering::SeqCst),
+            no_address: self.stats.no_address.load(Ordering::SeqCst),
+            no_transport: self.stats.no_transport.load(Ordering::SeqCst),
+            dialing_backoff: self.stats.dialing_backoff.load(Ordering::SeqCst),
+            total_jobs: self.stats.total_jobs.load(Ordering::SeqCst),
+            dialing_success: self.stats.dialing_success.load(Ordering::SeqCst),
+            dialing_limit: self.stats.dialing_limit.load(Ordering::SeqCst),
+            dialing_timeout: self.stats.dialing_timeout.load(Ordering::SeqCst),
+            mismatch_peer_id: self.stats.mismatch_peer_id.load(Ordering::SeqCst),
+            transport_error: self.stats.transport_error.load(Ordering::SeqCst),
+        }
     }
 
     async fn start_dialing(dial_param: DialParam) -> Result<IStreamMuxer> {
@@ -413,7 +491,13 @@ impl AsyncDialer {
 
         let addrs_origin = match &mut param.addrs {
             EitherDialAddr::Addresses(addrs) => addrs.clone(),
-            EitherDialAddr::DHT(routing) => routing.find_peer(&peer_id).await?,
+            EitherDialAddr::DHT(routing) => match routing.find_peer(&peer_id).await {
+                Ok(addrs) => addrs,
+                Err(err) => {
+                    param.stats.no_address.fetch_add(1, Ordering::SeqCst);
+                    return Err(err.into());
+                }
+            },
         };
 
         // TODO: filter Known Undialables address ,If there is no address  can dial return SwarmError::NoGoodAddresses
@@ -433,6 +517,7 @@ impl AsyncDialer {
                 addrs_origin.len(),
                 peer_id
             );
+            param.stats.dialing_backoff.fetch_add(1, Ordering::SeqCst);
             return Err(SwarmError::DialBackoff);
         }
 
@@ -442,6 +527,7 @@ impl AsyncDialer {
         // dialing all addresses
         let (tx, rx) = mpsc::unbounded::<(Result<IStreamMuxer>, Multiaddr)>();
         let mut num_jobs = 0;
+
         for addr in addrs_rank {
             // first of all, check the transport
             let r = param.transports.lookup_by_addr(addr.clone());
@@ -455,6 +541,7 @@ impl AsyncDialer {
             let dj = DialJob {
                 addr,
                 peer: peer_id,
+                stats: param.stats.clone(),
                 tx: tx.clone(),
                 transport: r.unwrap(),
             };
@@ -465,21 +552,28 @@ impl AsyncDialer {
             });
         }
 
-        log::debug!("total {} dialing jobs for {:?} started, collecting...", num_jobs, peer_id);
-        AsyncDialer::collect_dialing_result(rx, num_jobs, param).await
+        if num_jobs > 0 {
+            log::debug!("total {} dialing jobs for {:?} started, collecting...", num_jobs, peer_id);
+            param.stats.total_jobs.fetch_add(num_jobs, Ordering::SeqCst);
+            AsyncDialer::collect_dialing_result(rx, num_jobs, param).await
+        } else {
+            param.stats.no_transport.fetch_add(1, Ordering::SeqCst);
+            Err(SwarmError::DialNoTransport(peer_id))
+        }
     }
 
     // collect the job results
     // return the first successful dialing result, ignore the rest
     async fn collect_dialing_result(
         mut rx: UnboundedReceiver<(Result<IStreamMuxer>, Multiaddr)>,
-        jobs: u32,
+        jobs: usize,
         param: DialParam,
     ) -> Result<IStreamMuxer> {
         for i in 0..jobs {
             let peer_id = param.peer_id;
             let r = rx.next().await;
             log::debug!("[Dialer] job for {:?} finished, seq={} ...", peer_id, i);
+
             match r {
                 Some((Ok(stream_muxer), addr)) => {
                     let reported_pid = stream_muxer.remote_peer();
@@ -497,6 +591,7 @@ impl AsyncDialer {
                             peer_id,
                             reported_pid
                         );
+                        param.stats.mismatch_peer_id.fetch_add(1, Ordering::SeqCst);
                         param.backoff.add_peer(peer_id, addr).await;
                     }
                 }

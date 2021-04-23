@@ -35,7 +35,7 @@ use std::{error::Error, fmt};
 use libp2prs_multiaddr::Multiaddr;
 
 use crate::multistream::NegotiationError;
-use crate::pnet::PnetError;
+use libp2p_pnet::PnetError;
 
 pub mod dummy;
 pub mod memory;

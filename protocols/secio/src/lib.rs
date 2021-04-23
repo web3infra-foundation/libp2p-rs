@@ -30,12 +30,16 @@ use crate::{crypto::cipher::CipherType, error::SecioError, exchange::KeyAgreemen
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::{Multiaddr, PeerId, PublicKey};
 
-use crate::codec::secure_stream::{SecureStream, SecureStreamReader, SecureStreamWriter};
+use crate::codec::secure_stream::SecureStream;
+use futures::{AsyncRead, AsyncWrite};
 use libp2prs_core::secure_io::SecureInfo;
 use libp2prs_core::transport::{ConnectionInfo, TransportError};
 use libp2prs_core::upgrade::{UpgradeInfo, Upgrader};
-use libp2prs_traits::{ReadEx, SplitEx, SplittableReadWrite, WriteEx};
-use std::io;
+use std::{
+    io,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 /// Encrypted and decrypted codec implementation, and stream handle
 pub mod codec;
@@ -139,12 +143,9 @@ impl Config {
     ///
     /// On success, produces a `SecureStream` that can then be used to encode/decode
     /// communications, plus the public key of the remote, plus the ephemeral public key.
-    pub async fn handshake<T>(
-        self,
-        socket: T,
-    ) -> Result<(SecureStream<T::Reader, T::Writer>, PublicKey, EphemeralPublicKey), SecioError>
+    pub async fn handshake<T>(self, socket: T) -> Result<(SecureStream<T>, PublicKey, EphemeralPublicKey), SecioError>
     where
-        T: SplittableReadWrite,
+        T: AsyncRead + AsyncWrite + Send + Unpin + 'static,
     {
         handshake(socket, self).await
     }
@@ -160,7 +161,7 @@ impl UpgradeInfo for Config {
 
 async fn make_secure_output<T>(config: Config, socket: T) -> Result<SecioOutput<T>, TransportError>
 where
-    T: ConnectionInfo + SplittableReadWrite,
+    T: ConnectionInfo + AsyncRead + AsyncWrite + Send + Unpin + 'static,
 {
     // TODO: to be more elegant, local private key could be returned by handshake()
     let pri_key = config.key.clone();
@@ -183,7 +184,7 @@ where
 #[async_trait]
 impl<T> Upgrader<T> for Config
 where
-    T: ConnectionInfo + SplittableReadWrite,
+    T: ConnectionInfo + AsyncRead + AsyncWrite + Send + Unpin + 'static,
 {
     type Output = SecioOutput<T>;
 
@@ -197,9 +198,11 @@ where
 }
 
 /// Output of the secio protocol. It implements the SecureStream trait
-pub struct SecioOutput<S: SplitEx> {
+#[pin_project::pin_project]
+pub struct SecioOutput<S> {
     /// The encrypted stream.
-    pub stream: SecureStream<S::Reader, S::Writer>,
+    #[pin]
+    pub stream: SecureStream<S>,
     /// The local multiaddr of the connection
     la: Multiaddr,
     /// The remote multiaddr of the connection
@@ -214,7 +217,7 @@ pub struct SecioOutput<S: SplitEx> {
     pub remote_peer_id: PeerId,
 }
 
-impl<S: ConnectionInfo + SplitEx> ConnectionInfo for SecioOutput<S> {
+impl<S: ConnectionInfo> ConnectionInfo for SecioOutput<S> {
     fn local_multiaddr(&self) -> Multiaddr {
         self.la.clone()
     }
@@ -224,7 +227,7 @@ impl<S: ConnectionInfo + SplitEx> ConnectionInfo for SecioOutput<S> {
     }
 }
 
-impl<S: SplitEx> SecureInfo for SecioOutput<S> {
+impl<S> SecureInfo for SecioOutput<S> {
     fn local_peer(&self) -> PeerId {
         self.local_peer_id
     }
@@ -242,35 +245,27 @@ impl<S: SplitEx> SecureInfo for SecioOutput<S> {
     }
 }
 
-#[async_trait]
-impl<S: SplittableReadWrite> ReadEx for SecioOutput<S> {
-    async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
-        self.stream.read2(buf).await
+impl<S: AsyncRead + AsyncWrite + Send + Unpin + 'static> AsyncRead for SecioOutput<S> {
+    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<io::Result<usize>> {
+        let this = self.project();
+        this.stream.poll_read(cx, buf)
     }
 }
 
-#[async_trait]
-impl<S: SplittableReadWrite> WriteEx for SecioOutput<S> {
-    async fn write2(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
-        self.stream.write2(buf).await
+impl<S: AsyncRead + AsyncWrite + Send + Unpin + 'static> AsyncWrite for SecioOutput<S> {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
+        let this = self.project();
+        this.stream.poll_write(cx, buf)
     }
 
-    async fn flush2(&mut self) -> Result<(), io::Error> {
-        self.stream.flush2().await
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let this = self.project();
+        this.stream.poll_flush(cx)
     }
 
-    async fn close2(&mut self) -> Result<(), io::Error> {
-        self.stream.close2().await
-    }
-}
-
-impl<S: SplittableReadWrite> SplitEx for SecioOutput<S> {
-    type Reader = SecureStreamReader<S::Reader>;
-    type Writer = SecureStreamWriter<S::Writer>;
-
-    fn split(self) -> (Self::Reader, Self::Writer) {
-        let (r, w) = self.stream.split();
-        (r, w)
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let this = self.project();
+        this.stream.poll_close(cx)
     }
 }
 

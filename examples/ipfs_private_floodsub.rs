@@ -21,14 +21,10 @@
 use log::{error, info};
 #[macro_use]
 extern crate lazy_static;
+use libp2p_pnet::{PnetConfig, PreSharedKey};
 
 use libp2prs_core::transport::upgrade::TransportUpgrade;
-use libp2prs_core::{
-    multiaddr::protocol::Protocol,
-    pnet::{PnetConfig, PreSharedKey},
-    transport::protector::ProtectorTransport,
-    Multiaddr, PeerId,
-};
+use libp2prs_core::{multiaddr::protocol::Protocol, transport::protector::ProtectorTransport, Multiaddr, PeerId};
 use libp2prs_runtime::task;
 use libp2prs_tcp::TcpConfig;
 
@@ -128,7 +124,7 @@ async fn entry() -> Result<(), Box<dyn Error>> {
     info!("Address: {}/ipfs/{}", listen_addr, local_peer_id);
 
     let sec = secio::Config::new(local_key.clone());
-    let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
+    let mux = Selector::new(yamux::Config::server(), mplex::Config::new());
 
     // Get shared key
     let ipfs_path = get_ipfs_path();

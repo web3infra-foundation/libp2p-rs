@@ -32,7 +32,7 @@ use crate::identify::IdentifyInfo;
 use crate::metrics::metric::Metric;
 use crate::network::NetworkInfo;
 use crate::substream::{StreamId, Substream, SubstreamView};
-use crate::{SwarmError, SWARM_EXIT_FLAG};
+use crate::{SwarmError, SwarmStats, SWARM_EXIT_FLAG};
 use std::collections::hash_map::IntoIter;
 use std::sync::atomic::Ordering;
 
@@ -75,6 +75,8 @@ pub enum DumpCommand {
     Connections(Option<PeerId>, oneshot::Sender<Vec<ConnectionView>>),
     /// Dump all substreams of a connection.
     Streams(PeerId, oneshot::Sender<Result<Vec<SubstreamView>>>),
+    /// Dump all statistics of Swarm.
+    Statistics(oneshot::Sender<Result<SwarmStats>>),
 }
 
 /// The `Swarm` controller.
@@ -231,6 +233,12 @@ impl Control {
     pub async fn dump_streams(&mut self, peer_id: PeerId) -> Result<Vec<SubstreamView>> {
         let (tx, rx) = oneshot::channel();
         self.sender.send(SwarmControlCmd::Dump(DumpCommand::Streams(peer_id, tx))).await?;
+        rx.await?
+    }
+
+    pub async fn dump_statistics(&mut self) -> Result<SwarmStats> {
+        let (tx, rx) = oneshot::channel();
+        self.sender.send(SwarmControlCmd::Dump(DumpCommand::Statistics(tx))).await?;
         rx.await?
     }
 
