@@ -1,6 +1,6 @@
 [package]
 name = "libp2prs-dns"
-version = "0.2.2"
+version = "0.3.0"
 license = "MIT"
 description = "DNS transport implementation for libp2p"
 authors = ["Netwarps Technologies admin@paradeum.com"]
@@ -16,10 +16,10 @@ tokio = ["libp2prs-runtime/tokio"]
 [dependencies]
 log = "0.4"
 async-trait = "0.1"
-libp2prs-core = { path = "../../core", version = "0.2.2" }
-libp2prs-runtime = { path = "../../runtime", version = "0.2.2" }
+libp2prs-core = { path = "../../core", version = "0.3.0" }
+libp2prs-runtime = { path = "../../runtime", version = "0.3.0" }
 
 [dev-dependencies]
-libp2prs-traits = { path = "../../traits", version = "0.2.2" }
-libp2prs-tcp = { path = "../tcp", version = "0.2.2", features = ["async-std"] }
-libp2prs-multiaddr = { path = "../../multiaddr", version = "0.2.2" }
+futures = { version = "0.3", features = ["std"], default-features = false }
+libp2prs-tcp = { path = "../tcp", version = "0.3.0", features = ["async-std"] }
+libp2prs-multiaddr = { path = "../../multiaddr", version = "0.3.0" }

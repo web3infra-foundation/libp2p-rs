@@ -18,14 +18,12 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+use futures::{AsyncReadExt, AsyncWriteExt};
+use libp2p_pnet::{PnetConfig, PreSharedKey};
 use log::{error, info};
 
 use libp2prs_core::transport::upgrade::TransportUpgrade;
-use libp2prs_core::{
-    pnet::{PnetConfig, PreSharedKey},
-    transport::protector::ProtectorTransport,
-    Multiaddr, Transport,
-};
+use libp2prs_core::{transport::protector::ProtectorTransport, Multiaddr, Transport};
 use libp2prs_dns::DnsConfig;
 use libp2prs_runtime::task;
 use libp2prs_tcp::TcpConfig;
@@ -64,7 +62,7 @@ fn build_pet_config() -> ProtectorTransport<DnsConfig<TcpConfig>> {
 async fn run_server() {
     let listen_addr: Multiaddr = "/ip4/127.0.0.1/tcp/38087".parse().unwrap();
     let sec = secio::Config::new(Keypair::generate_secp256k1());
-    let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
+    let mux = Selector::new(yamux::Config::server(), mplex::Config::new());
     let mut tu = TransportUpgrade::new(build_pet_config(), mux, sec);
 
     let mut listener = tu.listen_on(listen_addr).unwrap();
@@ -86,7 +84,7 @@ async fn run_server() {
                 let mut buf = [0; 4096];
 
                 loop {
-                    let n = match stream.read2(&mut buf).await {
+                    let n = match stream.read(&mut buf).await {
                         Ok(num) => num,
                         Err(e) => {
                             error!("{:?} read failed: {:?}", stream, e);
@@ -96,7 +94,7 @@ async fn run_server() {
                     if n == 0 {
                         return;
                     }
-                    if let Err(e) = stream.write_all2(buf[..n].as_ref()).await {
+                    if let Err(e) = stream.write_all(buf[..n].as_ref()).await {
                         error!("{:?} write failed: {:?}", stream, e);
                         return;
                     };
@@ -109,7 +107,7 @@ async fn run_server() {
 async fn run_client() {
     let addr: Multiaddr = "/dns4/localhost/tcp/38087".parse().unwrap();
     let sec = secio::Config::new(Keypair::generate_secp256k1());
-    let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
+    let mux = Selector::new(yamux::Config::client(), mplex::Config::new());
 
     let mut tu = TransportUpgrade::new(build_pet_config(), mux, sec);
 
@@ -125,15 +123,15 @@ async fn run_client() {
         info!("opened new stream {:?}", stream);
         let data = b"hello world";
 
-        stream.write_all2(data.as_ref()).await.unwrap();
+        stream.write_all(data.as_ref()).await.unwrap();
         info!("stream: {:?}: write {:?}", stream, String::from_utf8_lossy(data));
 
         let mut frame = vec![0; data.len()];
-        stream.read_exact2(&mut frame).await.unwrap();
+        stream.read_exact(&mut frame).await.unwrap();
         info!("stream: {:?}: read {:?}", stream, String::from_utf8_lossy(&frame));
 
         assert_eq!(&data[..], &frame[..]);
-        stream.close2().await.expect("close stream");
+        stream.close().await.expect("close stream");
     })
     .await;
 

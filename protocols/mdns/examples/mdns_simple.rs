@@ -20,7 +20,7 @@ fn main() {
         let pid = Keypair::generate_ed25519().public().into_peer_id();
         let listen_addr: Multiaddr = "/ip4/0.0.0.0/tcp/0".parse().unwrap();
         let config = MdnsConfig::new(pid, vec![listen_addr], false);
-        let service = MdnsService::new(config).expect("new mdns service failed");
+        let service = MdnsService::new(config);
         let mut control = service.control();
 
         service.start();

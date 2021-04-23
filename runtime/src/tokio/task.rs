@@ -31,9 +31,7 @@ use tokio::time;
 #[cfg(feature = "tokio")]
 fn tokio() -> &'static tokio::runtime::Runtime {
     static INSTANCE: OnceCell<tokio::runtime::Runtime> = OnceCell::new();
-    INSTANCE.get_or_init(||
-        tokio::runtime::Runtime::new().unwrap()
-    )
+    INSTANCE.get_or_init(|| tokio::runtime::Runtime::new().unwrap())
 }
 
 #[derive(Debug)]
@@ -90,7 +88,7 @@ where
             // The first call should run the executor
             tokio().block_on(future)
         } else {
-            futures::executor::block_on(future)
+            tokio::task::block_in_place(|| futures::executor::block_on(future))
         };
         num_nested_blocking.replace(num_nested_blocking.get() - 1);
         res

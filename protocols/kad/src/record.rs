@@ -83,29 +83,30 @@ pub struct Record {
     pub key: Key,
     /// Value of the record.
     pub value: Vec<u8>,
+    /// The timestamp when the record is received from Kademlia network.
+    /// `None` means record is created locally.
+    pub time_received: Option<Instant>,
     /// The (original) publisher of the record.
     pub publisher: Option<PeerId>,
-    /// The expiration time as measured by a local, monotonic clock.
-    pub expires: Option<Instant>,
 }
 
 impl Record {
     /// Creates a new record for insertion into the DHT.
-    pub fn new<K>(key: K, value: Vec<u8>) -> Self
+    pub fn new<K>(key: K, value: Vec<u8>, local: bool, publisher: Option<PeerId>) -> Self
     where
         K: Into<Key>,
     {
         Record {
             key: key.into(),
             value,
-            publisher: None,
-            expires: None,
+            time_received: if local { None } else { Some(Instant::now()) },
+            publisher,
         }
     }
 
-    /// Checks whether the record is expired w.r.t. the given `Instant`.
-    pub fn is_expired(&self, now: Instant) -> bool {
-        self.expires.map_or(false, |t| now >= t)
+    /// Returns the timestamp of the record, `Instant`.
+    pub fn timestamp(&self) -> Option<Instant> {
+        self.time_received
     }
 }
 
@@ -117,8 +118,9 @@ pub struct ProviderRecord {
     pub key: Key,
     /// The provider of the value for the key.
     pub provider: PeerId,
-    /// The expiration time as measured by a local, monotonic clock.
-    pub expires: Option<Instant>,
+    /// The timestamp when the provider record is received from Kademlia network.
+    /// `None` means it is created locally.
+    pub time_received: Option<Instant>,
 }
 
 // Skip clippy::derive_hash_xor_eq, but it may to be resolved.
@@ -132,20 +134,20 @@ impl Hash for ProviderRecord {
 
 impl ProviderRecord {
     /// Creates a new provider record for insertion into a `RecordStore`.
-    pub fn new<K>(key: K, provider: PeerId, expires: Option<Instant>) -> Self
+    pub fn new<K>(key: K, provider: PeerId, local: bool) -> Self
     where
         K: Into<Key>,
     {
         ProviderRecord {
             key: key.into(),
             provider,
-            expires,
+            time_received: if local { None } else { Some(Instant::now()) },
         }
     }
 
-    /// Checks whether the provider record is expired w.r.t. the given `Instant`.
-    pub fn is_expired(&self, now: Instant) -> bool {
-        self.expires.map_or(false, |t| now >= t)
+    /// Returns the timestamp of the provider, `Instant`.
+    pub fn timestamp(&self) -> Option<Instant> {
+        self.time_received
     }
 }
 
@@ -169,12 +171,12 @@ mod tests {
             Record {
                 key: Key::arbitrary(g),
                 value: Vec::arbitrary(g),
-                publisher: if g.gen() { Some(PeerId::random()) } else { None },
-                expires: if g.gen() {
+                time_received: if g.gen() {
                     Some(Instant::now() + Duration::from_secs(g.gen_range(0, 60)))
                 } else {
                     None
                 },
+                publisher: if g.gen() { Some(PeerId::random()) } else { None },
             }
         }
     }
@@ -184,11 +186,7 @@ mod tests {
             ProviderRecord {
                 key: Key::arbitrary(g),
                 provider: PeerId::random(),
-                expires: if g.gen() {
-                    Some(Instant::now() + Duration::from_secs(g.gen_range(0, 60)))
-                } else {
-                    None
-                },
+                time_received: Some(Instant::now() + Duration::from_secs(g.gen_range(0, 60))),
             }
         }
     }

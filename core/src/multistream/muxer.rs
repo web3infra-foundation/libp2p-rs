@@ -19,12 +19,10 @@
 // DEALINGS IN THE SOFTWARE.
 
 use async_trait::async_trait;
+use futures::{AsyncRead, AsyncWrite};
 use std::{collections::HashMap, future::Future};
 
-use super::{
-    negotiator::{NegotiationError, Negotiator},
-    ReadEx, WriteEx,
-};
+use super::negotiator::{NegotiationError, Negotiator};
 
 pub trait Stream {}
 
@@ -82,7 +80,7 @@ where
         socket: TSocket,
     ) -> Result<(&mut IProtocolHandler<T>, TProto, TSocket), NegotiationError>
     where
-        TSocket: ReadEx + WriteEx + Unpin,
+        TSocket: AsyncRead + AsyncWrite + Unpin,
     {
         let (proto, io) = self.negotiator.negotiate(socket).await?;
         let h = self.handlers.get_mut(&proto).expect("get handler");
@@ -94,7 +92,7 @@ where
         socket: TSocket,
     ) -> Result<(&mut IProtocolHandler<T>, TProto, TSocket), NegotiationError>
     where
-        TSocket: ReadEx + WriteEx + Unpin,
+        TSocket: AsyncRead + AsyncWrite + Unpin,
     {
         let (proto, io) = self.negotiator.select_one(socket).await?;
         let h = self.handlers.get_mut(&proto).expect("get handler");

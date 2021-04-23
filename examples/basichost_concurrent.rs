@@ -23,6 +23,7 @@ use std::time::Duration;
 #[macro_use]
 extern crate lazy_static;
 
+use futures::{AsyncReadExt, AsyncWriteExt};
 use libp2prs_core::identity::Keypair;
 use libp2prs_core::transport::upgrade::TransportUpgrade;
 use libp2prs_core::upgrade::UpgradeInfo;
@@ -35,7 +36,6 @@ use libp2prs_swarm::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandl
 use libp2prs_swarm::substream::Substream;
 use libp2prs_swarm::{DummyProtocol, Swarm, SwarmError};
 use libp2prs_tcp::TcpConfig;
-use libp2prs_traits::{copy, ReadEx, WriteEx};
 use libp2prs_yamux as yamux;
 use std::{collections::VecDeque, error::Error};
 
@@ -64,7 +64,7 @@ fn run_server() {
 
     let listen_addr: Multiaddr = "/ip4/127.0.0.1/tcp/8086".parse().unwrap();
     let sec = secio::Config::new(keys.clone());
-    let mux = yamux::Config::new();
+    let mux = yamux::Config::server();
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
 
     struct MyProtocol;
@@ -91,9 +91,8 @@ fn run_server() {
     impl ProtocolHandler for MyProtocolHandler {
         async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn Error>> {
             log::info!("MyProtocolHandler handling inbound {:?}", stream);
-            let r = stream.clone();
-            let w = stream.clone();
-            if let Err(e) = copy(r, w).await {
+            let (r, mut w) = stream.split();
+            if let Err(e) = futures::io::copy(r, &mut w).await {
                 if e.kind() != std::io::ErrorKind::UnexpectedEof {
                     return Err(Box::new(SwarmError::from(e)));
                 }
@@ -129,7 +128,7 @@ fn run_client() {
 
     let _addr: Multiaddr = "/ip4/127.0.0.1/tcp/8086".parse().unwrap();
     let sec = secio::Config::new(keys.clone());
-    let mux = yamux::Config::new();
+    let mux = yamux::Config::client();
     //let mux = mplex::Config::new();
     //let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
@@ -161,15 +160,15 @@ fn run_client() {
                 let msg = b"hello";
 
                 for _ in 0..100u32 {
-                    stream.write_all2(msg).await.expect("C write");
+                    stream.write_all(msg).await.expect("C write");
 
                     let mut buf = vec![0; msg.len()];
-                    stream.read_exact2(&mut buf).await.expect("C read");
+                    stream.read_exact(&mut buf).await.expect("C read");
                     assert_eq!(buf, msg);
 
                     // runtime::sleep(Duration::from_secs(1)).await;
                 }
-                stream.close2().await.expect("close stream");
+                stream.close().await.expect("close stream");
             });
             handles.push_back(handle);
         }

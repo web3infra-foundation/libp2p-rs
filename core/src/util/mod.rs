@@ -18,17 +18,12 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-mod copy;
-
 use std::io;
 use std::io::ErrorKind;
 
 use async_trait::async_trait;
-use futures::io::{ReadHalf, WriteHalf};
 use futures::prelude::*;
 use futures::{AsyncReadExt, AsyncWriteExt};
-
-pub use copy::copy;
 
 /// Read Trait for async/await
 ///
@@ -289,34 +284,6 @@ impl<T: AsyncWrite + Unpin + Send> WriteEx for T {
         AsyncWriteExt::close(self).await
     }
 }
-
-///
-/// SplitEx Trait for read and write separation
-///
-pub trait SplitEx {
-    /// read half
-    type Reader: ReadEx + Unpin;
-    /// write half
-    type Writer: WriteEx + Unpin;
-
-    /// split Self to independent reader and writer
-    fn split(self) -> (Self::Reader, Self::Writer);
-}
-
-// a common way to support SplitEx for T, requires T: AsyncRead+AsyncWrite
-impl<T: AsyncRead + AsyncWrite + Send + Unpin> SplitEx for T {
-    type Reader = ReadHalf<T>;
-    type Writer = WriteHalf<T>;
-
-    fn split(self) -> (Self::Reader, Self::Writer) {
-        futures::AsyncReadExt::split(self)
-    }
-}
-
-/// SplittableReadWrite trait for simplifying generic type constraints
-pub trait SplittableReadWrite: ReadEx + WriteEx + SplitEx + Unpin + 'static {}
-
-impl<T: ReadEx + WriteEx + SplitEx + Unpin + 'static> SplittableReadWrite for T {}
 
 #[cfg(test)]
 mod tests {

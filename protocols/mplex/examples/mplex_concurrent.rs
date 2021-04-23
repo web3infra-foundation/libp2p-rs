@@ -18,12 +18,12 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+use futures::{AsyncReadExt, AsyncWriteExt};
 use libp2prs_mplex::{connection::Connection, error::ConnectionError};
 use libp2prs_runtime::{
     net::{TcpListener, TcpStream},
     task,
 };
-use libp2prs_traits::{ReadEx, WriteEx};
 use log::info;
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -57,11 +57,11 @@ fn run_server() {
                     info!("accepted new stream: {:?}", stream);
                     task::spawn(async move {
                         let mut len = [0; 4];
-                        stream.read_exact2(&mut len).await?;
+                        stream.read_exact(&mut len).await?;
                         let mut buf = vec![0; u32::from_be_bytes(len) as usize];
-                        let _ = stream.read_exact2(&mut buf).await;
-                        stream.write_all2(&buf).await?;
-                        stream.close2().await?;
+                        let _ = stream.read_exact(&mut buf).await;
+                        stream.write_all(&buf).await?;
+                        stream.close().await?;
                         Ok::<(), ConnectionError>(())
                     });
                 }
@@ -90,16 +90,16 @@ fn run_client() {
             let data = data.clone();
             info!("C: opened new stream {}", stream.id());
             let handle = task::spawn(async move {
-                stream.write_all2(&(data.len() as u32).to_be_bytes()[..]).await.unwrap();
+                stream.write_all(&(data.len() as u32).to_be_bytes()[..]).await.unwrap();
 
-                stream.write_all2(data.as_ref()).await.unwrap();
+                stream.write_all(data.as_ref()).await.unwrap();
                 info!("C: {}: wrote {} bytes", stream.id(), data.len());
 
                 let mut frame = vec![0; data.len()];
-                stream.read_exact2(&mut frame).await.unwrap();
+                stream.read_exact(&mut frame).await.unwrap();
                 assert_eq!(&data[..], &frame[..]);
 
-                stream.close2().await.expect("close stream");
+                stream.close().await.expect("close stream");
             });
             handles.push_back(handle);
         }

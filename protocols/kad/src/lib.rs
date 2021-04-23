@@ -89,9 +89,6 @@ pub const BETA_VALUE: NonZeroUsize = unsafe { NonZeroUsize::new_unchecked(3) };
 pub enum KadError {
     /// The store is at capacity w.r.t. the total number of stored records.
     MaxRecords,
-    /// The store is at capacity w.r.t. the total number of stored keys for
-    /// provider records.
-    MaxProvidedKeys,
     /// The value of a record to be stored is too large.
     ValueTooLarge,
     /// An operation failed to due no known peers in the routing table.

@@ -18,12 +18,12 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+use futures::{AsyncReadExt, AsyncWriteExt};
 use libp2prs_mplex::connection::Connection;
 use libp2prs_runtime::{
     net::{TcpListener, TcpStream},
     task,
 };
-use libp2prs_traits::{copy, ReadEx, WriteEx};
 use log::info;
 use std::collections::VecDeque;
 
@@ -55,9 +55,9 @@ fn run_server() {
                 while let Ok(stream) = ctrl.accept_stream().await {
                     info!("accepted new stream: {:?}", stream);
                     task::spawn(async move {
-                        let r = stream.clone();
-                        let w = stream.clone();
-                        let _ = copy(r, w).await;
+                        let (r, mut w) = stream.split();
+                        let _ = futures::io::copy(r, &mut w).await.expect("copy");
+                        w.close().await.expect("close");
                     });
                 }
             });
@@ -85,15 +85,15 @@ fn run_client() {
             let handle = task::spawn(async move {
                 let data = b"hello world";
 
-                stream.write_all2(data.as_ref()).await.unwrap();
+                stream.write_all(data.as_ref()).await.unwrap();
                 info!("C: {}: wrote {} bytes", stream.id(), data.len());
 
                 let mut frame = vec![0; data.len()];
-                stream.read_exact2(&mut frame).await.unwrap();
+                stream.read_exact(&mut frame).await.unwrap();
                 info!("C: {}: read {:?}", stream.id(), &frame);
                 // assert_eq!(&data[..], &frame[..]);
 
-                stream.close2().await.expect("close stream");
+                stream.close().await.expect("close stream");
 
                 // wait for stream to send and recv close frame
                 // runtime::sleep(Duration::from_secs(1)).await;

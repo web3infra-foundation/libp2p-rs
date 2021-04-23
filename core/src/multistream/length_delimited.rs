@@ -22,7 +22,7 @@
 use bytes::{BufMut as _, Bytes, BytesMut};
 use std::{convert::TryFrom as __, io, u16};
 
-use super::{ReadEx, WriteEx};
+use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 const MAX_LEN_BYTES: u16 = 2;
 const MAX_FRAME_SIZE: u16 = (1 << (MAX_LEN_BYTES * 8 - MAX_LEN_BYTES)) - 1;
@@ -44,7 +44,7 @@ pub struct LengthDelimited<R> {
     write_buffer: BytesMut,
 }
 
-impl<R: ReadEx + WriteEx> LengthDelimited<R> {
+impl<R: AsyncRead + AsyncWrite + Unpin> LengthDelimited<R> {
     /// Creates a new I/O resource for reading and writing unsigned-varint
     /// length delimited frames.
     pub fn new(inner: R) -> LengthDelimited<R> {
@@ -75,7 +75,7 @@ impl<R: ReadEx + WriteEx> LengthDelimited<R> {
     async fn read_unsigned_varint(&mut self) -> io::Result<u16> {
         let mut b = unsigned_varint::encode::u16_buffer();
         for i in 0..b.len() {
-            self.inner.read_exact2(&mut b[i..=i]).await?;
+            self.inner.read_exact(&mut b[i..=i]).await?;
             if unsigned_varint::decode::is_last(b[i]) {
                 return Ok(unsigned_varint::decode::u16(&b[..=i])
                     .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
@@ -94,7 +94,7 @@ impl<R: ReadEx + WriteEx> LengthDelimited<R> {
         buf.clear();
         buf.resize(len as usize, 0);
         if len > 0 {
-            self.inner.read_exact2(buf).await?;
+            self.inner.read_exact(buf).await?;
         }
         Ok(buf.split_off(0).freeze())
     }
@@ -110,7 +110,8 @@ impl<R: ReadEx + WriteEx> LengthDelimited<R> {
         self.write_buffer.reserve(len as usize + uvi_len.len());
         self.write_buffer.put(uvi_len);
         self.write_buffer.put(buf);
-        self.inner.write_all2(&self.write_buffer).await
+        self.inner.write_all(&self.write_buffer).await?;
+        self.inner.flush().await
     }
 }
 

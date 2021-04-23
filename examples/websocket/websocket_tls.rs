@@ -26,6 +26,7 @@ use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 
 use async_trait::async_trait;
+use futures::{AsyncReadExt, AsyncWriteExt};
 #[macro_use]
 extern crate lazy_static;
 
@@ -40,7 +41,6 @@ use libp2prs_swarm::identify::IdentifyConfig;
 use libp2prs_swarm::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandler, ProtocolImpl};
 use libp2prs_swarm::substream::Substream;
 use libp2prs_swarm::Swarm;
-use libp2prs_traits::{ReadEx, WriteEx};
 use libp2prs_websocket::{tls, WsConfig};
 
 use rustls::internal::pemfile::{certs, rsa_private_keys};
@@ -162,9 +162,9 @@ impl ProtocolHandler for MyProtocolHandler {
         log::trace!("MyProtocolHandler handling inbound {:?}", stream);
         let mut msg = vec![0; 4096];
         loop {
-            let n = stream.read2(&mut msg).await?;
+            let n = stream.read(&mut msg).await?;
             log::info!("received: {:?}", &msg[..n]);
-            stream.write2(&msg[..n]).await?;
+            stream.write(&msg[..n]).await?;
         }
     }
 
@@ -256,14 +256,14 @@ fn run_client() -> io::Result<()> {
         log::info!("stream {:?} opened, writing something...", stream);
 
         let msg = b"hello";
-        let _ = stream.write2(msg).await;
+        let _ = stream.write(msg).await;
         let mut buf = [0; 5];
 
-        let _ = stream.read2(&mut buf).await;
+        let _ = stream.read(&mut buf).await;
         log::info!("receiv msg ======={}", String::from_utf8_lossy(&buf[..]));
         assert_eq!(msg, &buf);
 
-        let _ = stream.close2().await;
+        let _ = stream.close().await;
 
         log::info!("shutdown is completed");
     });

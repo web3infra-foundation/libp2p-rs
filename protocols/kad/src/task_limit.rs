@@ -22,6 +22,7 @@ use futures::{channel::mpsc, SinkExt, StreamExt};
 use std::future::Future;
 use std::num::NonZeroUsize;
 
+use crate::KadError;
 use libp2prs_runtime::task;
 
 /// The runtime limiter could be used to limit the maximum count of running runtime
@@ -30,7 +31,7 @@ pub(crate) struct TaskLimiter {
     parallelism: NonZeroUsize,
     tx: mpsc::Sender<()>,
     rx: mpsc::Receiver<()>,
-    handles: Vec<task::TaskHandle<()>>,
+    handles: Vec<task::TaskHandle<Result<(), KadError>>>,
 }
 
 impl TaskLimiter {
@@ -48,26 +49,30 @@ impl TaskLimiter {
         }
     }
 
-    pub(crate) async fn run<F, T>(&mut self, future: F)
+    pub(crate) async fn run<F>(&mut self, future: F)
     where
-        F: Future<Output = T> + Send + 'static,
+        F: Future<Output = Result<(), KadError>> + Send + 'static,
     {
         self.rx.next().await.expect("must be Some");
         let mut tx = self.tx.clone();
         let handle = task::spawn(async move {
-            let _ = future.await;
+            let r = future.await;
             let _ = tx.send(()).await;
+            r
         });
 
         self.handles.push(handle);
     }
 
-    pub(crate) async fn wait(self) -> usize {
+    pub(crate) async fn wait(self) -> (usize, usize) {
         let count = self.handles.len();
+        let mut success = 0;
         for h in self.handles {
-            h.await;
+            if h.await.map_or(false, |r| r.is_ok()) {
+                success += 1;
+            }
         }
-        count
+        (count, success)
     }
 }
 
@@ -90,12 +95,13 @@ mod tests {
                 limiter
                     .run(async move {
                         count.fetch_add(1, SeqCst);
+                        Ok::<(), KadError>(())
                     })
                     .await;
             }
 
             let c = limiter.wait().await;
-            assert_eq!(c, 10);
+            assert_eq!(c.0, 10);
             assert_eq!(count.load(SeqCst), 10);
         });
     }

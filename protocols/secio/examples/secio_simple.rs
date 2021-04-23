@@ -23,7 +23,8 @@ use libp2prs_runtime::{net, task};
 use libp2prs_secio::Config;
 use log::info;
 
-use libp2prs_traits::{ReadEx, WriteEx};
+// use libp2prs_traits::{ReadEx, WriteEx};
+use futures::{AsyncReadExt, AsyncWriteExt};
 
 fn main() {
     env_logger::init();
@@ -53,14 +54,18 @@ fn server() {
 
                 let mut buf = [0; 100];
 
-                while let Ok(n) = handle.read2(&mut buf).await {
-                    if handle.write_all2(&buf[..n]).await.is_err() {
+                while let Ok(n) = handle.read(&mut buf).await {
+                    if n == 0 {
                         break;
                     }
+                    if handle.write_all(&buf[..n]).await.is_err() {
+                        break;
+                    }
+                    handle.flush().await.expect("expect handle flush");
                 }
 
                 info!("session closed!");
-                let _ = handle.close2().await;
+                let _ = handle.close().await;
 
                 // let (h1, h2) = handle.split();
                 // match async_std::io::copy(h1, h2).await {
@@ -85,13 +90,14 @@ fn client() {
     task::block_on(async move {
         let stream = net::TcpStream::connect("127.0.0.1:1337").await.unwrap();
         let (mut handle, _, _) = config.handshake(stream).await.unwrap();
-        match handle.write_all2(data.as_ref()).await {
+        match handle.write_all(data.as_ref()).await {
             Ok(_) => info!("send all"),
             Err(e) => info!("err: {:?}", e),
         }
+        handle.flush().await.expect("expect handle flush");
 
         let mut buf = [0; 100];
-        let n = handle.read2(&mut buf).await.unwrap();
+        let n = handle.read(&mut buf).await.unwrap();
         info!("receive: {:?}", &buf[..n]);
     });
 }

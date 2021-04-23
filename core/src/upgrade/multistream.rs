@@ -21,7 +21,7 @@
 use crate::multistream::Negotiator;
 use crate::transport::TransportError;
 use crate::upgrade::{ProtocolName, Upgrader};
-use libp2prs_traits::{ReadEx, WriteEx};
+use futures::{AsyncRead, AsyncWrite};
 use log::{debug, trace};
 
 //b"/multistream/1.0.0"
@@ -46,7 +46,7 @@ impl<U> Multistream<U> {
 impl<U> Multistream<U> {
     pub(crate) async fn select_inbound<C>(self, socket: C) -> Result<U::Output, TransportError>
     where
-        C: ReadEx + WriteEx + Unpin,
+        C: AsyncRead + AsyncWrite + Unpin,
         U: Upgrader<C> + Send,
     {
         trace!("starting multistream select for inbound...");
@@ -61,7 +61,7 @@ impl<U> Multistream<U> {
 
     pub(crate) async fn select_outbound<C: Send + Unpin>(self, socket: C) -> Result<U::Output, TransportError>
     where
-        C: ReadEx + WriteEx + Unpin,
+        C: AsyncRead + AsyncWrite + Unpin,
         U: Upgrader<C> + Send,
     {
         trace!("starting multistream select for outbound...");

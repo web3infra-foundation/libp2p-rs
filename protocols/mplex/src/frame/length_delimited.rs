@@ -18,7 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use libp2prs_traits::{ReadEx, WriteEx};
+use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use std::io::{self, ErrorKind};
 
 const U32_LEN: usize = 5;
@@ -41,10 +41,10 @@ where
 
 impl<T> LengthDelimited<T>
 where
-    T: ReadEx,
+    T: AsyncRead + Send + Unpin,
 {
     pub async fn read_byte(&mut self, buf: &mut [u8]) -> io::Result<()> {
-        let n = self.inner.read2(buf).await?;
+        let n = self.inner.read(buf).await?;
         if n == 1 {
             return Ok(());
         }
@@ -69,19 +69,19 @@ where
     }
 
     pub async fn read_body(&mut self, buf: &mut [u8]) -> io::Result<()> {
-        self.inner.read_exact2(buf).await?;
+        self.inner.read_exact(buf).await?;
         Ok(())
     }
 }
 
 impl<T> LengthDelimited<T>
 where
-    T: WriteEx,
+    T: AsyncWrite + Send + Unpin,
 {
     pub async fn write_header(&mut self, hdr: u32) -> io::Result<()> {
         let mut uvi_buf = unsigned_varint::encode::u32_buffer();
         let header_byte = unsigned_varint::encode::u32(hdr, &mut uvi_buf);
-        self.inner.write_all2(header_byte).await
+        self.inner.write_all(header_byte).await
     }
 
     pub async fn write_length(&mut self, length: u32) -> io::Result<()> {
@@ -91,18 +91,18 @@ where
 
         let mut uvi_buf = unsigned_varint::encode::u32_buffer();
         let uvi_len = unsigned_varint::encode::u32(length, &mut uvi_buf);
-        self.inner.write_all2(uvi_len).await
+        self.inner.write_all(uvi_len).await
     }
 
     pub async fn write_body(&mut self, data: &[u8]) -> io::Result<()> {
-        self.inner.write_all2(data).await
+        self.inner.write_all(data).await
     }
 
     pub(crate) async fn flush(&mut self) -> io::Result<()> {
-        self.inner.flush2().await
+        self.inner.flush().await
     }
 
     pub(crate) async fn close(&mut self) -> io::Result<()> {
-        self.inner.close2().await
+        self.inner.close().await
     }
 }

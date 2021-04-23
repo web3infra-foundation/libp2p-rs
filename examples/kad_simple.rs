@@ -85,6 +85,7 @@ fn run_server(bootstrap_peer: PeerId, bootstrap_addr: Multiaddr) {
 
     let sec_noise = NoiseConfig::xx(dh, keys.clone());
     let sec_secio = secio::Config::new(keys.clone());
+
     let sec = Selector::new(sec_noise, sec_secio);
 
     let mux = Selector::new(yamux::Config::new(), mplex::Config::new());
@@ -101,7 +102,9 @@ fn run_server(bootstrap_peer: PeerId, bootstrap_addr: Multiaddr) {
         swarm.listen_on(vec![listen_addr1]).unwrap();
 
         // build Kad
-        let config = KademliaConfig::default().with_query_timeout(Duration::from_secs(90));
+        let config = KademliaConfig::default()
+            .with_refresh_interval(None)
+            .with_query_timeout(Duration::from_secs(90));
 
         let store = MemoryStore::new(*swarm.local_peer_id());
         let kad = Kademlia::with_config(*swarm.local_peer_id(), store, config);

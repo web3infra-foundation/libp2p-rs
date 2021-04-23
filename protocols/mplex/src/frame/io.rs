@@ -24,7 +24,7 @@ use crate::connection::Id;
 use crate::frame::header;
 use crate::frame::length_delimited::LengthDelimited;
 use crate::frame::Frame;
-use libp2prs_traits::{ReadEx, WriteEx};
+use futures::{AsyncRead, AsyncWrite};
 
 const MAX_MESSAGE_SIZE: u32 = 1 << 20;
 
@@ -45,7 +45,7 @@ where
 
 impl<T> IO<T>
 where
-    T: ReadEx + Unpin,
+    T: AsyncRead + Send + Unpin,
 {
     pub(crate) async fn recv_frame(&mut self) -> Result<Frame, FrameDecodeError> {
         // get header
@@ -72,7 +72,7 @@ where
 
 impl<T> IO<T>
 where
-    T: WriteEx + Unpin,
+    T: AsyncWrite + Send + Unpin,
 {
     pub(crate) async fn send_frame(&mut self, frame: &Frame) -> io::Result<()> {
         log::trace!("{}: write stream, header: {}, len {}", self.id, frame.header, frame.body.len());

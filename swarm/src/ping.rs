@@ -48,10 +48,10 @@ use std::num::NonZeroU32;
 use std::time::{Duration, Instant};
 use std::{error::Error, io};
 
+use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use libp2prs_core::transport::TransportError;
 use libp2prs_core::upgrade::UpgradeInfo;
 use libp2prs_runtime::task;
-use libp2prs_traits::{ReadEx, WriteEx};
 
 use crate::connection::Connection;
 use crate::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandler};
@@ -170,17 +170,20 @@ impl PingConfig {
     }
 }
 
-pub async fn ping<T: ReadEx + WriteEx + Send + std::fmt::Debug>(mut stream: T, timeout: Duration) -> Result<Duration, TransportError> {
+pub async fn ping<T: AsyncRead + AsyncWrite + Send + Unpin + std::fmt::Debug>(
+    mut stream: T,
+    timeout: Duration,
+) -> Result<Duration, TransportError> {
     let ping = async {
         let payload: [u8; PING_SIZE] = thread_rng().sample(distributions::Standard);
         log::trace!("Preparing ping payload {:?}", payload);
 
-        stream.write_all2(&payload).await?;
+        stream.write_all(&payload).await?;
         let started = Instant::now();
 
         let mut recv_payload = [0u8; PING_SIZE];
-        stream.read_exact2(&mut recv_payload).await?;
-        stream.close2().await?;
+        stream.read_exact(&mut recv_payload).await?;
+        stream.close().await?;
         if recv_payload == payload {
             log::trace!("ping succeeded for {:?}", stream);
             Ok(started.elapsed())
@@ -254,10 +257,10 @@ impl ProtocolHandler for PingHandler {
         log::trace!("Ping Protocol handling on {:?}", stream);
 
         let mut payload = [0u8; PING_SIZE];
-        while stream.read_exact2(&mut payload).await.is_ok() {
-            stream.write_all2(&payload).await?;
+        while stream.read_exact(&mut payload).await.is_ok() {
+            stream.write_all(&payload).await?;
         }
-        stream.close2().await?;
+        stream.close().await?;
 
         Ok(())
     }

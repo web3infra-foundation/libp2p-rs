@@ -22,14 +22,13 @@
 //!
 //! [libp2p-noise-spec]: https://github.com/libp2p/specs/tree/master/noise
 
-use crate::{protocol, NoiseConfig, NoiseError, Protocol, ProtocolParams};
+use crate::{NoiseError, Protocol, ProtocolParams};
 use libp2prs_core::identity;
 use rand::Rng;
 use x25519_dalek::{x25519, X25519_BASEPOINT_BYTES};
 use zeroize::Zeroize;
 
 use super::{x25519::X25519, *};
-use libp2prs_core::upgrade::UpgradeInfo;
 
 /// Prefix of static key signatures for domain separation.
 const STATIC_KEY_DOMAIN: &str = "noise-libp2p-static-key:";
@@ -50,6 +49,7 @@ impl Zeroize for X25519Spec {
     }
 }
 
+#[allow(clippy::new_without_default)]
 impl Keypair<X25519Spec> {
     /// Create a new X25519 keypair.
     pub fn new() -> Keypair<X25519Spec> {
@@ -61,12 +61,6 @@ impl Keypair<X25519Spec> {
     }
 }
 
-impl Default for protocol::Keypair<protocol::x25519_spec::X25519Spec> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Promote a X25519 secret key into a keypair.
 impl From<SecretKey<X25519Spec>> for Keypair<X25519Spec> {
     fn from(secret: SecretKey<X25519Spec>) -> Keypair<X25519Spec> {
@@ -75,19 +69,50 @@ impl From<SecretKey<X25519Spec>> for Keypair<X25519Spec> {
     }
 }
 
+/*
 impl UpgradeInfo for NoiseConfig<XX, X25519Spec> {
     type Info = &'static [u8];
+    type InfoIter = std::iter::Once<Self::Info>;
 
-    fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![b"/noise"]
+    fn protocol_info(&self) -> Self::InfoIter {
+        std::iter::once(b"/noise")
     }
 }
+
+/// **Note**: This is not currentlyy a standardised upgrade.
+impl UpgradeInfo for NoiseConfig<IX, X25519Spec> {
+    type Info = &'static [u8];
+    type InfoIter = std::iter::Once<Self::Info>;
+
+    fn protocol_info(&self) -> Self::InfoIter {
+        std::iter::once(b"/noise/ix/25519/chachapoly/sha256/0.1.0")
+    }
+}
+
+/// **Note**: This is not currently a standardised upgrade.
+impl<R> UpgradeInfo for NoiseConfig<IK, X25519Spec, R> {
+    type Info = &'static [u8];
+    type InfoIter = std::iter::Once<Self::Info>;
+
+    fn protocol_info(&self) -> Self::InfoIter {
+        std::iter::once(b"/noise/ik/25519/chachapoly/sha256/0.1.0")
+    }
+}
+ */
 
 /// Noise protocols for X25519 with libp2p-spec compliant signatures.
 ///
 /// **Note**: Only the XX handshake pattern is currently guaranteed to be
 /// interoperable with other libp2p implementations.
 impl Protocol<X25519Spec> for X25519Spec {
+    fn params_ik() -> ProtocolParams {
+        X25519::params_ik()
+    }
+
+    fn params_ix() -> ProtocolParams {
+        X25519::params_ix()
+    }
+
     fn params_xx() -> ProtocolParams {
         X25519::params_xx()
     }

@@ -29,8 +29,7 @@ use crate::upgrade::multistream::Multistream;
 use crate::upgrade::Upgrader;
 use crate::{transport::TransportError, Multiaddr, Transport};
 use async_trait::async_trait;
-use futures::{future::Either, stream::FuturesUnordered, FutureExt, StreamExt};
-use libp2prs_traits::{ReadEx, WriteEx};
+use futures::{future::Either, stream::FuturesUnordered, AsyncRead, AsyncWrite, FutureExt, StreamExt};
 use std::{
     future::Future,
     num::NonZeroUsize,
@@ -51,9 +50,9 @@ pub struct TransportUpgrade<InnerTrans, TMux, TSec> {
 impl<InnerTrans, TMux, TSec> TransportUpgrade<InnerTrans, TMux, TSec>
 where
     InnerTrans: Transport,
-    InnerTrans::Output: ConnectionInfo + ReadEx + WriteEx + Unpin,
+    InnerTrans::Output: ConnectionInfo + AsyncRead + AsyncWrite + Unpin,
     TSec: Upgrader<InnerTrans::Output>,
-    TSec::Output: SecureInfo + ReadEx + WriteEx + Unpin,
+    TSec::Output: SecureInfo + AsyncRead + AsyncWrite + Unpin,
     TMux: Upgrader<TSec::Output>,
     TMux::Output: StreamMuxer,
 {
@@ -71,9 +70,9 @@ where
 impl<InnerTrans, TMux, TSec> Transport for TransportUpgrade<InnerTrans, TMux, TSec>
 where
     InnerTrans: Transport + Clone + 'static,
-    InnerTrans::Output: ConnectionInfo + ReadEx + WriteEx + Unpin + 'static,
+    InnerTrans::Output: ConnectionInfo + AsyncRead + AsyncWrite + Unpin + 'static,
     TSec: Upgrader<InnerTrans::Output> + 'static,
-    TSec::Output: SecureInfo + ReadEx + WriteEx + Unpin,
+    TSec::Output: SecureInfo + AsyncRead + AsyncWrite + Unpin,
     TMux: Upgrader<TSec::Output> + 'static,
     TMux::Output: StreamMuxerEx + 'static,
 {
@@ -110,9 +109,9 @@ type UpgradeFuture<Output> = Pin<Box<dyn Future<Output = Result<Output, Transpor
 
 pub struct ListenerUpgrade<TOutput, TMux, TSec>
 where
-    TOutput: ConnectionInfo + ReadEx + WriteEx + Unpin + 'static,
+    TOutput: ConnectionInfo + AsyncRead + AsyncWrite + Unpin + 'static,
     TSec: Upgrader<TOutput> + Send + Clone + 'static,
-    TSec::Output: SecureInfo + ReadEx + WriteEx + Unpin,
+    TSec::Output: SecureInfo + AsyncRead + AsyncWrite + Unpin,
     TMux: Upgrader<TSec::Output> + 'static,
     TMux::Output: StreamMuxerEx + 'static,
 {
@@ -121,14 +120,13 @@ where
     sec: Multistream<TSec>,
     futures: FuturesUnordered<UpgradeFuture<TMux::Output>>,
     limit: Option<NonZeroUsize>,
-    event: Option<ListenerEvent<<Self as TransportListener>::Output>>,
 }
 
 impl<TOutput, TMux, TSec> ListenerUpgrade<TOutput, TMux, TSec>
 where
-    TOutput: ConnectionInfo + ReadEx + WriteEx + Unpin + 'static,
+    TOutput: ConnectionInfo + AsyncRead + AsyncWrite + Unpin + 'static,
     TSec: Upgrader<TOutput> + Send + Clone + 'static,
-    TSec::Output: SecureInfo + ReadEx + WriteEx + Unpin,
+    TSec::Output: SecureInfo + AsyncRead + AsyncWrite + Unpin,
     TMux: Upgrader<TSec::Output> + 'static,
     TMux::Output: StreamMuxerEx + 'static,
 {
@@ -139,7 +137,6 @@ where
             sec,
             futures: FuturesUnordered::new(),
             limit: NonZeroUsize::new(10),
-            event: None,
         }
     }
 
@@ -155,9 +152,9 @@ where
 #[async_trait]
 impl<TOutput, TMux, TSec> TransportListener for ListenerUpgrade<TOutput, TMux, TSec>
 where
-    TOutput: ConnectionInfo + ReadEx + WriteEx + Unpin + 'static,
+    TOutput: ConnectionInfo + AsyncRead + AsyncWrite + Unpin + 'static,
     TSec: Upgrader<TOutput> + Send + Clone + 'static,
-    TSec::Output: SecureInfo + ReadEx + WriteEx + Unpin,
+    TSec::Output: SecureInfo + AsyncRead + AsyncWrite + Unpin,
     TMux: Upgrader<TSec::Output> + 'static,
     TMux::Output: StreamMuxerEx + 'static,
 {
@@ -165,86 +162,58 @@ where
 
     async fn accept(&mut self) -> Result<ListenerEvent<Self::Output>, TransportError> {
         loop {
-            if let Some(evt) = self.event.take() {
-                return Ok(evt);
-            }
-
             let mut next_incoming = if self.limit.map(|limit| limit.get() > self.futures.len()).unwrap_or(true) {
-                Either::Left(self.inner.accept())
+                self.inner.accept()
             } else {
-                Either::Right(futures::future::pending())
+                futures::future::pending().boxed()
             };
 
             let mut next_upgraded = self.futures.next();
 
             let next = futures::future::poll_fn(move |cx: &mut Context| {
-                let a = next_incoming.poll_unpin(cx);
-                let b = next_upgraded.poll_unpin(cx);
-
-                let upgrade_pending = match b {
+                if let Poll::Ready(ret) = next_incoming.poll_unpin(cx) {
+                    return Poll::Ready(Either::Left(ret));
+                }
+                match next_upgraded.poll_unpin(cx) {
                     Poll::Pending | Poll::Ready(None) => {
                         // when the queue is empty, FuturesUnordered next return none
-                        true
+                        Poll::Pending
                     }
-                    _ => false,
-                };
-
-                if a.is_pending() && upgrade_pending {
-                    return Poll::Pending;
+                    Poll::Ready(Some(ret)) => Poll::Ready(Either::Right(ret)),
                 }
-                Poll::Ready((a, b))
             });
 
-            let (incoming, upgraded) = next.await;
+            let event_or_upgraded = next.await;
 
-            let mut event: Option<ListenerEvent<Self::Output>> = None;
+            match event_or_upgraded {
+                Either::Left(ret) => {
+                    match ret? {
+                        ListenerEvent::AddressAdded(a) => {
+                            return Ok(ListenerEvent::AddressAdded(a));
+                        }
+                        ListenerEvent::AddressDeleted(a) => {
+                            return Ok(ListenerEvent::AddressDeleted(a));
+                        }
+                        ListenerEvent::Accepted(socket) => {
+                            let sec = self.sec.clone();
+                            let mux = self.mux.clone();
 
-            if let Poll::Ready(ret) = incoming {
-                match ret? {
-                    ListenerEvent::AddressAdded(a) => {
-                        event = Some(ListenerEvent::AddressAdded(a));
-                    }
-                    ListenerEvent::AddressDeleted(a) => {
-                        event = Some(ListenerEvent::AddressDeleted(a));
-                    }
-                    ListenerEvent::Accepted(socket) => {
-                        let sec = self.sec.clone();
-                        let mux = self.mux.clone();
-
-                        self.futures.push(
-                            async move {
-                                log::trace!("accept a new connection from {}, upgrading...", socket.remote_multiaddr());
-                                //futures_timer::Delay::new(Duration::from_secs(3)).await;
-                                let sec_socket = sec.select_inbound(socket).await?;
-                                mux.select_inbound(sec_socket).await
-                            }
-                            .boxed(),
-                        );
-                    }
-                }
-            }
-
-            match upgraded {
-                Poll::Pending => { /* continue */ }
-                Poll::Ready(Some(Ok(o))) => {
-                    let evt: ListenerEvent<Self::Output> = ListenerEvent::Accepted(Box::new(o));
-                    if event.is_some() {
-                        self.event = Some(evt);
-                    } else {
-                        event = Some(evt);
+                            self.futures.push(
+                                async move {
+                                    log::trace!("accept a new connection from {}, upgrading...", socket.remote_multiaddr());
+                                    //futures_timer::Delay::new(Duration::from_secs(3)).await;
+                                    let sec_socket = sec.select_inbound(socket).await?;
+                                    mux.select_inbound(sec_socket).await
+                                }
+                                .boxed(),
+                            );
+                        }
                     }
                 }
-                Poll::Ready(Some(Err(e))) => {
-                    // TODO Is it necessary to strictly follow the sequence of events when an error occurs
-                    return Err(e);
+                Either::Right(ret) => {
+                    let o = ret?;
+                    return Ok(ListenerEvent::Accepted(Box::new(o)));
                 }
-                Poll::Ready(None) => {
-                    // futures is empty and new incoming pushed to futures
-                    // continue loop
-                }
-            }
-            if let Some(evt) = event {
-                return Ok(evt);
             }
         }
 
@@ -299,10 +268,10 @@ impl Clone for ITransportEx {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pnet::*;
     use crate::transport::memory::MemoryTransport;
     use crate::transport::protector::ProtectorTransport;
     use crate::upgrade::dummy::DummyUpgrader;
+    use libp2p_pnet::*;
     #[test]
     fn test_dialer_and_listener() {
         // Setup listener.

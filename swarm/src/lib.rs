@@ -67,7 +67,7 @@ use futures::future::Either;
 use futures::prelude::*;
 use smallvec::SmallVec;
 use std::collections::HashSet;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::Arc;
 use std::time::Duration;
 use std::{error, fmt};
@@ -81,9 +81,9 @@ use libp2prs_core::{
 };
 use libp2prs_runtime::task;
 
-use crate::connection::{Connection, ConnectionId, ConnectionLimit, ConnectionView, Direction};
+use crate::connection::{Connection, ConnectionId, ConnectionView, Direction};
 use crate::control::{DumpCommand, SwarmControlCmd};
-use crate::dial::EitherDialAddr;
+use crate::dial::{DialerStatsView, EitherDialAddr};
 use crate::identify::{IdentifyConfig, IdentifyHandler, IdentifyInfo, IdentifyPushHandler};
 use crate::metrics::metric::Metric;
 use crate::muxer::Muxer;
@@ -130,6 +130,8 @@ pub enum SwarmEvent {
     StreamError {
         /// The connection Id of the sub stream.
         cid: ConnectionId,
+        /// Direction of the requested stream.
+        dir: Direction,
         /// The cause of the error.
         error: TransportError,
     },
@@ -217,6 +219,51 @@ impl Transports {
     }
 }
 
+/// Statistics of Swarm connection and stream.
+#[derive(Default, Clone, Debug)]
+pub struct SwarmBaseStats {
+    connection_incoming_opened: usize,
+    connection_outgoing_opened: usize,
+    connection_closed: usize,
+    incoming_connection_error: usize,
+    outgoing_connection_error: usize,
+    substream_inbound_opened: usize,
+    substream_outbound_opened: usize,
+    substream_closed: usize,
+    substream_inbound_error: usize,
+    substream_outbound_error: usize,
+}
+
+/// Statistics of Swarm.
+#[derive(Debug)]
+pub struct SwarmStats {
+    base: SwarmBaseStats,
+    dialer: DialerStatsView,
+    listener: ListenerStatsView,
+}
+
+/// Statistics of listener.
+#[derive(Default)]
+struct ListenerStats {
+    total_connecton: AtomicUsize,
+    total_error: AtomicUsize,
+}
+
+#[derive(Debug)]
+pub struct ListenerStatsView {
+    total_connecton: usize,
+    total_error: usize,
+}
+
+impl From<&ListenerStats> for ListenerStatsView {
+    fn from(s: &ListenerStats) -> Self {
+        Self {
+            total_connecton: s.total_connecton.load(Ordering::Relaxed),
+            total_error: s.total_error.load(Ordering::Relaxed),
+        }
+    }
+}
+
 /// The post-processing callback for Dialer.
 type DialCallback = Box<dyn FnOnce(Result<&mut Connection>) + Send>;
 /// The transaction Id for dialer post-processing.
@@ -250,6 +297,12 @@ pub struct Swarm {
 
     /// The next listener ID to assign.
     next_connection_id: usize,
+
+    /// The basic statistics of Swarm.
+    base_stats: SwarmBaseStats,
+
+    /// The listener statistics.
+    listener_stats: Arc<ListenerStats>,
 
     /// List of multiaddresses we're listening on.
     listened_addrs: SmallVec<[Multiaddr; 8]>,
@@ -320,6 +373,8 @@ impl Swarm {
             public_key: key.clone(),
             local_peer_id: key.into_peer_id(),
             next_connection_id: 0,
+            base_stats: Default::default(),
+            listener_stats: Default::default(),
             listened_addrs: Default::default(),
             external_addrs: Default::default(),
             banned_peers: Default::default(),
@@ -469,13 +524,13 @@ impl Swarm {
                 let _ = self.handle_connection_closed(cid);
             }
             SwarmEvent::OutgoingConnectionError { tid, peer_id, error } => {
-                let _ = self.handle_connection_error(peer_id, error, tid);
+                let _ = self.handle_outgoing_connection_error(peer_id, error, tid);
             }
             SwarmEvent::IncomingConnectionError { remote_addr, error } => {
-                log::debug!("incoming connection error for {:?} {:?}", remote_addr, error);
+                let _ = self.handle_incoming_connection_error(remote_addr, error);
             }
-            SwarmEvent::StreamError { .. } => {
-                // TODO: add statistics
+            SwarmEvent::StreamError { cid, dir, .. } => {
+                let _ = self.handle_stream_error(cid, dir);
             }
             SwarmEvent::StreamOpened { view } => {
                 let _ = self.handle_stream_opened(view);
@@ -542,6 +597,11 @@ impl Swarm {
                         let _ = reply.send(r);
                     });
                 }
+                DumpCommand::Statistics(reply) => {
+                    let _ = self.on_retrieve_statistics(|r| {
+                        let _ = reply.send(r);
+                    });
+                }
             },
         }
         Ok(())
@@ -574,16 +634,19 @@ impl Swarm {
     }
 
     fn on_close_connection(&mut self, peer_id: PeerId, reply: oneshot::Sender<Result<()>>) -> Result<()> {
-        if let Some(ids) = self.connections_by_peer.get(&peer_id) {
+        let r = if let Some(ids) = self.connections_by_peer.get(&peer_id) {
             // close all connections related to the peer_id
             for id in ids {
                 if let Some(c) = self.connections_by_id.get_mut(&id) {
                     c.close()
                 }
             }
-        }
+            Ok(())
+        } else {
+            Err(SwarmError::NoConnection(peer_id))
+        };
 
-        let _ = reply.send(Ok(()));
+        let _ = reply.send(r);
         Ok(())
     }
 
@@ -649,6 +712,11 @@ impl Swarm {
     /// Retrieves the substream views.
     fn on_retrieve_substream_views(&mut self, pid: PeerId, f: impl FnOnce(Result<Vec<SubstreamView>>)) -> Result<()> {
         f(self.get_substream_views(pid));
+        Ok(())
+    }
+    /// Retrieves the statistics.
+    fn on_retrieve_statistics(&mut self, f: impl FnOnce(Result<SwarmStats>)) -> Result<()> {
+        f(self.get_stats());
         Ok(())
     }
     /// Starts Swarm background runtime
@@ -719,6 +787,13 @@ impl Swarm {
         } else {
             Err(SwarmError::NoConnection(peer_id))
         }
+    }
+    /// Returns the statistics of the `Swarm`.
+    fn get_stats(&self) -> Result<SwarmStats> {
+        let dialer = self.dialer.stats();
+        let listener = self.listener_stats.as_ref().into();
+        let base = self.base_stats.clone();
+        Ok(SwarmStats { base, dialer, listener })
     }
     /// Returns network information about the `Swarm`.
     fn get_network_info(&self) -> NetworkInfo {
@@ -802,6 +877,7 @@ impl Swarm {
         let mut tx = self.event_sender.clone();
         // start a runtime for this listener
         // TODO: remember the runtime handle of this listener, so that we can 'cancel' it when exiting
+        let stats = self.listener_stats.clone();
         task::spawn(async move {
             loop {
                 let r = listener.accept().await;
@@ -816,6 +892,7 @@ impl Swarm {
                         // don't have to verify if remote peer id matches its public key
                         // always accept any incoming connection
                         // send muxer back to Swarm main runtime
+                        stats.total_connecton.fetch_add(1, Ordering::SeqCst);
                         let _ = tx
                             .send(SwarmEvent::ConnectionEstablished {
                                 stream_muxer: muxer,
@@ -825,6 +902,7 @@ impl Swarm {
                             .await;
                     }
                     Err(err) => {
+                        stats.total_error.fetch_add(1, Ordering::SeqCst);
                         let _ = tx
                             .send(SwarmEvent::IncomingConnectionError {
                                 remote_addr: Multiaddr::empty(),
@@ -846,6 +924,8 @@ impl Swarm {
             f(Err(SwarmError::DialToSelf));
             return;
         }
+
+        self.peer_store.add_addrs(&peer_id, addrs.clone(), ADDRESS_TTL);
 
         // allocate transaction id and push box::f into hashmap for post-processing
         let tid = self.assign_tid();
@@ -985,7 +1065,12 @@ impl Swarm {
     fn handle_connection_opened(&mut self, stream_muxer: IStreamMuxer, dir: Direction, tid: Option<TransactionId>) -> Result<()> {
         log::debug!("handle_connection_opened: {:?} {:?}", stream_muxer, dir);
 
-        let metric = self.metric.clone();
+        // update base statistics
+        if dir == Direction::Inbound {
+            self.base_stats.connection_incoming_opened += 1;
+        } else {
+            self.base_stats.connection_outgoing_opened += 1;
+        }
 
         // add local pubkey to keybook
         // self.peer_store.add_key(&self.local_peer_id, stream_muxer.local_priv_key().public());
@@ -997,7 +1082,7 @@ impl Swarm {
             dir,
             self.event_sender.clone(),
             self.ctrl_sender.clone(),
-            metric.clone(),
+            self.metric.clone(),
         );
         // TODO: filtering the multiaddr, Err = AddrFiltered(addr)
 
@@ -1018,6 +1103,7 @@ impl Swarm {
 
         let mut tx = self.event_sender.clone();
         let cid = connection.id();
+        let metric = self.metric.clone();
         // clone muxer and move it into the runtime
         let mut muxer = self.muxer.clone();
         let ctrl = self.ctrl_sender.clone();
@@ -1061,7 +1147,7 @@ impl Swarm {
                             }
                             Err(error) => {
                                 log::debug!("failed inbound protocol selection {:?} {:?}", cid, error);
-                                let _ = tx.send(SwarmEvent::StreamError { cid, error }).await;
+                                let _ = tx.send(SwarmEvent::StreamError { cid, dir, error }).await;
                             }
                         }
                     }
@@ -1107,16 +1193,27 @@ impl Swarm {
 
         Ok(())
     }
+    /// Handles outgoing connection error.
+    fn handle_incoming_connection_error(&mut self, remote_addr: Multiaddr, error: TransportError) -> Result<()> {
+        log::debug!("incoming connection error for {:?} {:?}", remote_addr, error);
+
+        // update base statistics
+        self.base_stats.incoming_connection_error += 1;
+
+        Ok(())
+    }
 
     /// Handles outgoing connection error.
-    fn handle_connection_error(&mut self, peer_id: PeerId, error: SwarmError, tid: TransactionId) -> Result<()> {
-        log::debug!("handle_connection_error: {:?} {:?} tid={:?}", peer_id, error, tid);
+    fn handle_outgoing_connection_error(&mut self, peer_id: PeerId, error: SwarmError, tid: TransactionId) -> Result<()> {
+        log::debug!("outgoing connection error: {:?} {:?} tid={:?}", peer_id, error, tid);
+
+        // update base statistics
+        self.base_stats.outgoing_connection_error += 1;
 
         //execute dial callback for post processing
         let callback = self.dial_transactions.remove(&tid).expect("no match tid found");
         callback(Err(error));
 
-        // TODO: add statistics
         Ok(())
     }
 
@@ -1125,6 +1222,14 @@ impl Swarm {
     /// Use channel to received message that sent by another runtime
     fn handle_stream_opened(&mut self, view: SubstreamView) -> Result<()> {
         log::debug!("handle_stream_opened: {:?}", view);
+
+        // update base statistics
+        if view.dir == Direction::Inbound {
+            self.base_stats.substream_inbound_opened += 1;
+        } else {
+            self.base_stats.substream_outbound_opened += 1;
+        }
+
         // add stream id to the connection substream list
         if let Some(c) = self.connections_by_id.get_mut(&view.cid) {
             c.add_stream(view)
@@ -1132,13 +1237,31 @@ impl Swarm {
         Ok(())
     }
 
-    /// Handles closing stream
+    /// Handles closing stream.
     fn handle_stream_closed(&mut self, cid: ConnectionId, sid: StreamId) -> Result<()> {
         log::debug!("handle_stream_closed: {:?}/{:?}", cid, sid);
+
+        // update base statistics
+        self.base_stats.substream_closed += 1;
+
         // delete sub-stream from the connection substream list
         if let Some(c) = self.connections_by_id.get_mut(&cid) {
             c.del_stream(sid)
         }
+        Ok(())
+    }
+
+    /// Handles stream error.
+    fn handle_stream_error(&mut self, cid: ConnectionId, dir: Direction) -> Result<()> {
+        log::debug!("handle_stream_error: {:?}", cid);
+
+        // update base statistics
+        if dir == Direction::Outbound {
+            self.base_stats.substream_outbound_error += 1;
+        } else {
+            self.base_stats.substream_inbound_error += 1;
+        }
+
         Ok(())
     }
 
@@ -1147,6 +1270,9 @@ impl Swarm {
     /// start a Task for accepting new sub-stream from the connection
     fn handle_connection_closed(&mut self, cid: ConnectionId) -> Result<()> {
         log::debug!("handle_connection_closed: {:?}", cid);
+
+        // update base statistics
+        self.base_stats.connection_closed += 1;
 
         // try to retrieve the Connection by looking up 'connections_by_id'
         if let Some(mut connection) = self.connections_by_id.remove(&cid) {
@@ -1245,7 +1371,7 @@ impl Swarm {
                     }
                 }
                 Err(err) => {
-                    log::info!("identify failed {:?} for {:?}", err, connection);
+                    log::debug!("identify failed {:?} for {:?}", err, connection);
                 }
             }
         }
@@ -1287,10 +1413,6 @@ impl Swarm {
 /// The possible failures of [`Swarm`].
 #[derive(Debug)]
 pub enum SwarmError {
-    /// The configured limit for simultaneous outgoing connections
-    /// has been reached.
-    ConnectionLimit(ConnectionLimit),
-
     /// Returned no addresses for the peer to dial.
     NoAddresses(PeerId),
 
@@ -1322,10 +1444,13 @@ pub enum SwarmError {
     ///ErrDialToSelf is returned if we attempt to dial our own peer
     DialToSelf,
 
-    ///been dialed too frequently
+    /// Dialed too frequently
     DialBackoff,
 
-    ///AllDialsFailed is returned when connecting to a peer has ultimately failed
+    /// No suitable transport found for a given peer to dial.
+    DialNoTransport(PeerId),
+
+    /// AllDialsFailed is returned when connecting to a peer has ultimately failed
     AllDialsFailed,
 
     ///dial timeout
@@ -1342,7 +1467,6 @@ pub enum SwarmError {
 impl fmt::Display for SwarmError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SwarmError::ConnectionLimit(err) => write!(f, "Swarm Dial error: {}", err),
             SwarmError::NoAddresses(peer_id) => write!(f, "Swarm Dial error: no addresses for peer{:?}.", peer_id),
             SwarmError::NoConnection(peer_id) => write!(f, "Swarm Stream error: no connections for peer{:?}.", peer_id),
             SwarmError::InvalidPeerId(peer_id) => write!(f, "Swarm Dial error: invalid peer id{:?}.", peer_id),
@@ -1351,9 +1475,10 @@ impl fmt::Display for SwarmError {
             SwarmError::General(text) => write!(f, "Swarm general error: {}.", text),
             SwarmError::Closing(s) => write!(f, "Swarm channel closed source={}.", s),
             SwarmError::CanNotListenOnAny => write!(f, "Failed to listen on any addresses"),
-            SwarmError::DialToSelf => write!(f, "Swarm Dial error:dial to self attempted"),
-            SwarmError::DialBackoff => write!(f, "Swarm Dial error:dial backoff"),
-            SwarmError::AllDialsFailed => write!(f, "Swarm Dial error:all dials failed"),
+            SwarmError::DialToSelf => write!(f, "Swarm Dial error: dial to self attempted"),
+            SwarmError::DialNoTransport(peer_id) => write!(f, "Swarm Dial error: No suitable transport found for dialing {}", peer_id),
+            SwarmError::DialBackoff => write!(f, "Swarm Dial error: dial backoff"),
+            SwarmError::AllDialsFailed => write!(f, "Swarm Dial error: all dials failed"),
             SwarmError::DialTimeout(ma, t) => write!(f, "Swarm Dial error:dial timeout, addr={:?},timeout={:?}", ma, Duration::from_secs(*t)),
             SwarmError::MaxDialAttempts(c) => write!(f, "Swarm Dial error:max dial attempts exceeded, count={}", c),
             SwarmError::ConcurrentDialLimit(c) => write!(f, "Swarm Dial error:max concurrent dial exceeded, count={}", c),
@@ -1364,7 +1489,6 @@ impl fmt::Display for SwarmError {
 impl error::Error for SwarmError {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
-            SwarmError::ConnectionLimit(err) => Some(err),
             SwarmError::NoAddresses(_) => None,
             SwarmError::NoConnection(_) => None,
             SwarmError::InvalidPeerId(_) => None,
@@ -1374,6 +1498,7 @@ impl error::Error for SwarmError {
             SwarmError::Closing(_) => None,
             SwarmError::CanNotListenOnAny => None,
             SwarmError::DialToSelf => None,
+            SwarmError::DialNoTransport(_) => None,
             SwarmError::DialBackoff => None,
             SwarmError::AllDialsFailed => None,
             SwarmError::DialTimeout(_, _) => None,

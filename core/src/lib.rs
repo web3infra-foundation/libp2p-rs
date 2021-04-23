@@ -66,5 +66,8 @@ pub mod either;
 
 pub mod peerstore;
 
-pub mod pnet;
+// pub mod pnet;
 pub mod translation;
+
+pub mod util;
+pub use util::{ReadEx, WriteEx};

@@ -93,8 +93,6 @@ pub use libp2prs_swarm as swarm;
 #[cfg_attr(docsrs, doc(cfg(any(feature = "tcp-async-std", feature = "tcp-tokio"))))]
 #[doc(inline)]
 pub use libp2prs_tcp as tcp;
-#[doc(inline)]
-pub use libp2prs_traits as traits;
 #[cfg(feature = "websocket")]
 #[cfg_attr(docsrs, doc(cfg(feature = "websocket")))]
 #[doc(inline)]

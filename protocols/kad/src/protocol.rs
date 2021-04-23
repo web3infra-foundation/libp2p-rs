@@ -31,20 +31,18 @@ use futures::channel::oneshot;
 use prost::Message;
 use std::error::Error;
 use std::io;
-use std::{convert::TryFrom, time::Duration, time::Instant};
+use std::{convert::TryFrom, time::Duration};
 
 use async_trait::async_trait;
 
 use libp2prs_core::upgrade::UpgradeInfo;
-use libp2prs_core::{Multiaddr, PeerId, ProtocolId};
+use libp2prs_core::{Multiaddr, PeerId, ProtocolId, ReadEx, WriteEx};
 use libp2prs_swarm::connection::Connection;
 use libp2prs_swarm::protocol_handler::{IProtocolHandler, Notifiee, ProtocolHandler};
 use libp2prs_swarm::substream::{Substream, SubstreamView};
 use libp2prs_swarm::Control as SwarmControl;
-use libp2prs_traits::{ReadEx, WriteEx};
 
 use crate::kad::KadPoster;
-use crate::query::QueryStats;
 use crate::record::{self, Record};
 use crate::{dht_proto as proto, KadError, ProviderRecord};
 
@@ -702,18 +700,9 @@ fn record_from_proto(record: proto::Record) -> Result<Record, io::Error> {
         None
     };
 
-    let expires = if record.ttl > 0 {
-        Some(Instant::now() + Duration::from_secs(record.ttl as u64))
-    } else {
-        None
-    };
+    let record = Record::new(key, value, false, publisher);
 
-    Ok(Record {
-        key,
-        value,
-        publisher,
-        expires,
-    })
+    Ok(record)
 }
 
 fn record_to_proto(record: Record) -> proto::Record {
@@ -721,17 +710,6 @@ fn record_to_proto(record: Record) -> proto::Record {
         key: record.key.to_vec(),
         value: record.value,
         publisher: record.publisher.map(|id| id.to_bytes()).unwrap_or_default(),
-        ttl: record
-            .expires
-            .map(|t| {
-                let now = Instant::now();
-                if t > now {
-                    (t - now).as_secs() as u32
-                } else {
-                    1 // because 0 means "does not expire"
-                }
-            })
-            .unwrap_or(0),
         time_received: String::new(),
     }
 }
@@ -888,14 +866,8 @@ pub(crate) enum ProtocolEvent {
     /// notification from event bus(TBD).
     KadPeerStopped(PeerId),
 
-    /// The event to notify that iterative query has been completed.
-    IterativeQueryCompleted(QueryStats),
-
-    /// The event to notify that iterative query has failed due to timeout.
-    IterativeQueryTimeout,
-
-    /// Timer event for Provider cleanup.
-    ProviderCleanupTimer,
+    /// Timer event for Provider & Record GC.
+    GCTimer,
 
     /// Timer event for Refresh.
     RefreshTimer,

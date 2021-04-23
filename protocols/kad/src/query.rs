@@ -22,6 +22,8 @@ use futures::channel::mpsc;
 use futures::future::Either;
 use futures::{FutureExt, SinkExt, StreamExt};
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::{num::NonZeroUsize, time::Duration, time::Instant};
 
 use libp2prs_core::peerstore::{PROVIDER_ADDR_TTL, TEMP_ADDR_TTL};
@@ -32,9 +34,103 @@ use libp2prs_swarm::Control as SwarmControl;
 use crate::kbucket::{Distance, Key};
 use crate::{record, KadError, ALPHA_VALUE, BETA_VALUE, K_VALUE};
 
-use crate::kad::{KadPoster, MessengerManager};
+use crate::kad::{KadPoster, MessageStats, MessengerManager};
 use crate::protocol::{KadConnectionType, KadPeer, ProtocolEvent};
 use crate::task_limit::TaskLimiter;
+
+/// Execution statistics of a query.
+#[derive(Debug, Clone, Default)]
+pub struct IterativeStats {
+    pub(crate) requests: u32,
+    pub(crate) success: u32,
+    pub(crate) failure: u32,
+}
+
+// Atomic version of QueryStats.
+#[derive(Default)]
+pub struct IterativeStatsAtomic {
+    pub(crate) requests: AtomicU32,
+    pub(crate) success: AtomicU32,
+    pub(crate) failure: AtomicU32,
+}
+
+impl IterativeStatsAtomic {
+    pub(crate) fn to_view(&self) -> IterativeStats {
+        IterativeStats {
+            requests: self.requests.load(Ordering::Relaxed),
+            success: self.success.load(Ordering::Relaxed),
+            failure: self.failure.load(Ordering::Relaxed),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct QueryStats {
+    pub(crate) fixed_query_executed: usize,
+    pub(crate) fixed_query_completed: usize,
+    pub(crate) iter_query_executed: usize,
+    pub(crate) iter_query_completed: usize,
+    pub(crate) iter_query_timeout: usize,
+    // tx error of fixed query
+    pub(crate) fixed_tx_error: usize,
+    // details of iterative query
+    pub(crate) iterative: IterativeStats,
+    // Kad message tx
+    pub(crate) message_tx: MessageStats,
+}
+
+#[derive(Default)]
+pub(crate) struct QueryStatsAtomic {
+    pub(crate) fixed_query_executed: AtomicUsize,
+    pub(crate) fixed_query_completed: AtomicUsize,
+    pub(crate) iter_query_executed: AtomicUsize,
+    pub(crate) iter_query_completed: AtomicUsize,
+    pub(crate) iter_query_timeout: AtomicUsize,
+    // tx error for fixed query
+    pub(crate) fixed_tx_error: AtomicUsize,
+    // details of iterative query
+    pub(crate) iterative: IterativeStatsAtomic,
+    // message tx
+    pub(crate) message_tx: MessageStatsAtomic,
+}
+
+impl QueryStatsAtomic {
+    pub(crate) fn to_view(&self) -> QueryStats {
+        QueryStats {
+            fixed_query_executed: self.fixed_query_executed.load(Ordering::Relaxed),
+            fixed_query_completed: self.fixed_query_completed.load(Ordering::Relaxed),
+            iter_query_executed: self.iter_query_executed.load(Ordering::Relaxed),
+            iter_query_completed: self.iter_query_completed.load(Ordering::Relaxed),
+            iter_query_timeout: self.iter_query_timeout.load(Ordering::Relaxed),
+            fixed_tx_error: self.fixed_tx_error.load(Ordering::Relaxed),
+            iterative: self.iterative.to_view(),
+            message_tx: self.message_tx.to_view(),
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct MessageStatsAtomic {
+    pub(crate) ping: AtomicUsize,
+    pub(crate) find_node: AtomicUsize,
+    pub(crate) get_provider: AtomicUsize,
+    pub(crate) add_provider: AtomicUsize,
+    pub(crate) get_value: AtomicUsize,
+    pub(crate) put_value: AtomicUsize,
+}
+
+impl MessageStatsAtomic {
+    pub(crate) fn to_view(&self) -> MessageStats {
+        MessageStats {
+            ping: self.ping.load(Ordering::Relaxed),
+            find_node: self.find_node.load(Ordering::Relaxed),
+            get_provider: self.get_provider.load(Ordering::Relaxed),
+            add_provider: self.add_provider.load(Ordering::Relaxed),
+            get_value: self.get_value.load(Ordering::Relaxed),
+            put_value: self.put_value.load(Ordering::Relaxed),
+        }
+    }
+}
 
 type Result<T> = std::result::Result<T, KadError>;
 
@@ -79,15 +175,24 @@ pub(crate) struct FixedQuery {
     config: QueryConfig,
     /// The seed peers used to start the query.
     peers: Vec<PeerId>,
+    /// The statistics.
+    stats: Arc<QueryStatsAtomic>,
 }
 
 impl FixedQuery {
-    pub(crate) fn new(query_type: QueryType, messenger: MessengerManager, config: QueryConfig, peers: Vec<PeerId>) -> Self {
+    pub(crate) fn new(
+        query_type: QueryType,
+        messengers: MessengerManager,
+        config: QueryConfig,
+        peers: Vec<PeerId>,
+        stats: Arc<QueryStatsAtomic>,
+    ) -> Self {
         Self {
-            messengers: messenger,
+            messengers,
             query_type,
             config,
             peers,
+            stats,
         }
     }
 
@@ -95,6 +200,8 @@ impl FixedQuery {
     where
         F: FnOnce(Result<()>) + Send + 'static,
     {
+        log::debug!("run fixed query {:?}", self.query_type);
+
         // check for empty fixed peers
         if self.peers.is_empty() {
             log::info!("no fixed peers, abort running");
@@ -102,39 +209,48 @@ impl FixedQuery {
             return;
         }
 
+        // update stats
+        let stats = self.stats.clone();
+        stats.fixed_query_executed.fetch_add(1, Ordering::SeqCst);
+
         let me = self;
         let mut limiter = TaskLimiter::new(me.config.alpha_value);
+        let message_stats = stats.clone();
         task::spawn(async move {
             for peer in me.peers {
                 // let record = record.clone();
                 let mut messengers = me.messengers.clone();
                 let qt = me.query_type.clone();
+                let stats = message_stats.clone();
 
                 limiter
                     .run(async move {
-                        if let Ok(mut ms) = messengers.get_messenger(&peer).await {
-                            match qt {
-                                QueryType::PutRecord { record } => {
-                                    if ms.send_put_value(record).await.is_ok() {
-                                        messengers.put_messenger(ms);
-                                    }
-                                }
-                                QueryType::AddProvider { provider, addresses } => {
-                                    if ms.send_add_provider(provider, addresses).await.is_ok() {
-                                        messengers.put_messenger(ms);
-                                    }
-                                }
-                                _ => panic!("BUG"),
+                        let mut ms = messengers.get_messenger(&peer).await?;
+                        match qt {
+                            QueryType::PutRecord { record } => {
+                                let _ = ms.send_put_value(record).await?;
+                                stats.message_tx.put_value.fetch_add(1, Ordering::SeqCst);
                             }
-
-                            // otherwise, ms will be dropped here, a runtime will be spawned to close
-                            // the inner substream...
+                            QueryType::AddProvider { provider, addresses } => {
+                                let _ = ms.send_add_provider(provider, addresses).await?;
+                                stats.message_tx.add_provider.fetch_add(1, Ordering::SeqCst);
+                            }
+                            _ => panic!("BUG"),
                         }
+                        messengers.put_messenger(ms);
+
+                        Ok::<(), KadError>(())
                     })
                     .await;
             }
-            let c = limiter.wait().await;
-            log::info!("data announced to total {} peers", c);
+            let (c, s) = limiter.wait().await;
+            log::info!("data announced to total {} peers, success={}", c, s);
+
+            // update tx error
+            stats.fixed_tx_error.fetch_add(c - s, Ordering::SeqCst);
+            // update stats
+            stats.fixed_query_completed.fetch_add(1, Ordering::SeqCst);
+
             f(Ok(()))
         });
     }
@@ -145,6 +261,7 @@ struct QueryJob {
     qt: QueryType,
     messengers: MessengerManager,
     peer: PeerId,
+    stats: Arc<QueryStatsAtomic>,
     tx: mpsc::Sender<QueryUpdate>,
 }
 
@@ -158,6 +275,7 @@ impl QueryJob {
         match me.qt {
             QueryType::GetClosestPeers | QueryType::FindPeer => {
                 let closer = messenger.send_find_node(me.key).await?;
+                me.stats.message_tx.find_node.fetch_add(1, Ordering::SeqCst);
                 let duration = startup.elapsed();
                 let _ = me
                     .tx
@@ -172,6 +290,7 @@ impl QueryJob {
             }
             QueryType::GetProviders { .. } => {
                 let (closer, provider) = messenger.send_get_providers(me.key).await?;
+                me.stats.message_tx.get_provider.fetch_add(1, Ordering::SeqCst);
                 let duration = startup.elapsed();
                 let _ = me
                     .tx
@@ -186,6 +305,7 @@ impl QueryJob {
             }
             QueryType::GetRecord { .. } => {
                 let (closer, record) = messenger.send_get_value(me.key).await?;
+                me.stats.message_tx.get_value.fetch_add(1, Ordering::SeqCst);
                 let duration = startup.elapsed();
                 let _ = me
                     .tx
@@ -389,7 +509,7 @@ pub enum QueryType {
     /// A query initiated by [`Kademlia::get_record`].
     GetRecord {
         /// The quorum needed by get_record.
-        quorum_needed: usize,
+        quorum: usize,
         /// Records found locally.
         local: Option<Vec<PeerRecord>>,
     },
@@ -429,8 +549,8 @@ pub(crate) struct IterativeQuery {
     seeds: Vec<Key<PeerId>>,
     /// The KadPoster used to post ProtocolEvent to Kad main loop.
     poster: KadPoster,
-    /// The statistics of this iterative query.
-    stats: QueryStats,
+    /// The statistics.
+    stats: Arc<QueryStatsAtomic>,
 }
 
 impl IterativeQuery {
@@ -444,6 +564,7 @@ impl IterativeQuery {
         config: QueryConfig,
         seeds: Vec<Key<PeerId>>,
         poster: KadPoster,
+        stats: Arc<QueryStatsAtomic>,
     ) -> Self {
         Self {
             query_type,
@@ -454,7 +575,7 @@ impl IterativeQuery {
             config,
             seeds,
             poster,
-            stats: QueryStats::default(),
+            stats,
         }
     }
 
@@ -487,8 +608,6 @@ impl IterativeQuery {
                 );
                 log::trace!("{:?} returns closer peers: {:?}", source, closer);
 
-                me.stats.success += 1;
-
                 // note we don't add myself
                 closer.retain(|p| p.node_id != me.local_id);
 
@@ -496,7 +615,7 @@ impl IterativeQuery {
                 // to PeerStore
                 for peer in closer.iter() {
                     // kingwel, we filter out all loopback addresses
-                    let addrs = peer.multiaddrs.iter().filter(|a| !a.is_loopback_addr()).cloned().collect();
+                    let addrs = peer.clone().multiaddrs;
                     me.swarm.add_addrs(&peer.node_id, addrs, TEMP_ADDR_TTL);
                 }
 
@@ -531,19 +650,21 @@ impl IterativeQuery {
                                 // append or create the query_results.providers
                                 if let Some(mut old) = query_results.providers.take() {
                                     old.extend(provider);
+                                    // remove duplicated peers
+                                    old.dedup_by(|a, b| a.node_id == b.node_id);
                                     query_results.providers = Some(old);
                                 } else {
                                     query_results.providers = Some(provider);
                                 }
                                 // check if we have enough providers
-                                if query_results.providers.as_ref().map_or(0, |p| p.len()) >= count {
+                                if count != 0 && query_results.providers.as_ref().map_or(0, |p| p.len()) >= count {
                                     log::debug!("GetProviders: got enough provider for {:?}, limit={}", me.key, count);
                                     return true;
                                 }
                             }
                         }
                     }
-                    QueryType::GetRecord { quorum_needed, .. } => {
+                    QueryType::GetRecord { quorum, .. } => {
                         if let Some(record) = record {
                             log::debug!("GetRecord: record found {:?} key={:?}", record, me.key);
 
@@ -559,7 +680,7 @@ impl IterativeQuery {
                             }
 
                             // check if we have enough records
-                            if query_results.records.as_ref().map_or(0, |r| r.len()) > quorum_needed {
+                            if query_results.records.as_ref().map_or(0, |r| r.len()) > quorum {
                                 log::info!("GetRecord: got enough records for key={:?}", me.key);
 
                                 let peers_have_value = query_results
@@ -591,8 +712,6 @@ impl IterativeQuery {
                 // set to PeerState::Unreachable
                 log::debug!("unreachable peer {:?} detected", peer);
 
-                me.stats.failure += 1;
-
                 closest_peers.set_peer_state(&peer, PeerState::Unreachable);
                 // signal for dead peer detected
                 let _ = me.poster.post(ProtocolEvent::KadPeerStopped(peer)).await;
@@ -614,6 +733,9 @@ impl IterativeQuery {
             f(Err(KadError::NoKnownPeers));
             return;
         }
+
+        // update stats
+        self.stats.iter_query_executed.fetch_add(1, Ordering::SeqCst);
 
         let mut me = self;
         let alpha_value = me.config.alpha_value.get();
@@ -640,7 +762,7 @@ impl IterativeQuery {
             QueryType::GetProviders { count: _, local } => {
                 query_results.providers = local.take();
             }
-            QueryType::GetRecord { quorum_needed: _, local } => {
+            QueryType::GetRecord { quorum: _, local } => {
                 query_results.records = local.take();
             }
             _ => {}
@@ -649,27 +771,33 @@ impl IterativeQuery {
         // the channel used to deliver the result of each jobs
         let (mut tx, mut rx) = mpsc::channel(alpha_value);
 
+        // statistics for this iterative query
+        // This stat has to be referred by thwo futures: query & deadline, so it is implemented as
+        // an Arc<Atomic...>
+        let stats = me.stats.clone();
         // deadline for an iterative query
-        let mut poster = me.poster.clone();
         let deadline = async move {
             task::sleep(timeout).await;
-            let _ = poster.post(ProtocolEvent::IterativeQueryTimeout).await;
+            stats.iter_query_timeout.fetch_add(1, Ordering::SeqCst);
             log::info!("iterative query timeout");
         };
 
+        // clone stats and move into query
+        let stats = me.stats.clone();
         // a runtime for query
         let query = async move {
             let seeds = me
                 .seeds
                 .iter()
-                .map(|k| KadPeer {
-                    node_id: k.clone().into_preimage(),
-                    multiaddrs: vec![],
-                    connection_ty: KadConnectionType::CanConnect,
+                .map(|k| {
+                    let id = k.clone().into_preimage();
+                    KadPeer {
+                        node_id: id,
+                        multiaddrs: me.swarm.get_addrs(&id).unwrap_or_default(),
+                        connection_ty: KadConnectionType::CanConnect,
+                    }
                 })
                 .collect();
-
-            me.stats.requests += 1;
 
             // deliver the seeds to kick off the initial query
             let _ = tx
@@ -719,21 +847,26 @@ impl IterativeQuery {
 
                     log::debug!("creating query job for {:?}", peer_id);
 
-                    me.stats.requests += 1;
+                    stats.iterative.requests.fetch_add(1, Ordering::SeqCst);
 
                     let job = QueryJob {
                         key: me.key.clone(),
                         qt: me.query_type.clone(),
                         messengers: me.messengers.clone(),
                         peer: peer_id,
+                        stats: stats.clone(),
                         tx: tx.clone(),
                     };
 
                     let mut tx = tx.clone();
                     let _ = task::spawn(async move {
+                        let stats = job.stats.clone();
                         let r = job.execute().await;
                         if r.is_err() {
+                            stats.iterative.failure.fetch_add(1, Ordering::SeqCst);
                             let _ = tx.send(QueryUpdate::Unreachable(peer_id)).await;
+                        } else {
+                            stats.iterative.success.fetch_add(1, Ordering::SeqCst);
                         }
                     });
                 }
@@ -759,10 +892,12 @@ impl IterativeQuery {
                 query_results.closest_peers = Some(peers);
             }
 
-            me.stats.duration = Instant::now().duration_since(start);
+            stats.iter_query_completed.fetch_add(1, Ordering::SeqCst);
 
-            // send the statistics back to the Kad main loop
-            let _ = me.poster.post(ProtocolEvent::IterativeQueryCompleted(me.stats)).await;
+            // calculate how long this iterative query lasts
+            let duration = start.elapsed();
+
+            log::info!("iterative query report : {:?} {:?}", stats.iterative.to_view(), duration);
 
             Ok(query_results)
         };
@@ -774,27 +909,6 @@ impl IterativeQuery {
                 Either::Right((_, _)) => f(Err(KadError::Timeout)),
             }
         });
-    }
-}
-
-/// Execution statistics of a query.
-#[derive(Debug, Clone, Default)]
-pub struct QueryStats {
-    pub(crate) requests: u32,
-    pub(crate) success: u32,
-    pub(crate) failure: u32,
-    pub(crate) duration: Duration,
-}
-
-impl QueryStats {
-    /// Merges these stats with the given stats of another query,
-    /// e.g. to accumulate the global statistics.
-    ///
-    /// Counters are merged cumulatively.
-    pub fn merge(&mut self, other: QueryStats) {
-        self.requests += other.requests;
-        self.success += other.success;
-        self.failure += other.failure;
     }
 }
 

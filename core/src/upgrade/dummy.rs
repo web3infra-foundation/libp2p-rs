@@ -26,8 +26,10 @@ use crate::upgrade::{UpgradeInfo, Upgrader};
 use crate::{Multiaddr, PeerId, PublicKey};
 use async_trait::async_trait;
 use futures::future::BoxFuture;
-use libp2prs_traits::{ReadEx, WriteEx};
+use futures::task::{Context, Poll};
+use futures::{AsyncRead, AsyncWrite};
 use log::trace;
+use pin_project::__private::Pin;
 use std::{fmt, io};
 
 /// Implementation of dummy `Upgrader` that doesn't do anything practice.
@@ -35,7 +37,8 @@ use std::{fmt, io};
 /// Useful for testing purposes.
 pub struct DummyUpgrader;
 
-pub struct DummyStream<T>(pub(crate) T);
+#[pin_project::pin_project]
+pub struct DummyStream<T>(#[pin] pub(crate) T);
 
 impl<T> Clone for DummyStream<T> {
     fn clone(&self) -> Self {
@@ -97,24 +100,23 @@ impl<T: Send + 'static> Upgrader<T> for DummyUpgrader {
     }
 }
 
-#[async_trait]
-impl<T: Send + ReadEx> ReadEx for DummyStream<T> {
-    async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.0.read2(buf).await
+impl<T: AsyncRead + Send> AsyncRead for DummyStream<T> {
+    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<io::Result<usize>> {
+        AsyncRead::poll_read(self.project().0, cx, buf)
     }
 }
-#[async_trait]
-impl<T: Send + WriteEx> WriteEx for DummyStream<T> {
-    async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.write2(buf).await
+
+impl<T: AsyncWrite + Send> AsyncWrite for DummyStream<T> {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
+        AsyncWrite::poll_write(self.project().0, cx, buf)
     }
 
-    async fn flush2(&mut self) -> io::Result<()> {
-        self.0.flush2().await
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        AsyncWrite::poll_flush(self.project().0, cx)
     }
 
-    async fn close2(&mut self) -> io::Result<()> {
-        self.0.close2().await
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        AsyncWrite::poll_close(self.project().0, cx)
     }
 }
 

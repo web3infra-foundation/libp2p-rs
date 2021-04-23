@@ -24,16 +24,17 @@
 #![cfg(test)]
 
 use super::negotiator::Negotiator;
-use super::{NegotiationError, ReadEx, Version, WriteEx};
+use super::{NegotiationError, Version};
 
-use async_trait::async_trait;
 use bytes::Bytes;
 use futures::channel::mpsc;
 use futures::prelude::*;
+use futures::task::{Context, Poll};
 use libp2prs_runtime::{
     net::{TcpListener, TcpStream},
     task,
 };
+use pin_project::__private::Pin;
 use std::io;
 
 #[derive(Debug)]
@@ -78,35 +79,34 @@ impl Memory<Bytes> {
     }
 }
 
-#[async_trait]
-impl ReadEx for Memory<Bytes> {
-    async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if let Some(n) = self.drain(buf) {
-            return Ok(n);
+impl AsyncRead for Memory<Bytes> {
+    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<io::Result<usize>> {
+        let this = &mut *self;
+        if let Some(n) = this.drain(buf) {
+            return Poll::Ready(Ok(n));
         }
-        let b = self.rx.next().await.expect("recv next");
-        self.recv_drian.replace(b);
-        Ok(self.drain(buf).expect("must be Some(n)"))
+        let b = futures::ready!(Stream::poll_next(Pin::new(&mut this.rx), cx)).expect("recv next");
+        this.recv_drian.replace(b);
+        Poll::Ready(Ok(this.drain(buf).expect("must be Some(n)")))
     }
 }
 
-#[async_trait]
-impl WriteEx for Memory<Bytes> {
-    async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
+impl AsyncWrite for Memory<Bytes> {
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
         log::debug!("write data: {:?}", buf);
+        futures::ready!(self.tx.poll_ready(cx)).expect("poll ready");
         self.tx
-            .send(Bytes::copy_from_slice(buf))
-            .await
+            .start_send(Bytes::copy_from_slice(buf))
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-        Ok(buf.len())
+        Poll::Ready(Ok(buf.len()))
     }
 
-    async fn flush2(&mut self) -> io::Result<()> {
-        Ok(())
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(Ok(()))
     }
 
-    async fn close2(&mut self) -> io::Result<()> {
-        Ok(())
+    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(Ok(()))
     }
 }
 

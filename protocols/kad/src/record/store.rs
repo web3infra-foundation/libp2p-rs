@@ -26,6 +26,7 @@ pub use memory::{MemoryStore, MemoryStoreConfig};
 use super::*;
 use crate::{KadError, K_VALUE};
 use std::borrow::Cow;
+use std::time::Duration;
 
 /// The result of an operation on a `RecordStore`.
 pub type Result<T> = std::result::Result<T, KadError>;
@@ -50,7 +51,6 @@ pub type Result<T> = std::result::Result<T, KadError>;
 ///
 pub trait RecordStore<'a> {
     type RecordsIter: Iterator<Item = Cow<'a, Record>>;
-    type ProvidedIter: Iterator<Item = Cow<'a, ProviderRecord>>;
     type ProviderIter: Iterator<Item = Cow<'a, ProviderRecord>>;
 
     /// Gets a record from the store, given its key.
@@ -63,7 +63,14 @@ pub trait RecordStore<'a> {
     fn remove(&'a mut self, k: &Key);
 
     /// Gets an iterator over all (value-) records currently stored.
-    fn records(&'a self) -> Self::RecordsIter;
+    fn all_records(&'a self) -> Self::RecordsIter;
+
+    /// Runs GC for all stored records. As a result, all outdated items
+    /// will be removed from storage.
+    fn gc_records(&'a mut self, ttl: Duration);
+
+    /// Gets a copy of the stored provider records for the given key.
+    fn providers(&'a self, key: &Key) -> Vec<ProviderRecord>;
 
     /// Adds a provider record to the store.
     ///
@@ -72,15 +79,13 @@ pub trait RecordStore<'a> {
     /// store those records whose providers are closest to the key.
     fn add_provider(&'a mut self, record: ProviderRecord) -> Result<()>;
 
-    /// Gets a copy of the stored provider records for the given key.
-    fn providers(&'a self, key: &Key) -> Vec<ProviderRecord>;
-
-    fn all_providers(&'a self) -> Self::ProviderIter;
-
-    /// Gets an iterator over all stored provider records for which the
-    /// node owning the store is itself the provider.
-    fn provided(&'a self) -> Self::ProvidedIter;
-
     /// Removes a provider record from the store.
     fn remove_provider(&'a mut self, k: &Key, p: &PeerId);
+
+    /// Gets an iterator over all stored provider records.
+    fn all_providers(&'a self) -> Self::ProviderIter;
+
+    /// Runs GC for all stored providers. As a result, all outdated items
+    /// will be removed from storage.
+    fn gc_providers(&'a mut self, ttl: Duration);
 }

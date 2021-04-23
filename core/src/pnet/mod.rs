@@ -46,7 +46,8 @@ use crate::pnet::crypt_reader::CryptReader;
 use crate::transport::ConnectionInfo;
 use crate::Multiaddr;
 use async_trait::async_trait;
-use libp2prs_traits::{ReadEx, SplitEx, SplittableReadWrite, WriteEx};
+use libp2prs_traits::{ReadEx, WriteEx};
+use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 const KEY_SIZE: usize = 32;
 const NONCE_SIZE: usize = 24;
@@ -245,7 +246,7 @@ impl fmt::Display for PnetError {
 #[async_trait]
 impl<TSocket> Pnet<TSocket> for PnetConfig
 where
-    TSocket: ConnectionInfo + SplittableReadWrite,
+    TSocket: ConnectionInfo + AsyncRead + AsyncWrite + Send + Unpin + 'static,
 {
     type Output = PnetOutput<TSocket>;
     /// upgrade a connection to use pre shared key encryption.
@@ -257,8 +258,8 @@ where
         let mut local_nonce = [0u8; NONCE_SIZE];
         let mut remote_nonce = [0u8; NONCE_SIZE];
         rand::thread_rng().fill_bytes(&mut local_nonce);
-        socket.write_all2(&local_nonce).await.map_err(PnetError::HandshakeError)?;
-        socket.read_exact2(&mut remote_nonce).await.map_err(PnetError::HandshakeError)?;
+        socket.write_all(&local_nonce).await.map_err(PnetError::HandshakeError)?;
+        socket.read_exact(&mut remote_nonce).await.map_err(PnetError::HandshakeError)?;
         trace!("setting up ciphers");
         let write_cipher = XSalsa20::new(&self.key.0.into(), &local_nonce.into());
         let read_cipher = XSalsa20::new(&self.key.0.into(), &remote_nonce.into());
@@ -268,7 +269,7 @@ where
 
 /// The result of a handshake. This implements AsyncRead and AsyncWrite and can therefore
 /// be used as base for additional upgrades.
-pub struct PnetOutput<S: SplitEx> {
+pub struct PnetOutput<S> {
     reader: CryptReader<S::Reader>,
     writer: CryptWriter<S::Writer>,
 
@@ -276,7 +277,7 @@ pub struct PnetOutput<S: SplitEx> {
     remote_addr: Multiaddr,
 }
 
-impl<S: ConnectionInfo + SplittableReadWrite> PnetOutput<S> {
+impl<S: ConnectionInfo + AsyncRead + AsyncWrite + Send + Unpin + 'static> PnetOutput<S> {
     fn new(inner: S, write_cipher: XSalsa20, read_cipher: XSalsa20) -> Self {
         let local_addr = inner.local_multiaddr();
         let remote_addr = inner.remote_multiaddr();
@@ -318,16 +319,7 @@ where
     }
 }
 
-impl<S: SplittableReadWrite> SplitEx for PnetOutput<S> {
-    type Reader = CryptReader<S::Reader>;
-    type Writer = CryptWriter<S::Writer>;
-
-    fn split(self) -> (Self::Reader, Self::Writer) {
-        (self.reader, self.writer)
-    }
-}
-
-impl<S: ConnectionInfo + SplitEx> ConnectionInfo for PnetOutput<S> {
+impl<S: ConnectionInfo> ConnectionInfo for PnetOutput<S> {
     fn local_multiaddr(&self) -> Multiaddr {
         self.local_addr.clone()
     }
