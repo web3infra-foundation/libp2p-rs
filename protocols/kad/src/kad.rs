@@ -411,7 +411,9 @@ where
                     let bucket = entry.bucket();
                     let candidate = bucket
                         .iter()
-                        .filter(|n| n.value.get_aliveness().map_or(true, |a| now.duration_since(a) > timeout))
+                        .filter(|n| {
+                            !n.value.is_permanent() && n.value.get_aliveness().map_or(true, |a| now.duration_since(a) > timeout)
+                        })
                         .min_by(|x, y| x.value.get_aliveness().cmp(&y.value.get_aliveness()));
 
                     if let Some(candidate) = candidate {
@@ -458,6 +460,7 @@ where
                     if let Some(s) = self.swarm.as_ref() {
                         s.unpin(&peer)
                     }
+                    log::debug!("removed {:?}", entry.value());
                     Some(entry.remove())
                 } else {
                     entry.value().set_aliveness(None);
