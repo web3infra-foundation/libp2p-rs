@@ -426,7 +426,9 @@ impl Swarm {
     ///
     /// A protocl must implement ProtocolImpl trait. See [Swarm::ProtocolImpl].
     pub fn with_protocol<T: ProtocolImpl>(mut self, p: T) -> Self {
-        self.muxer.add_protocol_handler(p.handler());
+        for p in p.handlers() {
+            self.muxer.add_protocol_handler(p);
+        }
         if let Some(task) = p.start(self.control()) {
             self.tasks.push(task);
         }

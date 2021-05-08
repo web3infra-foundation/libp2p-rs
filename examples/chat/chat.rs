@@ -112,8 +112,8 @@ where
 struct Chat;
 
 impl ProtocolImpl for Chat {
-    fn handler(&self) -> IProtocolHandler {
-        Box::new(ChatHandler)
+    fn handlers(&self) -> Vec<IProtocolHandler> {
+        vec![Box::new(ChatHandler)]
     }
 }
 

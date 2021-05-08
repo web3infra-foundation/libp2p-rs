@@ -429,8 +429,8 @@ impl FloodSub {
 }
 
 impl ProtocolImpl for FloodSub {
-    fn handler(&self) -> IProtocolHandler {
-        Box::new(Handler::new(self.incoming_tx.clone(), self.peer_tx.clone()))
+    fn handlers(&self) -> Vec<IProtocolHandler> {
+        vec![Box::new(Handler::new(self.incoming_tx.clone(), self.peer_tx.clone()))]
     }
 
     fn start(mut self, swarm: SwarmControl) -> Option<task::TaskHandle<()>> {

@@ -77,9 +77,9 @@ pub trait Notifiee {
 
 /// Common trait for describing a Swarm friendly protocol.
 pub trait ProtocolImpl {
-    /// Returns the trait object of the ProtocolHandler, which can be used by Swarm
-    /// to construct the protocol muxer.
-    fn handler(&self) -> IProtocolHandler;
+    /// Returns the trait object of the vector of ProtocolHandler supported by
+    /// this ProtocolImpl, which can be used by Swarm to construct the protocol muxer.
+    fn handlers(&self) -> Vec<IProtocolHandler>;
     /// start() will consume the ownership and start the protocol. An optional
     /// task handle might be returned by start(), and it could be used to track
     /// the lifetime of the protocol.
@@ -125,8 +125,8 @@ impl DummyProtocol {
 }
 
 impl ProtocolImpl for DummyProtocol {
-    fn handler(&self) -> IProtocolHandler {
-        Box::new(DummyProtocolHandler)
+    fn handlers(&self) -> Vec<IProtocolHandler> {
+        vec![Box::new(DummyProtocolHandler)]
     }
 }
 

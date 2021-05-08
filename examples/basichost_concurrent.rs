@@ -72,8 +72,8 @@ fn run_server() {
     struct MyProtocolHandler;
 
     impl ProtocolImpl for MyProtocol {
-        fn handler(&self) -> IProtocolHandler {
-            Box::new(MyProtocolHandler)
+        fn handlers(&self) -> Vec<IProtocolHandler> {
+            vec![Box::new(MyProtocolHandler)]
         }
     }
 

@@ -1474,8 +1474,9 @@ impl<TStore> ProtocolImpl for Kademlia<TStore>
 where
     for<'a> TStore: RecordStore<'a> + Send + 'static,
 {
-    fn handler(&self) -> IProtocolHandler {
-        Box::new(KadProtocolHandler::new(self.protocol_config.clone(), self.poster()))
+    fn handlers(&self) -> Vec<IProtocolHandler> {
+        let p = Box::new(KadProtocolHandler::new(self.protocol_config.clone(), self.poster()));
+        vec![p]
     }
 
     fn start(mut self, swarm: SwarmControl) -> Option<task::TaskHandle<()>>
