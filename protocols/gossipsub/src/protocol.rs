@@ -19,16 +19,14 @@
 // DEALINGS IN THE SOFTWARE.
 
 use async_trait::async_trait;
-use asynchronous_codec::{Decoder, Encoder, Framed};
 use byteorder::{BigEndian, ByteOrder};
 use bytes::Bytes;
 use bytes::BytesMut;
-use futures::prelude::*;
+// use futures::prelude::*;
 use futures::{future, AsyncWriteExt, SinkExt};
 use log::{debug, warn};
 use prost::Message as ProtobufMessage;
 use std::{borrow::Cow, error, io, pin::Pin};
-use unsigned_varint::codec;
 
 use futures::channel::mpsc;
 use libp2prs_core::upgrade::UpgradeInfo;
@@ -51,6 +49,13 @@ use crate::{rpc_proto, Topic};
 
 pub(crate) const SIGNING_PREFIX: &[u8] = b"libp2p-pubsub:";
 
+/// The event emitted by the Notifiee trait.
+#[derive(Debug)]
+pub(crate) enum PeerEvent {
+    NewPeer(PeerId),
+    DeadPeer(PeerId),
+}
+
 /// The event emitted by the Handler. This informs the behaviour of various events created
 /// by the handler.
 #[derive(Debug)]
@@ -67,6 +72,8 @@ pub enum HandlerEvent {
     /// An inbound or outbound substream has been established with the peer and this informs over
     /// which protocol. This message only occurs once per connection.
     PeerKind(PeerKind),
+    /// Notifications from the Notifiee trait, to indicate connection establishment or teardown.
+    Notification(PeerEvent)
 }
 
 /// The maximum number of substreams we accept or create before disconnecting from the peer.
@@ -141,28 +148,20 @@ impl ProtoId {
     }
 }
 
-pub(crate) enum PeerEvent {
-    NewPeer(PeerId),
-    DeadPeer(PeerId),
-}
-
 #[derive(Clone)]
-pub struct GossipHandler {
+pub struct GossipsubHandler {
     config: ProtocolConfig,
-    incoming_tx: mpsc::UnboundedSender<HandlerEvent>,
-    peer_tx: mpsc::UnboundedSender<PeerEvent>,
+    tx: mpsc::UnboundedSender<HandlerEvent>,
 }
 
-impl GossipHandler {
+impl GossipsubHandler {
     pub(crate) fn new(
         config: ProtocolConfig,
-        incoming_tx: mpsc::UnboundedSender<HandlerEvent>,
-        peer_tx: mpsc::UnboundedSender<PeerEvent>,
+        tx: mpsc::UnboundedSender<HandlerEvent>,
     ) -> Self {
-        GossipHandler {
+        GossipsubHandler {
             config,
-            incoming_tx,
-            peer_tx,
+            tx,
         }
     }
 
@@ -225,7 +224,7 @@ impl GossipHandler {
     }
 }
 
-impl UpgradeInfo for GossipHandler {
+impl UpgradeInfo for GossipsubHandler {
     type Info = ProtocolId;
 
     fn protocol_info(&self) -> Vec<Self::Info> {
@@ -233,20 +232,20 @@ impl UpgradeInfo for GossipHandler {
     }
 }
 
-impl Notifiee for GossipHandler {
+impl Notifiee for GossipsubHandler {
     fn connected(&mut self, conn: &mut Connection) {
         let peer_id = conn.remote_peer();
-        let _ = self.peer_tx.unbounded_send(PeerEvent::NewPeer(peer_id));
+        let _ = self.tx.unbounded_send(HandlerEvent::Notification(PeerEvent::NewPeer(peer_id)));
     }
 
     fn disconnected(&mut self, conn: &mut Connection) {
         let peer_id = conn.remote_peer();
-        let _ = self.peer_tx.unbounded_send(PeerEvent::DeadPeer(peer_id));
+        let _ = self.tx.unbounded_send(HandlerEvent::Notification(PeerEvent::DeadPeer(peer_id)));
     }
 }
 
 #[async_trait]
-impl ProtocolHandler for GossipHandler {
+impl ProtocolHandler for GossipsubHandler {
     async fn handle(&mut self, mut stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn error::Error>> {
         log::trace!("Handle stream from {}", stream.remote_peer());
         loop {
@@ -320,7 +319,7 @@ impl ProtocolHandler for GossipHandler {
                 }
 
                 // verify message signatures if required
-                if verify_signature && !GossipHandler::verify_signature(&message) {
+                if verify_signature && !GossipsubHandler::verify_signature(&message) {
                     warn!("Invalid signature for received message");
 
                     // Build the invalid message (ignoring further validation of sequence number
@@ -510,7 +509,7 @@ impl ProtocolHandler for GossipHandler {
             };
 
             // TODO: Error
-            self.incoming_tx
+            self.tx
                 .send(evt)
                 .await
                 .map_err(|_| GossipsubHandlerError::MaxTransmissionSize)?;

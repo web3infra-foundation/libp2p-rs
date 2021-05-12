@@ -124,6 +124,8 @@
 
 pub mod error;
 pub mod protocol;
+pub mod control;
+pub mod subscription;
 
 mod backoff;
 mod config;
