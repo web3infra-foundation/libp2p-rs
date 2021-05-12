@@ -126,10 +126,10 @@ pub mod error;
 pub mod protocol;
 
 mod backoff;
-// mod behaviour;
 mod config;
 mod gossip_promises;
-mod handler;
+mod gossipsub;
+// mod handler;
 mod mcache;
 mod peer_score;
 pub mod subscription_filter;

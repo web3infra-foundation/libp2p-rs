@@ -42,7 +42,6 @@ use libp2prs_swarm::{
 
 use crate::config::ValidationMode;
 use crate::error::{GossipsubHandlerError, ValidationError};
-use crate::handler::HandlerEvent;
 use crate::topic::TopicHash;
 use crate::types::{
     GossipsubControlAction, GossipsubRpc, GossipsubSubscription, GossipsubSubscriptionAction, MessageId, PeerInfo, PeerKind,
@@ -51,6 +50,31 @@ use crate::types::{
 use crate::{rpc_proto, Topic};
 
 pub(crate) const SIGNING_PREFIX: &[u8] = b"libp2p-pubsub:";
+
+/// The event emitted by the Handler. This informs the behaviour of various events created
+/// by the handler.
+#[derive(Debug)]
+pub enum HandlerEvent {
+    /// A GossipsubRPC message has been received. This also contains a list of invalid messages (if
+    /// any) that were received.
+    Message {
+        /// The GossipsubRPC message excluding any invalid messages.
+        rpc: GossipsubRpc,
+        /// Any invalid messages that were received in the RPC, along with the associated
+        /// validation error.
+        invalid_messages: Vec<(RawGossipsubMessage, ValidationError)>,
+    },
+    /// An inbound or outbound substream has been established with the peer and this informs over
+    /// which protocol. This message only occurs once per connection.
+    PeerKind(PeerKind),
+}
+
+/// The maximum number of substreams we accept or create before disconnecting from the peer.
+///
+/// Gossipsub is supposed to have a single long-lived inbound and outbound substream. On failure we
+/// attempt to recreate these. This imposes an upper bound of new substreams before we consider the
+/// connection faulty and disconnect. This also prevents against potential substream creation loops.
+const MAX_SUBSTREAM_CREATION: usize = 5;
 
 /// Implementation of [`InboundUpgrade`] and [`OutboundUpgrade`] for the Gossipsub protocol.
 #[derive(Clone)]

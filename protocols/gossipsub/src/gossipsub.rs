@@ -37,19 +37,16 @@ use prost::Message;
 use rand::{seq::SliceRandom, thread_rng};
 use wasm_timer::{Instant, Interval};
 
-use libp2p_swarm::{DialPeerCondition, NetworkBehaviour, NetworkBehaviourAction, NotifyHandler, PollParameters, ProtocolsHandler};
-use libp2prs_core::{
-    connection::ConnectionId, identity::Keypair, multiaddr::Protocol::Ip4, multiaddr::Protocol::Ip6, ConnectedPoint, Multiaddr, PeerId,
-};
+use libp2prs_core::{identity::Keypair, multiaddr::Protocol::Ip4, multiaddr::Protocol::Ip6, Multiaddr, PeerId};
 
 use crate::backoff::BackoffStorage;
 use crate::config::{GossipsubConfig, ValidationMode};
 use crate::error::{PublishError, SubscriptionError, ValidationError};
 use crate::gossip_promises::GossipPromises;
-use crate::handler::{GossipsubHandler, HandlerEvent};
 use crate::mcache::MessageCache;
 use crate::peer_score::{PeerScore, PeerScoreParams, PeerScoreThresholds, RejectReason};
 use crate::protocol::SIGNING_PREFIX;
+use crate::protocol::{GossipHandler, HandlerEvent};
 use crate::subscription_filter::{AllowAllSubscriptionFilter, TopicSubscriptionFilter};
 use crate::time_cache::{DuplicateCache, TimeCache};
 use crate::topic::{Hasher, Topic, TopicHash};
@@ -60,6 +57,7 @@ use crate::types::{
 };
 use crate::types::{GossipsubRpc, PeerKind};
 use crate::{rpc_proto, TopicScoreParams};
+use libp2prs_runtime::task;
 use std::{cmp::Ordering::Equal, fmt::Debug};
 
 #[cfg(test)]
@@ -189,8 +187,6 @@ impl From<MessageAuthenticity> for PublishConfig {
     }
 }
 
-type GossipsubNetworkBehaviourAction = NetworkBehaviourAction<Arc<rpc_proto::Rpc>, GossipsubEvent>;
-
 /// Network behaviour that handles the gossipsub protocol.
 ///
 /// NOTE: Initialisation requires a [`MessageAuthenticity`] and [`GossipsubConfig`] instance. If
@@ -205,9 +201,6 @@ type GossipsubNetworkBehaviourAction = NetworkBehaviourAction<Arc<rpc_proto::Rpc
 pub struct Gossipsub<D: DataTransform = IdentityTransform, F: TopicSubscriptionFilter = AllowAllSubscriptionFilter> {
     /// Configuration providing gossipsub performance parameters.
     config: GossipsubConfig,
-
-    /// Events that need to be yielded to the outside when polling.
-    events: VecDeque<GossipsubNetworkBehaviourAction>,
 
     /// Pools non-urgent control messages between heartbeats.
     control_pool: HashMap<PeerId, Vec<GossipsubControlAction>>,
@@ -357,7 +350,6 @@ where
         // Set up message publishing parameters.
 
         Ok(Gossipsub {
-            events: VecDeque::new(),
             control_pool: HashMap::new(),
             publish_config: privacy.into(),
             duplicate_cache: DuplicateCache::new(config.duplicate_cache_time()),
@@ -919,10 +911,14 @@ where
         if !self.peer_topics.contains_key(peer_id) {
             // Connect to peer
             debug!("Connecting to explicit peer {:?}", peer_id);
-            self.events.push_back(NetworkBehaviourAction::DialPeer {
-                peer_id: *peer_id,
-                condition: DialPeerCondition::Disconnected,
+
+            task::spawn(async move {
+                // TODO: Swarm to make dialing
             });
+            // self.events.push_back(NetworkBehaviourAction::DialPeer {
+            //     peer_id: *peer_id,
+            //     condition: DialPeerCondition::Disconnected,
+            // });
         }
     }
 
@@ -2397,333 +2393,333 @@ fn get_ip_addr(addr: &Multiaddr) -> Option<IpAddr> {
     })
 }
 
-impl<C, F> NetworkBehaviour for Gossipsub<C, F>
-where
-    C: Send + 'static + DataTransform,
-    F: Send + 'static + TopicSubscriptionFilter,
-{
-    type ProtocolsHandler = GossipsubHandler;
-    type OutEvent = GossipsubEvent;
-
-    fn new_handler(&mut self) -> Self::ProtocolsHandler {
-        GossipsubHandler::new(
-            self.config.protocol_id_prefix().clone(),
-            self.config.max_transmit_size(),
-            self.config.validation_mode().clone(),
-            self.config.support_floodsub(),
-        )
-    }
-
-    fn addresses_of_peer(&mut self, _: &PeerId) -> Vec<Multiaddr> {
-        Vec::new()
-    }
-
-    fn inject_connected(&mut self, peer_id: &PeerId) {
-        // Ignore connections from blacklisted peers.
-        if self.blacklisted_peers.contains(peer_id) {
-            debug!("Ignoring connection from blacklisted peer: {}", peer_id);
-            return;
-        }
-
-        info!("New peer connected: {}", peer_id);
-        // We need to send our subscriptions to the newly-connected node.
-        let mut subscriptions = vec![];
-        for topic_hash in self.mesh.keys() {
-            subscriptions.push(GossipsubSubscription {
-                topic_hash: topic_hash.clone(),
-                action: GossipsubSubscriptionAction::Subscribe,
-            });
-        }
-
-        if !subscriptions.is_empty() {
-            // send our subscriptions to the peer
-            if self
-                .send_message(
-                    *peer_id,
-                    GossipsubRpc {
-                        messages: Vec::new(),
-                        subscriptions,
-                        control_msgs: Vec::new(),
-                    }
-                    .into_protobuf(),
-                )
-                .is_err()
-            {
-                error!("Failed to send subscriptions, message too large");
-            }
-        }
-
-        // Insert an empty set of the topics of this peer until known.
-        self.peer_topics.insert(*peer_id, Default::default());
-
-        // By default we assume a peer is only a floodsub peer.
-        //
-        // The protocol negotiation occurs once a message is sent/received. Once this happens we
-        // update the type of peer that this is in order to determine which kind of routing should
-        // occur.
-        self.peer_protocols.entry(*peer_id).or_insert(PeerKind::Floodsub);
-
-        if let Some((peer_score, ..)) = &mut self.peer_score {
-            peer_score.add_peer(*peer_id);
-        }
-    }
-
-    fn inject_disconnected(&mut self, peer_id: &PeerId) {
-        // remove from mesh, topic_peers, peer_topic and the fanout
-        debug!("Peer disconnected: {}", peer_id);
-        {
-            let topics = match self.peer_topics.get(peer_id) {
-                Some(topics) => (topics),
-                None => {
-                    if !self.blacklisted_peers.contains(peer_id) {
-                        debug!("Disconnected node, not in connected nodes");
-                    }
-                    return;
-                }
-            };
-
-            // remove peer from all mappings
-            for topic in topics {
-                // check the mesh for the topic
-                if let Some(mesh_peers) = self.mesh.get_mut(&topic) {
-                    // check if the peer is in the mesh and remove it
-                    mesh_peers.remove(peer_id);
-                }
-
-                // remove from topic_peers
-                if let Some(peer_list) = self.topic_peers.get_mut(&topic) {
-                    if !peer_list.remove(peer_id) {
-                        // debugging purposes
-                        warn!("Disconnected node: {} not in topic_peers peer list", peer_id);
-                    }
-                } else {
-                    warn!("Disconnected node: {} with topic: {:?} not in topic_peers", &peer_id, &topic);
-                }
-
-                // remove from fanout
-                self.fanout.get_mut(&topic).map(|peers| peers.remove(peer_id));
-            }
-
-            //forget px and outbound status for this peer
-            self.px_peers.remove(peer_id);
-            self.outbound_peers.remove(peer_id);
-        }
-
-        // Remove peer from peer_topics and peer_protocols
-        // NOTE: It is possible the peer has already been removed from all mappings if it does not
-        // support the protocol.
-        self.peer_topics.remove(peer_id);
-        self.peer_protocols.remove(peer_id);
-
-        if let Some((peer_score, ..)) = &mut self.peer_score {
-            peer_score.remove_peer(peer_id);
-        }
-    }
-
-    fn inject_connection_established(&mut self, peer_id: &PeerId, _: &ConnectionId, endpoint: &ConnectedPoint) {
-        // Ignore connections from blacklisted peers.
-        if self.blacklisted_peers.contains(peer_id) {
-            return;
-        }
-
-        // Check if the peer is an outbound peer
-        if let ConnectedPoint::Dialer { .. } = endpoint {
-            // Diverging from the go implementation we only want to consider a peer as outbound peer
-            // if its first connection is outbound. To check if this connection is the first we
-            // check if the peer isn't connected yet. This only works because the
-            // `inject_connection_established` event for the first connection gets called immediately
-            // before `inject_connected` gets called.
-            if !self.peer_topics.contains_key(peer_id) && !self.px_peers.contains(peer_id) {
-                // The first connection is outbound and it is not a peer from peer exchange => mark
-                // it as outbound peer
-                self.outbound_peers.insert(*peer_id);
-            }
-        }
-
-        // Add the IP to the peer scoring system
-        if let Some((peer_score, ..)) = &mut self.peer_score {
-            if let Some(ip) = get_ip_addr(endpoint.get_remote_address()) {
-                peer_score.add_ip(&peer_id, ip);
-            } else {
-                trace!("Couldn't extract ip from endpoint of peer {} with endpoint {:?}", peer_id, endpoint)
-            }
-        }
-    }
-
-    fn inject_connection_closed(&mut self, peer: &PeerId, _: &ConnectionId, endpoint: &ConnectedPoint) {
-        // Remove IP from peer scoring system
-        if let Some((peer_score, ..)) = &mut self.peer_score {
-            if let Some(ip) = get_ip_addr(endpoint.get_remote_address()) {
-                peer_score.remove_ip(peer, &ip);
-            } else {
-                trace!("Couldn't extract ip from endpoint of peer {} with endpoint {:?}", peer, endpoint)
-            }
-        }
-    }
-
-    fn inject_address_change(
-        &mut self,
-        peer: &PeerId,
-        _: &ConnectionId,
-        endpoint_old: &ConnectedPoint,
-        endpoint_new: &ConnectedPoint,
-    ) {
-        // Exchange IP in peer scoring system
-        if let Some((peer_score, ..)) = &mut self.peer_score {
-            if let Some(ip) = get_ip_addr(endpoint_old.get_remote_address()) {
-                peer_score.remove_ip(peer, &ip);
-            } else {
-                trace!(
-                    "Couldn't extract ip from endpoint of peer {} with endpoint {:?}",
-                    peer,
-                    endpoint_old
-                )
-            }
-            if let Some(ip) = get_ip_addr(endpoint_new.get_remote_address()) {
-                peer_score.add_ip(&peer, ip);
-            } else {
-                trace!(
-                    "Couldn't extract ip from endpoint of peer {} with endpoint {:?}",
-                    peer,
-                    endpoint_new
-                )
-            }
-        }
-    }
-
-    fn inject_event(&mut self, propagation_source: PeerId, _: ConnectionId, handler_event: HandlerEvent) {
-        match handler_event {
-            HandlerEvent::PeerKind(kind) => {
-                // We have identified the protocol this peer is using
-                if let PeerKind::NotSupported = kind {
-                    debug!("Peer does not support gossipsub protocols. {}", propagation_source);
-                    // We treat this peer as disconnected
-                    self.inject_disconnected(&propagation_source);
-                } else if let Some(old_kind) = self.peer_protocols.get_mut(&propagation_source) {
-                    // Only change the value if the old value is Floodsub (the default set in
-                    // inject_connected). All other PeerKind changes are ignored.
-                    debug!("New peer type found: {} for peer: {}", kind, propagation_source);
-                    if let PeerKind::Floodsub = *old_kind {
-                        *old_kind = kind;
-                    }
-                }
-            }
-            HandlerEvent::Message { rpc, invalid_messages } => {
-                // Handle the gossipsub RPC
-
-                // Handle subscriptions
-                // Update connected peers topics
-                if !rpc.subscriptions.is_empty() {
-                    self.handle_received_subscriptions(&rpc.subscriptions, &propagation_source);
-                }
-
-                // Check if peer is graylisted in which case we ignore the event
-                if let (true, _) = self.score_below_threshold(&propagation_source, |pst| pst.graylist_threshold) {
-                    debug!("RPC Dropped from greylisted peer {}", propagation_source);
-                    return;
-                }
-
-                // Handle any invalid messages from this peer
-                if self.peer_score.is_some() {
-                    for (raw_message, validation_error) in invalid_messages {
-                        self.handle_invalid_message(&propagation_source, raw_message, validation_error)
-                    }
-                } else {
-                    // log the invalid messages
-                    for (message, validation_error) in invalid_messages {
-                        warn!(
-                            "Invalid message. Reason: {:?} propagation_peer {} source {:?}",
-                            validation_error,
-                            propagation_source.to_string(),
-                            message.source
-                        );
-                    }
-                }
-
-                // Handle messages
-                for (count, raw_message) in rpc.messages.into_iter().enumerate() {
-                    // Only process the amount of messages the configuration allows.
-                    if self.config.max_messages_per_rpc().is_some() && Some(count) >= self.config.max_messages_per_rpc() {
-                        warn!(
-                            "Received more messages than permitted. Ignoring further messages. Processed: {}",
-                            count
-                        );
-                        break;
-                    }
-                    self.handle_received_message(raw_message, &propagation_source);
-                }
-
-                // Handle control messages
-                // group some control messages, this minimises SendEvents (code is simplified to handle each event at a time however)
-                let mut ihave_msgs = vec![];
-                let mut graft_msgs = vec![];
-                let mut prune_msgs = vec![];
-                for control_msg in rpc.control_msgs {
-                    match control_msg {
-                        GossipsubControlAction::IHave { topic_hash, message_ids } => {
-                            ihave_msgs.push((topic_hash, message_ids));
-                        }
-                        GossipsubControlAction::IWant { message_ids } => self.handle_iwant(&propagation_source, message_ids),
-                        GossipsubControlAction::Graft { topic_hash } => graft_msgs.push(topic_hash),
-                        GossipsubControlAction::Prune {
-                            topic_hash,
-                            peers,
-                            backoff,
-                        } => prune_msgs.push((topic_hash, peers, backoff)),
-                    }
-                }
-                if !ihave_msgs.is_empty() {
-                    self.handle_ihave(&propagation_source, ihave_msgs);
-                }
-                if !graft_msgs.is_empty() {
-                    self.handle_graft(&propagation_source, graft_msgs);
-                }
-                if !prune_msgs.is_empty() {
-                    self.handle_prune(&propagation_source, prune_msgs);
-                }
-            }
-        }
-    }
-
-    fn poll(
-        &mut self,
-        cx: &mut Context<'_>,
-        _: &mut impl PollParameters,
-    ) -> Poll<NetworkBehaviourAction<<Self::ProtocolsHandler as ProtocolsHandler>::InEvent, Self::OutEvent>> {
-        if let Some(event) = self.events.pop_front() {
-            return Poll::Ready(match event {
-                NetworkBehaviourAction::NotifyHandler {
-                    peer_id,
-                    handler,
-                    event: send_event,
-                } => {
-                    // clone send event reference if others references are present
-                    let event = Arc::try_unwrap(send_event).unwrap_or_else(|e| (*e).clone());
-                    NetworkBehaviourAction::NotifyHandler { peer_id, event, handler }
-                }
-                NetworkBehaviourAction::GenerateEvent(e) => NetworkBehaviourAction::GenerateEvent(e),
-                NetworkBehaviourAction::DialAddress { address } => NetworkBehaviourAction::DialAddress { address },
-                NetworkBehaviourAction::DialPeer { peer_id, condition } => NetworkBehaviourAction::DialPeer { peer_id, condition },
-                NetworkBehaviourAction::ReportObservedAddr { address, score } => {
-                    NetworkBehaviourAction::ReportObservedAddr { address, score }
-                }
-            });
-        }
-
-        // update scores
-        if let Some((peer_score, _, interval, _)) = &mut self.peer_score {
-            while let Poll::Ready(Some(())) = interval.poll_next_unpin(cx) {
-                peer_score.refresh_scores();
-            }
-        }
-
-        while let Poll::Ready(Some(())) = self.heartbeat.poll_next_unpin(cx) {
-            self.heartbeat();
-        }
-
-        Poll::Pending
-    }
-}
+// impl<C, F> NetworkBehaviour for Gossipsub<C, F>
+// where
+//     C: Send + 'static + DataTransform,
+//     F: Send + 'static + TopicSubscriptionFilter,
+// {
+//     type ProtocolsHandler = GossipsubHandler;
+//     type OutEvent = GossipsubEvent;
+//
+//     fn new_handler(&mut self) -> Self::ProtocolsHandler {
+//         GossipHandler::new(
+//             self.config.protocol_id_prefix().clone(),
+//             self.config.max_transmit_size(),
+//             self.config.validation_mode().clone(),
+//             self.config.support_floodsub(),
+//         )
+//     }
+//
+//     fn addresses_of_peer(&mut self, _: &PeerId) -> Vec<Multiaddr> {
+//         Vec::new()
+//     }
+//
+//     fn inject_connected(&mut self, peer_id: &PeerId) {
+//         // Ignore connections from blacklisted peers.
+//         if self.blacklisted_peers.contains(peer_id) {
+//             debug!("Ignoring connection from blacklisted peer: {}", peer_id);
+//             return;
+//         }
+//
+//         info!("New peer connected: {}", peer_id);
+//         // We need to send our subscriptions to the newly-connected node.
+//         let mut subscriptions = vec![];
+//         for topic_hash in self.mesh.keys() {
+//             subscriptions.push(GossipsubSubscription {
+//                 topic_hash: topic_hash.clone(),
+//                 action: GossipsubSubscriptionAction::Subscribe,
+//             });
+//         }
+//
+//         if !subscriptions.is_empty() {
+//             // send our subscriptions to the peer
+//             if self
+//                 .send_message(
+//                     *peer_id,
+//                     GossipsubRpc {
+//                         messages: Vec::new(),
+//                         subscriptions,
+//                         control_msgs: Vec::new(),
+//                     }
+//                     .into_protobuf(),
+//                 )
+//                 .is_err()
+//             {
+//                 error!("Failed to send subscriptions, message too large");
+//             }
+//         }
+//
+//         // Insert an empty set of the topics of this peer until known.
+//         self.peer_topics.insert(*peer_id, Default::default());
+//
+//         // By default we assume a peer is only a floodsub peer.
+//         //
+//         // The protocol negotiation occurs once a message is sent/received. Once this happens we
+//         // update the type of peer that this is in order to determine which kind of routing should
+//         // occur.
+//         self.peer_protocols.entry(*peer_id).or_insert(PeerKind::Floodsub);
+//
+//         if let Some((peer_score, ..)) = &mut self.peer_score {
+//             peer_score.add_peer(*peer_id);
+//         }
+//     }
+//
+//     fn inject_disconnected(&mut self, peer_id: &PeerId) {
+//         // remove from mesh, topic_peers, peer_topic and the fanout
+//         debug!("Peer disconnected: {}", peer_id);
+//         {
+//             let topics = match self.peer_topics.get(peer_id) {
+//                 Some(topics) => (topics),
+//                 None => {
+//                     if !self.blacklisted_peers.contains(peer_id) {
+//                         debug!("Disconnected node, not in connected nodes");
+//                     }
+//                     return;
+//                 }
+//             };
+//
+//             // remove peer from all mappings
+//             for topic in topics {
+//                 // check the mesh for the topic
+//                 if let Some(mesh_peers) = self.mesh.get_mut(&topic) {
+//                     // check if the peer is in the mesh and remove it
+//                     mesh_peers.remove(peer_id);
+//                 }
+//
+//                 // remove from topic_peers
+//                 if let Some(peer_list) = self.topic_peers.get_mut(&topic) {
+//                     if !peer_list.remove(peer_id) {
+//                         // debugging purposes
+//                         warn!("Disconnected node: {} not in topic_peers peer list", peer_id);
+//                     }
+//                 } else {
+//                     warn!("Disconnected node: {} with topic: {:?} not in topic_peers", &peer_id, &topic);
+//                 }
+//
+//                 // remove from fanout
+//                 self.fanout.get_mut(&topic).map(|peers| peers.remove(peer_id));
+//             }
+//
+//             //forget px and outbound status for this peer
+//             self.px_peers.remove(peer_id);
+//             self.outbound_peers.remove(peer_id);
+//         }
+//
+//         // Remove peer from peer_topics and peer_protocols
+//         // NOTE: It is possible the peer has already been removed from all mappings if it does not
+//         // support the protocol.
+//         self.peer_topics.remove(peer_id);
+//         self.peer_protocols.remove(peer_id);
+//
+//         if let Some((peer_score, ..)) = &mut self.peer_score {
+//             peer_score.remove_peer(peer_id);
+//         }
+//     }
+//
+//     fn inject_connection_established(&mut self, peer_id: &PeerId, _: &ConnectionId, endpoint: &ConnectedPoint) {
+//         // Ignore connections from blacklisted peers.
+//         if self.blacklisted_peers.contains(peer_id) {
+//             return;
+//         }
+//
+//         // Check if the peer is an outbound peer
+//         if let ConnectedPoint::Dialer { .. } = endpoint {
+//             // Diverging from the go implementation we only want to consider a peer as outbound peer
+//             // if its first connection is outbound. To check if this connection is the first we
+//             // check if the peer isn't connected yet. This only works because the
+//             // `inject_connection_established` event for the first connection gets called immediately
+//             // before `inject_connected` gets called.
+//             if !self.peer_topics.contains_key(peer_id) && !self.px_peers.contains(peer_id) {
+//                 // The first connection is outbound and it is not a peer from peer exchange => mark
+//                 // it as outbound peer
+//                 self.outbound_peers.insert(*peer_id);
+//             }
+//         }
+//
+//         // Add the IP to the peer scoring system
+//         if let Some((peer_score, ..)) = &mut self.peer_score {
+//             if let Some(ip) = get_ip_addr(endpoint.get_remote_address()) {
+//                 peer_score.add_ip(&peer_id, ip);
+//             } else {
+//                 trace!("Couldn't extract ip from endpoint of peer {} with endpoint {:?}", peer_id, endpoint)
+//             }
+//         }
+//     }
+//
+//     fn inject_connection_closed(&mut self, peer: &PeerId, _: &ConnectionId, endpoint: &ConnectedPoint) {
+//         // Remove IP from peer scoring system
+//         if let Some((peer_score, ..)) = &mut self.peer_score {
+//             if let Some(ip) = get_ip_addr(endpoint.get_remote_address()) {
+//                 peer_score.remove_ip(peer, &ip);
+//             } else {
+//                 trace!("Couldn't extract ip from endpoint of peer {} with endpoint {:?}", peer, endpoint)
+//             }
+//         }
+//     }
+//
+//     fn inject_address_change(
+//         &mut self,
+//         peer: &PeerId,
+//         _: &ConnectionId,
+//         endpoint_old: &ConnectedPoint,
+//         endpoint_new: &ConnectedPoint,
+//     ) {
+//         // Exchange IP in peer scoring system
+//         if let Some((peer_score, ..)) = &mut self.peer_score {
+//             if let Some(ip) = get_ip_addr(endpoint_old.get_remote_address()) {
+//                 peer_score.remove_ip(peer, &ip);
+//             } else {
+//                 trace!(
+//                     "Couldn't extract ip from endpoint of peer {} with endpoint {:?}",
+//                     peer,
+//                     endpoint_old
+//                 )
+//             }
+//             if let Some(ip) = get_ip_addr(endpoint_new.get_remote_address()) {
+//                 peer_score.add_ip(&peer, ip);
+//             } else {
+//                 trace!(
+//                     "Couldn't extract ip from endpoint of peer {} with endpoint {:?}",
+//                     peer,
+//                     endpoint_new
+//                 )
+//             }
+//         }
+//     }
+//
+//     fn inject_event(&mut self, propagation_source: PeerId, _: ConnectionId, handler_event: HandlerEvent) {
+//         match handler_event {
+//             HandlerEvent::PeerKind(kind) => {
+//                 // We have identified the protocol this peer is using
+//                 if let PeerKind::NotSupported = kind {
+//                     debug!("Peer does not support gossipsub protocols. {}", propagation_source);
+//                     // We treat this peer as disconnected
+//                     self.inject_disconnected(&propagation_source);
+//                 } else if let Some(old_kind) = self.peer_protocols.get_mut(&propagation_source) {
+//                     // Only change the value if the old value is Floodsub (the default set in
+//                     // inject_connected). All other PeerKind changes are ignored.
+//                     debug!("New peer type found: {} for peer: {}", kind, propagation_source);
+//                     if let PeerKind::Floodsub = *old_kind {
+//                         *old_kind = kind;
+//                     }
+//                 }
+//             }
+//             HandlerEvent::Message { rpc, invalid_messages } => {
+//                 // Handle the gossipsub RPC
+//
+//                 // Handle subscriptions
+//                 // Update connected peers topics
+//                 if !rpc.subscriptions.is_empty() {
+//                     self.handle_received_subscriptions(&rpc.subscriptions, &propagation_source);
+//                 }
+//
+//                 // Check if peer is graylisted in which case we ignore the event
+//                 if let (true, _) = self.score_below_threshold(&propagation_source, |pst| pst.graylist_threshold) {
+//                     debug!("RPC Dropped from greylisted peer {}", propagation_source);
+//                     return;
+//                 }
+//
+//                 // Handle any invalid messages from this peer
+//                 if self.peer_score.is_some() {
+//                     for (raw_message, validation_error) in invalid_messages {
+//                         self.handle_invalid_message(&propagation_source, raw_message, validation_error)
+//                     }
+//                 } else {
+//                     // log the invalid messages
+//                     for (message, validation_error) in invalid_messages {
+//                         warn!(
+//                             "Invalid message. Reason: {:?} propagation_peer {} source {:?}",
+//                             validation_error,
+//                             propagation_source.to_string(),
+//                             message.source
+//                         );
+//                     }
+//                 }
+//
+//                 // Handle messages
+//                 for (count, raw_message) in rpc.messages.into_iter().enumerate() {
+//                     // Only process the amount of messages the configuration allows.
+//                     if self.config.max_messages_per_rpc().is_some() && Some(count) >= self.config.max_messages_per_rpc() {
+//                         warn!(
+//                             "Received more messages than permitted. Ignoring further messages. Processed: {}",
+//                             count
+//                         );
+//                         break;
+//                     }
+//                     self.handle_received_message(raw_message, &propagation_source);
+//                 }
+//
+//                 // Handle control messages
+//                 // group some control messages, this minimises SendEvents (code is simplified to handle each event at a time however)
+//                 let mut ihave_msgs = vec![];
+//                 let mut graft_msgs = vec![];
+//                 let mut prune_msgs = vec![];
+//                 for control_msg in rpc.control_msgs {
+//                     match control_msg {
+//                         GossipsubControlAction::IHave { topic_hash, message_ids } => {
+//                             ihave_msgs.push((topic_hash, message_ids));
+//                         }
+//                         GossipsubControlAction::IWant { message_ids } => self.handle_iwant(&propagation_source, message_ids),
+//                         GossipsubControlAction::Graft { topic_hash } => graft_msgs.push(topic_hash),
+//                         GossipsubControlAction::Prune {
+//                             topic_hash,
+//                             peers,
+//                             backoff,
+//                         } => prune_msgs.push((topic_hash, peers, backoff)),
+//                     }
+//                 }
+//                 if !ihave_msgs.is_empty() {
+//                     self.handle_ihave(&propagation_source, ihave_msgs);
+//                 }
+//                 if !graft_msgs.is_empty() {
+//                     self.handle_graft(&propagation_source, graft_msgs);
+//                 }
+//                 if !prune_msgs.is_empty() {
+//                     self.handle_prune(&propagation_source, prune_msgs);
+//                 }
+//             }
+//         }
+//     }
+//
+//     fn poll(
+//         &mut self,
+//         cx: &mut Context<'_>,
+//         _: &mut impl PollParameters,
+//     ) -> Poll<NetworkBehaviourAction<<Self::ProtocolsHandler as ProtocolsHandler>::InEvent, Self::OutEvent>> {
+//         if let Some(event) = self.events.pop_front() {
+//             return Poll::Ready(match event {
+//                 NetworkBehaviourAction::NotifyHandler {
+//                     peer_id,
+//                     handler,
+//                     event: send_event,
+//                 } => {
+//                     // clone send event reference if others references are present
+//                     let event = Arc::try_unwrap(send_event).unwrap_or_else(|e| (*e).clone());
+//                     NetworkBehaviourAction::NotifyHandler { peer_id, event, handler }
+//                 }
+//                 NetworkBehaviourAction::GenerateEvent(e) => NetworkBehaviourAction::GenerateEvent(e),
+//                 NetworkBehaviourAction::DialAddress { address } => NetworkBehaviourAction::DialAddress { address },
+//                 NetworkBehaviourAction::DialPeer { peer_id, condition } => NetworkBehaviourAction::DialPeer { peer_id, condition },
+//                 NetworkBehaviourAction::ReportObservedAddr { address, score } => {
+//                     NetworkBehaviourAction::ReportObservedAddr { address, score }
+//                 }
+//             });
+//         }
+//
+//         // update scores
+//         if let Some((peer_score, _, interval, _)) = &mut self.peer_score {
+//             while let Poll::Ready(Some(())) = interval.poll_next_unpin(cx) {
+//                 peer_score.refresh_scores();
+//             }
+//         }
+//
+//         while let Poll::Ready(Some(())) = self.heartbeat.poll_next_unpin(cx) {
+//             self.heartbeat();
+//         }
+//
+//         Poll::Pending
+//     }
+// }
 
 /// Helper function to get a subset of random gossipsub peers for a `topic_hash`
 /// filtered by the function `f`. The number of peers to get equals the output of `n_map`
