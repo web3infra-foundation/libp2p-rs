@@ -20,15 +20,15 @@
 
 use async_trait::async_trait;
 use byteorder::{BigEndian, ByteOrder};
-use bytes::Bytes;
-use bytes::BytesMut;
+use std::{borrow::Cow, error};
+// use bytes::Bytes;
+// use bytes::BytesMut;
 // use futures::prelude::*;
-use futures::{future, AsyncWriteExt, SinkExt};
+use futures::channel::mpsc;
+use futures::{AsyncWriteExt, SinkExt};
 use log::{debug, warn};
 use prost::Message as ProtobufMessage;
-use std::{borrow::Cow, error, io, pin::Pin};
 
-use futures::channel::mpsc;
 use libp2prs_core::upgrade::UpgradeInfo;
 use libp2prs_core::{PeerId, ProtocolId, PublicKey, ReadEx};
 use libp2prs_swarm::protocol_handler::Notifiee;
@@ -73,7 +73,7 @@ pub enum HandlerEvent {
     /// which protocol. This message only occurs once per connection.
     PeerKind(PeerKind),
     /// Notifications from the Notifiee trait, to indicate connection establishment or teardown.
-    Notification(PeerEvent)
+    Notification(PeerEvent),
 }
 
 /// The maximum number of substreams we accept or create before disconnecting from the peer.
@@ -87,7 +87,7 @@ const MAX_SUBSTREAM_CREATION: usize = 5;
 #[derive(Clone)]
 pub struct ProtocolConfig {
     /// The Gossipsub protocol id to listen on.
-    protocol_ids: Vec<ProtoId>,
+    protocol_ids: Vec<ProtocolId>,
     /// The maximum transmit size for a packet.
     max_transmit_size: usize,
     /// Determines the level of validation to be done on incoming messages.
@@ -98,21 +98,13 @@ impl ProtocolConfig {
     /// Builds a new [`ProtocolConfig`].
     ///
     /// Sets the maximum gossip transmission size.
-    pub fn new(
-        id_prefix: Cow<'static, str>,
-        max_transmit_size: usize,
-        validation_mode: ValidationMode,
-        support_floodsub: bool,
-    ) -> ProtocolConfig {
-        // support version 1.1.0 and 1.0.0 with user-customized prefix
-        let mut protocol_ids = vec![
-            ProtoId::new(id_prefix.clone(), PeerKind::Gossipsubv1_1),
-            ProtoId::new(id_prefix, PeerKind::Gossipsub),
-        ];
+    pub fn new(max_transmit_size: usize, validation_mode: ValidationMode, support_floodsub: bool) -> ProtocolConfig {
+        // support version 1.1.0 and 1.0.0
+        let mut protocol_ids = vec![b"/meshsub/1.1.0".into(), b"/meshsub/1.0.0".into()];
 
         // add floodsub support if enabled.
         if support_floodsub {
-            protocol_ids.push(ProtoId::new(Cow::from(""), PeerKind::Floodsub));
+            protocol_ids.push(b"/floodsub/1.0.0".into());
         }
 
         ProtocolConfig {
@@ -155,14 +147,8 @@ pub struct GossipsubHandler {
 }
 
 impl GossipsubHandler {
-    pub(crate) fn new(
-        config: ProtocolConfig,
-        tx: mpsc::UnboundedSender<HandlerEvent>,
-    ) -> Self {
-        GossipsubHandler {
-            config,
-            tx,
-        }
+    pub(crate) fn new(config: ProtocolConfig, tx: mpsc::UnboundedSender<HandlerEvent>) -> Self {
+        GossipsubHandler { config, tx }
     }
 
     /// Verifies a gossipsub message. This returns either a success or failure. All errors
@@ -509,10 +495,7 @@ impl ProtocolHandler for GossipsubHandler {
             };
 
             // TODO: Error
-            self.tx
-                .send(evt)
-                .await
-                .map_err(|_| GossipsubHandlerError::MaxTransmissionSize)?;
+            self.tx.send(evt).await.map_err(|_| GossipsubHandlerError::MaxTransmissionSize)?;
         }
     }
 

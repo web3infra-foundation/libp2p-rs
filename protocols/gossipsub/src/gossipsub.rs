@@ -27,7 +27,6 @@ use std::{
     iter::FromIterator,
     net::IpAddr,
     sync::Arc,
-    task::{Context, Poll},
     time::Duration,
 };
 
@@ -44,11 +43,12 @@ use libp2prs_swarm::Control as SwarmControl;
 
 use crate::backoff::BackoffStorage;
 use crate::config::{GossipsubConfig, ValidationMode};
+use crate::control::ControlCommand;
 use crate::error::{PublishError, SubscriptionError, ValidationError};
 use crate::gossip_promises::GossipPromises;
 use crate::mcache::MessageCache;
 use crate::peer_score::{PeerScore, PeerScoreParams, PeerScoreThresholds, RejectReason};
-use crate::protocol::{SIGNING_PREFIX, GossipsubHandler, HandlerEvent, PeerEvent};
+use crate::protocol::{GossipsubHandler, HandlerEvent, PeerEvent, SIGNING_PREFIX};
 use crate::subscription_filter::{AllowAllSubscriptionFilter, TopicSubscriptionFilter};
 use crate::time_cache::{DuplicateCache, TimeCache};
 use crate::topic::{Hasher, Topic, TopicHash};
@@ -59,10 +59,9 @@ use crate::types::{
 };
 use crate::types::{GossipsubRpc, PeerKind};
 use crate::{rpc_proto, TopicScoreParams};
+use futures::channel::mpsc;
 use libp2prs_runtime::task;
 use std::{cmp::Ordering::Equal, fmt::Debug};
-use futures::channel::mpsc;
-use crate::control::ControlCommand;
 
 #[cfg(test)]
 mod tests;
@@ -359,7 +358,7 @@ where
         // setup the channels
         let (tx, rx) = mpsc::unbounded();
         let (control_tx, control_rx) = mpsc::unbounded();
-        
+
         // Set up the router given the configuration settings.
 
         // We do not allow configurations where a published message would also be rejected if it
@@ -1044,7 +1043,6 @@ where
         }
     }
 
-
     /// Handles an IHAVE control message. Checks our cache of messages. If the message is unknown,
     /// requests it with an IWANT control message.
     fn handle_ihave(&mut self, peer_id: &PeerId, ihave_msgs: Vec<(TopicHash, Vec<MessageId>)>) {
@@ -1505,12 +1503,13 @@ where
         // Dispatch the message to the user if we are subscribed to any of the topics
         if self.mesh.contains_key(&message.topic) {
             debug!("Sending received message to user");
-            self.events
-                .push_back(NetworkBehaviourAction::GenerateEvent(GossipsubEvent::Message {
-                    propagation_source: *propagation_source,
-                    message_id: msg_id.clone(),
-                    message,
-                }));
+        // TODO:
+        // self.events
+        //     .push_back(NetworkBehaviourAction::GenerateEvent(GossipsubEvent::Message {
+        //         propagation_source: *propagation_source,
+        //         message_id: msg_id.clone(),
+        //         message,
+        //     }));
         } else {
             debug!("Received message on a topic we are not subscribed to: {:?}", message.topic);
             return;
@@ -1571,9 +1570,6 @@ where
 
         // Collect potential graft messages for the peer.
         let mut grafts = Vec::new();
-
-        // Notify the application about the subscription, after the grafts are sent.
-        let mut application_event = Vec::new();
 
         let filtered_topics = match self
             .subscription_filter
@@ -1642,11 +1638,12 @@ where
                             }
                         }
                     }
-                    // generates a subscription event to be polled
-                    application_event.push(NetworkBehaviourAction::GenerateEvent(GossipsubEvent::Subscribed {
-                        peer_id: *propagation_source,
-                        topic: subscription.topic_hash.clone(),
-                    }));
+                    // TODO:
+                    // // generates a subscription event to be polled
+                    // application_event.push(NetworkBehaviourAction::GenerateEvent(GossipsubEvent::Subscribed {
+                    //     peer_id: *propagation_source,
+                    //     topic: subscription.topic_hash.clone(),
+                    // }));
                 }
                 GossipsubSubscriptionAction::Unsubscribe => {
                     if peer_list.remove(propagation_source) {
@@ -1659,11 +1656,12 @@ where
                     // remove topic from the peer_topics mapping
                     subscribed_topics.remove(&subscription.topic_hash);
                     unsubscribed_peers.push((*propagation_source, subscription.topic_hash.clone()));
-                    // generate an unsubscribe event to be polled
-                    application_event.push(NetworkBehaviourAction::GenerateEvent(GossipsubEvent::Unsubscribed {
-                        peer_id: *propagation_source,
-                        topic: subscription.topic_hash.clone(),
-                    }));
+                    // TODO:
+                    // // generate an unsubscribe event to be polled
+                    // application_event.push(NetworkBehaviourAction::GenerateEvent(GossipsubEvent::Unsubscribed {
+                    //     peer_id: *propagation_source,
+                    //     topic: subscription.topic_hash.clone(),
+                    // }));
                 }
             }
         }
@@ -1691,10 +1689,10 @@ where
             error!("Failed sending grafts. Message too large");
         }
 
-        // Notify the application of the subscriptions
-        for event in application_event {
-            self.events.push_back(event);
-        }
+        // // Notify the application of the subscriptions
+        // for event in application_event {
+        //     self.events.push_back(event);
+        // }
 
         trace!("Completed handling subscriptions from source: {:?}", propagation_source);
     }
@@ -2350,13 +2348,14 @@ where
 
         let messages = self.fragment_message(message.into())?;
 
-        for message in messages {
-            self.events.push_back(NetworkBehaviourAction::NotifyHandler {
-                peer_id,
-                event: message,
-                handler: NotifyHandler::Any,
-            })
-        }
+        // TODO: go over the connected peers to get the tx channel for the outgoing stream
+        // for message in messages {
+        //     self.events.push_back(NetworkBehaviourAction::NotifyHandler {
+        //         peer_id,
+        //         event: message,
+        //         handler: NotifyHandler::Any,
+        //     })
+        // }
         Ok(())
     }
 
@@ -2901,7 +2900,6 @@ impl<C: DataTransform, F: TopicSubscriptionFilter> fmt::Debug for Gossipsub<C, F
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Gossipsub")
             .field("config", &self.config)
-            .field("events", &self.events)
             .field("control_pool", &self.control_pool)
             .field("publish_config", &self.publish_config)
             .field("topic_peers", &self.topic_peers)
