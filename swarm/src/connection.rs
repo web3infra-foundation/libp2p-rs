@@ -308,7 +308,7 @@ impl Connection {
         let stream_muxer = self.stream_muxer.clone();
         let mut tx = self.tx.clone();
         let flag = self.ping_running.clone();
-        let pids = vec![PING_PROTOCOL.into()];
+        let pids = vec![ProtocolId::new(PING_PROTOCOL, 0)];
         let ctrl = self.ctrl.clone();
         let metric = self.metric.clone();
 
@@ -393,7 +393,7 @@ impl Connection {
         let stream_muxer = self.stream_muxer.clone();
         let mut tx = self.tx.clone();
         let ctrl = self.ctrl.clone();
-        let pids = vec![IDENTIFY_PROTOCOL.into()];
+        let pids = vec![ProtocolId::new(IDENTIFY_PROTOCOL, 0)];
         let metric = self.metric.clone();
 
         let handle = task::spawn(async move {
@@ -442,7 +442,7 @@ impl Connection {
     pub(crate) fn start_identify_push(&mut self) {
         let cid = self.id();
         let stream_muxer = self.stream_muxer.clone();
-        let pids = vec![IDENTIFY_PUSH_PROTOCOL.into()];
+        let pids = vec![ProtocolId::new(IDENTIFY_PUSH_PROTOCOL, 0)];
         let metric = self.metric.clone();
 
         let mut ctrl = self.ctrl.clone();

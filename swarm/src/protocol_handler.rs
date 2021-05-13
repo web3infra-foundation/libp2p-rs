@@ -137,8 +137,8 @@ impl UpgradeInfo for DummyProtocolHandler {
     type Info = ProtocolId;
     fn protocol_info(&self) -> Vec<Self::Info> {
         vec![
-            ProtocolId::from(b"/dummy/1.0.0" as &[u8]),
-            ProtocolId::from(b"/dummy/2.0.0" as &[u8]),
+            ProtocolId::new("/dummy/1.0.0", 0),
+            ProtocolId::new("/dummy/2.0.0", 0),
         ]
     }
 }

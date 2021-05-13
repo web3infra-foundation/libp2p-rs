@@ -235,7 +235,7 @@ const PING_SIZE: usize = 32;
 impl UpgradeInfo for PingHandler {
     type Info = ProtocolId;
     fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![PING_PROTOCOL.into()]
+        vec![ProtocolId::new(PING_PROTOCOL, 0)]
     }
 }
 

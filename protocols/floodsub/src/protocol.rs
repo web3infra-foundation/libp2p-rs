@@ -56,7 +56,7 @@ impl UpgradeInfo for Handler {
     type Info = ProtocolId;
 
     fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![FLOOD_SUB_ID.into()]
+        vec![ProtocolId::new(FLOOD_SUB_ID, 0)]
     }
 }
 

@@ -59,7 +59,7 @@ pub(crate) enum PeerEvent {
 /// The event emitted by the Handler. This informs the behaviour of various events created
 /// by the handler.
 #[derive(Debug)]
-pub enum HandlerEvent {
+pub(crate) enum HandlerEvent {
     /// A GossipsubRPC message has been received. This also contains a list of invalid messages (if
     /// any) that were received.
     Message {
@@ -94,17 +94,29 @@ pub struct ProtocolConfig {
     validation_mode: ValidationMode,
 }
 
+// A quick conversion from PeerKind to u64
+impl From<PeerKind> for u64 {
+    fn from(v: PeerKind) -> Self {
+        match v {
+            PeerKind::Gossipsubv1_1 => 11,
+            PeerKind::Gossipsub => 10,
+            PeerKind::Floodsub => 0,
+            PeerKind::NotSupported => 1001,
+        }
+    }
+}
+
 impl ProtocolConfig {
     /// Builds a new [`ProtocolConfig`].
     ///
     /// Sets the maximum gossip transmission size.
     pub fn new(max_transmit_size: usize, validation_mode: ValidationMode, support_floodsub: bool) -> ProtocolConfig {
         // support version 1.1.0 and 1.0.0
-        let mut protocol_ids = vec![b"/meshsub/1.1.0".into(), b"/meshsub/1.0.0".into()];
+        let mut protocol_ids = vec![ProtocolId::new("/meshsub/1.1.0", PeerKind::Gossipsubv1_1.into()), ProtocolId::new("/meshsub/1.0.0", PeerKind::Gossipsub.into())];
 
         // add floodsub support if enabled.
         if support_floodsub {
-            protocol_ids.push(b"/floodsub/1.0.0".into());
+            protocol_ids.push(ProtocolId::new("/floodsub/1.0.0", PeerKind::Floodsub.into()));
         }
 
         ProtocolConfig {
@@ -112,31 +124,6 @@ impl ProtocolConfig {
             max_transmit_size,
             validation_mode,
         }
-    }
-}
-
-/// The protocol ID
-#[derive(Clone, Debug)]
-pub struct ProtoId {
-    /// The RPC message type/name.
-    pub protocol_id: Vec<u8>,
-    /// The type of protocol we support
-    pub kind: PeerKind,
-}
-
-/// An RPC protocol ID.
-impl ProtoId {
-    pub fn new(prefix: Cow<'static, str>, kind: PeerKind) -> Self {
-        let protocol_id = match kind {
-            PeerKind::Gossipsubv1_1 => format!("/{}/{}", prefix, "1.1.0"),
-            PeerKind::Gossipsub => format!("/{}/{}", prefix, "1.0.0"),
-            PeerKind::Floodsub => format!("/{}/{}", "floodsub", "1.0.0"),
-            // NOTE: This is used for informing the behaviour of unsupported peers. We do not
-            // advertise this variant.
-            PeerKind::NotSupported => unreachable!("Should never advertise NotSupported"),
-        }
-        .into_bytes();
-        ProtoId { protocol_id, kind }
     }
 }
 
@@ -214,7 +201,7 @@ impl UpgradeInfo for GossipsubHandler {
     type Info = ProtocolId;
 
     fn protocol_info(&self) -> Vec<Self::Info> {
-        self.config.protocol_ids.iter().map(|p| p.protocol_id.into()).collect()
+        self.config.protocol_ids.clone()
     }
 }
 
@@ -233,7 +220,7 @@ impl Notifiee for GossipsubHandler {
 #[async_trait]
 impl ProtocolHandler for GossipsubHandler {
     async fn handle(&mut self, mut stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn error::Error>> {
-        log::trace!("Handle stream from {}", stream.remote_peer());
+        log::trace!("Handle stream from {} negotiated@{}", stream.remote_peer(), stream.protocol());
         loop {
             let packet = stream.read_one(self.config.max_transmit_size).await?;
             let rpc = rpc_proto::Rpc::decode(&packet[..])?;
