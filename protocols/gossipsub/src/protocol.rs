@@ -49,10 +49,15 @@ use crate::{rpc_proto, Topic};
 
 pub(crate) const SIGNING_PREFIX: &[u8] = b"libp2p-pubsub:";
 
-/// The event emitted by the Notifiee trait.
+/// The event emitted from the Peer connection.
 #[derive(Debug)]
 pub(crate) enum PeerEvent {
+    /// An inbound or outbound substream has been established with the peer and this informs over
+    /// which protocol. This message only occurs once per connection.
+    PeerKind(PeerKind),
+    /// A peer is newly found connected.
     NewPeer(PeerId),
+    /// A peer is found disconnected.
     DeadPeer(PeerId),
 }
 
@@ -69,11 +74,8 @@ pub(crate) enum HandlerEvent {
         /// validation error.
         invalid_messages: Vec<(RawGossipsubMessage, ValidationError)>,
     },
-    /// An inbound or outbound substream has been established with the peer and this informs over
-    /// which protocol. This message only occurs once per connection.
-    PeerKind(PeerKind),
-    /// Notifications from the Notifiee trait, to indicate connection establishment or teardown.
-    Notification(PeerEvent),
+    /// Peer Notifications from the Notifiee trait, to indicate connection establishment or teardown.
+    PeerEvent(PeerEvent),
 }
 
 /// The maximum number of substreams we accept or create before disconnecting from the peer.
@@ -112,7 +114,10 @@ impl ProtocolConfig {
     /// Sets the maximum gossip transmission size.
     pub fn new(max_transmit_size: usize, validation_mode: ValidationMode, support_floodsub: bool) -> ProtocolConfig {
         // support version 1.1.0 and 1.0.0
-        let mut protocol_ids = vec![ProtocolId::new("/meshsub/1.1.0", PeerKind::Gossipsubv1_1.into()), ProtocolId::new("/meshsub/1.0.0", PeerKind::Gossipsub.into())];
+        let mut protocol_ids = vec![
+            ProtocolId::new("/meshsub/1.1.0", PeerKind::Gossipsubv1_1.into()),
+            ProtocolId::new("/meshsub/1.0.0", PeerKind::Gossipsub.into()),
+        ];
 
         // add floodsub support if enabled.
         if support_floodsub {
@@ -208,12 +213,12 @@ impl UpgradeInfo for GossipsubHandler {
 impl Notifiee for GossipsubHandler {
     fn connected(&mut self, conn: &mut Connection) {
         let peer_id = conn.remote_peer();
-        let _ = self.tx.unbounded_send(HandlerEvent::Notification(PeerEvent::NewPeer(peer_id)));
+        let _ = self.tx.unbounded_send(HandlerEvent::PeerEvent(PeerEvent::NewPeer(peer_id)));
     }
 
     fn disconnected(&mut self, conn: &mut Connection) {
         let peer_id = conn.remote_peer();
-        let _ = self.tx.unbounded_send(HandlerEvent::Notification(PeerEvent::DeadPeer(peer_id)));
+        let _ = self.tx.unbounded_send(HandlerEvent::PeerEvent(PeerEvent::DeadPeer(peer_id)));
     }
 }
 

@@ -48,7 +48,7 @@ use crate::error::{PublishError, SubscriptionError, ValidationError};
 use crate::gossip_promises::GossipPromises;
 use crate::mcache::MessageCache;
 use crate::peer_score::{PeerScore, PeerScoreParams, PeerScoreThresholds, RejectReason};
-use crate::protocol::{GossipsubHandler, HandlerEvent, PeerEvent, SIGNING_PREFIX};
+use crate::protocol::{GossipsubHandler, HandlerEvent, PeerEvent, ProtocolConfig, SIGNING_PREFIX};
 use crate::subscription_filter::{AllowAllSubscriptionFilter, TopicSubscriptionFilter};
 use crate::time_cache::{DuplicateCache, TimeCache};
 use crate::topic::{Hasher, Topic, TopicHash};
@@ -59,7 +59,7 @@ use crate::types::{
 };
 use crate::types::{GossipsubRpc, PeerKind};
 use crate::{rpc_proto, TopicScoreParams};
-use futures::channel::mpsc;
+use futures::{channel::mpsc, prelude::*, select};
 use libp2prs_runtime::task;
 use std::{cmp::Ordering::Equal, fmt::Debug};
 
@@ -974,15 +974,49 @@ where
         });
     }
 
+    /// Message Process Loop.
+    async fn process_loop(&mut self) {
+        loop {
+            select! {
+                cmd = self.rx.next() => {
+                    self.handle_event(cmd);
+                }
+                cmd = self.control_rx.next() => {
+                    if self.handle_command(cmd).is_err() {
+                        break;
+                    }
+                }
+                // sub = self.cancel_rx.next() => {
+                //     self.un_subscribe(sub);
+                // }
+            }
+        }
+    }
+
+    fn handle_event(&mut self, evt: Option<HandlerEvent>) {
+        log::debug!("handling gossip event {:?}", evt);
+        match evt {
+            Some(HandlerEvent::PeerEvent(pe)) => self.handle_peer_event(pe),
+            Some(HandlerEvent::Message { .. }) => {} //self.handle_received_message(),
+            None => panic!("shouldn't happen"),
+        }
+    }
+
+    fn handle_command(&mut self, cmd: Option<ControlCommand>) -> Result<(), ()> {
+        Ok(())
+    }
+
     // Always wait to send message.
     fn handle_new_peer(&mut self, rpid: PeerId) {
         let mut swarm = self.swarm.clone().expect("swarm??");
-        // let tx = self.tx.clone();
-        // let (tx, rx) = mpsc::unbounded();
+        let mut evt_tx = self.tx.clone();
+        let (tx, rx) = mpsc::unbounded();
 
         // let _ = tx.unbounded_send(self.get_hello_packet());
 
         // self.connected_peers.insert(rpid, tx);
+
+        let pids = self.config.protocol_id_prefix().
 
         task::spawn(async move {
             let stream = swarm.new_stream(rpid, vec![]).await;
@@ -1029,9 +1063,12 @@ where
         // }
     }
 
-    // Handle peer event, include new peer event and peer dead event
-    fn handle_peer_event(&mut self, cmd: PeerEvent) {
-        match cmd {
+    // Handle peer event, new peer and dead peer event + PeerKind event
+    fn handle_peer_event(&mut self, evt: PeerEvent) {
+        match evt {
+            PeerEvent::PeerKind(kind) => {
+                // self.handle_new_peer(rpid);
+            }
             PeerEvent::NewPeer(rpid) => {
                 log::trace!("new peer {} has connected", rpid);
                 self.handle_new_peer(rpid);
@@ -2894,6 +2931,30 @@ fn validate_config(authenticity: &MessageAuthenticity, validation_mode: &Validat
         _ => {}
     }
     Ok(())
+}
+
+impl<D: DataTransform + Send + 'static, F: TopicSubscriptionFilter + Send + 'static> ProtocolImpl for Gossipsub<D, F> {
+    fn handlers(&self) -> Vec<IProtocolHandler> {
+        let proto_config = ProtocolConfig::new(
+            self.config.max_transmit_size(),
+            self.config.validation_mode().clone(),
+            self.config.support_floodsub(),
+        );
+        let handle = GossipsubHandler::new(proto_config, self.tx.clone());
+        vec![Box::new(handle)]
+    }
+
+    fn start(mut self, swarm: SwarmControl) -> Option<task::TaskHandle<()>> {
+        self.swarm = Some(swarm);
+
+        // well, self 'move' explicitly,
+        let mut gossipsub = self;
+        let task = task::spawn(async move {
+            let _ = gossipsub.process_loop().await;
+        });
+
+        Some(task)
+    }
 }
 
 impl<C: DataTransform, F: TopicSubscriptionFilter> fmt::Debug for Gossipsub<C, F> {

@@ -23,6 +23,7 @@ use std::time::Duration;
 
 use libp2prs_core::PeerId;
 
+use crate::protocol::ProtocolConfig;
 use crate::types::{FastMessageId, GossipsubMessage, MessageId, RawGossipsubMessage};
 
 /// The types of message validation that can be employed by gossipsub.
@@ -51,7 +52,7 @@ pub enum ValidationMode {
 /// Configuration parameters that define the performance of the gossipsub network.
 #[derive(Clone)]
 pub struct GossipsubConfig {
-    protocol_id_prefix: Cow<'static, str>,
+    protocol_config: ProtocolConfig,
     history_length: usize,
     history_gossip: usize,
     mesh_n: usize,
@@ -64,10 +65,10 @@ pub struct GossipsubConfig {
     heartbeat_interval: Duration,
     fanout_ttl: Duration,
     check_explicit_peers_ticks: u64,
-    max_transmit_size: usize,
+    //max_transmit_size: usize,
     duplicate_cache_time: Duration,
     validate_messages: bool,
-    validation_mode: ValidationMode,
+    //validation_mode: ValidationMode,
     message_id_fn: fn(&GossipsubMessage) -> MessageId,
     fast_message_id_fn: Option<fn(&RawGossipsubMessage) -> FastMessageId>,
     allow_self_origin: bool,
@@ -92,13 +93,9 @@ pub struct GossipsubConfig {
 impl GossipsubConfig {
     // All the getters
 
-    /// The protocol id prefix to negotiate this protocol. The protocol id is of the form
-    /// `/<prefix>/<supported-versions>`. As gossipsub supports version 1.0 and 1.1, there are two
-    /// protocol id's supported.
-    ///
-    /// The default prefix is `meshsub`, giving the supported protocol ids: `/meshsub/1.1.0` and `/meshsub/1.0.0`, negotiated in that order.
-    pub fn protocol_id_prefix(&self) -> &Cow<'static, str> {
-        &self.protocol_id_prefix
+    /// Protocol configurations.
+    pub fn protocol_config(&self) -> &ProtocolConfig {
+        &self.protocol_config
     }
 
     // Overlay network parameters.
@@ -369,7 +366,6 @@ impl Default for GossipsubConfigBuilder {
     fn default() -> Self {
         GossipsubConfigBuilder {
             config: GossipsubConfig {
-                protocol_id_prefix: Cow::Borrowed("meshsub"),
                 history_length: 5,
                 history_gossip: 3,
                 mesh_n: 6,
@@ -741,7 +737,6 @@ impl GossipsubConfigBuilder {
 impl std::fmt::Debug for GossipsubConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut builder = f.debug_struct("GossipsubConfig");
-        let _ = builder.field("protocol_id_prefix", &self.protocol_id_prefix);
         let _ = builder.field("history_length", &self.history_length);
         let _ = builder.field("history_gossip", &self.history_gossip);
         let _ = builder.field("mesh_n", &self.mesh_n);
