@@ -21,10 +21,9 @@
 use std::borrow::Cow;
 use std::time::Duration;
 
-use libp2prs_core::PeerId;
+use libp2prs_core::{PeerId, ProtocolId};
 
-use crate::protocol::ProtocolConfig;
-use crate::types::{FastMessageId, GossipsubMessage, MessageId, RawGossipsubMessage};
+use crate::types::{FastMessageId, GossipsubMessage, MessageId, PeerKind, RawGossipsubMessage};
 
 /// The types of message validation that can be employed by gossipsub.
 #[derive(Debug, Clone)]
@@ -52,7 +51,7 @@ pub enum ValidationMode {
 /// Configuration parameters that define the performance of the gossipsub network.
 #[derive(Clone)]
 pub struct GossipsubConfig {
-    protocol_config: ProtocolConfig,
+    protocol_ids: Vec<ProtocolId>,
     history_length: usize,
     history_gossip: usize,
     mesh_n: usize,
@@ -65,10 +64,10 @@ pub struct GossipsubConfig {
     heartbeat_interval: Duration,
     fanout_ttl: Duration,
     check_explicit_peers_ticks: u64,
-    //max_transmit_size: usize,
+    max_transmit_size: usize,
     duplicate_cache_time: Duration,
     validate_messages: bool,
-    //validation_mode: ValidationMode,
+    validation_mode: ValidationMode,
     message_id_fn: fn(&GossipsubMessage) -> MessageId,
     fast_message_id_fn: Option<fn(&RawGossipsubMessage) -> FastMessageId>,
     allow_self_origin: bool,
@@ -94,8 +93,8 @@ impl GossipsubConfig {
     // All the getters
 
     /// Protocol configurations.
-    pub fn protocol_config(&self) -> &ProtocolConfig {
-        &self.protocol_config
+    pub fn protocol_ids(&self) -> &Vec<ProtocolId> {
+        &self.protocol_ids
     }
 
     // Overlay network parameters.
@@ -364,8 +363,14 @@ pub struct GossipsubConfigBuilder {
 
 impl Default for GossipsubConfigBuilder {
     fn default() -> Self {
+        // support version 1.1.0 and 1.0.0 by default
+        let mut protocol_ids = vec![
+            ProtocolId::new("/meshsub/1.1.0", PeerKind::Gossipsubv1_1.into()),
+            ProtocolId::new("/meshsub/1.0.0", PeerKind::Gossipsub.into()),
+        ];
         GossipsubConfigBuilder {
             config: GossipsubConfig {
+                protocol_ids,
                 history_length: 5,
                 history_gossip: 3,
                 mesh_n: 6,
@@ -378,7 +383,7 @@ impl Default for GossipsubConfigBuilder {
                 heartbeat_interval: Duration::from_secs(1),
                 fanout_ttl: Duration::from_secs(60),
                 check_explicit_peers_ticks: 300,
-                max_transmit_size: 65536,
+                max_transmit_size: 65535,
                 duplicate_cache_time: Duration::from_secs(60),
                 validate_messages: false,
                 validation_mode: ValidationMode::Strict,
@@ -423,12 +428,6 @@ impl From<GossipsubConfig> for GossipsubConfigBuilder {
 }
 
 impl GossipsubConfigBuilder {
-    /// The protocol id to negotiate this protocol (default is `/meshsub/1.0.0`).
-    pub fn protocol_id_prefix(&mut self, protocol_id: impl Into<Cow<'static, str>>) -> &mut Self {
-        self.config.protocol_id_prefix = protocol_id.into();
-        self
-    }
-
     /// Number of heartbeats to keep in the `memcache` (default is 5).
     pub fn history_length(&mut self, history_length: usize) -> &mut Self {
         self.config.history_length = history_length;
@@ -697,6 +696,9 @@ impl GossipsubConfigBuilder {
     /// Enable support for flooodsub peers.
     pub fn support_floodsub(&mut self) -> &mut Self {
         self.config.support_floodsub = true;
+        self.config
+            .protocol_ids
+            .push(ProtocolId::new("/floodsub/1.0.0", PeerKind::Floodsub.into()));
         self
     }
 

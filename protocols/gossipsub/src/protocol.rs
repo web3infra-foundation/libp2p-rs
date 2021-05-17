@@ -85,17 +85,6 @@ pub(crate) enum HandlerEvent {
 /// connection faulty and disconnect. This also prevents against potential substream creation loops.
 const MAX_SUBSTREAM_CREATION: usize = 5;
 
-/// Implementation of [`InboundUpgrade`] and [`OutboundUpgrade`] for the Gossipsub protocol.
-#[derive(Clone)]
-pub struct ProtocolConfig {
-    /// The Gossipsub protocol id to listen on.
-    protocol_ids: Vec<ProtocolId>,
-    /// The maximum transmit size for a packet.
-    max_transmit_size: usize,
-    /// Determines the level of validation to be done on incoming messages.
-    validation_mode: ValidationMode,
-}
-
 // A quick conversion from PeerKind to u64
 impl From<PeerKind> for u64 {
     fn from(v: PeerKind) -> Self {
@@ -108,39 +97,31 @@ impl From<PeerKind> for u64 {
     }
 }
 
-impl ProtocolConfig {
-    /// Builds a new [`ProtocolConfig`].
-    ///
-    /// Sets the maximum gossip transmission size.
-    pub fn new(max_transmit_size: usize, validation_mode: ValidationMode, support_floodsub: bool) -> ProtocolConfig {
-        // support version 1.1.0 and 1.0.0
-        let mut protocol_ids = vec![
-            ProtocolId::new("/meshsub/1.1.0", PeerKind::Gossipsubv1_1.into()),
-            ProtocolId::new("/meshsub/1.0.0", PeerKind::Gossipsub.into()),
-        ];
-
-        // add floodsub support if enabled.
-        if support_floodsub {
-            protocol_ids.push(ProtocolId::new("/floodsub/1.0.0", PeerKind::Floodsub.into()));
-        }
-
-        ProtocolConfig {
-            protocol_ids,
-            max_transmit_size,
-            validation_mode,
-        }
-    }
-}
-
 #[derive(Clone)]
 pub struct GossipsubHandler {
-    config: ProtocolConfig,
+    /// The Gossipsub protocol id to listen on.
+    protocol_ids: Vec<ProtocolId>,
+    /// The maximum transmit size for a packet.
+    max_transmit_size: usize,
+    /// Determines the level of validation to be done on incoming messages.
+    validation_mode: ValidationMode,
+    /// Tx to send HandlerEvent back to the main loop.
     tx: mpsc::UnboundedSender<HandlerEvent>,
 }
 
 impl GossipsubHandler {
-    pub(crate) fn new(config: ProtocolConfig, tx: mpsc::UnboundedSender<HandlerEvent>) -> Self {
-        GossipsubHandler { config, tx }
+    pub(crate) fn new(
+        protocol_ids: Vec<ProtocolId>,
+        max_transmit_size: usize,
+        validation_mode: ValidationMode,
+        tx: mpsc::UnboundedSender<HandlerEvent>,
+    ) -> Self {
+        GossipsubHandler {
+            protocol_ids,
+            max_transmit_size,
+            validation_mode,
+            tx,
+        }
     }
 
     /// Verifies a gossipsub message. This returns either a success or failure. All errors
@@ -206,7 +187,7 @@ impl UpgradeInfo for GossipsubHandler {
     type Info = ProtocolId;
 
     fn protocol_info(&self) -> Vec<Self::Info> {
-        self.config.protocol_ids.clone()
+        self.protocol_ids.clone()
     }
 }
 
@@ -227,7 +208,7 @@ impl ProtocolHandler for GossipsubHandler {
     async fn handle(&mut self, mut stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn error::Error>> {
         log::trace!("Handle stream from {} negotiated@{}", stream.remote_peer(), stream.protocol());
         loop {
-            let packet = stream.read_one(self.config.max_transmit_size).await?;
+            let packet = stream.read_one(self.max_transmit_size).await?;
             let rpc = rpc_proto::Rpc::decode(&packet[..])?;
             log::trace!("recv rpc msg: {:?}", rpc);
 
@@ -245,7 +226,7 @@ impl ProtocolHandler for GossipsubHandler {
                 let mut verify_sequence_no = false;
                 let mut verify_source = false;
 
-                match self.config.validation_mode {
+                match self.validation_mode {
                     ValidationMode::Strict => {
                         // Validate everything
                         verify_signature = true;

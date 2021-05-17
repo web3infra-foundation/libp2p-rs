@@ -48,7 +48,7 @@ use crate::error::{PublishError, SubscriptionError, ValidationError};
 use crate::gossip_promises::GossipPromises;
 use crate::mcache::MessageCache;
 use crate::peer_score::{PeerScore, PeerScoreParams, PeerScoreThresholds, RejectReason};
-use crate::protocol::{GossipsubHandler, HandlerEvent, PeerEvent, ProtocolConfig, SIGNING_PREFIX};
+use crate::protocol::{GossipsubHandler, HandlerEvent, PeerEvent, SIGNING_PREFIX};
 use crate::subscription_filter::{AllowAllSubscriptionFilter, TopicSubscriptionFilter};
 use crate::time_cache::{DuplicateCache, TimeCache};
 use crate::topic::{Hasher, Topic, TopicHash};
@@ -1011,12 +1011,12 @@ where
         let mut swarm = self.swarm.clone().expect("swarm??");
         let mut evt_tx = self.tx.clone();
         let (tx, rx) = mpsc::unbounded();
-
+        let _ = tx.unbounded_send(());
         // let _ = tx.unbounded_send(self.get_hello_packet());
 
         // self.connected_peers.insert(rpid, tx);
 
-        let pids = self.config.protocol_id_prefix().
+        let pids = self.config.protocol_ids().clone();
 
         task::spawn(async move {
             let stream = swarm.new_stream(rpid, vec![]).await;
@@ -2935,12 +2935,12 @@ fn validate_config(authenticity: &MessageAuthenticity, validation_mode: &Validat
 
 impl<D: DataTransform + Send + 'static, F: TopicSubscriptionFilter + Send + 'static> ProtocolImpl for Gossipsub<D, F> {
     fn handlers(&self) -> Vec<IProtocolHandler> {
-        let proto_config = ProtocolConfig::new(
+        let handle = GossipsubHandler::new(
+            self.config.protocol_ids().clone(),
             self.config.max_transmit_size(),
             self.config.validation_mode().clone(),
-            self.config.support_floodsub(),
+            self.tx.clone(),
         );
-        let handle = GossipsubHandler::new(proto_config, self.tx.clone());
         vec![Box::new(handle)]
     }
 
