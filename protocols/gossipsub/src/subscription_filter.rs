@@ -149,9 +149,7 @@ impl<T: TopicSubscriptionFilter> TopicSubscriptionFilter for MaxCountSubscriptio
             }
         }
 
-        if new_subscribed + currently_subscribed_topics.len()
-            > self.max_subscribed_topics + unsubscribed
-        {
+        if new_subscribed + currently_subscribed_topics.len() > self.max_subscribed_topics + unsubscribed {
             return Err("too many subscribed topics".into());
         }
 
@@ -244,9 +242,7 @@ pub mod regex {
                 },
             ];
 
-            let result = filter
-                .filter_incoming_subscriptions(&subscriptions, &old)
-                .unwrap();
+            let result = filter.filter_incoming_subscriptions(&subscriptions, &old).unwrap();
             assert_eq!(result, subscriptions[..2].iter().collect());
         }
     }
@@ -289,9 +285,7 @@ mod test {
             },
         ];
 
-        let result = filter
-            .filter_incoming_subscriptions(&subscriptions, &old)
-            .unwrap();
+        let result = filter.filter_incoming_subscriptions(&subscriptions, &old).unwrap();
         assert_eq!(result, vec![&subscriptions[4]].into_iter().collect());
     }
 
@@ -314,9 +308,7 @@ mod test {
             },
         ];
 
-        let result = filter
-            .filter_incoming_subscriptions(&subscriptions, &old)
-            .unwrap();
+        let result = filter.filter_incoming_subscriptions(&subscriptions, &old).unwrap();
         assert_eq!(result, vec![&subscriptions[0]].into_iter().collect());
     }
 
@@ -353,9 +345,7 @@ mod test {
 
     #[test]
     fn test_filter_incoming_too_many_subscriptions() {
-        let t: Vec<_> = (0..4)
-            .map(|i| TopicHash::from_raw(format!("t{}", i)))
-            .collect();
+        let t: Vec<_> = (0..4).map(|i| TopicHash::from_raw(format!("t{}", i))).collect();
 
         let mut filter = MaxCountSubscriptionFilter {
             filter: AllowAllSubscriptionFilter {},
@@ -382,9 +372,7 @@ mod test {
 
     #[test]
     fn test_filter_incoming_max_subscribed_valid() {
-        let t: Vec<_> = (0..5)
-            .map(|i| TopicHash::from_raw(format!("t{}", i)))
-            .collect();
+        let t: Vec<_> = (0..5).map(|i| TopicHash::from_raw(format!("t{}", i))).collect();
 
         let mut filter = MaxCountSubscriptionFilter {
             filter: WhitelistSubscriptionFilter(t.iter().take(4).cloned().collect()),
@@ -417,9 +405,7 @@ mod test {
             },
         ];
 
-        let result = filter
-            .filter_incoming_subscriptions(&subscriptions, &old)
-            .unwrap();
+        let result = filter.filter_incoming_subscriptions(&subscriptions, &old).unwrap();
         assert_eq!(result, subscriptions[1..].iter().collect());
     }
 
@@ -442,9 +428,7 @@ mod test {
             },
         ];
 
-        let result = filter
-            .filter_incoming_subscriptions(&subscriptions, &old)
-            .unwrap();
+        let result = filter.filter_incoming_subscriptions(&subscriptions, &old).unwrap();
         assert_eq!(result, vec![&subscriptions[0]].into_iter().collect());
     }
 }

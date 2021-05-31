@@ -52,6 +52,7 @@ pub enum ValidationMode {
 /// Configuration parameters that define the performance of the gossipsub network.
 #[derive(Clone)]
 pub struct GossipsubConfig {
+    peer_id: PeerId,
     protocol_config: ProtocolConfig,
     history_length: usize,
     history_gossip: usize,
@@ -92,6 +93,11 @@ pub struct GossipsubConfig {
 
 impl GossipsubConfig {
     // All the getters
+
+    /// Peer ID
+    pub fn peer_id(&self) -> PeerId {
+        self.peer_id
+    }
 
     /// Protocol configurations.
     pub fn protocol_config(&self) -> &ProtocolConfig {
@@ -175,7 +181,7 @@ impl GossipsubConfig {
     /// must be large enough to transmit the desired peer information on pruning. It must be at
     /// least 100 bytes. Default is 65536 bytes.
     pub fn max_transmit_size(&self) -> usize {
-        self.max_transmit_size
+        self.protocol_config.max_transmit_size()
     }
 
     /// Duplicates are prevented by storing message id's of known messages in an LRU time cache.
@@ -197,8 +203,8 @@ impl GossipsubConfig {
 
     /// Determines the level of validation used when receiving messages. See [`ValidationMode`]
     /// for the available types. The default is ValidationMode::Strict.
-    pub fn validation_mode(&self) -> &ValidationMode {
-        &self.validation_mode
+    pub fn validation_mode(&self) -> ValidationMode {
+        self.protocol_config.validation_mode()
     }
 
     /// A user-defined function allowing the user to specify the message id of a gossipsub message.
@@ -348,10 +354,10 @@ impl GossipsubConfig {
     }
 }
 
-impl Default for GossipsubConfig {
-    fn default() -> Self {
+impl GossipsubConfig {
+    fn default(peer_id: PeerId) -> Self {
         // use ConfigBuilder to also validate defaults
-        GossipsubConfigBuilder::default()
+        GossipsubConfigBuilder::new(peer_id)
             .build()
             .expect("Default config parameters should be valid parameters")
     }
@@ -362,10 +368,13 @@ pub struct GossipsubConfigBuilder {
     config: GossipsubConfig,
 }
 
-impl Default for GossipsubConfigBuilder {
-    fn default() -> Self {
+impl GossipsubConfigBuilder {
+    pub fn new(peer_id: PeerId) -> Self {
+        let protocol_config = ProtocolConfig::new(65536, ValidationMode::Strict, false);
         GossipsubConfigBuilder {
             config: GossipsubConfig {
+                peer_id,
+                protocol_config,
                 history_length: 5,
                 history_gossip: 3,
                 mesh_n: 6,
@@ -378,10 +387,10 @@ impl Default for GossipsubConfigBuilder {
                 heartbeat_interval: Duration::from_secs(1),
                 fanout_ttl: Duration::from_secs(60),
                 check_explicit_peers_ticks: 300,
-                max_transmit_size: 65536,
+                // max_transmit_size: 65536,
                 duplicate_cache_time: Duration::from_secs(60),
                 validate_messages: false,
-                validation_mode: ValidationMode::Strict,
+                // validation_mode: ValidationMode::Strict,
                 message_id_fn: |message| {
                     // default message id is: source + sequence number
                     // NOTE: If either the peer_id or source is not provided, we set to 0;
@@ -424,10 +433,10 @@ impl From<GossipsubConfig> for GossipsubConfigBuilder {
 
 impl GossipsubConfigBuilder {
     /// The protocol id to negotiate this protocol (default is `/meshsub/1.0.0`).
-    pub fn protocol_id_prefix(&mut self, protocol_id: impl Into<Cow<'static, str>>) -> &mut Self {
-        self.config.protocol_id_prefix = protocol_id.into();
-        self
-    }
+    // pub fn protocol_id_prefix(&mut self, protocol_id: impl Into<Cow<'static, str>>) -> &mut Self {
+    //     self.config.protocol_id_prefix = protocol_id.into();
+    //     self
+    // }
 
     /// Number of heartbeats to keep in the `memcache` (default is 5).
     pub fn history_length(&mut self, history_length: usize) -> &mut Self {
@@ -512,7 +521,7 @@ impl GossipsubConfigBuilder {
 
     /// The maximum byte size for each gossip (default is 2048 bytes).
     pub fn max_transmit_size(&mut self, max_transmit_size: usize) -> &mut Self {
-        self.config.max_transmit_size = max_transmit_size;
+        self.config.protocol_config.set_max_transmit_size(max_transmit_size);
         self
     }
 
@@ -537,7 +546,7 @@ impl GossipsubConfigBuilder {
     /// Determines the level of validation used when receiving messages. See [`ValidationMode`]
     /// for the available types. The default is ValidationMode::Strict.
     pub fn validation_mode(&mut self, validation_mode: ValidationMode) -> &mut Self {
-        self.config.validation_mode = validation_mode;
+        self.config.protocol_config.set_validation_mode(validation_mode);
         self
     }
 
@@ -710,7 +719,7 @@ impl GossipsubConfigBuilder {
     pub fn build(&self) -> Result<GossipsubConfig, &str> {
         // check all constraints on config
 
-        if self.config.max_transmit_size < 100 {
+        if self.config.max_transmit_size() < 100 {
             return Err("The maximum transmission size must be greater than 100 to permit basic control messages");
         }
 
@@ -748,10 +757,10 @@ impl std::fmt::Debug for GossipsubConfig {
         let _ = builder.field("heartbeat_initial_delay", &self.heartbeat_initial_delay);
         let _ = builder.field("heartbeat_interval", &self.heartbeat_interval);
         let _ = builder.field("fanout_ttl", &self.fanout_ttl);
-        let _ = builder.field("max_transmit_size", &self.max_transmit_size);
+        let _ = builder.field("max_transmit_size", &self.max_transmit_size());
         let _ = builder.field("duplicate_cache_time", &self.duplicate_cache_time);
         let _ = builder.field("validate_messages", &self.validate_messages);
-        let _ = builder.field("validation_mode", &self.validation_mode);
+        let _ = builder.field("validation_mode", &self.validation_mode());
         let _ = builder.field("allow_self_origin", &self.allow_self_origin);
         let _ = builder.field("do_px", &self.do_px);
         let _ = builder.field("prune_peers", &self.prune_peers);
