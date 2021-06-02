@@ -77,14 +77,16 @@ impl Control {
     pub async fn subscribe(&mut self, topic: TopicHash) -> Result<Subscription, SubscriptionError> {
         // unimplemented!()
         let (tx, rx) = oneshot::channel();
-        self.control_sender.send(ControlCommand::Subscribe(topic, tx)).await;
+        let _ = self.control_sender.send(ControlCommand::Subscribe(topic, tx)).await;
         rx.await.map_err(|e| SubscriptionError::PublishError(InsufficientPeers))
     }
 
-    pub async fn unsubscribe(&self, topic: TopicHash) {}
+    pub async fn unsubscribe(&self, topic: TopicHash) {
+        let _ = self.control_sender.unbounded_send(ControlCommand::Unsubscribed(topic));
+    }
 
     pub fn heartbeat(&self) {
-        self.control_sender.unbounded_send(Heartbeat);
+        let _ = self.control_sender.unbounded_send(Heartbeat);
     }
 
     /// List subscribed topics by name.

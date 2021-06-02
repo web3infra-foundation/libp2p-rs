@@ -21,7 +21,6 @@
 use std::{
     cmp::{max, Ordering},
     collections::HashSet,
-    collections::VecDeque,
     collections::{BTreeSet, HashMap},
     fmt,
     iter::FromIterator,
@@ -36,9 +35,8 @@ use prost::Message;
 use rand::{seq::SliceRandom, thread_rng};
 use wasm_timer::{Instant, Interval};
 
-use libp2prs_core::{identity::Keypair, multiaddr::Protocol::Ip4, multiaddr::Protocol::Ip6, Multiaddr, PeerId, ProtocolId, WriteEx};
+use libp2prs_core::{identity::Keypair, multiaddr::Protocol::Ip4, multiaddr::Protocol::Ip6, Multiaddr, PeerId, WriteEx};
 use libp2prs_swarm::protocol_handler::{IProtocolHandler, ProtocolImpl};
-use libp2prs_swarm::substream::Substream;
 use libp2prs_swarm::Control as SwarmControl;
 
 use crate::backoff::BackoffStorage;
@@ -52,20 +50,20 @@ use crate::protocol::{GossipsubHandler, HandlerEvent, PeerEvent, ProtocolConfig,
 use crate::subscription::{SubId, Subscription};
 use crate::subscription_filter::{AllowAllSubscriptionFilter, TopicSubscriptionFilter};
 use crate::time_cache::{DuplicateCache, TimeCache};
-use crate::topic::{Hasher, IdentityHash, Topic, TopicHash};
+use crate::topic::TopicHash;
 use crate::transform::{DataTransform, IdentityTransform};
-use crate::types::PeerKind::Gossipsubv1_1;
+// use crate::types::PeerKind::Gossipsubv1_1;
 use crate::types::{
     FastMessageId, GossipsubControlAction, GossipsubMessage, GossipsubSubscription, GossipsubSubscriptionAction, MessageAcceptance,
     MessageId, PeerInfo, RawGossipsubMessage,
 };
 use crate::types::{GossipsubRpc, PeerKind};
 use crate::{rpc_proto, TopicScoreParams};
-use futures::channel::mpsc::{unbounded, UnboundedSender};
+use futures::channel::mpsc::UnboundedSender;
 use futures::prelude::future::Either;
 use futures::{channel::mpsc, prelude::*, select, SinkExt, StreamExt};
 use libp2prs_runtime::task;
-use nohash_hasher::IntMap;
+// use nohash_hasher::IntMap;
 use std::{cmp::Ordering::Equal, fmt::Debug};
 
 #[cfg(test)]
@@ -1013,7 +1011,7 @@ where
                 match either {
                     Either::Left((_, _)) => break,
                     Either::Right((_, _)) => {
-                        sender.unbounded_send(HandlerEvent::HeartBeat);
+                        let _ = sender.unbounded_send(HandlerEvent::HeartBeat);
                     }
                 }
             }
@@ -1053,28 +1051,23 @@ where
         }
     }
 
-    fn handle_unsubscribed(&self, topic: TopicHash) {
-        // let a = self.my_topics.get(topic).unwrap().get(sub_id).unwrap();
-        // a.close()
-    }
-
     /// Handle control event
     fn handle_command(&mut self, cmd: Option<ControlCommand>) -> Result<(), ()> {
         match cmd {
             Some(ControlCommand::Publish(message, reply)) => {
-                self.join(&message.topic);
-                self.publish(message.topic, message.data);
+                // self.join(&message.topic);
+                let _ = self.publish(message.topic, message.data);
 
                 let _ = reply.send(());
             }
             Some(ControlCommand::Subscribe(topic, reply)) => {
                 // self.join(topic.clone());
-                self.subscribe(&topic);
+                let _ = self.subscribe(&topic);
                 let (tx, rx) = mpsc::unbounded();
 
                 let topic_subs = self.my_topics.remove(&topic).unwrap_or(tx);
-                let sub_id = SubId::random();
-                let sub = Subscription::new(sub_id, topic.clone(), rx, self.cancel_tx.clone());
+                // let sub_id = SubId::random();
+                let sub = Subscription::new(SubId::random(), topic.clone(), rx, self.cancel_tx.clone());
                 // topic_subs.insert(sub_id, tx);
                 self.my_topics.insert(topic, topic_subs);
 
@@ -1083,11 +1076,11 @@ where
                 let _ = reply.send(sub);
             }
             Some(ControlCommand::Unsubscribed(topic)) => {
-                // self.unsubscribe(&topic);
-                //
-                // if let Some(topic_subs) = self.my_topics.get(&topic) {
-                //     topic_subs.unbounded_send(Arc::new(None));
-                // }
+                let _ = self.unsubscribe(&topic);
+
+                if let Some(mut topic_subs) = self.my_topics.remove(&topic) {
+                    let _ = topic_subs.close();
+                }
             }
             Some(ControlCommand::Heartbeat) => {
                 self.heartbeat();
@@ -1198,7 +1191,7 @@ where
     // Handle peer event, new peer and dead peer event + PeerKind event
     fn handle_peer_event(&mut self, evt: PeerEvent) {
         match evt {
-            PeerEvent::PeerKind(kind) => {
+            PeerEvent::PeerKind(_kind) => {
                 // self.handle_new_peer(rpid);
             }
             PeerEvent::NewPeer(rpid) => {
@@ -1764,7 +1757,7 @@ where
                 .into_protobuf(),
             );
             for mesh_peer in peer_list.clone() {
-                self.send_message(mesh_peer, proto.clone());
+                let _ = self.send_message(mesh_peer, proto.clone());
             }
         } else {
             debug!("Received message on a topic we are not subscribed to: {:?}", message.topic);
@@ -2606,7 +2599,7 @@ where
         log::debug!("Sending message from peer_id: {:?}", peer_id);
         if let Some(sender) = self.connected_peer.get(&peer_id) {
             for message in messages {
-                sender.unbounded_send(message);
+                let _ = sender.unbounded_send(message);
             }
         }
         Ok(())
@@ -2736,7 +2729,7 @@ where
             .into_iter()
             .map(|item| {
                 let mut buf = Vec::with_capacity(item.encoded_len());
-                let proto = item.encode(&mut buf).expect("Vec<u8> provides capacity as needed");
+                let _proto = item.encode(&mut buf).expect("Vec<u8> provides capacity as needed");
                 buf
             })
             .map(Arc::new)
