@@ -64,6 +64,7 @@ use futures::prelude::future::Either;
 use futures::{channel::mpsc, prelude::*, select, SinkExt, StreamExt};
 use libp2prs_runtime::task;
 // use nohash_hasher::IntMap;
+use crate::protocol::PeerEvent::NewPeer;
 use std::{cmp::Ordering::Equal, fmt::Debug};
 
 #[cfg(test)]
@@ -1002,6 +1003,7 @@ where
 
     /// Message Process Loop.
     async fn process_loop(&mut self) {
+        // If loop is break, stop heartbeat.
         let (mut tx, mut rx) = mpsc::channel::<()>(0);
         let sender = self.tx.clone();
         task::spawn(async move {
@@ -2601,6 +2603,9 @@ where
             for message in messages {
                 let _ = sender.unbounded_send(message);
             }
+        } else {
+            // TODO: If connection has been interrupted, ought to reconnect.
+            // self.tx.unbounded_send(NewPeer(peer_id))
         }
         Ok(())
     }

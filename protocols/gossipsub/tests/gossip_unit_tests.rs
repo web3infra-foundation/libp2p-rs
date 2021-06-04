@@ -164,7 +164,6 @@ pub fn test_gossip_fanout() {
 pub fn test_gossip_fanout_maintenance() {
     let topic: Topic<IdentityHash> = Topic::new("Hello World");
     let node_list = new_node(20);
-    dense_connect(node_list.clone());
     let mut subscription_list = vec![];
 
     task::block_on(async {
@@ -177,6 +176,8 @@ pub fn test_gossip_fanout_maintenance() {
             subscription_list.push(subscription);
         }
 
+        dense_connect(node_list.clone());
+
         task::sleep(Duration::from_secs(2)).await;
 
         let _ = node_list[0].get_gossip().publish(topic.hash(), message.to_vec()).await;
@@ -186,7 +187,9 @@ pub fn test_gossip_fanout_maintenance() {
                 Some(msg) => {
                     assert_eq!(msg.data, message.to_vec());
                 }
-                None => {}
+                None => {
+                    unreachable!()
+                }
             }
         }
 
