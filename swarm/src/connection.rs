@@ -359,16 +359,29 @@ impl Connection {
                     }
                 };
 
-                if fail_cnt >= max_failures {
+                if r.is_ok() {
                     let _ = tx
                         .send(SwarmEvent::PingResult {
                             cid,
                             result: r.map_err(|e| e.into()),
                         })
                         .await;
-
-                    break;
+                } else {
+                    if fail_cnt >= max_failures {
+                        break;
+                    }
                 }
+
+                // if fail_cnt >= max_failures {
+                //     let _ = tx
+                //         .send(SwarmEvent::PingResult {
+                //             cid,
+                //             result: r.map_err(|e| e.into()),
+                //         })
+                //         .await;
+                //
+                //     break;
+                // }
             }
 
             log::debug!("ping runtime exiting...");

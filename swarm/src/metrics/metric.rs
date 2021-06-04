@@ -18,8 +18,9 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use crate::metrics::metricmap::MetricMap;
+// use crate::metrics::metricmap::MetricMap;
 use crate::ProtocolId;
+use libp2prs_core::metricmap::MetricMap;
 use libp2prs_core::PeerId;
 use std::collections::hash_map::IntoIter;
 use std::fmt;

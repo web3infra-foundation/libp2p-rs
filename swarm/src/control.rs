@@ -63,6 +63,8 @@ pub enum SwarmControlCmd {
     NetworkInfo(oneshot::Sender<NetworkInfo>),
     /// Retrieve network information of Swarm.
     IdentifyInfo(oneshot::Sender<IdentifyInfo>),
+    /// Send
+    PeerLatency(oneshot::Sender<Vec<(PeerId, Duration)>>),
     ///
     Dump(DumpCommand),
 }
@@ -219,6 +221,12 @@ impl Control {
     pub async fn retrieve_identify_info(&mut self) -> Result<IdentifyInfo> {
         let (tx, rx) = oneshot::channel();
         self.sender.send(SwarmControlCmd::IdentifyInfo(tx)).await?;
+        Ok(rx.await?)
+    }
+
+    pub async fn dump_latency(&mut self) -> Result<Vec<(PeerId, Duration)>> {
+        let (tx, rx) = oneshot::channel();
+        self.sender.send(SwarmControlCmd::PeerLatency(tx)).await?;
         Ok(rx.await?)
     }
 

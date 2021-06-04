@@ -107,7 +107,7 @@ impl PingConfig {
             timeout: Duration::from_secs(20),
             interval: Duration::from_secs(15),
             max_failures: NonZeroU32::new(1).expect("1 != 0"),
-            unsolicited: false,
+            unsolicited: true,
             keep_alive: false,
         }
     }

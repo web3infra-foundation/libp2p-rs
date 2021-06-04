@@ -64,6 +64,12 @@ pub fn swarm_cli_commands<'a>() -> Command<'a> {
                 .usage("disconnect <PeerId>")
                 .action(cli_disconnect),
         )
+        .subcommand(
+            Command::new_with_alias("latency", "lat")
+                .about("display latency that connected to each peer")
+                .usage("latency")
+                .action(cli_dump_peer_latency),
+        )
 }
 
 fn handler(app: &App) -> Control {
@@ -117,6 +123,17 @@ fn cli_dump_statistics(app: &App, _args: &[&str]) -> XcliResult {
         println!("{:?}", stats.listener);
     });
 
+    Ok(CmdExeCode::Ok)
+}
+
+fn cli_dump_peer_latency(app: &App, _args: &[&str]) -> XcliResult {
+    let mut swarm = handler(app);
+
+    task::block_on(async {
+        let info = swarm.dump_latency().await.unwrap();
+        println!("Remote-Peer-Id                                       Latency");
+        info.iter().for_each(|item| println!("{:52} {:?}", item.0, item.1));
+    });
     Ok(CmdExeCode::Ok)
 }
 

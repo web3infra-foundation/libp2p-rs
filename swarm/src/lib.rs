@@ -588,6 +588,11 @@ impl Swarm {
                     let _ = reply.send(r);
                 });
             }
+            SwarmControlCmd::PeerLatency(reply) => {
+                let _ = self.on_retrieve_latency(|r| {
+                    let _ = reply.send(r);
+                });
+            }
             SwarmControlCmd::Dump(cmd) => match cmd {
                 DumpCommand::Connections(peer_id, reply) => {
                     let _ = self.on_retrieve_connection_views(peer_id, |r| {
@@ -719,6 +724,11 @@ impl Swarm {
     /// Retrieves the statistics.
     fn on_retrieve_statistics(&mut self, f: impl FnOnce(Result<SwarmStats>)) -> Result<()> {
         f(self.get_stats());
+        Ok(())
+    }
+    /// Retrieves each peer's latency
+    fn on_retrieve_latency(&self, f: impl FnOnce(Vec<(PeerId, Duration)>)) -> Result<()> {
+        f(self.peer_store.list_latency());
         Ok(())
     }
     /// Starts Swarm background runtime
@@ -1313,12 +1323,12 @@ impl Swarm {
 
         if let Some(connection) = self.connections_by_id.get_mut(&cid) {
             match result {
-                Ok(ttl) => {
+                Ok(rtt) => {
                     //let remote_peer_id = c.remote_peer();
-                    log::trace!("ping TTL={:?} for {:?}", ttl, connection);
+                    log::trace!("ping RTT={:?} for {:?}", rtt, connection);
                     // update peer store with the TTL
                     let peer_id = connection.stream_muxer().remote_peer();
-                    self.peer_store.update_addr(&peer_id, ttl);
+                    self.peer_store.record_latency(&peer_id, rtt);
                 }
                 Err(_) => {
                     log::info!("reach the max ping failure count, closing {:?}", connection);

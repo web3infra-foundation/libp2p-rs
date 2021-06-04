@@ -27,6 +27,7 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use crate::metricmap::MetricMap;
 use crate::{PeerId, PublicKey};
 use libp2prs_multiaddr::Multiaddr;
 
@@ -39,9 +40,12 @@ pub const OWN_OBSERVED_ADDR_TTL: Duration = Duration::from_secs(10 * 60);
 pub const PERMANENT_ADDR_TTL: Duration = Duration::from_secs(u64::MAX - 1);
 pub const CONNECTED_ADDR_TTL: Duration = Duration::from_secs(u64::MAX - 2);
 
+pub const LATENCY_EWMA_SMOOTHING: u128 = 1 / 10;
+
 #[derive(Default, Clone)]
 pub struct PeerStore {
     inner: Arc<Mutex<HashMap<PeerId, PeerRecord>>>,
+    m: Arc<MetricMap<PeerId, Duration>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -319,6 +323,20 @@ impl PeerStore {
         } else {
             None
         }
+    }
+
+    /// Update rtt by peer_id
+    pub fn record_latency(&self, peer_id: &PeerId, rtt: Duration) {
+        self.m.store_or_modify(peer_id, rtt, |_, value| {
+            let peer_rtt = (1 - LATENCY_EWMA_SMOOTHING) * value.clone().as_micros() + LATENCY_EWMA_SMOOTHING * rtt.as_micros();
+
+            Duration::from_millis(peer_rtt as u64)
+        });
+    }
+
+    /// Return latency info
+    pub fn list_latency(&self) -> Vec<(PeerId, Duration)> {
+        self.m.iterator().unwrap().collect::<Vec<_>>()
     }
 }
 

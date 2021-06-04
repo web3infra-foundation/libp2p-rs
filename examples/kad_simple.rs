@@ -39,6 +39,7 @@ use libp2prs_yamux as yamux;
 
 use libp2prs_kad::cli::dht_cli_commands;
 use libp2prs_swarm::cli::swarm_cli_commands;
+use libp2prs_swarm::ping::PingConfig;
 use std::convert::TryFrom;
 use std::time::Duration;
 use xcli::*;
@@ -111,7 +112,10 @@ fn run_server(bootstrap_peer: PeerId, bootstrap_addr: Multiaddr) {
         let mut kad_control = kad.control();
 
         // update Swarm to support Kad and Routing
-        swarm = swarm.with_protocol(kad).with_routing(Box::new(kad_control.clone()));
+        swarm = swarm
+            .with_protocol(kad)
+            .with_routing(Box::new(kad_control.clone()))
+            .with_ping(PingConfig::new());
         swarm.start();
 
         let bootstrapper = vec![(bootstrap_peer, bootstrap_addr)];
