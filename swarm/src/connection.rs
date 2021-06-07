@@ -167,6 +167,7 @@ impl Connection {
             dir: self.dir,
             info: self.info(),
             substreams: self.substreams.clone(),
+            route_trip_time: None,
         }
     }
 
@@ -534,6 +535,8 @@ pub struct ConnectionView {
     pub info: ConnectionInfo,
     /// Handler that processes substreams.
     pub substreams: SmallVec<[SubstreamView; 8]>,
+    /// rtt
+    pub route_trip_time: Option<Duration>,
 }
 
 impl fmt::Display for ConnectionView {

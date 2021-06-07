@@ -784,6 +784,11 @@ impl Swarm {
             .filter(|c| peer_id.as_ref().map_or(true, |pid| pid == &c.remote_peer()))
             .filter(|c| !c.is_closing())
             .map(|c| c.to_view())
+            .map(|mut c| {
+                let rtt = self.peer_store.get_latency(&c.info.remote_peer_id);
+                c.route_trip_time = rtt;
+                c
+            })
             .collect()
     }
     fn get_substream_views(&self, peer_id: PeerId) -> Result<Vec<SubstreamView>> {

@@ -334,6 +334,10 @@ impl PeerStore {
         });
     }
 
+    pub fn get_latency(&self, peer_id: &PeerId) -> Option<Duration> {
+        self.m.load(peer_id)
+    }
+
     /// Return latency info
     pub fn list_latency(&self) -> Vec<(PeerId, Duration)> {
         self.m.iterator().unwrap().collect::<Vec<_>>()

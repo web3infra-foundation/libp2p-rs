@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crossbeam_epoch::{Atomic, Owned};
-use smallvec::alloc::fmt::{Debug, Display, Formatter};
+use smallvec::alloc::fmt::{Debug, Formatter};
 use std::collections::hash_map::IntoIter;
 use std::collections::HashMap;
 use std::fmt;
@@ -114,7 +114,6 @@ where
         }
     }
 
-    #[cfg(test)]
     pub fn delete(&self, key: K) {
         let guard = crossbeam_epoch::pin();
 

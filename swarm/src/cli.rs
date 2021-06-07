@@ -148,11 +148,18 @@ fn cli_show_connections(app: &App, args: &[&str]) -> XcliResult {
 
     task::block_on(async {
         let connections = swarm.dump_connections(peer).await.unwrap();
-        println!("CID   DIR Remote-Peer-Id                                       I/O  Local-Multiaddr  Remote-Multiaddr");
+        println!("CID   DIR Remote-Peer-Id                                       I/O Local-Multiaddr                Remote-Multiaddr                 Latency");
         connections.iter().for_each(|v| {
             println!(
-                "{} {} {:52} {}/{}  {} {}",
-                v.id, v.dir, v.info.remote_peer_id, v.info.num_inbound_streams, v.info.num_outbound_streams, v.info.la, v.info.ra
+                "{} {} {:52} {}/{} {: <32} {: <32} {:?}",
+                v.id,
+                v.dir,
+                v.info.remote_peer_id,
+                v.info.num_inbound_streams,
+                v.info.num_outbound_streams,
+                v.info.la.to_string(),
+                v.info.ra.to_string(),
+                v.route_trip_time
             );
             if true {
                 v.substreams.iter().for_each(|s| {
