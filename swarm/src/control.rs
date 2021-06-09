@@ -67,6 +67,8 @@ pub enum SwarmControlCmd {
     PeerLatency(oneshot::Sender<Vec<(PeerId, Duration)>>),
     ///
     Dump(DumpCommand),
+    /// Start calculate speed
+    Rate(oneshot::Sender<(f64, f64)>),
 }
 
 /// The dump commands can be used to dump internal data of Swarm.
@@ -221,6 +223,12 @@ impl Control {
     pub async fn retrieve_identify_info(&mut self) -> Result<IdentifyInfo> {
         let (tx, rx) = oneshot::channel();
         self.sender.send(SwarmControlCmd::IdentifyInfo(tx)).await?;
+        Ok(rx.await?)
+    }
+
+    pub async fn dump_rate(&mut self) -> Result<(f64, f64)> {
+        let (tx, rx) = oneshot::channel();
+        self.sender.send(SwarmControlCmd::Rate(tx)).await?;
         Ok(rx.await?)
     }
 

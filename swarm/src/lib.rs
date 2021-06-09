@@ -610,6 +610,11 @@ impl Swarm {
                     });
                 }
             },
+            SwarmControlCmd::Rate(reply) => {
+                let _ = self.on_retrieve_rate(|r| {
+                    let _ = reply.send(r);
+                });
+            }
         }
         Ok(())
     }
@@ -726,6 +731,11 @@ impl Swarm {
         f(self.get_stats());
         Ok(())
     }
+    /// Retrieves the rate.
+    fn on_retrieve_rate(&self, f: impl FnOnce((f64, f64))) -> Result<()> {
+        f(self.get_rate_statistic());
+        Ok(())
+    }
     /// Retrieves each peer's latency
     fn on_retrieve_latency(&self, f: impl FnOnce(Vec<(PeerId, Duration)>)) -> Result<()> {
         f(self.peer_store.list_latency());
@@ -752,6 +762,21 @@ impl Swarm {
             }
             log::info!("quitting Peerstore GC...");
         });
+
+        let (mut metric_tx, mut metric_rx) = mpsc::channel::<()>(0);
+        let metric = swarm.metric.clone();
+        task::spawn(async move {
+            log::info!("starting rate calculation...");
+            loop {
+                let either = future::select(metric_rx.next(), task::sleep(Duration::from_secs(1)).boxed()).await;
+                match either {
+                    Either::Left((_, _)) => break,
+                    Either::Right((_, _)) => metric.update(),
+                }
+            }
+            log::info!("quitting rate calculation...");
+        });
+
         task::spawn(async move {
             log::info!("starting Swarm main loop...");
 
@@ -763,6 +788,8 @@ impl Swarm {
 
             // close peerstore GC runtime
             tx.close_channel();
+
+            metric_tx.close_channel();
 
             if let Err(e) = swarm.peer_store.save_data() {
                 log::info!("PeerStore save data failed: {}", e);
@@ -827,6 +854,10 @@ impl Swarm {
             num_connections_established: 0,
             num_active_streams,
         }
+    }
+    /// Returns rate in and out about the `Swarm`
+    fn get_rate_statistic(&self) -> (f64, f64) {
+        (self.metric.get_rate_in(), self.metric.get_rate_out())
     }
     /// Returns identify information about the `Swarm`.
     fn get_identify_info(&self) -> IdentifyInfo {

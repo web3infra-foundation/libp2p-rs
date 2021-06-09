@@ -70,6 +70,12 @@ pub fn swarm_cli_commands<'a>() -> Command<'a> {
                 .usage("latency")
                 .action(cli_dump_peer_latency),
         )
+        .subcommand(
+            Command::new_with_alias("rate", "r")
+                .about("display rate that connected to each peer")
+                .usage("rate")
+                .action(cli_dump_rate),
+        )
 }
 
 fn handler(app: &App) -> Control {
@@ -137,6 +143,17 @@ fn cli_dump_peer_latency(app: &App, _args: &[&str]) -> XcliResult {
     Ok(CmdExeCode::Ok)
 }
 
+fn cli_dump_rate(app: &App, _args: &[&str]) -> XcliResult {
+    let mut swarm = handler(app);
+
+    task::block_on(async {
+        let info = swarm.dump_rate().await.unwrap();
+        println!("Received-rates Send-rates");
+        println!("{:<14} {:?}", info.0, info.1);
+    });
+    Ok(CmdExeCode::Ok)
+}
+
 fn cli_show_connections(app: &App, args: &[&str]) -> XcliResult {
     let mut swarm = handler(app);
 
@@ -148,10 +165,10 @@ fn cli_show_connections(app: &App, args: &[&str]) -> XcliResult {
 
     task::block_on(async {
         let connections = swarm.dump_connections(peer).await.unwrap();
-        println!("CID   DIR Remote-Peer-Id                                       I/O Local-Multiaddr                Remote-Multiaddr                 Latency");
+        println!("CID   DIR Remote-Peer-Id                                       I/O Local-Multiaddr                  Remote-Multiaddr                 Latency");
         connections.iter().for_each(|v| {
             println!(
-                "{} {} {:52} {}/{} {: <32} {: <32} {:?}",
+                "{} {} {:52} {}/{} {: <32} {: <32} {:?} // {} {}",
                 v.id,
                 v.dir,
                 v.info.remote_peer_id,
@@ -159,7 +176,9 @@ fn cli_show_connections(app: &App, args: &[&str]) -> XcliResult {
                 v.info.num_outbound_streams,
                 v.info.la.to_string(),
                 v.info.ra.to_string(),
-                v.route_trip_time
+                v.route_trip_time,
+                v.rate_in,
+                v.rate_out
             );
             if true {
                 v.substreams.iter().for_each(|s| {

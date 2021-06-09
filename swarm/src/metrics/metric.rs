@@ -19,14 +19,17 @@
 // DEALINGS IN THE SOFTWARE.
 
 // use crate::metrics::metricmap::MetricMap;
+use crate::metrics::snapshot::SnapShot;
 use crate::ProtocolId;
 use libp2prs_core::metricmap::MetricMap;
 use libp2prs_core::PeerId;
 use std::collections::hash_map::IntoIter;
 use std::fmt;
-use std::ops::Add;
+use std::ops::{Add, Div, Mul, Sub};
 use std::sync::atomic::Ordering::SeqCst;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, RwLock};
+use std::time::SystemTime;
 
 pub struct Metric {
     /// The accumulative counter of packets sent.
@@ -47,6 +50,9 @@ pub struct Metric {
     peer_in: MetricMap<PeerId, usize>,
     /// A hashmap that key is peer_id and value is a counter of bytes sent.
     peer_out: MetricMap<PeerId, usize>,
+
+    recv_snapshot: Arc<RwLock<SnapShot>>,
+    send_snapshot: Arc<RwLock<SnapShot>>,
 }
 
 impl fmt::Debug for Metric {
@@ -82,6 +88,8 @@ impl Metric {
             protocol_out: MetricMap::new(),
             peer_in: MetricMap::new(),
             peer_out: MetricMap::new(),
+            recv_snapshot: Arc::new(Default::default()),
+            send_snapshot: Arc::new(Default::default()),
         }
     }
 
@@ -153,6 +161,69 @@ impl Metric {
     /// Get an iterator that key is protocol and value is output bytes.
     pub fn get_protocols_out_list(&self) -> IntoIter<String, usize> {
         self.protocol_out.iterator().unwrap()
+    }
+
+    pub fn get_rate_in(&self) -> f64 {
+        self.recv_snapshot.read().unwrap().rate()
+    }
+
+    pub fn get_rate_out(&self) -> f64 {
+        self.send_snapshot.read().unwrap().rate()
+    }
+
+    pub fn update(&self) {
+        self.update_in();
+        self.update_out();
+    }
+
+    fn update_in(&self) {
+        let mut snapshot = self.recv_snapshot.write().unwrap();
+        let now = SystemTime::now();
+        let tdiff = now.duration_since(snapshot.last_update_time()).unwrap();
+        snapshot.set_last_update_time(now);
+
+        let time_multiplier = 1 / tdiff.as_secs();
+        let total = self.byte_recv.load(SeqCst);
+        let diff = total as i64 - snapshot.total();
+        let instant = (time_multiplier.mul(diff as u64)) as f64;
+
+        if diff > 0 {
+            snapshot.set_last_update_time(now);
+        }
+
+        if snapshot.rate() == 0.0 {
+            snapshot.set_rate(instant)
+        } else {
+            let old_rate = snapshot.rate();
+            let new_rate = old_rate.add(instant.sub(old_rate).div(10.0));
+            snapshot.set_rate(new_rate)
+        }
+        snapshot.set_total(total as i64);
+    }
+
+    fn update_out(&self) {
+        let mut snapshot = self.send_snapshot.write().unwrap();
+        let now = SystemTime::now();
+        let tdiff = now.duration_since(snapshot.last_update_time()).unwrap();
+        snapshot.set_last_update_time(now);
+
+        let time_multiplier = 1 / tdiff.as_secs();
+        let total = self.byte_sent.load(SeqCst);
+        let diff = total as i64 - snapshot.total();
+        let instant = (time_multiplier.mul(diff as u64)) as f64;
+
+        if diff > 0 {
+            snapshot.set_last_update_time(now);
+        }
+
+        if snapshot.rate() == 0.0 {
+            snapshot.set_rate(instant)
+        } else {
+            let old_rate = snapshot.rate();
+            let new_rate = old_rate.add(instant.sub(old_rate).div(10.0));
+            snapshot.set_rate(new_rate)
+        }
+        snapshot.set_total(total as i64);
     }
 }
 
