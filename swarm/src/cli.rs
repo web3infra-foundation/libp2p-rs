@@ -149,7 +149,7 @@ fn cli_dump_rate(app: &App, _args: &[&str]) -> XcliResult {
     task::block_on(async {
         let info = swarm.dump_rate().await.unwrap();
         println!("Received-rates                Send-rates");
-        println!("{: <26}B/s {:?}B/s", info.0, info.1);
+        println!("{: <29} {: <29}", info.0.to_string() + " B/s", info.1.to_string() + " B/s");
     });
     Ok(CmdExeCode::Ok)
 }
