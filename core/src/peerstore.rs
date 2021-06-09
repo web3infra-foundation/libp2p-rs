@@ -40,7 +40,7 @@ pub const OWN_OBSERVED_ADDR_TTL: Duration = Duration::from_secs(10 * 60);
 pub const PERMANENT_ADDR_TTL: Duration = Duration::from_secs(u64::MAX - 1);
 pub const CONNECTED_ADDR_TTL: Duration = Duration::from_secs(u64::MAX - 2);
 
-pub const LATENCY_EWMA_SMOOTHING: u128 = 1 / 10;
+pub const LATENCY_EWMA_SMOOTHING: f64 = 0.1_f64;
 
 #[derive(Default, Clone)]
 pub struct PeerStore {
@@ -328,9 +328,11 @@ impl PeerStore {
     /// Update rtt by peer_id
     pub fn record_latency(&self, peer_id: &PeerId, rtt: Duration) {
         self.m.store_or_modify(peer_id, rtt, |_, value| {
-            let peer_rtt = (1 - LATENCY_EWMA_SMOOTHING) * value.clone().as_micros() + LATENCY_EWMA_SMOOTHING * rtt.as_micros();
+            let ewma_f64 = value.clone().as_secs_f64();
+            let next_f64 = rtt.as_secs_f64();
+            let peer_rtt = (1.0_f64 - LATENCY_EWMA_SMOOTHING) * ewma_f64 + LATENCY_EWMA_SMOOTHING * next_f64;
 
-            Duration::from_millis(peer_rtt as u64)
+            Duration::from_secs_f64(peer_rtt)
         });
     }
 

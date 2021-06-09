@@ -25,7 +25,7 @@ use libp2prs_core::metricmap::MetricMap;
 use libp2prs_core::PeerId;
 use std::collections::hash_map::IntoIter;
 use std::fmt;
-use std::ops::{Add, Div, Mul, Sub};
+use std::ops::{Add, Mul, Sub};
 use std::sync::atomic::Ordering::SeqCst;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
@@ -177,6 +177,7 @@ impl Metric {
     }
 
     fn update_in(&self) {
+        let alpha = 1.0f64 - (-1.0f64).exp();
         let mut snapshot = self.recv_snapshot.write().unwrap();
         let now = SystemTime::now();
         let tdiff = now.duration_since(snapshot.last_update_time()).unwrap();
@@ -195,13 +196,14 @@ impl Metric {
             snapshot.set_rate(instant)
         } else {
             let old_rate = snapshot.rate();
-            let new_rate = old_rate.add(instant.sub(old_rate).div(10.0));
+            let new_rate = old_rate.add(instant.sub(old_rate).mul(alpha));
             snapshot.set_rate(new_rate)
         }
         snapshot.set_total(total as i64);
     }
 
     fn update_out(&self) {
+        let alpha = 1.0f64 - (-1.0f64).exp();
         let mut snapshot = self.send_snapshot.write().unwrap();
         let now = SystemTime::now();
         let tdiff = now.duration_since(snapshot.last_update_time()).unwrap();
@@ -220,7 +222,7 @@ impl Metric {
             snapshot.set_rate(instant)
         } else {
             let old_rate = snapshot.rate();
-            let new_rate = old_rate.add(instant.sub(old_rate).div(10.0));
+            let new_rate = old_rate.add(instant.sub(old_rate).mul(alpha));
             snapshot.set_rate(new_rate)
         }
         snapshot.set_total(total as i64);
