@@ -183,10 +183,10 @@ impl Metric {
         let tdiff = now.duration_since(snapshot.last_update_time()).unwrap();
         snapshot.set_last_update_time(now);
 
-        let time_multiplier = 1 / tdiff.as_secs();
+        let time_multiplier = 1.0 / tdiff.as_secs_f64();
         let total = self.byte_recv.load(SeqCst);
         let diff = total as i64 - snapshot.total();
-        let instant = (time_multiplier.mul(diff as u64)) as f64;
+        let instant = time_multiplier.mul(diff as f64);
 
         if diff > 0 {
             snapshot.set_last_update_time(now);
@@ -209,10 +209,10 @@ impl Metric {
         let tdiff = now.duration_since(snapshot.last_update_time()).unwrap();
         snapshot.set_last_update_time(now);
 
-        let time_multiplier = 1 / tdiff.as_secs();
+        let time_multiplier = 1.0 / tdiff.as_secs_f64();
         let total = self.byte_sent.load(SeqCst);
         let diff = total as i64 - snapshot.total();
-        let instant = (time_multiplier.mul(diff as u64)) as f64;
+        let instant = time_multiplier.mul(diff as f64);
 
         if diff > 0 {
             snapshot.set_last_update_time(now);
