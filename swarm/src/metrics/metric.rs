@@ -163,19 +163,23 @@ impl Metric {
         self.protocol_out.iterator().unwrap()
     }
 
+    /// Get rates about received bytes per seconds
     pub fn get_rate_in(&self) -> f64 {
         self.recv_snapshot.read().unwrap().rate()
     }
 
+    /// Get rates about sent bytes per seconds
     pub fn get_rate_out(&self) -> f64 {
         self.send_snapshot.read().unwrap().rate()
     }
 
+    /// Update received and send rates
     pub fn update(&self) {
         self.update_in();
         self.update_out();
     }
 
+    /// Update received rates
     fn update_in(&self) {
         let alpha = 1.0f64 - (-1.0f64).exp();
         let mut snapshot = self.recv_snapshot.write().unwrap();
@@ -202,17 +206,20 @@ impl Metric {
         snapshot.set_total(total as i64);
     }
 
+    /// Update sent rates
     fn update_out(&self) {
         let alpha = 1.0f64 - (-1.0f64).exp();
         let mut snapshot = self.send_snapshot.write().unwrap();
         let now = SystemTime::now();
-        let tdiff = now.duration_since(snapshot.last_update_time()).unwrap();
+        // let tdiff = now.duration_since(snapshot.last_update_time()).unwrap();
         snapshot.set_last_update_time(now);
 
-        let time_multiplier = 1.0 / tdiff.as_secs_f64();
+        // let time_multiplier = 1.0 / tdiff.as_secs_f64();
         let total = self.byte_sent.load(SeqCst);
+        log::trace!("Out Bytes: {}", total);
         let diff = total as i64 - snapshot.total();
-        let instant = time_multiplier.mul(diff as f64);
+        let instant = 1.0f64.mul(diff as f64);
+        log::trace!("Delta Bytes per seconds: {}", instant);
 
         if diff > 0 {
             snapshot.set_last_update_time(now);
@@ -222,7 +229,9 @@ impl Metric {
             snapshot.set_rate(instant)
         } else {
             let old_rate = snapshot.rate();
+            log::trace!("Old rates: {}", old_rate);
             let new_rate = old_rate.add(instant.sub(old_rate).mul(alpha));
+            log::trace!("New rates: {}", new_rate);
             snapshot.set_rate(new_rate)
         }
         snapshot.set_total(total as i64);

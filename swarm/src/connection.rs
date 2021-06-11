@@ -369,10 +369,8 @@ impl Connection {
                             result: r.map_err(|e| e.into()),
                         })
                         .await;
-                } else {
-                    if fail_cnt >= max_failures {
-                        break;
-                    }
+                } else if fail_cnt >= max_failures {
+                    break;
                 }
 
                 // if fail_cnt >= max_failures {
