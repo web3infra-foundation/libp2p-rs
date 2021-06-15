@@ -20,14 +20,11 @@
 
 use async_trait::async_trait;
 use byteorder::{BigEndian, ByteOrder};
-use std::{borrow::Cow, error};
-// use bytes::Bytes;
-// use bytes::BytesMut;
-// use futures::prelude::*;
 use futures::channel::mpsc;
-use futures::{AsyncWriteExt, SinkExt};
+use futures::SinkExt;
 use log::{debug, warn};
 use prost::Message as ProtobufMessage;
+use std::error;
 
 use libp2prs_core::upgrade::UpgradeInfo;
 use libp2prs_core::{PeerId, ProtocolId, PublicKey, ReadEx};
@@ -40,12 +37,12 @@ use libp2prs_swarm::{
 
 use crate::config::ValidationMode;
 use crate::error::{GossipsubHandlerError, ValidationError};
+use crate::rpc_proto;
 use crate::topic::TopicHash;
 use crate::types::{
     GossipsubControlAction, GossipsubRpc, GossipsubSubscription, GossipsubSubscriptionAction, MessageId, PeerInfo, PeerKind,
     RawGossipsubMessage,
 };
-use crate::{rpc_proto, Topic};
 
 pub(crate) const SIGNING_PREFIX: &[u8] = b"libp2p-pubsub:";
 

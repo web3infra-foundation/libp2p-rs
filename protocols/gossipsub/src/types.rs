@@ -19,8 +19,8 @@
 // DEALINGS IN THE SOFTWARE.
 
 //! A collection of types using the Gossipsub system.
+use crate::rpc_proto;
 use crate::TopicHash;
-use crate::{rpc_proto, Topic};
 use libp2prs_core::PeerId;
 use std::fmt;
 use std::fmt::Debug;

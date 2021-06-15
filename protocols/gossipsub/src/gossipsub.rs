@@ -1182,7 +1182,7 @@ where
     }
 
     // If remote peer is dead, remove it from peers and topics.
-    fn handle_remove_dead_peer(&mut self, rpid: PeerId) {
+    fn handle_remove_dead_peer(&mut self, _rpid: PeerId) {
         // self.connected_peers.remove(&rpid);
         // for ps in self.topics.values_mut() {
         //     ps.remove(&rpid);

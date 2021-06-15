@@ -18,18 +18,13 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-// use crate::protocol::FloodsubMessage;
-// use crate::subscription::Subscription;
-// use crate::Topic;
-// use crate::{FloodsubConfig, FloodsubError};
 use crate::control::ControlCommand::Heartbeat;
 use crate::error::PublishError::InsufficientPeers;
 use crate::error::{PublishError, SubscriptionError};
 use crate::subscription::Subscription;
-use crate::{GossipsubConfig, GossipsubMessage, Hasher, Topic, TopicHash};
+use crate::{GossipsubConfig, GossipsubMessage, TopicHash};
 use futures::channel::{mpsc, oneshot};
 use futures::SinkExt;
-use libp2prs_core::PeerId;
 
 pub(crate) enum ControlCommand {
     Publish(GossipsubMessage, oneshot::Sender<()>),
@@ -68,9 +63,9 @@ impl Control {
         self.control_sender
             .send(ControlCommand::Publish(msg, tx))
             .await
-            .map_err(|e| InsufficientPeers)?;
+            .map_err(|_| InsufficientPeers)?;
 
-        rx.await.map_err(|e| InsufficientPeers)
+        rx.await.map_err(|_| InsufficientPeers)
     }
 
     /// Subscribe to messages on a given topic.
@@ -78,7 +73,7 @@ impl Control {
         // unimplemented!()
         let (tx, rx) = oneshot::channel();
         let _ = self.control_sender.send(ControlCommand::Subscribe(topic, tx)).await;
-        rx.await.map_err(|e| SubscriptionError::PublishError(InsufficientPeers))
+        rx.await.map_err(|_| SubscriptionError::PublishError(InsufficientPeers))
     }
 
     pub async fn unsubscribe(&self, topic: TopicHash) {
