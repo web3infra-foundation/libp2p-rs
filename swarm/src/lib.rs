@@ -860,6 +860,7 @@ impl Swarm {
         let mut listen_addrs = self.external_addrs.iter().cloned().collect::<Vec<_>>();
         listen_addrs.extend(self.listened_addrs.to_vec());
 
+        listen_addrs.sort_unstable();
         listen_addrs.dedup();
 
         log::trace!("swarm self addresses: {:?}", listen_addrs);
