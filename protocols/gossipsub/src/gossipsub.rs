@@ -64,7 +64,6 @@ use futures::prelude::future::Either;
 use futures::{channel::mpsc, prelude::*, select, SinkExt, StreamExt};
 use libp2prs_runtime::task;
 // use nohash_hasher::IntMap;
-use crate::protocol::PeerEvent::NewPeer;
 use std::{cmp::Ordering::Equal, fmt::Debug};
 
 #[cfg(test)]
@@ -1117,9 +1116,8 @@ where
 
             match stream {
                 Ok(mut stream) => {
-                    // let protocol = String::from_utf8(stream.protocol().as_ref().to_vec()).unwrap();
                     let protocol = stream.protocol();
-                    let _ = evt_tx.unbounded_send(HandlerEvent::PeerEvent(PeerKind::from(protocol.get_data())));
+                    let _ = evt_tx.unbounded_send(HandlerEvent::PeerEvent(PeerEvent::PeerKind(PeerKind::from(protocol.data()))));
                     loop {
                         match rx.next().await {
                             Some(rpc) => {

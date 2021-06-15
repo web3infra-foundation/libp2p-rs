@@ -19,7 +19,6 @@
 // DEALINGS IN THE SOFTWARE.
 
 //! A collection of types using the Gossipsub system.
-use crate::types::PeerKind::{Floodsub, Gossipsub, Gossipsubv1_1, NotSupported};
 use crate::TopicHash;
 use crate::{rpc_proto, Topic};
 use libp2prs_core::PeerId;
@@ -92,20 +91,6 @@ pub enum PeerKind {
     Floodsub,
     /// The peer doesn't support any of the protocols.
     NotSupported,
-}
-
-impl From<String> for PeerKind {
-    fn from(s: String) -> Self {
-        if s == "/meshsub/1.1.0" {
-            Gossipsubv1_1
-        } else if s == "/meshsub/1.0.0" {
-            Gossipsub
-        } else if s == "/floodsub/1.0.0" {
-            Floodsub
-        } else {
-            NotSupported
-        }
-    }
 }
 
 /// A message received by the gossipsub system and stored locally in caches..
