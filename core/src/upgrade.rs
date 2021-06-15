@@ -129,7 +129,7 @@ impl ProtocolId {
         }
     }
 
-    pub fn get_data(&self) -> u64 {
+    pub fn data(&self) -> u64 {
         self.data
     }
 }
