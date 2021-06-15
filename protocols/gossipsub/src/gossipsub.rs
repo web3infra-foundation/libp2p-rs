@@ -1117,8 +1117,9 @@ where
 
             match stream {
                 Ok(mut stream) => {
-                    let protocol = String::from_utf8(stream.protocol().as_ref().to_vec()).unwrap();
-                    let _ = evt_tx.unbounded_send(HandlerEvent::PeerEvent(PeerEvent::PeerKind(PeerKind::from(protocol))));
+                    // let protocol = String::from_utf8(stream.protocol().as_ref().to_vec()).unwrap();
+                    let protocol = stream.protocol();
+                    let _ = evt_tx.unbounded_send(HandlerEvent::PeerEvent(PeerKind::from(protocol.get_data())));
                     loop {
                         match rx.next().await {
                             Some(rpc) => {

@@ -112,6 +112,17 @@ impl From<PeerKind> for u64 {
     }
 }
 
+impl From<u64> for PeerKind {
+    fn from(data: u64) -> Self {
+        match data {
+            11 => PeerKind::Gossipsubv1_1,
+            10 => PeerKind::Gossipsub,
+            0 => PeerKind::Floodsub,
+            _ => PeerKind::NotSupported,
+        }
+    }
+}
+
 impl ProtocolConfig {
     /// Builds a new [`ProtocolConfig`].
     ///
