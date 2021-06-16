@@ -81,7 +81,7 @@ fn run_server() {
         type Info = ProtocolId;
 
         fn protocol_info(&self) -> Vec<Self::Info> {
-            vec![PROTO_NAME.into()]
+            vec![ProtocolId::new(PROTO_NAME, 1011)]
         }
     }
 
@@ -89,7 +89,11 @@ fn run_server() {
 
     #[async_trait]
     impl ProtocolHandler for MyProtocolHandler {
-        async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn Error>> {
+        async fn handle(
+            &mut self,
+            stream: Substream,
+            _info: <Self as UpgradeInfo>::Info,
+        ) -> Result<(), Box<dyn Error>> {
             log::info!("MyProtocolHandler handling inbound {:?}", stream);
             let (r, mut w) = stream.split();
             if let Err(e) = futures::io::copy(r, &mut w).await {
@@ -109,7 +113,11 @@ fn run_server() {
         .with_transport(Box::new(tu))
         .with_protocol(DummyProtocol::new())
         .with_protocol(MyProtocol)
-        .with_ping(PingConfig::new().with_unsolicited(true).with_interval(Duration::from_secs(1)))
+        .with_ping(
+            PingConfig::new()
+                .with_unsolicited(true)
+                .with_interval(Duration::from_secs(1)),
+        )
         .with_identify(IdentifyConfig::new(false));
 
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
@@ -135,7 +143,11 @@ fn run_client() {
 
     let swarm = Swarm::new(keys.public())
         .with_transport(Box::new(tu))
-        .with_ping(PingConfig::new().with_unsolicited(false).with_interval(Duration::from_secs(1)))
+        .with_ping(
+            PingConfig::new()
+                .with_unsolicited(false)
+                .with_interval(Duration::from_secs(1)),
+        )
         .with_identify(IdentifyConfig::new(false));
 
     let mut control = swarm.control();
@@ -148,12 +160,18 @@ fn run_client() {
 
     task::block_on(async move {
         control
-            .connect_with_addrs(remote_peer_id, vec!["/ip4/127.0.0.1/tcp/8086".parse().unwrap()])
+            .connect_with_addrs(
+                remote_peer_id,
+                vec!["/ip4/127.0.0.1/tcp/8086".parse().unwrap()],
+            )
             .await
             .unwrap();
         let mut handles = VecDeque::default();
         for _ in 0..100u32 {
-            let mut stream = control.new_stream(remote_peer_id, vec![PROTO_NAME.into()]).await.unwrap();
+            let mut stream = control
+                .new_stream(remote_peer_id, vec![ProtocolId::new(PROTO_NAME, 1011)])
+                .await
+                .unwrap();
             log::info!("stream {:?} opened, writing something...", stream);
 
             let handle = task::spawn(async move {

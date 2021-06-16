@@ -10,16 +10,14 @@ use libp2prs_core::{Multiaddr, PeerId};
 use libp2prs_gossipsub as gossip;
 use libp2prs_gossipsub::control::Control;
 use libp2prs_gossipsub::gossipsub::{Gossipsub, MessageAuthenticity};
-use libp2prs_gossipsub::subscription_filter::{AllowAllSubscriptionFilter, TopicSubscriptionFilter};
-use libp2prs_gossipsub::{DataTransform, GossipsubConfig, GossipsubConfigBuilder, IdentityTransform, Topic};
+use libp2prs_gossipsub::subscription_filter::AllowAllSubscriptionFilter;
+use libp2prs_gossipsub::{GossipsubConfigBuilder, IdentityTransform, Topic};
 use libp2prs_runtime::task;
 use libp2prs_secio as secio;
 use libp2prs_swarm::identify::IdentifyConfig;
 use libp2prs_swarm::ping::PingConfig;
 use libp2prs_swarm::Swarm;
-use libp2prs_tcp as transport;
 use libp2prs_yamux as yamux;
-use log::LevelFilter;
 use quickcheck::{QuickCheck, TestResult};
 use rand::random;
 use std::time::Duration;
@@ -55,7 +53,6 @@ fn test_gossipsub_basic() {
     env_logger::builder().init();
     fn prop() -> TestResult {
         task::block_on(async {
-            let message = b"Hello World";
             let srv_keys = SERVER_KEY.clone();
             let (mut srv_swarm, mut srv_fs_ctrl) = setup_swarm(srv_keys);
 
@@ -64,7 +61,7 @@ fn test_gossipsub_basic() {
             srv_swarm.listen_on(vec![addr.clone()]).unwrap();
             srv_swarm.start();
 
-            srv_fs_ctrl.subscribe(GOSSIP_TOPIC.hash()).await;
+            let _ = srv_fs_ctrl.subscribe(GOSSIP_TOPIC.hash()).await;
 
             // client 1
             let cli_keys = Keypair::generate_secp256k1();

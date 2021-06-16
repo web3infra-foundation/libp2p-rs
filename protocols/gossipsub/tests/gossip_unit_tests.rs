@@ -16,6 +16,7 @@ use libp2prs_runtime::task;
 use libp2prs_secio as secio;
 use libp2prs_swarm::{identify::IdentifyConfig, ping::PingConfig, Control as SwarmControl, Swarm};
 use libp2prs_yamux as yamux;
+use quickcheck::{QuickCheck, TestResult};
 use rand::random;
 use std::time::Duration;
 
@@ -72,7 +73,7 @@ fn new_node(n: i32) -> Vec<Node> {
             swarm_control: swarm.control(),
             gossip_control: gossip,
             addr: addr.clone(),
-            peer_id: swarm.local_peer_id().clone(),
+            peer_id: *swarm.local_peer_id(),
         };
         let _ = swarm.listen_on(vec![addr]);
         swarm.start();
@@ -138,8 +139,8 @@ pub fn test_gossip_fanout() {
     task::block_on(async {
         let message = b"foobar";
 
-        for i in 1..node_list.len() {
-            let mut gossip = node_list[i].get_gossip();
+        for node in node_list.iter().skip(1) {
+            let mut gossip = node.get_gossip();
             let subscription = gossip.subscribe(topic.hash()).await.unwrap();
             subscription_list.push(subscription);
         }
@@ -149,11 +150,8 @@ pub fn test_gossip_fanout() {
         let _ = node_list[0].get_gossip().publish(topic.hash(), message.to_vec()).await;
 
         for mut subscription in subscription_list {
-            match subscription.next().await {
-                Some(msg) => {
-                    assert_eq!(msg.data, message.to_vec());
-                }
-                None => {}
+            if let Some(msg) = subscription.next().await {
+                assert_eq!(msg.data, message.to_vec());
             }
         }
     })
@@ -163,63 +161,62 @@ pub fn test_gossip_fanout() {
 
 #[test]
 pub fn test_gossip_fanout_maintenance() {
-    let topic: Topic<IdentityHash> = Topic::new("Hello World");
-    let node_list = new_node(20);
-    let mut subscription_list = vec![];
+    fn prop() -> TestResult {
+        let topic: Topic<IdentityHash> = Topic::new("Hello World");
+        let node_list = new_node(20);
+        let mut subscription_list = vec![];
 
-    task::block_on(async {
-        // Subscribe and publish message from a fanout node.
-        let message = b"foobar";
+        task::block_on(async {
+            // Subscribe and publish message from a fanout node.
+            let message = b"foobar";
 
-        for i in 1..node_list.len() {
-            let mut gossip = node_list[i].get_gossip();
-            let subscription = gossip.subscribe(topic.hash()).await.unwrap();
-            subscription_list.push(subscription);
-        }
+            for node in node_list.iter().skip(1) {
+                let mut gossip = node.get_gossip();
+                let subscription = gossip.subscribe(topic.hash()).await.unwrap();
+                subscription_list.push(subscription);
+            }
 
-        dense_connect(node_list.clone());
+            dense_connect(node_list.clone());
 
-        task::sleep(Duration::from_secs(2)).await;
+            task::sleep(Duration::from_secs(2)).await;
 
-        let _ = node_list[0].get_gossip().publish(topic.hash(), message.to_vec()).await;
+            let _ = node_list[0].get_gossip().publish(topic.hash(), message.to_vec()).await;
 
-        for subscription in subscription_list.iter_mut() {
-            match subscription.next().await {
-                Some(msg) => {
+            for subscription in subscription_list.iter_mut() {
+                if let Some(msg) = subscription.next().await {
                     assert_eq!(msg.data, message.to_vec());
                 }
-                None => {
-                    unreachable!()
+            }
+
+            for node in node_list.iter() {
+                let gossip = node.get_gossip();
+                gossip.unsubscribe(topic.hash()).await;
+            }
+
+            task::sleep(Duration::from_secs(2)).await;
+
+            subscription_list.clear();
+
+            for node in node_list.iter().skip(1) {
+                let mut gossip = node.get_gossip();
+                let subscription = gossip.subscribe(topic.hash()).await.unwrap();
+                subscription_list.push(subscription);
+            }
+
+            task::sleep(Duration::from_secs(2)).await;
+
+            let _ = node_list[0].get_gossip().publish(topic.hash(), message.to_vec()).await;
+
+            for mut subscription in subscription_list {
+                if let Some(msg) = subscription.next().await {
+                    if msg.data.ne(&message.to_vec()) {
+                        return TestResult::failed();
+                    }
                 }
             }
-        }
+            TestResult::passed()
+        })
+    }
 
-        for node in node_list.iter() {
-            let gossip = node.get_gossip();
-            gossip.unsubscribe(topic.hash()).await;
-        }
-
-        task::sleep(Duration::from_secs(2)).await;
-
-        subscription_list.clear();
-
-        for i in 1..node_list.len() {
-            let mut gossip = node_list[i].get_gossip();
-            let subscription = gossip.subscribe(topic.hash()).await.unwrap();
-            subscription_list.push(subscription);
-        }
-
-        task::sleep(Duration::from_secs(2)).await;
-
-        let _ = node_list[0].get_gossip().publish(topic.hash(), message.to_vec()).await;
-
-        for mut subscription in subscription_list {
-            match subscription.next().await {
-                Some(msg) => {
-                    assert_eq!(msg.data, message.to_vec());
-                }
-                None => {}
-            }
-        }
-    });
+    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _);
 }

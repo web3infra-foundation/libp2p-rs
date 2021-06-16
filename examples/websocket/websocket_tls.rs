@@ -64,11 +64,21 @@ struct ServerTlsConfig {
     port: u16,
 
     /// cert file
-    #[structopt(short = "c", long = "cert", parse(from_os_str), default_value = "examples/websocket/cert/end.cert")]
+    #[structopt(
+        short = "c",
+        long = "cert",
+        parse(from_os_str),
+        default_value = "examples/websocket/cert/end.cert"
+    )]
     cert: PathBuf,
 
     /// key file
-    #[structopt(short = "k", long = "key", parse(from_os_str), default_value = "examples/websocket/cert/end.rsa")]
+    #[structopt(
+        short = "k",
+        long = "key",
+        parse(from_os_str),
+        default_value = "examples/websocket/cert/end.rsa"
+    )]
     key: PathBuf,
 }
 
@@ -102,12 +112,14 @@ struct ClientTlsConfig {
 
 /// Load the passed certificates file
 fn load_certs(path: &Path) -> io::Result<Vec<Certificate>> {
-    certs(&mut BufReader::new(File::open(path)?)).map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid cert"))
+    certs(&mut BufReader::new(File::open(path)?))
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid cert"))
 }
 
 /// Load the passed keys file
 fn load_keys(path: &Path) -> io::Result<Vec<PrivateKey>> {
-    rsa_private_keys(&mut BufReader::new(File::open(path)?)).map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid key"))
+    rsa_private_keys(&mut BufReader::new(File::open(path)?))
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid key"))
 }
 
 /// A TLS server needs a certificate and a fitting private key
@@ -149,7 +161,7 @@ impl UpgradeInfo for MyProtocolHandler {
     type Info = ProtocolId;
 
     fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![PROTO_NAME.into()]
+        vec![ProtocolId::new(PROTO_NAME, 1011)]
     }
 }
 
@@ -157,7 +169,11 @@ impl Notifiee for MyProtocolHandler {}
 
 #[async_trait]
 impl ProtocolHandler for MyProtocolHandler {
-    async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn Error>> {
+    async fn handle(
+        &mut self,
+        stream: Substream,
+        _info: <Self as UpgradeInfo>::Info,
+    ) -> Result<(), Box<dyn Error>> {
         let mut stream = stream;
         log::trace!("MyProtocolHandler handling inbound {:?}", stream);
         let mut msg = vec![0; 4096];
@@ -205,7 +221,9 @@ fn run_server() -> io::Result<()> {
     let sec = plaintext::PlainTextConfig::new(keys.clone());
     let mux = mplex::Config::new();
 
-    let ws = WsConfig::new().set_tls_config(build_server_tls_config(&options)).to_owned();
+    let ws = WsConfig::new()
+        .set_tls_config(build_server_tls_config(&options))
+        .to_owned();
     let tu = TransportUpgrade::new(ws, mux, sec);
 
     let mut swarm = Swarm::new(keys.public())
@@ -251,8 +269,14 @@ fn run_client() -> io::Result<()> {
     swarm.start();
 
     task::block_on(async move {
-        control.connect_with_addrs(remote_peer_id, vec![addr]).await.unwrap();
-        let mut stream = control.new_stream(remote_peer_id, vec![PROTO_NAME.into()]).await.unwrap();
+        control
+            .connect_with_addrs(remote_peer_id, vec![addr])
+            .await
+            .unwrap();
+        let mut stream = control
+            .new_stream(remote_peer_id, vec![ProtocolId::new(PROTO_NAME, 1011)])
+            .await
+            .unwrap();
         log::info!("stream {:?} opened, writing something...", stream);
 
         let msg = b"hello";

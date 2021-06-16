@@ -81,7 +81,7 @@ fn run_server() {
         type Info = ProtocolId;
 
         fn protocol_info(&self) -> Vec<Self::Info> {
-            vec![PROTO_NAME.into()]
+            vec![ProtocolId::new(PROTO_NAME, 1011)]
         }
     }
 
@@ -89,7 +89,11 @@ fn run_server() {
 
     #[async_trait]
     impl ProtocolHandler for MyProtocolHandler {
-        async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn Error>> {
+        async fn handle(
+            &mut self,
+            stream: Substream,
+            _info: <Self as UpgradeInfo>::Info,
+        ) -> Result<(), Box<dyn Error>> {
             let mut stream = stream;
             log::trace!("MyProtocolHandler handling inbound {:?}", stream);
             let mut msg = vec![0; 4096];
@@ -148,8 +152,14 @@ fn run_client() {
     swarm.start();
 
     task::block_on(async move {
-        control.connect_with_addrs(remote_peer_id, vec![addr]).await.unwrap();
-        let mut stream = control.new_stream(remote_peer_id, vec![PROTO_NAME.into()]).await.unwrap();
+        control
+            .connect_with_addrs(remote_peer_id, vec![addr])
+            .await
+            .unwrap();
+        let mut stream = control
+            .new_stream(remote_peer_id, vec![ProtocolId::new(PROTO_NAME, 1011)])
+            .await
+            .unwrap();
         log::info!("stream {:?} opened, writing something...", stream);
         let msg = b"hello";
         let _ = stream.write(msg).await;

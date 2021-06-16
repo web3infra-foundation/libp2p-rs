@@ -238,8 +238,9 @@ mod tests {
 
     #[test]
     fn protocol_id() {
-        let p = ProtocolId::from(b"protocol" as &[u8]);
+        // let p = ProtocolId::from(b"protocol" as &[u8]);
+        let p = ProtocolId::new("protocol", 200);
 
-        assert_eq!(p.to_string(), "protocol");
+        assert_eq!(String::from_utf8(p.name).unwrap(), "protocol".to_string());
     }
 }

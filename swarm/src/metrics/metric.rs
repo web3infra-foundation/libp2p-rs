@@ -296,8 +296,8 @@ mod tests {
         let metric = Arc::new(generate_metrics());
 
         let peer_id = PeerId::random();
-        let proto_id: &[u8] = b"/test/1.0.0";
-        let protocol: ProtocolId = proto_id.into();
+        // let proto_id: = b"/test/1.0.0";
+        let protocol = ProtocolId::new(b"/test/1.0.0", 110);
         task::block_on(async {
             let mut t = Vec::new();
             for i in 0..16 {

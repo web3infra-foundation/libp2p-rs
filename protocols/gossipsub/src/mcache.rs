@@ -86,6 +86,7 @@ impl MessageCache {
 
     /// Get a message with `message_id`
     #[cfg(test)]
+    #[allow(dead_code)]
     pub fn get(&self, message_id: &MessageId) -> Option<&RawGossipsubMessage> {
         self.msgs.get(message_id)
     }

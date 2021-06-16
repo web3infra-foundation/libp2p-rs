@@ -779,14 +779,14 @@ impl std::fmt::Debug for GossipsubConfig {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn create_thing() {
-        let builder: GossipsubConfig = GossipsubConfigBuilder::default().protocol_id_prefix("purple").build().unwrap();
-
-        dbg!(builder);
-    }
-}
+// #[cfg(test)]
+// mod test {
+//     use super::*;
+//
+//     // #[test]
+//     // fn create_thing() {
+//     //     let builder: GossipsubConfig = GossipsubConfigBuilder::default().protocol_id_prefix("purple").build().unwrap();
+//     //
+//     //     dbg!(builder);
+//     // }
+// }

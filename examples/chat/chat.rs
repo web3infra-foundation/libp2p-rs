@@ -124,7 +124,7 @@ impl UpgradeInfo for ChatHandler {
     type Info = ProtocolId;
 
     fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![PROTO_NAME.into()]
+        vec![ProtocolId::new(PROTO_NAME, 1011)]
     }
 }
 
@@ -132,7 +132,11 @@ impl Notifiee for ChatHandler {}
 
 #[async_trait]
 impl ProtocolHandler for ChatHandler {
-    async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn Error>> {
+    async fn handle(
+        &mut self,
+        stream: Substream,
+        _info: <Self as UpgradeInfo>::Info,
+    ) -> Result<(), Box<dyn Error>> {
         log::trace!("ChatHandler handling inbound {:?}", stream);
         let (r, w) = stream.split();
 
@@ -155,12 +159,16 @@ impl ProtocolHandler for ChatHandler {
 fn run_server() {
     let keys = SERVER_KEY.clone();
     let options = Config::from_args();
-    let listen_addr = format!("/ip4/127.0.0.1/tcp/{}", &(options.source_port.unwrap())).parse().unwrap();
+    let listen_addr = format!("/ip4/127.0.0.1/tcp/{}", &(options.source_port.unwrap()))
+        .parse()
+        .unwrap();
     let sec = secio::Config::new(keys.clone());
     let mux = yamux::Config::server();
     let tu = TransportUpgrade::new(TcpConfig::default(), mux, sec);
 
-    let mut swarm = Swarm::new(keys.public()).with_transport(Box::new(tu)).with_protocol(Chat);
+    let mut swarm = Swarm::new(keys.public())
+        .with_transport(Box::new(tu))
+        .with_protocol(Chat);
 
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
 
@@ -194,8 +202,14 @@ fn run_client() {
     swarm.start();
 
     task::block_on(async move {
-        control.connect_with_addrs(remote_peer_id, vec![dial_addr]).await.unwrap();
-        let stream = control.new_stream(remote_peer_id, vec![PROTO_NAME.into()]).await.unwrap();
+        control
+            .connect_with_addrs(remote_peer_id, vec![dial_addr])
+            .await
+            .unwrap();
+        let stream = control
+            .new_stream(remote_peer_id, vec![ProtocolId::new(PROTO_NAME, 1011)])
+            .await
+            .unwrap();
 
         log::info!("stream {:?} opened, writing something...", stream);
         let (r, w) = stream.split();
