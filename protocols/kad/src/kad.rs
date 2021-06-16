@@ -595,6 +595,8 @@ where
     {
         log::debug!("finding providers {:?}", key);
 
+        // note that self.provider_peers would not return any duplicated peers. The record store do NOT
+        // allow duplicated records for a specific Key.
         let provider_peers = self.provider_peers(&key, None);
 
         if count != 0 && provider_peers.len() >= count {

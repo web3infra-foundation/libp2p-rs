@@ -28,7 +28,7 @@ use crate::{
     FloodsubConfig, FloodsubError, Topic, FLOOD_SUB_ID,
 };
 use futures::channel::mpsc::UnboundedReceiver;
-use libp2prs_core::{PeerId, WriteEx};
+use libp2prs_core::{PeerId, WriteEx, ProtocolId};
 use libp2prs_runtime::task;
 use libp2prs_swarm::protocol_handler::{IProtocolHandler, ProtocolImpl};
 use libp2prs_swarm::substream::Substream;
@@ -159,7 +159,7 @@ impl FloodSub {
         self.connected_peers.insert(rpid, tx);
 
         task::spawn(async move {
-            let stream = swarm.new_stream(rpid, vec![FLOOD_SUB_ID.into()]).await;
+            let stream = swarm.new_stream(rpid, vec![ProtocolId::new(FLOOD_SUB_ID, 0)]).await;
 
             match stream {
                 Ok(stream) => {

@@ -140,7 +140,7 @@ impl Substream {
     /// For internal test only
     #[allow(dead_code)]
     pub(crate) fn new_with_default(inner: IReadWrite) -> Self {
-        let protocol = ProtocolId::from(b"/test" as &[u8]);
+        let protocol = ProtocolId::new("/test", 0);
         let dir = Direction::Outbound;
         let cid = ConnectionId::default();
         let ci = ConnectInfo {

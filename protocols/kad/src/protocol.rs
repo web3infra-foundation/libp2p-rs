@@ -182,7 +182,7 @@ impl KademliaProtocolConfig {
 impl Default for KademliaProtocolConfig {
     fn default() -> Self {
         KademliaProtocolConfig {
-            protocol_name: DEFAULT_PROTO_NAME.into(),
+            protocol_name: ProtocolId::new(DEFAULT_PROTO_NAME, 0),
             max_packet_size: DEFAULT_MAX_PACKET_SIZE,
             max_reuse_count: DEFAULT_MAX_REUSE_TRIES,
         }

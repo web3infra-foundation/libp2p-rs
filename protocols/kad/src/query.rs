@@ -651,6 +651,7 @@ impl IterativeQuery {
                                 if let Some(mut old) = query_results.providers.take() {
                                     old.extend(provider);
                                     // remove duplicated peers
+                                    old.sort_unstable_by(|a, b| a.node_id.partial_cmp(&b.node_id).unwrap());
                                     old.dedup_by(|a, b| a.node_id == b.node_id);
                                     query_results.providers = Some(old);
                                 } else {
