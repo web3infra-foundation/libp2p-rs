@@ -33,10 +33,14 @@ use libp2p_gossipsub::{Gossipsub, GossipsubConfigBuilder, GossipsubEvent, IdentT
 use libp2p_plaintext::PlainText2Config;
 use libp2p_swarm::Swarm;
 use libp2p_yamux as yamux;
+use libp2prs_core::transport::memory::MemoryTransport;
 use libp2prs_core::{identity, multiaddr::Protocol, transport::MemoryTransport, upgrade, Multiaddr, Transport};
+use libp2prs_gossipsub::gossipsub::GossipsubEvent;
+use libp2prs_gossipsub::{Topic, ValidationMode};
+use libp2prs_swarm::Swarm;
 
 struct Graph {
-    pub nodes: Vec<(Multiaddr, Swarm<Gossipsub>)>,
+    pub nodes: Vec<(Multiaddr, Swarm)>,
 }
 
 impl Future for Graph {
@@ -67,7 +71,7 @@ impl Graph {
             .cycle()
             .take(num_nodes)
             .map(|_| build_node())
-            .collect::<Vec<(Multiaddr, Swarm<Gossipsub>)>>();
+            .collect::<Vec<(Multiaddr, Swarm)>>();
 
         let mut connected_nodes = vec![not_connected_nodes.pop().unwrap()];
 
@@ -127,7 +131,7 @@ impl Graph {
     }
 }
 
-fn build_node() -> (Multiaddr, Swarm<Gossipsub>) {
+fn build_node() -> (Multiaddr, Swarm) {
     let key = identity::Keypair::generate_ed25519();
     let public_key = key.public();
 
@@ -155,7 +159,7 @@ fn build_node() -> (Multiaddr, Swarm<Gossipsub>) {
         .build()
         .unwrap();
     let behaviour = Gossipsub::new(MessageAuthenticity::Author(peer_id.clone()), config).unwrap();
-    let mut swarm = Swarm::new(transport, behaviour, peer_id);
+    let mut swarm = Swarm::new(public_key);
 
     let port = 1 + random::<u64>();
     let mut addr: Multiaddr = Protocol::Memory(port).into();

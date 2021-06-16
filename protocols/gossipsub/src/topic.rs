@@ -52,9 +52,7 @@ impl Hasher for Sha256Hash {
             enc: None,
         };
         let mut bytes = Vec::with_capacity(topic_descripter.encoded_len());
-        topic_descripter
-            .encode(&mut bytes)
-            .expect("buffer is large enough");
+        topic_descripter.encode(&mut bytes).expect("buffer is large enough");
         let hash = encode(Sha256::digest(&bytes).as_slice());
         TopicHash { hash }
     }

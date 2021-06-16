@@ -18,22 +18,20 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-// use crate::protocol::FloodsubMessage;
-// use crate::subscription::Subscription;
-// use crate::Topic;
-// use crate::{FloodsubConfig, FloodsubError};
+use crate::control::ControlCommand::Heartbeat;
+use crate::error::PublishError::InsufficientPeers;
+use crate::error::{PublishError, SubscriptionError};
+use crate::subscription::Subscription;
+use crate::{GossipsubConfig, GossipsubMessage, TopicHash};
 use futures::channel::{mpsc, oneshot};
 use futures::SinkExt;
-use libp2prs_core::PeerId;
-use crate::{GossipsubConfig, Topic, Hasher};
-use crate::subscription::Subscription;
-use crate::error::{PublishError, SubscriptionError};
 
 pub(crate) enum ControlCommand {
-    // Publish(FloodsubMessage, oneshot::Sender<()>),
-    // Subscribe(Topic, oneshot::Sender<Subscription>),
-    // Ls(oneshot::Sender<Vec<Topic>>),
-    // GetPeers(Topic, oneshot::Sender<Vec<PeerId>>),
+    Publish(GossipsubMessage, oneshot::Sender<()>),
+    Subscribe(TopicHash, oneshot::Sender<Subscription>),
+    Unsubscribed(TopicHash),
+    Heartbeat, // Ls(oneshot::Sender<Vec<Topic>>),
+               // GetPeers(Topic, oneshot::Sender<Vec<PeerId>>)
 }
 
 #[derive(Clone)]
@@ -52,34 +50,42 @@ impl Control {
     }
 
     /// Publish publishes data to a given topic.
-    pub async fn publish<H: Hasher>(&mut self, topic: Topic<H>, data: impl Into<Vec<u8>>) -> Result<(), PublishError> {
-        unimplemented!()
-        // let msg = FloodsubMessage {
-        //     source: self.config.local_peer_id,
-        //     data: data.into(),
-        //     // If the sequence numbers are predictable, then an attacker could flood the network
-        //     // with packets with the predetermined sequence numbers and absorb our legitimate
-        //     // messages. We therefore use a random number.
-        //     sequence_number: rand::random::<[u8; 20]>().to_vec(),
-        //     topics: vec![topic.clone()],
-        // };
-        //
-        // let (tx, rx) = oneshot::channel();
-        // self.control_sender.send(ControlCommand::Publish(msg, tx)).await?;
-        //
-        // Ok(rx.await?)
+    pub async fn publish(&mut self, topic: TopicHash, data: impl Into<Vec<u8>>) -> Result<(), PublishError> {
+        // unimplemented!()
+        let msg = GossipsubMessage {
+            source: None,
+            data: data.into(),
+            sequence_number: Some(rand::random::<u64>()),
+            topic,
+        };
+
+        let (tx, rx) = oneshot::channel();
+        self.control_sender
+            .send(ControlCommand::Publish(msg, tx))
+            .await
+            .map_err(|_| InsufficientPeers)?;
+
+        rx.await.map_err(|_| InsufficientPeers)
     }
 
     /// Subscribe to messages on a given topic.
-    pub async fn subscribe<H: Hasher>(&mut self, topic: Topic<H>) -> Result<Subscription, SubscriptionError> {
-        unimplemented!()
-        // let (tx, rx) = oneshot::channel();
-        // self.control_sender.send(ControlCommand::Subscribe(topic, tx)).await?;
-        // Ok(rx.await?)
+    pub async fn subscribe(&mut self, topic: TopicHash) -> Result<Subscription, SubscriptionError> {
+        // unimplemented!()
+        let (tx, rx) = oneshot::channel();
+        let _ = self.control_sender.send(ControlCommand::Subscribe(topic, tx)).await;
+        rx.await.map_err(|_| SubscriptionError::PublishError(InsufficientPeers))
+    }
+
+    pub async fn unsubscribe(&self, topic: TopicHash) {
+        let _ = self.control_sender.unbounded_send(ControlCommand::Unsubscribed(topic));
+    }
+
+    pub fn heartbeat(&self) {
+        let _ = self.control_sender.unbounded_send(Heartbeat);
     }
 
     /// List subscribed topics by name.
-    pub async fn ls<H: Hasher>(&mut self) -> Result<Vec<Topic<H>>, ()> {
+    pub async fn ls(&mut self) -> Result<Vec<TopicHash>, ()> {
         // let (tx, rx) = oneshot::channel();
         // self.control_sender.send(ControlCommand::Ls(tx)).await?;
         // Ok(rx.await?)

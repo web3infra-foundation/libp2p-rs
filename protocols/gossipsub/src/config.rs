@@ -18,7 +18,6 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use std::borrow::Cow;
 use std::time::Duration;
 
 use libp2prs_core::{PeerId, ProtocolId};
@@ -52,6 +51,7 @@ pub enum ValidationMode {
 #[derive(Clone)]
 pub struct GossipsubConfig {
     protocol_ids: Vec<ProtocolId>,
+    peer_id: PeerId,
     history_length: usize,
     history_gossip: usize,
     mesh_n: usize,
@@ -91,6 +91,11 @@ pub struct GossipsubConfig {
 
 impl GossipsubConfig {
     // All the getters
+
+    /// Peer ID
+    pub fn peer_id(&self) -> PeerId {
+        self.peer_id
+    }
 
     /// Protocol configurations.
     pub fn protocol_ids(&self) -> &Vec<ProtocolId> {
@@ -196,8 +201,8 @@ impl GossipsubConfig {
 
     /// Determines the level of validation used when receiving messages. See [`ValidationMode`]
     /// for the available types. The default is ValidationMode::Strict.
-    pub fn validation_mode(&self) -> &ValidationMode {
-        &self.validation_mode
+    pub fn validation_mode(&self) -> ValidationMode {
+        self.validation_mode.clone()
     }
 
     /// A user-defined function allowing the user to specify the message id of a gossipsub message.
@@ -347,29 +352,29 @@ impl GossipsubConfig {
     }
 }
 
-impl Default for GossipsubConfig {
-    fn default() -> Self {
-        // use ConfigBuilder to also validate defaults
-        GossipsubConfigBuilder::default()
-            .build()
-            .expect("Default config parameters should be valid parameters")
-    }
-}
+// impl GossipsubConfig {
+//     fn default(peer_id: PeerId) -> Self {
+//         // use ConfigBuilder to also validate defaults
+//         GossipsubConfigBuilder::new(peer_id)
+//             .build()
+//             .expect("Default config parameters should be valid parameters")
+//     }
+// }
 
 /// The builder struct for constructing a gossipsub configuration.
 pub struct GossipsubConfigBuilder {
     config: GossipsubConfig,
 }
 
-impl Default for GossipsubConfigBuilder {
-    fn default() -> Self {
-        // support version 1.1.0 and 1.0.0 by default
-        let mut protocol_ids = vec![
+impl GossipsubConfigBuilder {
+    pub fn new(peer_id: PeerId) -> Self {
+        let protocol_ids = vec![
             ProtocolId::new("/meshsub/1.1.0", PeerKind::Gossipsubv1_1.into()),
             ProtocolId::new("/meshsub/1.0.0", PeerKind::Gossipsub.into()),
         ];
         GossipsubConfigBuilder {
             config: GossipsubConfig {
+                peer_id,
                 protocol_ids,
                 history_length: 5,
                 history_gossip: 3,

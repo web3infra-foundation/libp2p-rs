@@ -125,8 +125,12 @@ impl ProtocolId {
     pub fn new<T: AsRef<[u8]>>(name: T, data: u64) -> Self {
         Self {
             name: name.as_ref().into(),
-            data
+            data,
         }
+    }
+
+    pub fn data(&self) -> u64 {
+        self.data
     }
 }
 
