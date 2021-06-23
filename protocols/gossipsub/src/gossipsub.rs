@@ -57,10 +57,10 @@ use crate::types::{
     MessageId, PeerInfo, RawGossipsubMessage,
 };
 use crate::types::{GossipsubRpc, PeerKind};
-use crate::{rpc_proto, TopicScoreParams};
+use crate::{rpc_proto, GossipsubError, TopicScoreParams};
 use futures::channel::mpsc::UnboundedSender;
 use futures::prelude::future::Either;
-use futures::{channel::mpsc, prelude::*, select, SinkExt, StreamExt};
+use futures::{channel::mpsc, prelude::*, select, StreamExt};
 use libp2prs_runtime::task;
 use std::{cmp::Ordering::Equal, fmt::Debug};
 
@@ -1028,9 +1028,9 @@ where
                         break;
                     }
                 }
-                cmd = self.cancel_rx.next() => {
-                    if cmd.is_some() {
-                        let topic = cmd.unwrap().0;
+                sub = self.cancel_rx.next() => {
+                    if sub.is_some() {
+                        let topic = sub.unwrap().0;
                         let _ = self.unsubscribe(&topic);
                     }
                 }
@@ -1055,7 +1055,7 @@ where
     }
 
     /// Handle control event
-    fn handle_command(&mut self, cmd: Option<ControlCommand>) -> Result<(), ()> {
+    fn handle_command(&mut self, cmd: Option<ControlCommand>) -> Result<(), GossipsubError> {
         match cmd {
             Some(ControlCommand::Publish(message, reply)) => {
                 // self.join(&message.topic);
@@ -1081,14 +1081,16 @@ where
             Some(ControlCommand::Unsubscribed(topic)) => {
                 let _ = self.unsubscribe(&topic);
 
-                if let Some(mut topic_subs) = self.my_topics.remove(&topic) {
-                    let _ = topic_subs.close();
+                if let Some(topic_subs) = self.my_topics.remove(&topic) {
+                    let _ = topic_subs.close_channel();
                 }
             }
             Some(ControlCommand::Heartbeat) => {
                 self.heartbeat();
             }
-            None => {}
+            None => {
+                return Err(GossipsubError::Closed);
+            }
         }
         Ok(())
     }
@@ -1186,7 +1188,55 @@ where
     }
 
     // If remote peer is dead, remove it from peers and topics.
-    fn handle_remove_dead_peer(&mut self, _rpid: PeerId) {
+    fn handle_remove_dead_peer(&mut self, _peer_id: PeerId) {
+        // debug!("Peer disconnected: {}", peer_id);
+        // {
+        //     let topics = match self.peer_topics.get(&peer_id) {
+        //         Some(topics) => (topics),
+        //         None => {
+        //             if !self.blacklisted_peers.contains(&peer_id) {
+        //                 debug!("Disconnected node, not in connected nodes");
+        //             }
+        //             return;
+        //         }
+        //     };
+        //
+        //     // remove peer from all mappings
+        //     for topic in topics {
+        //         // check the mesh for the topic
+        //         if let Some(mesh_peers) = self.mesh.get_mut(&topic) {
+        //             // check if the peer is in the mesh and remove it
+        //             mesh_peers.remove(&peer_id);
+        //         }
+        //
+        //         // remove from topic_peers
+        //         if let Some(peer_list) = self.topic_peers.get_mut(&topic) {
+        //             if !peer_list.remove(&peer_id) {
+        //                 // debugging purposes
+        //                 warn!("Disconnected node: {} not in topic_peers peer list", peer_id);
+        //             }
+        //         } else {
+        //             warn!("Disconnected node: {} with topic: {:?} not in topic_peers", &peer_id, &topic);
+        //         }
+        //
+        //         // remove from fanout
+        //         self.fanout.get_mut(&topic).map(|peers| peers.remove(&peer_id));
+        //     }
+        //
+        //     //forget px and outbound status for this peer
+        //     self.px_peers.remove(&peer_id);
+        //     self.outbound_peers.remove(&peer_id);
+        // }
+        //
+        // // Remove peer from peer_topics and peer_protocols
+        // // NOTE: It is possible the peer has already been removed from all mappings if it does not
+        // // support the protocol.
+        // self.peer_topics.remove(&peer_id);
+        // self.peer_protocols.remove(&peer_id);
+        //
+        // if let Some((peer_score, ..)) = &mut self.peer_score {
+        //     peer_score.remove_peer(&peer_id);
+        // }
         // self.connected_peers.remove(&rpid);
         // for ps in self.topics.values_mut() {
         //     ps.remove(&rpid);
@@ -2601,7 +2651,7 @@ where
         let messages = self.fragment_message(message.into())?;
 
         // TODO: go over the connected peers to get the tx channel for the outgoing stream
-        log::debug!("Sending message from peer_id: {:?}", peer_id);
+        log::debug!("Sending message to peer_id: {:?}", peer_id);
         if let Some(sender) = self.connected_peer.get(&peer_id) {
             for message in messages {
                 let _ = sender.unbounded_send(message);

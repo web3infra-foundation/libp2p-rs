@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 //! Gossipsub is a P2P pubsub (publish/subscription) routing layer designed to extend upon
-//! floodsub and meshsub routing protocols.
+//! Gossipsub and meshsub routing protocols.
 //!
 //! # Overview
 //!
@@ -80,6 +80,8 @@
 //! use libp2p_gossipsub::GossipsubEvent;
 //! use libp2prs_core::{identity::Keypair,transport::{Transport, MemoryTransport}, Multiaddr};
 //! use libp2p_gossipsub::MessageAuthenticity;
+//! use libp2prs_gossipsub::gossipsub::MessageAuthenticity;
+//! use libp2prs_core::transport::memory::MemoryTransport;
 //! let local_key = Keypair::generate_ed25519();
 //! let local_peer_id = libp2prs_core::PeerId::from(local_key.public());
 //!
@@ -154,5 +156,50 @@ pub use self::peer_score::{
 };
 pub use self::topic::{Hasher, Topic, TopicHash};
 pub use self::types::{FastMessageId, GossipsubMessage, GossipsubRpc, MessageAcceptance, MessageId, RawGossipsubMessage};
+use futures::channel::{mpsc, oneshot};
+use std::fmt::{Display, Result};
+use std::io;
 // pub type IdentTopic = Topic<self::topic::IdentityHash>;
 // pub type Sha256Topic = Topic<self::topic::Sha256Hash>;
+
+#[derive(Debug)]
+pub enum GossipsubError {
+    Io(io::Error),
+    Closed,
+}
+
+impl std::error::Error for GossipsubError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            GossipsubError::Io(err) => Some(err),
+            GossipsubError::Closed => None,
+        }
+    }
+}
+
+impl Display for GossipsubError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result {
+        match self {
+            GossipsubError::Io(e) => write!(f, "i/o error: {}", e),
+            GossipsubError::Closed => f.write_str("Gossipsub protocol is closed"),
+        }
+    }
+}
+
+impl From<io::Error> for GossipsubError {
+    fn from(e: io::Error) -> Self {
+        GossipsubError::Io(e)
+    }
+}
+
+impl From<mpsc::SendError> for GossipsubError {
+    fn from(_: mpsc::SendError) -> Self {
+        GossipsubError::Closed
+    }
+}
+
+impl From<oneshot::Canceled> for GossipsubError {
+    fn from(_: oneshot::Canceled) -> Self {
+        GossipsubError::Closed
+    }
+}

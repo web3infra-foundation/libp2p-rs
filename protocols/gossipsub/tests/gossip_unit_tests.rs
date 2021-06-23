@@ -193,9 +193,9 @@ pub fn test_gossip_fanout_maintenance() {
                 gossip.unsubscribe(topic.hash()).await;
             }
 
-            task::sleep(Duration::from_secs(2)).await;
-
             subscription_list.clear();
+
+            task::sleep(Duration::from_secs(2)).await;
 
             for node in node_list.iter().skip(1) {
                 let mut gossip = node.get_gossip();
