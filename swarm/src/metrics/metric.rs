@@ -184,17 +184,18 @@ impl Metric {
         let alpha = 1.0f64 - (-1.0f64).exp();
         let mut snapshot = self.recv_snapshot.write().unwrap();
         let now = SystemTime::now();
-        let tdiff = now.duration_since(snapshot.last_update_time()).unwrap();
+        let tdiff = now.duration_since(snapshot.last_update_time());
+        if tdiff.is_err() {
+            return;
+        }
         snapshot.set_last_update_time(now);
 
-        let time_multiplier = 1.0 / tdiff.as_secs_f64();
+        let time_multiplier = 1.0 / tdiff.unwrap().as_secs_f64();
         let total = self.byte_recv.load(SeqCst);
+        log::trace!("Input Bytes: {}", total);
         let diff = total as i64 - snapshot.total();
         let instant = time_multiplier.mul(diff as f64);
-
-        if diff > 0 {
-            snapshot.set_last_update_time(now);
-        }
+        log::trace!("Delta Input Bytes per seconds: {}", instant);
 
         if snapshot.rate() == 0.0 {
             snapshot.set_rate(instant)
@@ -211,19 +212,18 @@ impl Metric {
         let alpha = 1.0f64 - (-1.0f64).exp();
         let mut snapshot = self.send_snapshot.write().unwrap();
         let now = SystemTime::now();
-        // let tdiff = now.duration_since(snapshot.last_update_time()).unwrap();
+        let tdiff = now.duration_since(snapshot.last_update_time());
+        if tdiff.is_err() {
+            return;
+        }
         snapshot.set_last_update_time(now);
 
-        // let time_multiplier = 1.0 / tdiff.as_secs_f64();
+        let time_multiplier = 1.0 / tdiff.unwrap().as_secs_f64();
         let total = self.byte_sent.load(SeqCst);
-        log::trace!("Out Bytes: {}", total);
+        log::trace!("Output Bytes: {}", total);
         let diff = total as i64 - snapshot.total();
-        let instant = 1.0f64.mul(diff as f64);
-        log::trace!("Delta Bytes per seconds: {}", instant);
-
-        if diff > 0 {
-            snapshot.set_last_update_time(now);
-        }
+        let instant = time_multiplier.mul(diff as f64);
+        log::trace!("Delta Output Bytes per seconds: {}", instant);
 
         if snapshot.rate() == 0.0 {
             snapshot.set_rate(instant)
