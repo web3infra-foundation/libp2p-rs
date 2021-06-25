@@ -27,6 +27,8 @@ xcli = "0.5"
 #xcli = { git = "https://github.com/kingwel-xie/xcli-rs.git", branch = "master"}
 libp2prs-runtime = { path = "../runtime", version = "0.3.0" }
 libp2prs-core = { path = "../core", version = "0.3.0" }
+futures-timer = "3"
+smol-timeout = "0.6"
 
 [build-dependencies]
 prost-build = "0.6"

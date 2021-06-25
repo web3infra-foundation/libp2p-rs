@@ -24,22 +24,22 @@
 //! specified protocols.
 //!
 
-use futures::channel::mpsc;
-use futures::SinkExt;
-use std::sync::Arc;
-use std::{fmt, io};
-
-use futures::{AsyncRead, AsyncWrite, AsyncWriteExt};
-use libp2prs_core::muxing::IReadWrite;
-use libp2prs_core::{Multiaddr, PeerId};
-use libp2prs_runtime::task;
-
 use crate::connection::{ConnectionId, Direction};
 use crate::control::SwarmControlCmd;
 use crate::metrics::metric::Metric;
 use crate::ProtocolId;
+use futures::channel::mpsc;
 use futures::task::{Context, Poll};
+use futures::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use futures::{FutureExt, SinkExt};
+use futures_timer::Delay;
+use libp2prs_core::muxing::IReadWrite;
+use libp2prs_core::{Multiaddr, PeerId};
+use libp2prs_runtime::task;
 use std::pin::Pin;
+use std::sync::Arc;
+use std::time::Duration;
+use std::{fmt, io};
 
 /// The Id of sub stream
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -83,6 +83,14 @@ struct SubstreamMeta {
 pub struct Substream {
     /// The inner sub stream, created by the StreamMuxer
     inner: Option<IReadWrite>,
+    /// Read timeout, optional.
+    read_timeout: Option<Duration>,
+    /// Write timeout, optional.
+    write_timeout: Option<Duration>,
+    /// Read timer.
+    read_timer: Option<Delay>,
+    /// Write timer.
+    write_timer: Option<Delay>,
     /// The inner information of the sub-stream
     info: Arc<SubstreamMeta>,
     /// The control channel for closing stream
@@ -132,6 +140,10 @@ impl Substream {
     ) -> Self {
         Self {
             inner: Some(inner),
+            read_timeout: None,
+            write_timeout: None,
+            read_timer: None,
+            write_timer: None,
             info: Arc::new(SubstreamMeta { protocol, dir, cid, ci }),
             ctrl,
             metric,
@@ -152,6 +164,10 @@ impl Substream {
         let metric = Arc::new(Metric::new());
         Self {
             inner: Some(inner),
+            read_timeout: None,
+            write_timeout: None,
+            read_timer: None,
+            write_timer: None,
             info: Arc::new(SubstreamMeta { protocol, dir, cid, ci }),
             ctrl,
             metric,
@@ -203,15 +219,52 @@ impl Substream {
     }
 }
 
+impl Substream {
+    /// Set read timeout.
+    pub fn with_read_timeout(mut self, timeout: Duration) -> Self {
+        self.read_timeout = Some(timeout);
+        self
+    }
+    /// Set write timeout.
+    pub fn with_write_timeout(mut self, timeout: Duration) -> Self {
+        self.write_timeout = Some(timeout);
+        self
+    }
+    /// Set read and write timeout.
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.read_timeout = Some(timeout);
+        self.write_timeout = Some(timeout);
+        self
+    }
+}
+
 impl AsyncRead for Substream {
     fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<io::Result<usize>> {
         let this = &mut *self;
         let inner = this.inner.as_mut().expect("already closed?");
-        Poll::Ready(futures::ready!(AsyncRead::poll_read(Pin::new(inner), cx, buf)).map(|n| {
-            this.metric.log_recv_msg(n);
-            this.metric.log_recv_stream(this.protocol(), n, &this.info.ci.rpid);
-            n
-        }))
+        match AsyncRead::poll_read(Pin::new(inner), cx, buf) {
+            Poll::Pending => {
+                if this.read_timer.is_none() {
+                    if let Some(timeout) = this.read_timeout {
+                        this.read_timer = Some(Delay::new(timeout));
+                    }
+                }
+                if let Some(delay) = this.read_timer.as_mut() {
+                    if delay.poll_unpin(cx).is_ready() {
+                        return Poll::Ready(Err(io::Error::from(io::ErrorKind::TimedOut)));
+                    }
+                }
+                Poll::Pending
+            }
+            Poll::Ready(x) => {
+                this.read_timer.take();
+                Poll::Ready(x.map(|n| {
+                    this.metric.log_recv_msg(n);
+                    this.metric.log_recv_stream(this.protocol(), n, &this.info.ci.rpid);
+                    n
+                }))
+            }
+        }
     }
 }
 
@@ -219,11 +272,29 @@ impl AsyncWrite for Substream {
     fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
         let this = &mut *self;
         let inner = this.inner.as_mut().expect("already closed?");
-        Poll::Ready(futures::ready!(AsyncWrite::poll_write(Pin::new(inner), cx, buf)).map(|n| {
-            this.metric.log_sent_msg(n);
-            this.metric.log_sent_stream(this.protocol(), n, &this.info.ci.rpid);
-            n
-        }))
+        match AsyncWrite::poll_write(Pin::new(inner), cx, buf) {
+            Poll::Pending => {
+                if this.write_timer.is_none() {
+                    if let Some(timeout) = this.write_timeout {
+                        this.write_timer = Some(Delay::new(timeout));
+                    }
+                }
+                if let Some(delay) = this.write_timer.as_mut() {
+                    if delay.poll_unpin(cx).is_ready() {
+                        return Poll::Ready(Err(io::Error::from(io::ErrorKind::TimedOut)));
+                    }
+                }
+                Poll::Pending
+            }
+            Poll::Ready(x) => {
+                this.write_timer.take();
+                Poll::Ready(x.map(|n| {
+                    this.metric.log_sent_msg(n);
+                    this.metric.log_sent_stream(this.protocol(), n, &this.info.ci.rpid);
+                    n
+                }))
+            }
+        }
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
