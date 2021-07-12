@@ -88,7 +88,7 @@ use crate::identify::{IdentifyConfig, IdentifyHandler, IdentifyInfo, IdentifyPus
 use crate::metrics::metric::Metric;
 use crate::muxer::Muxer;
 use crate::network::NetworkInfo;
-use crate::ping::{PingConfig, PingHandler};
+use crate::ping::{PingConfig, PingHandler, PING_PROTOCOL};
 use crate::protocol_handler::ProtocolImpl;
 use crate::registry::Addresses;
 use crate::substream::{ConnectInfo, StreamId, Substream, SubstreamView};
@@ -615,6 +615,7 @@ impl Swarm {
                     let _ = reply.send(r);
                 });
             }
+            SwarmControlCmd::Ping(peer_id, reply) => self.get_ping_info(peer_id, reply),
         }
         Ok(())
     }
@@ -873,6 +874,33 @@ impl Swarm {
             listen_addrs,
             protocols,
         }
+    }
+    /// Get Ping info
+    fn get_ping_info(&mut self, peer_id: PeerId, cli_sender: oneshot::Sender<Result<Duration>>) {
+        let mut tx = self.ctrl_sender.clone();
+
+        task::spawn(async move {
+            let (sender, receiver) = oneshot::channel();
+
+            let _ = tx
+                .send(SwarmControlCmd::NewStream(
+                    peer_id,
+                    vec![ProtocolId::new(PING_PROTOCOL, 0)],
+                    true,
+                    sender,
+                ))
+                .await;
+            let result = receiver.await;
+            if let Ok(Ok(stream)) = result {
+                let result = ping::ping(stream, Duration::from_secs(1)).await.map_err(SwarmError::from);
+
+                let _ = cli_sender.send(result);
+
+                task::sleep(Duration::from_secs(1)).await;
+            } else {
+                let _ = cli_sender.send(Err(SwarmError::Internal));
+            }
+        });
     }
 
     /// Starts listening on the given address.

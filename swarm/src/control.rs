@@ -69,6 +69,8 @@ pub enum SwarmControlCmd {
     Dump(DumpCommand),
     /// Start calculate speed
     Rate(oneshot::Sender<(f64, f64)>),
+    /// Ping info
+    Ping(PeerId, oneshot::Sender<Result<Duration>>),
 }
 
 /// The dump commands can be used to dump internal data of Swarm.
@@ -181,6 +183,13 @@ impl Control {
         let (tx, rx) = oneshot::channel();
         self.sender.send(SwarmControlCmd::CloseConnection(peer_id, tx)).await?;
         rx.await?
+    }
+
+    /// Get ping info
+    pub async fn ping(&mut self, peer_id: PeerId) -> Result<Duration> {
+        let (tx, rx) = oneshot::channel();
+        let _ = self.sender.send(SwarmControlCmd::Ping(peer_id, tx)).await;
+        return if let Ok(r) = rx.await { r } else { Err(SwarmError::Internal) };
     }
 
     /// Open a new outbound stream towards the remote peer.

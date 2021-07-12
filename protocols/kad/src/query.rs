@@ -862,7 +862,7 @@ impl IterativeQuery {
                     let mut tx = tx.clone();
                     let _ = task::spawn(async move {
                         let stats = job.stats.clone();
-                        let pid = job.peer.clone();
+                        let pid = job.peer;
                         let r = job.execute().await;
                         if r.is_err() {
                             log::debug!("failed to talk to {} err={:?}", pid, r);

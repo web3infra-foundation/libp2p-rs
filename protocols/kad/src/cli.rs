@@ -366,7 +366,7 @@ fn cli_providing_many(app: &App, args: &[&str]) -> XcliResult {
                 let started = Instant::now();
                 for i in 0..count {
                     let key = (w * count + i).to_string().into_bytes();
-                    let _ = kad.provide(key.into()).await;
+                    let _ = kad.provide(key).await;
 
                     if i % 10 == 1 {
                         println!("Providing many, w={} c={}, elapsed: {:?}", w, i, started.elapsed());
@@ -405,7 +405,7 @@ fn cli_find_provider_many(app: &App, args: &[&str]) -> XcliResult {
                 let started = Instant::now();
                 for i in 0..count {
                     let key = (w * count + i).to_string().into_bytes();
-                    let r = kad.find_providers(key.into(), 0).await;
+                    let r = kad.find_providers(key, 0).await;
                     if r.is_err() {
                         println!("Finding many failed, key={}", w * count + i);
                     }
