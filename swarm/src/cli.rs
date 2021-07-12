@@ -174,6 +174,7 @@ fn cli_show_connections(app: &App, args: &[&str]) -> XcliResult {
 
     task::block_on(async {
         let connections = swarm.dump_connections(peer).await.unwrap();
+        let mut ss = 0;
         println!("CID   DIR Remote-Peer-Id                                       I/O Local-Multiaddr                  Remote-Multiaddr                 Latency");
         connections.iter().for_each(|v| {
             println!(
@@ -194,7 +195,10 @@ fn cli_show_connections(app: &App, args: &[&str]) -> XcliResult {
                     println!("      ({})", s);
                 });
             }
+
+            ss += v.substreams.len();
         });
+        println!("Total {} connections, {} sub-streams", connections.len(), ss);
     });
 
     Ok(CmdExeCode::Ok)
