@@ -159,6 +159,10 @@ pub struct KademliaProtocolConfig {
     max_packet_size: usize,
     /// Maximum allowed reuse count of a substream, used by Messenger cache.
     max_reuse_count: usize,
+    /// Timeout of new substream.
+    new_stream_timeout:  Option<Duration>,
+    /// Timeout of substream read and write.
+    read_write_timeout: Option<Duration>,
 }
 
 impl KademliaProtocolConfig {
@@ -177,6 +181,16 @@ impl KademliaProtocolConfig {
     pub fn set_max_packet_size(&mut self, size: usize) {
         self.max_packet_size = size;
     }
+
+    /// Set timeout of new substream.
+    pub fn set_new_stream_timeout(&mut self, timeout: Duration) {
+        self.new_stream_timeout = Some(timeout);
+    }
+
+    /// Set timeout of substream read and write.
+    pub fn set_read_write_timeout(&mut self, timeout: Duration) {
+        self.read_write_timeout = Some(timeout);
+    }
 }
 
 impl Default for KademliaProtocolConfig {
@@ -185,6 +199,8 @@ impl Default for KademliaProtocolConfig {
             protocol_name: ProtocolId::new(DEFAULT_PROTO_NAME, 0),
             max_packet_size: DEFAULT_MAX_PACKET_SIZE,
             max_reuse_count: DEFAULT_MAX_REUSE_TRIES,
+            new_stream_timeout: None,
+            read_write_timeout: None
         }
     }
 }
@@ -313,7 +329,7 @@ pub struct KadMessengerView {
 impl KadMessenger {
     pub(crate) async fn build(mut swarm: SwarmControl, peer: PeerId, config: KademliaProtocolConfig) -> Result<Self, KadError> {
         // open a new stream, without routing, so that Swarm wouldn't do routing for us
-        let stream = swarm.new_stream_no_routing(peer, vec![config.protocol_name().to_owned()]).await?;
+        let stream = swarm.new_stream_no_routing_with_timeout(peer, vec![config.protocol_name().to_owned()], config.new_stream_timeout).await?.with_timeout(config.read_write_timeout);
         Ok(Self {
             stream,
             config,

@@ -221,19 +221,19 @@ impl Substream {
 
 impl Substream {
     /// Set read timeout.
-    pub fn with_read_timeout(mut self, timeout: Duration) -> Self {
-        self.read_timeout = Some(timeout);
+    pub fn with_read_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.read_timeout = timeout;
         self
     }
     /// Set write timeout.
-    pub fn with_write_timeout(mut self, timeout: Duration) -> Self {
-        self.write_timeout = Some(timeout);
+    pub fn with_write_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.write_timeout = timeout;
         self
     }
     /// Set read and write timeout.
-    pub fn with_timeout(mut self, timeout: Duration) -> Self {
-        self.read_timeout = Some(timeout);
-        self.write_timeout = Some(timeout);
+    pub fn with_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.read_timeout = timeout;
+        self.write_timeout = timeout;
         self
     }
 }
@@ -244,16 +244,16 @@ impl AsyncRead for Substream {
         let inner = this.inner.as_mut().expect("already closed?");
         match AsyncRead::poll_read(Pin::new(inner), cx, buf) {
             Poll::Pending => {
-                if this.read_timer.is_none() {
-                    if let Some(timeout) = this.read_timeout {
+                if let Some(timeout) = this.read_timeout {
+                    if let Some(delay) = this.read_timer.as_mut() {
+                        if delay.poll_unpin(cx).is_ready() {
+                            return Poll::Ready(Err(io::Error::from(io::ErrorKind::TimedOut)));
+                        }
+                    } else {
                         this.read_timer = Some(Delay::new(timeout));
                     }
                 }
-                if let Some(delay) = this.read_timer.as_mut() {
-                    if delay.poll_unpin(cx).is_ready() {
-                        return Poll::Ready(Err(io::Error::from(io::ErrorKind::TimedOut)));
-                    }
-                }
+
                 Poll::Pending
             }
             Poll::Ready(x) => {
@@ -274,16 +274,16 @@ impl AsyncWrite for Substream {
         let inner = this.inner.as_mut().expect("already closed?");
         match AsyncWrite::poll_write(Pin::new(inner), cx, buf) {
             Poll::Pending => {
-                if this.write_timer.is_none() {
-                    if let Some(timeout) = this.write_timeout {
+                if let Some(timeout) = this.write_timeout {
+                    if let Some(delay) = this.write_timer.as_mut() {
+                        if delay.poll_unpin(cx).is_ready() {
+                            return Poll::Ready(Err(io::Error::from(io::ErrorKind::TimedOut)));
+                        }
+                    } else {
                         this.write_timer = Some(Delay::new(timeout));
                     }
                 }
-                if let Some(delay) = this.write_timer.as_mut() {
-                    if delay.poll_unpin(cx).is_ready() {
-                        return Poll::Ready(Err(io::Error::from(io::ErrorKind::TimedOut)));
-                    }
-                }
+
                 Poll::Pending
             }
             Poll::Ready(x) => {

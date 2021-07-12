@@ -31,7 +31,7 @@ use futures::{
 use libp2prs_core::peerstore::PeerStore;
 use libp2prs_core::transport::TransportError;
 use libp2prs_core::{Multiaddr, PeerId, ProtocolId, PublicKey};
-use smol_timeout::TimeoutExt;
+use libp2prs_runtime::task;
 use std::collections::hash_map::IntoIter;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -218,10 +218,7 @@ impl Control {
         let (tx, rx) = oneshot::channel();
         self.sender.send(SwarmControlCmd::NewStream(peer_id, pids, true, tx)).await?;
         match timeout {
-            Some(time) => rx
-                .timeout(time)
-                .await
-                .map_or_else(|| Err(SwarmError::from(TransportError::Timeout)), |a| a?),
+            Some(timeout) => task::timeout(timeout, rx).await.map_or_else(|_| Err(SwarmError::from(TransportError::Timeout)), |a| a?),
             None => rx.await?,
         }
     }
@@ -236,10 +233,7 @@ impl Control {
         let (tx, rx) = oneshot::channel();
         self.sender.send(SwarmControlCmd::NewStream(peer_id, pids, false, tx)).await?;
         match timeout {
-            Some(time) => rx
-                .timeout(time)
-                .await
-                .map_or_else(|| Err(SwarmError::from(TransportError::Timeout)), |a| a?),
+            Some(timeout) => task::timeout(timeout, rx).await.map_or_else(|_| Err(SwarmError::from(TransportError::Timeout)), |a| a?),
             None => rx.await?,
         }
     }

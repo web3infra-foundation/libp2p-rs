@@ -287,6 +287,18 @@ impl KademliaConfig {
         self.protocol_config.set_max_packet_size(size);
         self
     }
+
+    /// Set timeout of new substream.
+    pub fn with_new_stream_timeout(mut self, timeout: Duration) -> Self {
+        self.protocol_config.set_new_stream_timeout(timeout);
+        self
+    }
+
+    /// Set timeout of substream read and write.
+    pub fn with_read_write_timeout(mut self, timeout: Duration) -> Self {
+        self.protocol_config.set_read_write_timeout(timeout);
+        self
+    }
 }
 
 /// KadPoster is used to generate ProtocolEvent to Kad main loop.
