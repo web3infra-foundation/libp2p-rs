@@ -358,6 +358,7 @@ impl Connection {
                             })
                             .await;
 
+                        fail_cnt += 1;
                         Err(err)
                     }
                 };

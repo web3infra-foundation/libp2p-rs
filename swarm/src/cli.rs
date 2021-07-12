@@ -21,12 +21,11 @@
 use std::str::FromStr;
 use xcli::*;
 
-use libp2prs_core::{Multiaddr, PeerId};
+use libp2prs_core::{Multiaddr, PeerId, ProtocolId};
 use libp2prs_runtime::task;
 
+use crate::ping::ping;
 use crate::Control;
-use std::ops::{Add, Div};
-use std::thread::sleep;
 use std::time::Duration;
 
 const SWRM: &str = "swarm";
@@ -207,22 +206,24 @@ fn cli_ping(app: &App, args: &[&str]) -> XcliResult {
         _ => return Err(XcliError::MismatchArgument(1, args.len())),
     };
     task::block_on(async {
-        let mut average = Duration::default();
-        let mut actually_count = 0;
         for _ in 0..4 {
-            if let Ok(latency) = swarm.ping(pid).await {
-                println!("Ping result: {:?}", latency);
-                average = average.add(latency);
-                actually_count += 1;
-            } else {
-                println!("Unable ping");
+            let result_new_stream = swarm.new_stream(pid, vec![ProtocolId::new(b"/ipfs/ping/1.0.0", 0)]).await;
+            match result_new_stream {
+                Ok(stream) => match ping(stream, Duration::from_secs(1)).await {
+                    Ok(latency) => {
+                        println!("Ping result: {:?}", latency);
+                    }
+                    Err(e) => {
+                        log::debug!("Ping error: {:?}", e);
+                        println!("Unable ping");
+                    }
+                },
+                Err(e) => {
+                    log::debug!("New stream error: {:?}", e);
+                    println!("Unable ping");
+                }
             }
-            sleep(Duration::from_secs(1));
-        }
-        if actually_count == 0 {
-            println!("Unable ping peer {:?}", pid)
-        } else {
-            println!("Average ping latency: {:?}", average.div(actually_count))
+            task::sleep(Duration::from_secs(1)).await;
         }
     });
 
