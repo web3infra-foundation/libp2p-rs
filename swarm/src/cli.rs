@@ -109,12 +109,13 @@ fn cli_show_id(app: &App, _args: &[&str]) -> XcliResult {
             println!("Support Protocols : {:?}", identify.protocols);
             println!("Listening address : {:?}", identify.listen_addrs);
         }
+        let (recv_count, recv_bytes) = swarm.get_recv_count_and_size();
+        let (send_count, send_bytes) = swarm.get_sent_count_and_size();
+        println!("Received package: {}", recv_count);
+        println!("Sent package: {}", send_count);
 
-        println!(
-            "Metric: {:?} {:?}",
-            swarm.get_recv_count_and_size(),
-            swarm.get_sent_count_and_size()
-        );
+        println!("Received bytes: {}", recv_bytes);
+        println!("Sent bytes: {}", send_bytes);
     });
 
     Ok(CmdExeCode::Ok)
@@ -215,16 +216,16 @@ fn cli_ping(app: &App, args: &[&str]) -> XcliResult {
             match result_new_stream {
                 Ok(stream) => match ping(stream, Duration::from_secs(1)).await {
                     Ok(latency) => {
-                        println!("Ping result: {:?}", latency);
+                        println!("Time: {:?}", latency);
                     }
                     Err(e) => {
                         log::debug!("Ping error: {:?}", e);
-                        println!("Unable ping");
+                        println!("Request timeout");
                     }
                 },
                 Err(e) => {
                     log::debug!("New stream error: {:?}", e);
-                    println!("Unable ping");
+                    println!("Request timeout");
                 }
             }
             task::sleep(Duration::from_secs(1)).await;
