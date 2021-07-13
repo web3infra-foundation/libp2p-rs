@@ -25,6 +25,7 @@ use libp2prs_core::{Multiaddr, PeerId};
 use libp2prs_runtime::task;
 
 use crate::Control;
+use std::time::Instant;
 
 const DHT: &str = "dht";
 
@@ -67,6 +68,14 @@ pub fn dht_cli_commands<'a>() -> Command<'a> {
         .about("providing key to dht")
         .usage("provide <key>")
         .action(cli_providing);
+    let providing_many_cmd = Command::new_with_alias("pm", "pm")
+        .about("providing many keys to dht")
+        .usage("pm <count> <num-of-worker>")
+        .action(cli_providing_many);
+    let finding_many_cmd = Command::new_with_alias("fm", "fm")
+        .about("finding many keys in dht")
+        .usage("fm <count> <num-of-worker>")
+        .action(cli_find_provider_many);
 
     let dump_providers_cmd = Command::new_with_alias("local-store", "ls")
         .about("dump local-store")
@@ -101,6 +110,8 @@ pub fn dht_cli_commands<'a>() -> Command<'a> {
         .subcommand(put_value_cmd)
         .subcommand(find_providers_cmd)
         .subcommand(providing_cmd)
+        .subcommand(providing_many_cmd)
+        .subcommand(finding_many_cmd)
 }
 
 fn handler(app: &App) -> Control {
@@ -330,6 +341,87 @@ fn cli_providing(app: &App, args: &[&str]) -> XcliResult {
     task::block_on(async {
         let r = kad.provide(key.as_bytes().into()).await;
         println!("Providing: {:?}", r);
+    });
+
+    Ok(CmdExeCode::Ok)
+}
+
+fn cli_providing_many(app: &App, args: &[&str]) -> XcliResult {
+    let kad = handler(app);
+
+    if args.len() != 2 {
+        return Err(XcliError::MismatchArgument(2, args.len()));
+    }
+
+    let count_str = args.get(0).unwrap();
+    let count = usize::from_str(count_str).map_err(|e| XcliError::BadArgument(e.to_string()))?;
+    let workers_str = args.get(1).unwrap();
+    let workers = usize::from_str(workers_str).map_err(|e| XcliError::BadArgument(e.to_string()))?;
+
+    task::spawn(async move {
+        let mut tasks = vec![];
+        for w in 0..workers {
+            let mut kad = kad.clone();
+            let task = task::spawn(async move {
+                let started = Instant::now();
+                for i in 0..count {
+                    let key = (w * count + i).to_string().into_bytes();
+                    let _ = kad.provide(key).await;
+
+                    if i % 10 == 1 {
+                        println!("Providing many, w={} c={}, elapsed: {:?}", w, i, started.elapsed());
+                    }
+                }
+                println!("Providing many, w={} many={}, done elapsed: {:?}", w, count, started.elapsed());
+            });
+
+            tasks.push(task);
+        }
+        futures::future::join_all(tasks).await;
+
+        println!("Providing many, worker={} count-per-worker={} job done!", workers, count);
+    });
+
+    Ok(CmdExeCode::Ok)
+}
+
+fn cli_find_provider_many(app: &App, args: &[&str]) -> XcliResult {
+    let kad = handler(app);
+
+    if args.len() != 2 {
+        return Err(XcliError::MismatchArgument(2, args.len()));
+    }
+
+    let count_str = args.get(0).unwrap();
+    let count = usize::from_str(count_str).map_err(|e| XcliError::BadArgument(e.to_string()))?;
+    let workers_str = args.get(1).unwrap();
+    let workers = usize::from_str(workers_str).map_err(|e| XcliError::BadArgument(e.to_string()))?;
+
+    task::spawn(async move {
+        let mut tasks = vec![];
+        for w in 0..workers {
+            let mut kad = kad.clone();
+            let task = task::spawn(async move {
+                let started = Instant::now();
+                for i in 0..count {
+                    let key = (w * count + i).to_string().into_bytes();
+                    let r = kad.find_providers(key, 0).await;
+                    if r.is_err() {
+                        println!("Finding many failed, key={}", w * count + i);
+                    }
+
+                    if i % 10 == 1 {
+                        println!("Finding many, w={} c={}, elapsed: {:?}", w, i, started.elapsed());
+                    }
+                }
+                println!("Finding many, w={} many={}, done elapsed: {:?}", w, count, started.elapsed());
+            });
+
+            tasks.push(task);
+        }
+        futures::future::join_all(tasks).await;
+
+        println!("Finding many, worker={} count-per-worker={} job done!", workers, count);
     });
 
     Ok(CmdExeCode::Ok)

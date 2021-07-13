@@ -21,10 +21,12 @@
 use std::str::FromStr;
 use xcli::*;
 
-use libp2prs_core::{Multiaddr, PeerId};
+use libp2prs_core::{Multiaddr, PeerId, ProtocolId};
 use libp2prs_runtime::task;
 
+use crate::ping::ping;
 use crate::Control;
+use std::time::Duration;
 
 const SWRM: &str = "swarm";
 
@@ -45,6 +47,12 @@ pub fn swarm_cli_commands<'a>() -> Command<'a> {
                 .about("display connection information")
                 .usage("connection [PeerId]")
                 .action(cli_show_connections),
+        )
+        .subcommand(
+            Command::new_with_alias("ping", "p")
+                .about("ping other peerid")
+                .usage("ping [PeerId]")
+                .action(cli_ping),
         )
         .subcommand(
             Command::new_with_alias("peer", "pr")
@@ -165,6 +173,7 @@ fn cli_show_connections(app: &App, args: &[&str]) -> XcliResult {
 
     task::block_on(async {
         let connections = swarm.dump_connections(peer).await.unwrap();
+        let mut ss = 0;
         println!("CID   DIR Remote-Peer-Id                                       I/O Local-Multiaddr                  Remote-Multiaddr                 Latency");
         connections.iter().for_each(|v| {
             println!(
@@ -185,7 +194,41 @@ fn cli_show_connections(app: &App, args: &[&str]) -> XcliResult {
                     println!("      ({})", s);
                 });
             }
+
+            ss += v.substreams.len();
         });
+        println!("Total {} connections, {} sub-streams", connections.len(), ss);
+    });
+
+    Ok(CmdExeCode::Ok)
+}
+
+fn cli_ping(app: &App, args: &[&str]) -> XcliResult {
+    let mut swarm = handler(app);
+    let pid = match args.len() {
+        1 => PeerId::from_str(args[0]).map_err(|e| XcliError::BadArgument(e.to_string()))?,
+        _ => return Err(XcliError::MismatchArgument(1, args.len())),
+    };
+    task::block_on(async {
+        for _ in 0..4 {
+            let result_new_stream = swarm.new_stream(pid, vec![ProtocolId::new(b"/ipfs/ping/1.0.0", 0)]).await;
+            match result_new_stream {
+                Ok(stream) => match ping(stream, Duration::from_secs(1)).await {
+                    Ok(latency) => {
+                        println!("Ping result: {:?}", latency);
+                    }
+                    Err(e) => {
+                        log::debug!("Ping error: {:?}", e);
+                        println!("Unable ping");
+                    }
+                },
+                Err(e) => {
+                    log::debug!("New stream error: {:?}", e);
+                    println!("Unable ping");
+                }
+            }
+            task::sleep(Duration::from_secs(1)).await;
+        }
     });
 
     Ok(CmdExeCode::Ok)

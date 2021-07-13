@@ -862,8 +862,10 @@ impl IterativeQuery {
                     let mut tx = tx.clone();
                     let _ = task::spawn(async move {
                         let stats = job.stats.clone();
+                        let pid = job.peer;
                         let r = job.execute().await;
                         if r.is_err() {
+                            log::debug!("failed to talk to {} err={:?}", pid, r);
                             stats.iterative.failure.fetch_add(1, Ordering::SeqCst);
                             let _ = tx.send(QueryUpdate::Unreachable(peer_id)).await;
                         } else {
