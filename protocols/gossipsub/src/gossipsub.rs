@@ -1131,6 +1131,7 @@ where
                                 log::debug!("send rpc msg: {:?}", rpc);
                                 if stream.write_one(rpc.as_slice()).await.is_err() {
                                     let _ = evt_tx.unbounded_send(HandlerEvent::PeerEvent(PeerEvent::DeadPeer(rpid)));
+                                    break;
                                 }
                             }
                             None => {
@@ -1189,59 +1190,59 @@ where
     }
 
     // If remote peer is dead, remove it from peers and topics.
-    fn handle_remove_dead_peer(&mut self, _peer_id: PeerId) {
-        // debug!("Peer disconnected: {}", peer_id);
-        // {
-        //     let topics = match self.peer_topics.get(&peer_id) {
-        //         Some(topics) => (topics),
-        //         None => {
-        //             if !self.blacklisted_peers.contains(&peer_id) {
-        //                 debug!("Disconnected node, not in connected nodes");
-        //             }
-        //             return;
-        //         }
-        //     };
-        //
-        //     // remove peer from all mappings
-        //     for topic in topics {
-        //         // check the mesh for the topic
-        //         if let Some(mesh_peers) = self.mesh.get_mut(&topic) {
-        //             // check if the peer is in the mesh and remove it
-        //             mesh_peers.remove(&peer_id);
-        //         }
-        //
-        //         // remove from topic_peers
-        //         if let Some(peer_list) = self.topic_peers.get_mut(&topic) {
-        //             if !peer_list.remove(&peer_id) {
-        //                 // debugging purposes
-        //                 warn!("Disconnected node: {} not in topic_peers peer list", peer_id);
-        //             }
-        //         } else {
-        //             warn!("Disconnected node: {} with topic: {:?} not in topic_peers", &peer_id, &topic);
-        //         }
-        //
-        //         // remove from fanout
-        //         self.fanout.get_mut(&topic).map(|peers| peers.remove(&peer_id));
-        //     }
-        //
-        //     //forget px and outbound status for this peer
-        //     self.px_peers.remove(&peer_id);
-        //     self.outbound_peers.remove(&peer_id);
-        // }
-        //
-        // // Remove peer from peer_topics and peer_protocols
-        // // NOTE: It is possible the peer has already been removed from all mappings if it does not
-        // // support the protocol.
-        // self.peer_topics.remove(&peer_id);
-        // self.peer_protocols.remove(&peer_id);
-        //
-        // if let Some((peer_score, ..)) = &mut self.peer_score {
-        //     peer_score.remove_peer(&peer_id);
-        // }
-        // self.connected_peers.remove(&rpid);
-        // for ps in self.topics.values_mut() {
-        //     ps.remove(&rpid);
-        // }
+    fn handle_remove_dead_peer(&mut self, peer_id: PeerId) {
+        debug!("Peer disconnected: {}", peer_id);
+        {
+            let topics = match self.peer_topics.get(&peer_id) {
+                Some(topics) => (topics),
+                None => {
+                    if !self.blacklisted_peers.contains(&peer_id) {
+                        debug!("Disconnected node, not in connected nodes");
+                    }
+                    return;
+                }
+            };
+
+            // remove peer from all mappings
+            for topic in topics {
+                // check the mesh for the topic
+                if let Some(mesh_peers) = self.mesh.get_mut(&topic) {
+                    // check if the peer is in the mesh and remove it
+                    mesh_peers.remove(&peer_id);
+                }
+
+                // remove from topic_peers
+                if let Some(peer_list) = self.topic_peers.get_mut(&topic) {
+                    if !peer_list.remove(&peer_id) {
+                        // debugging purposes
+                        warn!("Disconnected node: {} not in topic_peers peer list", peer_id);
+                    }
+                } else {
+                    warn!("Disconnected node: {} with topic: {:?} not in topic_peers", &peer_id, &topic);
+                }
+
+                // remove from fanout
+                self.fanout.get_mut(&topic).map(|peers| peers.remove(&peer_id));
+            }
+
+            //forget px and outbound status for this peer
+            self.px_peers.remove(&peer_id);
+            self.outbound_peers.remove(&peer_id);
+        }
+
+        self.explicit_peers.remove(&peer_id);
+
+        self.connected_peer.remove(&peer_id);
+
+        // Remove peer from peer_topics and peer_protocols
+        // NOTE: It is possible the peer has already been removed from all mappings if it does not
+        // support the protocol.
+        self.peer_topics.remove(&peer_id);
+        self.peer_protocols.remove(&peer_id);
+
+        if let Some((peer_score, ..)) = &mut self.peer_score {
+            peer_score.remove_peer(&peer_id);
+        }
     }
 
     // Handle peer event, new peer and dead peer event + PeerKind event

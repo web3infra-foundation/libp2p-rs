@@ -68,11 +68,12 @@ struct PeerStats {
 enum ConnectionStatus {
     /// The peer is connected.
     Connected,
-    // /// The peer is disconnected
-    // Disconnected {
-    //     /// Expiration time of the score state for disconnected peers.
-    //     expire: Instant,
-    // },
+    /// The peer is disconnected
+    Disconnected {
+        /// Expiration time of the score state for disconnected peers.
+        #[allow(dead_code)]
+        expire: Instant,
+    },
 }
 
 impl Default for PeerStats {
@@ -324,13 +325,13 @@ impl PeerScore {
         }
     }
 
-    // fn remove_ips_for_peer(peer_stats: &PeerStats, peer_ips: &mut HashMap<IpAddr, HashSet<PeerId>>, peer_id: &PeerId) {
-    //     for ip in peer_stats.known_ips.iter() {
-    //         if let Some(peer_set) = peer_ips.get_mut(ip) {
-    //             peer_set.remove(peer_id);
-    //         }
-    //     }
-    // }
+    fn remove_ips_for_peer(peer_stats: &PeerStats, peer_ips: &mut HashMap<IpAddr, HashSet<PeerId>>, peer_id: &PeerId) {
+        for ip in peer_stats.known_ips.iter() {
+            if let Some(peer_set) = peer_ips.get_mut(ip) {
+                peer_set.remove(peer_id);
+            }
+        }
+    }
 
     // pub fn refresh_scores(&mut self) {
     //     let now = Instant::now();
@@ -436,41 +437,41 @@ impl PeerScore {
 
     // /// Removes a peer from the score table. This retains peer statistics if their score is
     // /// non-positive.
-    // pub fn remove_peer(&mut self, peer_id: &PeerId) {
-    //     // we only retain non-positive scores of peers
-    //     if self.score(peer_id) > 0f64 {
-    //         if let hash_map::Entry::Occupied(entry) = self.peer_stats.entry(*peer_id) {
-    //             Self::remove_ips_for_peer(entry.get(), &mut self.peer_ips, peer_id);
-    //             entry.remove();
-    //         }
-    //         return;
-    //     }
-    //
-    //     // if the peer is retained (including it's score) the `first_message_delivery` counters
-    //     // are reset to 0 and mesh delivery penalties applied.
-    //     if let Some(peer_stats) = self.peer_stats.get_mut(peer_id) {
-    //         for (topic, topic_stats) in peer_stats.topics.iter_mut() {
-    //             topic_stats.first_message_deliveries = 0f64;
-    //
-    //             if let Some(threshold) = self.params.topics.get(topic).map(|param| param.mesh_message_deliveries_threshold) {
-    //                 if topic_stats.in_mesh()
-    //                     && topic_stats.mesh_message_deliveries_active
-    //                     && topic_stats.mesh_message_deliveries < threshold
-    //                 {
-    //                     let deficit = threshold - topic_stats.mesh_message_deliveries;
-    //                     topic_stats.mesh_failure_penalty += deficit * deficit;
-    //                 }
-    //             }
-    //
-    //             topic_stats.mesh_status = MeshStatus::InActive;
-    //             topic_stats.mesh_message_deliveries_active = false;
-    //         }
-    //
-    //         peer_stats.status = ConnectionStatus::Disconnected {
-    //             expire: Instant::now() + self.params.retain_score,
-    //         };
-    //     }
-    // }
+    pub fn remove_peer(&mut self, peer_id: &PeerId) {
+        // we only retain non-positive scores of peers
+        if self.score(peer_id) > 0f64 {
+            if let hash_map::Entry::Occupied(entry) = self.peer_stats.entry(*peer_id) {
+                Self::remove_ips_for_peer(entry.get(), &mut self.peer_ips, peer_id);
+                entry.remove();
+            }
+            return;
+        }
+
+        // if the peer is retained (including it's score) the `first_message_delivery` counters
+        // are reset to 0 and mesh delivery penalties applied.
+        if let Some(peer_stats) = self.peer_stats.get_mut(peer_id) {
+            for (topic, topic_stats) in peer_stats.topics.iter_mut() {
+                topic_stats.first_message_deliveries = 0f64;
+
+                if let Some(threshold) = self.params.topics.get(topic).map(|param| param.mesh_message_deliveries_threshold) {
+                    if topic_stats.in_mesh()
+                        && topic_stats.mesh_message_deliveries_active
+                        && topic_stats.mesh_message_deliveries < threshold
+                    {
+                        let deficit = threshold - topic_stats.mesh_message_deliveries;
+                        topic_stats.mesh_failure_penalty += deficit * deficit;
+                    }
+                }
+
+                topic_stats.mesh_status = MeshStatus::InActive;
+                topic_stats.mesh_message_deliveries_active = false;
+            }
+
+            peer_stats.status = ConnectionStatus::Disconnected {
+                expire: Instant::now() + self.params.retain_score,
+            };
+        }
+    }
 
     /// Handles scoring functionality as a peer GRAFTs to a topic.
     pub fn graft(&mut self, peer_id: &PeerId, topic: impl Into<TopicHash>) {

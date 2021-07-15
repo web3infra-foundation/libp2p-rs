@@ -581,7 +581,7 @@ async fn open_stream_internal(
             Ok(stream)
         }
         Err(err) => {
-            log::debug!("failed outbound protocol selection {:?} {:?}", cid, err);
+            log::debug!("failed outbound protocol selection {:?} {:?} with peer: {:?}", cid, err, ra);
             Err(TransportError::NegotiationError(err))
         }
     }
