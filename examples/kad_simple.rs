@@ -73,7 +73,7 @@ fn main() {
 }
 
 lazy_static! {
-    static ref SERVER_KEY: identity::Keypair = identity::Keypair::generate_ed25519_fixed();
+    static ref SERVER_KEY: identity::Keypair = identity::Keypair::generate_ed25519_with_seed([8u8; 32]);
 }
 
 #[allow(clippy::empty_loop)]
