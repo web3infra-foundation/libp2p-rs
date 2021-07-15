@@ -395,7 +395,7 @@ impl Connection {
     /// Stops the Ping service on this connection
     pub(crate) async fn stop_ping(&mut self) {
         if let Some(h) = self.ping_handle.take() {
-            log::debug!("stopping Ping service for {:?}...", self.id);
+            log::info!("stopping Ping service for {:?}...", self.id);
             self.ping_running.store(false, Ordering::Relaxed);
             h.await;
             //h.cancel().await;

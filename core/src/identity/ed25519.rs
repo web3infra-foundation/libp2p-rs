@@ -35,7 +35,7 @@ pub struct Keypair(ed25519::Keypair);
 impl Keypair {
     /// Generate a fixed Ed25519 keypair, used for test puepose only.
     pub fn generate_fixed() -> Keypair {
-        let bytes = [0u8; 32];
+        let bytes = [6u8; 32];
         Keypair::from(SecretKey::from_bytes(bytes).unwrap())
     }
 

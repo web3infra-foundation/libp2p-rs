@@ -93,6 +93,10 @@ pub fn dht_cli_commands<'a>() -> Command<'a> {
         .about("dump statistics")
         .usage("stats")
         .action(cli_dump_statistics);
+    let dump_ledgers_cmd = Command::new_with_alias("ledgers", "led")
+        .about("dump ledgers")
+        .usage("ledgers")
+        .action(cli_dump_ledgers);
 
     Command::new_with_alias(DHT, "d")
         .about("Kad-DHT")
@@ -105,6 +109,7 @@ pub fn dht_cli_commands<'a>() -> Command<'a> {
         .subcommand(dump_kbucket_cmd)
         .subcommand(dump_messenger_cmd)
         .subcommand(dump_stats_cmd)
+        .subcommand(dump_ledgers_cmd)
         .subcommand(find_peer_cmd)
         .subcommand(get_value_cmd)
         .subcommand(put_value_cmd)
@@ -240,6 +245,24 @@ fn cli_dump_statistics(app: &App, _args: &[&str]) -> XcliResult {
         println!("Fixed query tx error   : {}", stats.query.fixed_tx_error);
         println!("Kad tx messages        : {:?}", stats.query.message_tx);
         println!("Kad rx messages        : {:?}", stats.message_rx);
+    });
+
+    Ok(CmdExeCode::Ok)
+}
+
+fn cli_dump_ledgers(app: &App, args: &[&str]) -> XcliResult {
+    let mut kad = handler(app);
+
+    let peer = match args.len() {
+        0 => None,
+        1 => Some(PeerId::from_str(args[0]).map_err(|e| XcliError::BadArgument(e.to_string()))?),
+        _ => return Err(XcliError::MismatchArgument(1, args.len())),
+    };
+
+    task::block_on(async {
+        let ledgers = kad.dump_ledgers(peer).await.unwrap();
+        println!("peer                                                     ledger");
+        ledgers.into_iter().for_each(|(p, l)| println!("{:52}  {}", p, l));
     });
 
     Ok(CmdExeCode::Ok)

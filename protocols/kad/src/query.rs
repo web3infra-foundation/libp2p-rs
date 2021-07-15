@@ -34,9 +34,11 @@ use libp2prs_swarm::Control as SwarmControl;
 use crate::kbucket::{Distance, Key};
 use crate::{record, KadError, ALPHA_VALUE, BETA_VALUE, K_VALUE};
 
-use crate::kad::{KadPoster, MessageStats, MessengerManager};
+use crate::kad::{KadPoster, MessageStats, MessengerManager, Ledger};
 use crate::protocol::{KadConnectionType, KadPeer, ProtocolEvent};
 use crate::task_limit::TaskLimiter;
+use libp2prs_core::metricmap::MetricMap;
+use std::ops::Add;
 
 /// Execution statistics of a query.
 #[derive(Debug, Clone, Default)]
@@ -262,6 +264,7 @@ struct QueryJob {
     messengers: MessengerManager,
     peer: PeerId,
     stats: Arc<QueryStatsAtomic>,
+    ledgers: Arc<MetricMap<PeerId, Ledger>>,
     tx: mpsc::Sender<QueryUpdate>,
 }
 
@@ -551,6 +554,8 @@ pub(crate) struct IterativeQuery {
     poster: KadPoster,
     /// The statistics.
     stats: Arc<QueryStatsAtomic>,
+    /// The ledger of all peer.
+    ledgers: Arc<MetricMap<PeerId, Ledger>>,
 }
 
 impl IterativeQuery {
@@ -565,6 +570,7 @@ impl IterativeQuery {
         seeds: Vec<Key<PeerId>>,
         poster: KadPoster,
         stats: Arc<QueryStatsAtomic>,
+        ledgers: Arc<MetricMap<PeerId, Ledger>>,
     ) -> Self {
         Self {
             query_type,
@@ -576,6 +582,7 @@ impl IterativeQuery {
             seeds,
             poster,
             stats,
+            ledgers,
         }
     }
 
@@ -736,7 +743,7 @@ impl IterativeQuery {
         }
 
         // update stats
-        self.stats.iter_query_executed.fetch_add(1, Ordering::SeqCst);
+        let index = self.stats.iter_query_executed.fetch_add(1, Ordering::SeqCst);
 
         let mut me = self;
         let alpha_value = me.config.alpha_value.get();
@@ -856,19 +863,34 @@ impl IterativeQuery {
                         messengers: me.messengers.clone(),
                         peer: peer_id,
                         stats: stats.clone(),
+                        ledgers: me.ledgers.clone(),
                         tx: tx.clone(),
                     };
 
                     let mut tx = tx.clone();
                     let _ = task::spawn(async move {
                         let stats = job.stats.clone();
+                        let ledgers = job.ledgers.clone();
                         let pid = job.peer;
+                        let start = Instant::now();
                         let r = job.execute().await;
+                        let cost = start.elapsed();
                         if r.is_err() {
-                            log::debug!("failed to talk to {} err={:?}", pid, r);
+                            log::info!("index {}， cost {:?}, failed to talk to {} err={:?}", index, cost, pid, r);
                             stats.iterative.failure.fetch_add(1, Ordering::SeqCst);
+                            let addition = Ledger {
+                                succeed: 0,
+                                failed: 1,
+                            };
+                            ledgers.store_or_modify(&pid, addition, |_, ledger| ledger.add(addition));
                             let _ = tx.send(QueryUpdate::Unreachable(peer_id)).await;
                         } else {
+                            // log::info!("index {}， cost {:?}, succeed to talk to {}", index, cost, pid);
+                            let addition = Ledger {
+                                succeed: 1,
+                                failed: 0,
+                            };
+                            ledgers.store_or_modify(&pid, addition, |_, ledger| ledger.add(addition));
                             stats.iterative.success.fetch_add(1, Ordering::SeqCst);
                         }
                     });
@@ -900,7 +922,7 @@ impl IterativeQuery {
             // calculate how long this iterative query lasts
             let duration = start.elapsed();
 
-            log::info!("iterative query report : {:?} {:?}", stats.iterative.to_view(), duration);
+            log::info!("index {}, iterative query report : {:?} {:?}", index, stats.iterative.to_view(), duration);
 
             Ok(query_results)
         };

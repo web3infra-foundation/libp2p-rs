@@ -78,7 +78,7 @@ lazy_static! {
 
 #[allow(clippy::empty_loop)]
 fn run_server(bootstrap_peer: PeerId, bootstrap_addr: Multiaddr) {
-    let keys = identity::Keypair::generate_ed25519();
+    let keys = SERVER_KEY.clone();
 
     let listen_addr1: Multiaddr = "/ip4/0.0.0.0/tcp/8086".parse().unwrap();
 
@@ -105,8 +105,8 @@ fn run_server(bootstrap_peer: PeerId, bootstrap_addr: Multiaddr) {
         // build Kad
         let config = KademliaConfig::default()
             .with_refresh_interval(None)
-            .with_query_timeout(Duration::from_secs(90));
-            // .with_new_stream_timeout(Duration::from_secs(8));
+            .with_query_timeout(Duration::from_secs(90))
+            .with_new_stream_timeout(Duration::from_secs(8));
 
         let store = MemoryStore::new(*swarm.local_peer_id());
         let kad = Kademlia::with_config(*swarm.local_peer_id(), store, config);
