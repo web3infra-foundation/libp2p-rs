@@ -880,7 +880,9 @@ impl IterativeQuery {
                             stats.iterative.failure.fetch_add(1, Ordering::SeqCst);
                             let addition = Ledger {
                                 succeed: 0,
+                                succeed_cost: Default::default(),
                                 failed: 1,
+                                failed_cost: cost
                             };
                             ledgers.store_or_modify(&pid, addition, |_, ledger| ledger.add(addition));
                             let _ = tx.send(QueryUpdate::Unreachable(peer_id)).await;
@@ -888,7 +890,9 @@ impl IterativeQuery {
                             // log::info!("index {}， cost {:?}, succeed to talk to {}", index, cost, pid);
                             let addition = Ledger {
                                 succeed: 1,
+                                succeed_cost: cost,
                                 failed: 0,
+                                failed_cost: Default::default()
                             };
                             ledgers.store_or_modify(&pid, addition, |_, ledger| ledger.add(addition));
                             stats.iterative.success.fetch_add(1, Ordering::SeqCst);

@@ -187,6 +187,8 @@ fn cli_dump_storage(app: &App, args: &[&str]) -> XcliResult {
 
     task::block_on(async {
         let storage_stat = kad.dump_storage().await.unwrap();
+        let plen = storage_stat.provider.len();
+        let rlen = storage_stat.record.len();
         println!("Providers: ");
         for provider in storage_stat.provider {
             println!("{} {:?} {:?}", provider.provider, provider.time_received, provider.key);
@@ -199,6 +201,7 @@ fn cli_dump_storage(app: &App, args: &[&str]) -> XcliResult {
                 record.key, record.value, record.time_received, record.publisher
             );
         }
+        println!("Total {} providers, {} records", plen, rlen);
     });
 
     Ok(CmdExeCode::Ok)
@@ -262,7 +265,8 @@ fn cli_dump_ledgers(app: &App, args: &[&str]) -> XcliResult {
     task::block_on(async {
         let ledgers = kad.dump_ledgers(peer).await.unwrap();
         println!("peer                                                     ledger");
-        ledgers.into_iter().for_each(|(p, l)| println!("{:52}  {}", p, l));
+        ledgers.iter().for_each(|(p, l)| println!("{:52}  succeed: {} cost: {:?}, failed: {} cost {:?}", p, l.succeed, l.succeed_cost.checked_div(l.succeed), l.failed, l.failed_cost.checked_div(l.failed)));
+        println!("Total {} peers", ledgers.len());
     });
 
     Ok(CmdExeCode::Ok)

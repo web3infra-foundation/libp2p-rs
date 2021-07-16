@@ -158,7 +158,9 @@ pub struct StorageStats {
 #[derive(Copy, Clone, Default, Debug)]
 pub struct Ledger {
     pub succeed: u32,
+    pub succeed_cost: Duration,
     pub failed: u32,
+    pub failed_cost: Duration,
 }
 
 impl Display for Ledger {
@@ -172,7 +174,9 @@ impl Add for Ledger {
 
     fn add(mut self, rhs: Self) -> Self::Output {
         self.succeed += rhs.succeed;
+        self.succeed_cost.add(rhs.succeed_cost);
         self.failed += rhs.failed;
+        self.failed_cost.add(rhs.failed_cost);
         self
     }
 }
