@@ -65,10 +65,12 @@ pub enum SwarmControlCmd {
     IdentifyInfo(oneshot::Sender<IdentifyInfo>),
     /// Send
     PeerLatency(oneshot::Sender<Vec<(PeerId, Duration)>>),
-    ///
+    /// Dump stream info
     Dump(DumpCommand),
     /// Start calculate speed
     Rate(oneshot::Sender<(f64, f64)>),
+    /// Check peer connected either or not
+    IsConnected(PeerId, oneshot::Sender<bool>),
 }
 
 /// The dump commands can be used to dump internal data of Swarm.
@@ -226,18 +228,21 @@ impl Control {
         Ok(rx.await?)
     }
 
+    /// Dump input and output bytes.
     pub async fn dump_rate(&mut self) -> Result<(f64, f64)> {
         let (tx, rx) = oneshot::channel();
         self.sender.send(SwarmControlCmd::Rate(tx)).await?;
         Ok(rx.await?)
     }
 
+    /// Dump latency time for all peer.
     pub async fn dump_latency(&mut self) -> Result<Vec<(PeerId, Duration)>> {
         let (tx, rx) = oneshot::channel();
         self.sender.send(SwarmControlCmd::PeerLatency(tx)).await?;
         Ok(rx.await?)
     }
 
+    /// Dump all connection info for specific peer_id.
     pub async fn dump_connections(&mut self, peer_id: Option<PeerId>) -> Result<Vec<ConnectionView>> {
         let (tx, rx) = oneshot::channel();
         self.sender
@@ -246,16 +251,25 @@ impl Control {
         Ok(rx.await?)
     }
 
+    /// Dump substream info for specific peer_id.
     pub async fn dump_streams(&mut self, peer_id: PeerId) -> Result<Vec<SubstreamView>> {
         let (tx, rx) = oneshot::channel();
         self.sender.send(SwarmControlCmd::Dump(DumpCommand::Streams(peer_id, tx))).await?;
         rx.await?
     }
 
+    /// Dump statistic of swarm.
     pub async fn dump_statistics(&mut self) -> Result<SwarmStats> {
         let (tx, rx) = oneshot::channel();
         self.sender.send(SwarmControlCmd::Dump(DumpCommand::Statistics(tx))).await?;
         rx.await?
+    }
+
+    /// Check connection still alive or not.
+    pub async fn still_connected(&mut self, peer_id: PeerId) -> Result<bool> {
+        let (tx, rx) = oneshot::channel();
+        self.sender.send(SwarmControlCmd::IsConnected(peer_id, tx)).await?;
+        Ok(rx.await?)
     }
 
     /// Close the swarm.

@@ -1107,7 +1107,11 @@ where
         let evt_tx = self.tx.clone();
         let (tx, mut rx) = mpsc::unbounded();
 
-        self.connected_peer.insert(rpid, tx);
+        let old_tx = self.connected_peer.insert(rpid, tx);
+
+        if let Some(tx) = old_tx {
+            tx.close_channel();
+        }
 
         // self.connected_peers.insert(rpid, tx);
 
@@ -1140,6 +1144,7 @@ where
                             }
                         }
                     }
+                    rx.close();
                 }
                 Err(_) => {
                     // new stream failed
@@ -1257,6 +1262,16 @@ where
             }
             PeerEvent::DeadPeer(rpid) => {
                 log::trace!("peer {} has disconnected", rpid);
+                if self.swarm.is_some() {
+                    let mut control = self.swarm.clone().unwrap();
+                    task::block_on(async {
+                        let still_connected = control.still_connected(rpid).await;
+                        if let Ok(true) = still_connected {
+                            let _ = self.tx.send(HandlerEvent::PeerEvent(PeerEvent::NewPeer(rpid)));
+                            return;
+                        }
+                    });
+                }
                 self.handle_remove_dead_peer(rpid);
             }
         }
