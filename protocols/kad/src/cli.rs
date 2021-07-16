@@ -395,16 +395,22 @@ fn cli_providing_many(app: &App, args: &[&str]) -> XcliResult {
                     let key = (w * count + i).to_string().into_bytes();
                     let _ = kad.provide(key).await;
 
-                    if i % 10 == 1 {
+                    if i % 10 == 0 {
                         println!("Providing many, w={} c={}, elapsed: {:?}", w, i, started.elapsed());
                     }
                 }
-                println!("Providing many, w={} many={}, done elapsed: {:?}", w, count, started.elapsed());
+                // println!("Providing many, w={} many={}, done elapsed: {:?}", w, count, started.elapsed());
+                started.elapsed()
             });
 
             tasks.push(task);
         }
-        futures::future::join_all(tasks).await;
+
+        for (i, task) in tasks.into_iter().enumerate() {
+            println!("Providing many, w={} many={}, done elapsed: {:?}", i, count, task.await);
+        }
+
+        // futures::future::join_all(tasks).await; d pm 10 10
 
         println!("Providing many, worker={} count-per-worker={} job done!", workers, count);
     });
@@ -437,16 +443,21 @@ fn cli_find_provider_many(app: &App, args: &[&str]) -> XcliResult {
                         println!("Finding many failed, key={}", w * count + i);
                     }
 
-                    if i % 10 == 1 {
+                    if i % 10 == 0 {
                         println!("Finding many, w={} c={}, elapsed: {:?}", w, i, started.elapsed());
                     }
                 }
-                println!("Finding many, w={} many={}, done elapsed: {:?}", w, count, started.elapsed());
+                // println!("Finding many, w={} many={}, done elapsed: {:?}", w, count, started.elapsed());
+                started.elapsed()
             });
 
             tasks.push(task);
         }
-        futures::future::join_all(tasks).await;
+        // futures::future::join_all(tasks).await;
+
+        for (i, task) in tasks.into_iter().enumerate() {
+            println!("Finding many, w={} many={}, done elapsed: {:?}", i, count, task.await);
+        }
 
         println!("Finding many, worker={} count-per-worker={} job done!", workers, count);
     });
