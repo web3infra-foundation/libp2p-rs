@@ -399,18 +399,16 @@ fn cli_providing_many(app: &App, args: &[&str]) -> XcliResult {
                         println!("Providing many, w={} c={}, elapsed: {:?}", w, i, started.elapsed());
                     }
                 }
-                // println!("Providing many, w={} many={}, done elapsed: {:?}", w, count, started.elapsed());
-                started.elapsed()
+                let cost = started.elapsed();
+                println!("Providing many, w={} many={}, done elapsed: {:?}", w, count, cost);
+                cost
             });
 
             tasks.push(task);
         }
 
-        for (i, task) in tasks.into_iter().enumerate() {
-            println!("Providing many, w={} many={}, done elapsed: {:?}", i, count, task.await);
-        }
-
-        // futures::future::join_all(tasks).await; d pm 10 10
+        let res = futures::future::join_all(tasks).await;
+        println!("min: {:?}, max: {:?}", res.iter().min(), res.iter().max());
 
         println!("Providing many, worker={} count-per-worker={} job done!", workers, count);
     });
@@ -447,17 +445,15 @@ fn cli_find_provider_many(app: &App, args: &[&str]) -> XcliResult {
                         println!("Finding many, w={} c={}, elapsed: {:?}", w, i, started.elapsed());
                     }
                 }
-                // println!("Finding many, w={} many={}, done elapsed: {:?}", w, count, started.elapsed());
-                started.elapsed()
+                let cost = started.elapsed();
+                println!("Finding many, w={} many={}, done elapsed: {:?}", w, count, cost);
+                cost
             });
 
             tasks.push(task);
         }
-        // futures::future::join_all(tasks).await;
-
-        for (i, task) in tasks.into_iter().enumerate() {
-            println!("Finding many, w={} many={}, done elapsed: {:?}", i, count, task.await);
-        }
+        let res = futures::future::join_all(tasks).await;
+        println!("min: {:?}, max: {:?}", res.iter().min().unwrap().unwrap(), res.iter().max().unwrap().unwrap());
 
         println!("Finding many, worker={} count-per-worker={} job done!", workers, count);
     });

@@ -174,9 +174,9 @@ impl Add for Ledger {
 
     fn add(mut self, rhs: Self) -> Self::Output {
         self.succeed += rhs.succeed;
-        self.succeed_cost.add(rhs.succeed_cost);
+        self.succeed_cost += rhs.succeed_cost;
         self.failed += rhs.failed;
-        self.failed_cost.add(rhs.failed_cost);
+        self.failed_cost += rhs.failed_cost;
         self
     }
 }
