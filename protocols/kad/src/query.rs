@@ -263,6 +263,7 @@ struct QueryJob {
     qt: QueryType,
     messengers: MessengerManager,
     peer: PeerId,
+    addrs: Vec<Multiaddr>,
     stats: Arc<QueryStatsAtomic>,
     ledgers: Arc<MetricMap<PeerId, Ledger>>,
     tx: mpsc::Sender<QueryUpdate>,
@@ -862,6 +863,7 @@ impl IterativeQuery {
                         qt: me.query_type.clone(),
                         messengers: me.messengers.clone(),
                         peer: peer_id,
+                        addrs: me.swarm.get_addrs(&peer_id).unwrap_or_default(),
                         stats: stats.clone(),
                         ledgers: me.ledgers.clone(),
                         tx: tx.clone(),
@@ -872,11 +874,13 @@ impl IterativeQuery {
                         let stats = job.stats.clone();
                         let ledgers = job.ledgers.clone();
                         let pid = job.peer;
+                        let addrs = job.addrs.clone();
                         let start = Instant::now();
                         let r = job.execute().await;
                         let cost = start.elapsed();
                         if r.is_err() {
-                            log::info!("index {}， cost {:?}, failed to talk to {} err={:?}", index, cost, pid, r);
+                            let public_ips :Vec<Multiaddr> = addrs.into_iter().filter(|addr| !addr.is_private_addr()).collect();
+                            log::info!("index {}， cost {:?}, failed to talk to {}, all private ip {} err={:?}", index, cost, pid, public_ips.is_empty(), r);
                             stats.iterative.failure.fetch_add(1, Ordering::SeqCst);
                             let addition = Ledger {
                                 succeed: 0,

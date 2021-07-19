@@ -598,11 +598,8 @@ impl AsyncDialer {
                     }
                 }
                 Some((Err(err), addr)) => {
-                    for ip in PUBLIC_IPS.iter() {
-                        if addr.to_string().contains(ip) {
-                            log::info!("[Dialer] job for {:?} failed: addr={:?},error={:?}", peer_id, addr, err);
-                            break;
-                        }
+                    if !addr.is_private_addr() {
+                        log::info!("[Dialer] job for {:?} failed: addr={:?},error={:?}", peer_id, addr, err);
                     }
                     // log::debug!("[Dialer] job for {:?} failed: addr={:?},error={:?}", peer_id, addr.clone(), err);
                     if let SwarmError::Transport(_) = err {
