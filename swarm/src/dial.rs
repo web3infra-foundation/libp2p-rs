@@ -45,7 +45,7 @@ use libp2prs_core::routing::IRouting;
 type Result<T> = std::result::Result<T, SwarmError>;
 
 /// CONCURRENT_DIALS_LIMIT  is the number of concurrent outbound dials
-const CONCURRENT_DIALS_LIMIT: u32 = 500;
+const CONCURRENT_DIALS_LIMIT: u32 = 1000;
 
 /// DIAL_TIMEOUT is the maximum duration a Dial is allowed to take.This includes the time between dialing the raw network connection,protocol selection as well the handshake, if applicable.
 const DIAL_TIMEOUT: Duration = Duration::from_secs(20);
@@ -64,6 +64,8 @@ const BACKOFF_COEF: Duration = Duration::from_secs(1);
 
 /// BACKOFF_MAX is the maximum backoff time (default: 300s).
 const BACKOFF_MAX: Duration = Duration::from_secs(300);
+
+const PUBLIC_IPS: [&str; 4] = ["47.75.221.15", "47.244.137.22", "47.244.56.200", "47.90.106.218"];
 
 /// Statistics of dialer.
 #[derive(Default)]
@@ -596,7 +598,13 @@ impl AsyncDialer {
                     }
                 }
                 Some((Err(err), addr)) => {
-                    log::debug!("[Dialer] job for {:?} failed: addr={:?},error={:?}", peer_id, addr.clone(), err);
+                    for ip in PUBLIC_IPS.iter() {
+                        if addr.to_string().contains(ip) {
+                            log::info!("[Dialer] job for {:?} failed: addr={:?},error={:?}", peer_id, addr, err);
+                            break;
+                        }
+                    }
+                    // log::debug!("[Dialer] job for {:?} failed: addr={:?},error={:?}", peer_id, addr.clone(), err);
                     if let SwarmError::Transport(_) = err {
                         // add to backoff list if transport error reported
                         param.backoff.add_peer(peer_id, addr).await;

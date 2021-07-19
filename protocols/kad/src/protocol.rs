@@ -353,7 +353,8 @@ impl KadMessenger {
     // update reuse count, true means yes please reuse, otherwise, messenger is recycled
     pub(crate) fn reuse(&mut self) -> bool {
         self.reuse += 1;
-        self.reuse < self.config.max_reuse_count
+        // self.reuse < self.config.max_reuse_count
+        true
     }
 
     // send a message to peer.
