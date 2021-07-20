@@ -119,7 +119,7 @@ struct DialJob {
     peer: PeerId,
     stats: Arc<DialerStats>,
     // here we send the maddr back for dialer-backoff
-    tx: mpsc::UnboundedSender<(Result<IStreamMuxer>, Multiaddr)>,
+    tx: mpsc::UnboundedSender<(Result<IStreamMuxer>, Multiaddr, Duration)>,
 }
 
 #[derive(Clone)]
@@ -163,7 +163,7 @@ impl DialLimiter {
                 self.dial_limit,
             );
             dj.stats.dialing_limit.fetch_add(1, Ordering::SeqCst);
-            let _ = dj.tx.send((Err(SwarmError::ConcurrentDialLimit(self.dial_limit)), dj.addr)).await;
+            let _ = dj.tx.send((Err(SwarmError::ConcurrentDialLimit(self.dial_limit)), dj.addr, Default::default())).await;
             return;
         }
 
@@ -183,19 +183,21 @@ impl DialLimiter {
     async fn execute_dial(&self, mut dj: DialJob) {
         let timeout = self.dial_timeout(&dj.addr);
 
+        let start = Instant::now();
         let dial_r = task::timeout(timeout, dj.transport.dial(dj.addr.clone())).await;
+        let cost = start.elapsed();
         if let Ok(r) = dial_r {
             if r.is_err() {
                 dj.stats.transport_error.fetch_add(1, Ordering::SeqCst);
             } else {
                 dj.stats.dialing_success.fetch_add(1, Ordering::SeqCst);
             }
-            let _ = dj.tx.send((r.map_err(|e| e.into()), dj.addr)).await;
+            let _ = dj.tx.send((r.map_err(|e| e.into()), dj.addr, cost)).await;
         } else {
             dj.stats.dialing_timeout.fetch_add(1, Ordering::SeqCst);
             let _ = dj
                 .tx
-                .send((Err(SwarmError::DialTimeout(dj.addr.clone(), timeout.as_secs())), dj.addr))
+                .send((Err(SwarmError::DialTimeout(dj.addr.clone(), timeout.as_secs())), dj.addr, cost))
                 .await;
         }
         self.dial_consuming.fetch_sub(1, Ordering::SeqCst);
@@ -527,7 +529,7 @@ impl AsyncDialer {
         let addrs_rank = AsyncDialer::rank_addrs(addrs);
 
         // dialing all addresses
-        let (tx, rx) = mpsc::unbounded::<(Result<IStreamMuxer>, Multiaddr)>();
+        let (tx, rx) = mpsc::unbounded::<(Result<IStreamMuxer>, Multiaddr, Duration)>();
         let mut num_jobs = 0;
 
         for addr in addrs_rank {
@@ -567,7 +569,7 @@ impl AsyncDialer {
     // collect the job results
     // return the first successful dialing result, ignore the rest
     async fn collect_dialing_result(
-        mut rx: UnboundedReceiver<(Result<IStreamMuxer>, Multiaddr)>,
+        mut rx: UnboundedReceiver<(Result<IStreamMuxer>, Multiaddr, Duration)>,
         jobs: usize,
         param: DialParam,
     ) -> Result<IStreamMuxer> {
@@ -577,7 +579,7 @@ impl AsyncDialer {
             log::debug!("[Dialer] job for {:?} finished, seq={} ...", peer_id, i);
 
             match r {
-                Some((Ok(stream_muxer), addr)) => {
+                Some((Ok(stream_muxer), addr, cost)) => {
                     let reported_pid = stream_muxer.remote_peer();
 
                     // verify if the PeerId matches expectation, otherwise,
@@ -597,9 +599,9 @@ impl AsyncDialer {
                         param.backoff.add_peer(peer_id, addr).await;
                     }
                 }
-                Some((Err(err), addr)) => {
+                Some((Err(err), addr, cost)) => {
                     if !addr.is_private_addr() && !addr.is_ipv6_addr() {
-                        log::info!("[Dialer] job for {:?} failed: addr={:?},error={:?}", peer_id, addr, err);
+                        log::info!("[Dialer] job for {:?}, cost {:?}, failed: addr={:?},error={:?}", peer_id, cost, addr, err);
                     }
                     // log::debug!("[Dialer] job for {:?} failed: addr={:?},error={:?}", peer_id, addr.clone(), err);
                     if let SwarmError::Transport(_) = err {
