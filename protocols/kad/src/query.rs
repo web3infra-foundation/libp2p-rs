@@ -879,7 +879,7 @@ impl IterativeQuery {
                         let r = job.execute().await;
                         let cost = start.elapsed();
                         if r.is_err() {
-                            let public_ips :Vec<Multiaddr> = addrs.into_iter().filter(|addr| !addr.is_private_addr()).collect();
+                            let public_ips :Vec<Multiaddr> = addrs.into_iter().filter(|addr| !addr.is_private_addr() && !addr.is_ipv6_addr()).collect();
                             log::info!("index {}， cost {:?}, failed to talk to {}, all private ip {} err={:?}", index, cost, pid, public_ips.is_empty(), r);
                             stats.iterative.failure.fetch_add(1, Ordering::SeqCst);
                             let addition = Ledger {

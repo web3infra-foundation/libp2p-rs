@@ -598,7 +598,7 @@ impl AsyncDialer {
                     }
                 }
                 Some((Err(err), addr)) => {
-                    if !addr.is_private_addr() {
+                    if !addr.is_private_addr() && !addr.is_ipv6_addr() {
                         log::info!("[Dialer] job for {:?} failed: addr={:?},error={:?}", peer_id, addr, err);
                     }
                     // log::debug!("[Dialer] job for {:?} failed: addr={:?},error={:?}", peer_id, addr.clone(), err);
