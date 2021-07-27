@@ -424,11 +424,23 @@ impl Swarm {
     }
     /// Adds a protocol into Swarm.
     ///
-    /// A protocl must implement ProtocolImpl trait. See [Swarm::ProtocolImpl].
+    /// A protocol must implement ProtocolImpl trait. See [Swarm::ProtocolImpl].
     pub fn with_protocol<T: ProtocolImpl>(mut self, p: T) -> Self {
         for p in p.handlers() {
             self.muxer.add_protocol_handler(p);
         }
+        if let Some(task) = p.start(self.control()) {
+            self.tasks.push(task);
+        }
+        self
+    }
+    /// Starts a protocol but doesn't add its protocol handlers to the protocol muxer.
+    ///
+    /// It is typically useful when we only want the functionality of the client side
+    /// of the protocol.
+    ///
+    /// A protocol must implement ProtocolImpl trait. See [Swarm::ProtocolImpl].
+    pub fn with_protocol_no_handler<T: ProtocolImpl>(mut self, p: T) -> Self {
         if let Some(task) = p.start(self.control()) {
             self.tasks.push(task);
         }
