@@ -241,7 +241,7 @@ impl UpgradeInfo for PingHandler {
 
 impl Notifiee for PingHandler {
     fn connected(&mut self, connection: &mut Connection) {
-        let config = self.config.clone();
+        let config = &self.config;
         if config.unsolicited() {
             log::trace!("starting Ping service for {:?}", connection);
             connection.start_ping(config.timeout(), config.interval(), config.max_failures());

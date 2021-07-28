@@ -100,6 +100,12 @@ pub trait ProtocolHandler: UpgradeInfo + Notifiee {
     ///
     /// The `info` is the identifier of the protocol, as produced by `protocol_info`.
     async fn handle(&mut self, stream: Substream, info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn Error>>;
+    /// The protocol handler is dummy. It will not become the supported protocols when
+    /// the Swarm multi-stream Muxer is trying to negotiate with other peers. On the other hand,
+    /// the handler is still working, sending/receiving protocol messages.
+    ///
+    /// It is disabled by default.
+    fn client_mode(&self) -> bool { false }
     /// This is to provide a clone method for the trait object.
     fn box_clone(&self) -> IProtocolHandler;
 }
