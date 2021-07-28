@@ -93,6 +93,10 @@ pub fn dht_cli_commands<'a>() -> Command<'a> {
         .about("dump statistics")
         .usage("stats")
         .action(cli_dump_statistics);
+    let get_no_addr_peer = Command::new_with_alias("noaddr", "na")
+        .about("dump no addr peer")
+        .usage("noaddr")
+        .action(cli_get_not_exist_multiaddr_peer);
 
     Command::new_with_alias(DHT, "d")
         .about("Kad-DHT")
@@ -112,6 +116,7 @@ pub fn dht_cli_commands<'a>() -> Command<'a> {
         .subcommand(providing_cmd)
         .subcommand(providing_many_cmd)
         .subcommand(finding_many_cmd)
+        .subcommand(get_no_addr_peer)
 }
 
 fn handler(app: &App) -> Control {
@@ -424,5 +429,19 @@ fn cli_find_provider_many(app: &App, args: &[&str]) -> XcliResult {
         println!("Finding many, worker={} count-per-worker={} job done!", workers, count);
     });
 
+    Ok(CmdExeCode::Ok)
+}
+
+fn cli_get_not_exist_multiaddr_peer(app: &App, _args: &[&str]) -> XcliResult {
+    let mut kad = handler(app);
+
+    task::block_on(async {
+        if let Ok(no_addr_peer) = kad.show_no_addr_peer().await {
+            println!("Peer");
+            for id in no_addr_peer {
+                println!("{:?}", id);
+            }
+        }
+    });
     Ok(CmdExeCode::Ok)
 }

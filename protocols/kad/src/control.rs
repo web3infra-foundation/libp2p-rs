@@ -30,6 +30,7 @@ use libp2prs_core::{Multiaddr, PeerId};
 use crate::kad::{KBucketView, KademliaStats, StorageStats};
 use crate::protocol::{KadMessengerView, KadPeer};
 use crate::query::PeerRecord;
+use crate::record::Key;
 use crate::{record, KadError};
 
 type Result<T> = std::result::Result<T, KadError>;
@@ -66,6 +67,8 @@ pub(crate) enum ControlCommand {
     AddNode(PeerId, Vec<Multiaddr>),
     /// Removes a peer from Kad KBuckets, also removes it from Peerstore.
     RemoveNode(PeerId),
+    /// Show all peers without multiaddress
+    NotAddressPeer(oneshot::Sender<Result<Vec<PeerId>>>),
 }
 
 /// The dump commands can be used to dump internal data of Kad-DHT.
@@ -190,6 +193,12 @@ impl Control {
         self.control_sender.send(ControlCommand::FindProviders(key, count, tx)).await?;
         rx.await?
     }
+
+    pub async fn show_no_addr_peer(&mut self) -> Result<Vec<PeerId>> {
+        let (tx, rx) = oneshot::channel();
+        self.control_sender.send(ControlCommand::NotAddressPeer(tx)).await?;
+        rx.await?
+    }
 }
 
 /// Implements `Routing` for Kad Control. Therefore, Kad control can be used
@@ -212,6 +221,17 @@ impl Routing for Control {
     async fn provide(&mut self, key: Vec<u8>) -> std::result::Result<(), TransportError> {
         let _ = self.provide(key).await.map_err(|e| TransportError::Routing(e.into()))?;
         Ok(())
+    }
+
+    async fn lookup(&mut self, key: Vec<u8>) -> std::result::Result<Vec<PeerId>, TransportError> {
+        let peer = self
+            .lookup(Key::new(&key))
+            .await
+            .map_err(|e| TransportError::Routing(e.into()))?
+            .into_iter()
+            .map(|item| item.node_id)
+            .collect();
+        Ok(peer)
     }
 
     fn box_clone(&self) -> IRouting {

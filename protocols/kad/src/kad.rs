@@ -612,6 +612,19 @@ where
         }
     }
 
+    fn get_peer_without_addr(&mut self) -> Vec<PeerId> {
+        let mut no_addr_peer = vec![];
+        for kbucket in self.kbuckets.iter() {
+            for peer_entry in kbucket.iter() {
+                let peer_id = peer_entry.node.key.preimage();
+                if self.swarm.as_ref().unwrap().get_addrs(peer_id).is_none() {
+                    no_addr_peer.push(*peer_id);
+                }
+            }
+        }
+        no_addr_peer
+    }
+
     /// Performs a lookup of a record to the given key.
     ///
     /// The result of this operation is delivered into the callback
@@ -1464,6 +1477,10 @@ where
                     let _ = reply.send(self.dump_messengers());
                 }
             },
+            Some(ControlCommand::NotAddressPeer(reply)) => {
+                let peer_no_addr = self.get_peer_without_addr();
+                let _ = reply.send(Ok(peer_no_addr));
+            }
             None => {
                 return Err(KadError::Closing(1));
             }
