@@ -159,6 +159,11 @@ pub struct KademliaProtocolConfig {
     max_packet_size: usize,
     /// Maximum allowed reuse count of a substream, used by Messenger cache.
     max_reuse_count: usize,
+    /// Client mode of Kad.
+    /// Client mode Kad plays a client role in Kad-DHT network. It will not
+    /// claim supporting the Kad protocol. Consequently, it will not be added
+    /// to the routing table of any node.
+    client_mode: bool,
 }
 
 impl KademliaProtocolConfig {
@@ -177,6 +182,11 @@ impl KademliaProtocolConfig {
     pub fn set_max_packet_size(&mut self, size: usize) {
         self.max_packet_size = size;
     }
+
+    /// Modifies the mode of Kad.
+    pub fn set_client_mode(&mut self, client_mode: bool) {
+        self.client_mode = client_mode;
+    }
 }
 
 impl Default for KademliaProtocolConfig {
@@ -185,6 +195,7 @@ impl Default for KademliaProtocolConfig {
             protocol_name: ProtocolId::new(DEFAULT_PROTO_NAME, 0),
             max_packet_size: DEFAULT_MAX_PACKET_SIZE,
             max_reuse_count: DEFAULT_MAX_REUSE_TRIES,
+            client_mode: false
         }
     }
 }
@@ -194,8 +205,6 @@ impl Default for KademliaProtocolConfig {
 pub struct KadProtocolHandler {
     /// The configuration of the protocol handler.
     config: KademliaProtocolConfig,
-    /// If false, we deny incoming requests.
-    allow_listening: bool,
     /// Time after which we close an idle connection.
     idle_timeout: Duration,
     /// Used to post ProtocolEvent to Kad main loop.
@@ -207,7 +216,6 @@ impl KadProtocolHandler {
     pub(crate) fn new(config: KademliaProtocolConfig, poster: KadPoster) -> Self {
         KadProtocolHandler {
             config,
-            allow_listening: false,
             idle_timeout: Duration::from_secs(10),
             poster,
         }
@@ -281,6 +289,8 @@ impl ProtocolHandler for KadProtocolHandler {
             }
         }
     }
+
+    fn client_mode(&self) -> bool { self.config.client_mode }
 
     fn box_clone(&self) -> IProtocolHandler {
         Box::new(self.clone())

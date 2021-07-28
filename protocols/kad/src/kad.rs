@@ -202,6 +202,14 @@ impl KademliaConfig {
         self
     }
 
+    /// Sets Kad client mode.
+    ///
+    /// Kademlia nodes can be configured to be running on the client mode.
+    pub fn with_client_mode(mut self, client_mode: bool) -> Self {
+        self.protocol_config.set_client_mode(client_mode);
+        self
+    }
+
     /// Sets the timeout for a single query.
     ///
     /// > **Note**: A single query usually comprises at least as many requests
