@@ -105,7 +105,9 @@ pub trait ProtocolHandler: UpgradeInfo + Notifiee {
     /// the handler is still working, sending/receiving protocol messages.
     ///
     /// It is disabled by default.
-    fn client_mode(&self) -> bool { false }
+    fn client_mode(&self) -> bool {
+        false
+    }
     /// This is to provide a clone method for the trait object.
     fn box_clone(&self) -> IProtocolHandler;
 }
@@ -142,10 +144,7 @@ struct DummyProtocolHandler;
 impl UpgradeInfo for DummyProtocolHandler {
     type Info = ProtocolId;
     fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![
-            ProtocolId::new("/dummy/1.0.0", 0),
-            ProtocolId::new("/dummy/2.0.0", 0),
-        ]
+        vec![ProtocolId::new("/dummy/1.0.0", 0), ProtocolId::new("/dummy/2.0.0", 0)]
     }
 }
 

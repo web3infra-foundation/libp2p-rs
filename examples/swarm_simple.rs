@@ -99,11 +99,7 @@ fn run_server() {
 
     #[async_trait]
     impl ProtocolHandler for MyProtocolHandler {
-        async fn handle(
-            &mut self,
-            stream: Substream,
-            _info: <Self as UpgradeInfo>::Info,
-        ) -> Result<(), Box<dyn Error>> {
+        async fn handle(&mut self, stream: Substream, _info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn Error>> {
             let mut stream = stream;
             log::trace!("MyProtocol handling inbound {:?}", stream);
             let mut msg = vec![0; 4096];
@@ -125,11 +121,7 @@ fn run_server() {
         .with_transport(Box::new(tu3))
         .with_protocol(DummyProtocol::new())
         .with_protocol(MyProtocol)
-        .with_ping(
-            PingConfig::new()
-                .with_unsolicited(true)
-                .with_interval(Duration::from_secs(1)),
-        )
+        .with_ping(PingConfig::new().with_unsolicited(true).with_interval(Duration::from_secs(1)))
         .with_identify(IdentifyConfig::new(false));
 
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
@@ -162,11 +154,7 @@ fn run_client() {
     let swarm = Swarm::new(keys.public())
         .with_transport(Box::new(tu))
         .with_transport(Box::new(tu2))
-        .with_ping(
-            PingConfig::new()
-                .with_unsolicited(false)
-                .with_interval(Duration::from_secs(1)),
-        )
+        .with_ping(PingConfig::new().with_unsolicited(false).with_interval(Duration::from_secs(1)))
         .with_identify(IdentifyConfig::new(false));
 
     let mut control = swarm.control();
