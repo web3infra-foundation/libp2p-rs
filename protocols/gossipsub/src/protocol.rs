@@ -52,7 +52,7 @@ pub(crate) const SIGNING_PREFIX: &[u8] = b"libp2p-pubsub:";
 pub(crate) enum PeerEvent {
     /// An inbound or outbound substream has been established with the peer and this informs over
     /// which protocol. This message only occurs once per connection.
-    PeerKind(PeerKind),
+    PeerKind(PeerId, PeerKind),
     /// A peer is newly found connected.
     NewPeer(PeerId),
     /// A peer is found disconnected.

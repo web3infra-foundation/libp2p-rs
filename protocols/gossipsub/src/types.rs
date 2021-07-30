@@ -139,6 +139,7 @@ pub struct GossipsubMessage {
 impl fmt::Debug for GossipsubMessage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("GossipsubMessage")
+            .field("raw data", &String::from_utf8(self.data.clone()))
             .field("data", &format_args!("{:<20}", &hex_fmt::HexFmt(&self.data)))
             .field("source", &self.source)
             .field("sequence_number", &self.sequence_number)

@@ -47,6 +47,8 @@ pub enum SubscriptionError {
     PublishError(PublishError),
     /// We are not allowed to subscribe to this topic by the subscription filter
     NotAllowed,
+    /// Topic has subscribed.
+    SubscriptionExist,
 }
 
 impl From<SigningError> for PublishError {

@@ -316,9 +316,9 @@ pub struct Gossipsub<D: DataTransform = IdentityTransform, F: TopicSubscriptionF
 }
 
 impl<D, F> Gossipsub<D, F>
-where
-    D: DataTransform + Default,
-    F: TopicSubscriptionFilter + Default,
+    where
+        D: DataTransform + Default,
+        F: TopicSubscriptionFilter + Default,
 {
     /// Creates a [`Gossipsub`] struct given a set of parameters specified via a
     /// [`GossipsubConfig`]. This has no subscription filter and uses no compression.
@@ -328,9 +328,9 @@ where
 }
 
 impl<D, F> Gossipsub<D, F>
-where
-    D: DataTransform + Default,
-    F: TopicSubscriptionFilter,
+    where
+        D: DataTransform + Default,
+        F: TopicSubscriptionFilter,
 {
     /// Creates a [`Gossipsub`] struct given a set of parameters specified via a
     /// [`GossipsubConfig`] and a custom subscription filter.
@@ -344,9 +344,9 @@ where
 }
 
 impl<D, F> Gossipsub<D, F>
-where
-    D: DataTransform,
-    F: TopicSubscriptionFilter + Default,
+    where
+        D: DataTransform,
+        F: TopicSubscriptionFilter + Default,
 {
     /// Creates a [`Gossipsub`] struct given a set of parameters specified via a
     /// [`GossipsubConfig`] and a custom data transform.
@@ -356,9 +356,9 @@ where
 }
 
 impl<D, F> Gossipsub<D, F>
-where
-    D: DataTransform,
-    F: TopicSubscriptionFilter,
+    where
+        D: DataTransform,
+        F: TopicSubscriptionFilter,
 {
     /// Creates a [`Gossipsub`] struct given a set of parameters specified via a
     /// [`GossipsubConfig`] and a custom subscription filter and data transform.
@@ -421,22 +421,22 @@ where
 }
 
 impl<D, F> Gossipsub<D, F>
-where
-    D: DataTransform,
-    F: TopicSubscriptionFilter,
+    where
+        D: DataTransform,
+        F: TopicSubscriptionFilter,
 {
     /// Lists the hashes of the topics we are currently subscribed to.
-    pub fn topics(&self) -> impl Iterator<Item = &TopicHash> {
+    pub fn topics(&self) -> impl Iterator<Item=&TopicHash> {
         self.mesh.keys()
     }
 
     /// Lists all mesh peers for a certain topic hash.
-    pub fn mesh_peers(&self, topic_hash: &TopicHash) -> impl Iterator<Item = &PeerId> {
+    pub fn mesh_peers(&self, topic_hash: &TopicHash) -> impl Iterator<Item=&PeerId> {
         self.mesh.get(topic_hash).into_iter().map(|x| x.iter()).flatten()
     }
 
     /// Lists all mesh peers for all topics.
-    pub fn all_mesh_peers(&self) -> impl Iterator<Item = &PeerId> {
+    pub fn all_mesh_peers(&self) -> impl Iterator<Item=&PeerId> {
         let mut res = BTreeSet::new();
         for peers in self.mesh.values() {
             res.extend(peers);
@@ -445,7 +445,7 @@ where
     }
 
     /// Lists all known peers and their associated subscribed topics.
-    pub fn all_peers(&self) -> impl Iterator<Item = (&PeerId, Vec<&TopicHash>)> {
+    pub fn all_peers(&self) -> impl Iterator<Item=(&PeerId, Vec<&TopicHash>)> {
         self.peer_topics
             .iter()
             .map(|(peer_id, topic_set)| (peer_id, topic_set.iter().collect()))
@@ -456,7 +456,7 @@ where
     }
 
     /// Lists all known peers and their associated protocol.
-    pub fn peer_protocol(&self) -> impl Iterator<Item = (&PeerId, &PeerKind)> {
+    pub fn peer_protocol(&self) -> impl Iterator<Item=(&PeerId, &PeerKind)> {
         self.peer_protocols.iter()
     }
 
@@ -493,7 +493,7 @@ where
                     }],
                     control_msgs: Vec::new(),
                 }
-                .into_protobuf(),
+                    .into_protobuf(),
             );
 
             for peer in peer_list {
@@ -534,7 +534,7 @@ where
                     }],
                     control_msgs: Vec::new(),
                 }
-                .into_protobuf(),
+                    .into_protobuf(),
             );
 
             for peer in peer_list {
@@ -574,7 +574,7 @@ where
                 messages: vec![raw_message.clone()],
                 control_msgs: Vec::new(),
             }
-            .into_protobuf(),
+                .into_protobuf(),
         );
 
         // check that the size doesn't exceed the max transmission size
@@ -918,9 +918,9 @@ where
                 self.config.prune_peers(),
                 |p| p != peer && !self.score_below_threshold(p, |_| 0.0).0,
             )
-            .into_iter()
-            .map(|p| PeerInfo { peer_id: Some(p) })
-            .collect()
+                .into_iter()
+                .map(|p| PeerInfo { peer_id: Some(p) })
+                .collect()
         } else {
             Vec::new()
         };
@@ -1046,10 +1046,10 @@ where
         match evt {
             Some(HandlerEvent::PeerEvent(pe)) => self.handle_peer_event(pe),
             Some(HandlerEvent::Message {
-                propagation_source,
-                rpc,
-                invalid_messages,
-            }) => self.handle_message_event(rpc, propagation_source, invalid_messages),
+                     propagation_source,
+                     rpc,
+                     invalid_messages,
+                 }) => self.handle_message_event(rpc, propagation_source, invalid_messages),
             Some(HandlerEvent::HeartBeat) => self.heartbeat(),
             None => panic!("shouldn't happen"),
         }
@@ -1066,18 +1066,28 @@ where
             }
             Some(ControlCommand::Subscribe(topic, reply)) => {
                 // self.join(topic.clone());
-                let _ = self.subscribe(&topic);
-                let (tx, rx) = mpsc::unbounded();
+                let result = self.subscribe(&topic);
+                match result {
+                    Ok(false) => {
+                        let _ = reply.send(Err(SubscriptionError::SubscriptionExist));
+                    }
+                    Ok(true) => {
+                        let (tx, rx) = mpsc::unbounded();
 
-                let topic_subs = self.my_topics.remove(&topic).unwrap_or(tx);
-                // let sub_id = SubId::random();
-                let sub = Subscription::new(SubId::random(), topic.clone(), rx, self.cancel_tx.clone());
-                // topic_subs.insert(sub_id, tx);
-                self.my_topics.insert(topic, topic_subs);
+                        let topic_subs = self.my_topics.remove(&topic).unwrap_or(tx);
+                        // let sub_id = SubId::random();
+                        let sub = Subscription::new(SubId::random(), topic.clone(), rx, self.cancel_tx.clone());
+                        // topic_subs.insert(sub_id, tx);
+                        self.my_topics.insert(topic, topic_subs);
 
-                log::debug!("MY TOPICS: {:?}", self.my_topics);
+                        log::debug!("MY TOPICS: {:?}", self.my_topics);
 
-                let _ = reply.send(sub);
+                        let _ = reply.send(Ok(sub));
+                    }
+                    Err(e) => {
+                        let _ = reply.send(Err(e));
+                    }
+                }
             }
             Some(ControlCommand::Unsubscribed(topic)) => {
                 let _ = self.unsubscribe(&topic);
@@ -1089,9 +1099,18 @@ where
             Some(ControlCommand::Heartbeat) => {
                 self.heartbeat();
             }
+            Some(ControlCommand::GetMeshPeer(sender)) => {
+                let result = self.mesh.clone();
+                let _ = sender.send(result);
+            }
+            Some(ControlCommand::GetFanoutPeer(sender)) => {
+                let result = self.fanout.clone();
+                let _ = sender.send(result);
+            }
             None => {
                 return Err(GossipsubError::Closed);
             }
+            _ => {}
         }
         Ok(())
     }
@@ -1128,7 +1147,8 @@ where
             match stream {
                 Ok(mut stream) => {
                     let protocol = stream.protocol();
-                    let _ = evt_tx.unbounded_send(HandlerEvent::PeerEvent(PeerEvent::PeerKind(PeerKind::from(protocol.data()))));
+
+                    let _ = evt_tx.unbounded_send(HandlerEvent::PeerEvent(PeerEvent::PeerKind(rpid, PeerKind::from(protocol.data()))));
                     loop {
                         match rx.next().await {
                             Some(rpc) => {
@@ -1171,7 +1191,7 @@ where
                         subscriptions,
                         control_msgs: Vec::new(),
                     }
-                    .into_protobuf(),
+                        .into_protobuf(),
                 )
                 .is_err()
             {
@@ -1182,12 +1202,12 @@ where
         // Insert an empty set of the topics of this peer until known.
         self.peer_topics.insert(rpid, Default::default());
 
-        // By default we assume a peer is only a floodsub peer.
-        //
-        // The protocol negotiation occurs once a message is sent/received. Once this happens we
-        // update the type of peer that this is in order to determine which kind of routing should
-        // occur.
-        self.peer_protocols.entry(rpid).or_insert(PeerKind::Gossipsub);
+        // // By default we assume a peer is only a floodsub peer.
+        // //
+        // // The protocol negotiation occurs once a message is sent/received. Once this happens we
+        // // update the type of peer that this is in order to determine which kind of routing should
+        // // occur.
+        // self.peer_protocols.entry(rpid).or_insert(PeerKind::Gossipsubv1_1);
 
         if let Some((peer_score, ..)) = &mut self.peer_score {
             peer_score.add_peer(rpid);
@@ -1253,8 +1273,13 @@ where
     // Handle peer event, new peer and dead peer event + PeerKind event
     fn handle_peer_event(&mut self, evt: PeerEvent) {
         match evt {
-            PeerEvent::PeerKind(_kind) => {
-                // self.handle_new_peer(rpid);
+            PeerEvent::PeerKind(rpid, kind) => {
+                // By default we assume a peer is only a floodsub peer.
+                //
+                // The protocol negotiation occurs once a message is sent/received. Once this happens we
+                // update the type of peer that this is in order to determine which kind of routing should
+                // occur.
+                self.peer_protocols.entry(rpid).or_insert(kind);
             }
             PeerEvent::NewPeer(rpid) => {
                 log::trace!("new peer {} has connected", rpid);
@@ -1398,7 +1423,7 @@ where
                         messages: message_list,
                         control_msgs: Vec::new(),
                     }
-                    .into_protobuf(),
+                        .into_protobuf(),
                 )
                 .is_err()
             {
@@ -1514,7 +1539,7 @@ where
                         messages: Vec::new(),
                         control_msgs: prune_messages,
                     }
-                    .into_protobuf(),
+                        .into_protobuf(),
                 )
                 .is_err()
             {
@@ -1653,10 +1678,10 @@ where
         // reject messages claiming to be from ourselves but not locally published
         let self_published = !self.config.allow_self_origin()
             && if let Some(own_id) = self.publish_config.get_own_id() {
-                own_id != propagation_source && raw_message.source.as_ref().map_or(false, |s| s == own_id)
-            } else {
-                self.published_message_ids.contains(&msg_id)
-            };
+            own_id != propagation_source && raw_message.source.as_ref().map_or(false, |s| s == own_id)
+        } else {
+            self.published_message_ids.contains(&msg_id)
+        };
 
         if self_published {
             debug!(
@@ -1826,7 +1851,7 @@ where
                     subscriptions: vec![],
                     control_msgs: Vec::new(),
                 }
-                .into_protobuf(),
+                    .into_protobuf(),
             );
             for mesh_peer in peer_list.clone() {
                 let _ = self.send_message(mesh_peer, proto.clone());
@@ -1931,10 +1956,10 @@ where
                     // if the mesh needs peers add the peer to the mesh
                     if !self.explicit_peers.contains(propagation_source)
                         && match self.peer_protocols.get(propagation_source) {
-                            Some(PeerKind::Gossipsubv1_1) => true,
-                            Some(PeerKind::Gossipsub) => true,
-                            _ => false,
-                        }
+                        Some(PeerKind::Gossipsubv1_1) => true,
+                        Some(PeerKind::Gossipsub) => true,
+                        _ => false,
+                    }
                         && !Self::score_below_threshold_from_scores(&self.peer_score, propagation_source, |_| 0.0).0
                         && !self.backoffs.is_backoff_with_slack(&subscription.topic_hash, propagation_source)
                     {
@@ -1992,16 +2017,16 @@ where
         // heartbeat.
         if !grafts.is_empty()
             && self
-                .send_message(
-                    *propagation_source,
-                    GossipsubRpc {
-                        subscriptions: Vec::new(),
-                        messages: Vec::new(),
-                        control_msgs: grafts,
-                    }
+            .send_message(
+                *propagation_source,
+                GossipsubRpc {
+                    subscriptions: Vec::new(),
+                    messages: Vec::new(),
+                    control_msgs: grafts,
+                }
                     .into_protobuf(),
-                )
-                .is_err()
+            )
+            .is_err()
         {
             error!("Failed sending grafts. Message too large");
         }
@@ -2453,7 +2478,7 @@ where
                         messages: Vec::new(),
                         control_msgs,
                     }
-                    .into_protobuf(),
+                        .into_protobuf(),
                 )
                 .is_err()
             {
@@ -2475,7 +2500,7 @@ where
                         messages: Vec::new(),
                         control_msgs: remaining_prunes,
                     }
-                    .into_protobuf(),
+                        .into_protobuf(),
                 )
                 .is_err()
             {
@@ -2531,7 +2556,7 @@ where
                     messages: vec![message.clone()],
                     control_msgs: Vec::new(),
                 }
-                .into_protobuf(),
+                    .into_protobuf(),
             );
 
             for peer in recipient_peers.iter() {
@@ -2649,7 +2674,7 @@ where
                         messages: Vec::new(),
                         control_msgs: controls,
                     }
-                    .into_protobuf(),
+                        .into_protobuf(),
                 )
                 .is_err()
             {

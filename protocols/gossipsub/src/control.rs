@@ -25,13 +25,21 @@ use crate::subscription::Subscription;
 use crate::{GossipsubConfig, GossipsubMessage, TopicHash};
 use futures::channel::{mpsc, oneshot};
 use futures::SinkExt;
+use libp2prs_core::PeerId;
+use std::collections::btree_set::BTreeSet;
+use std::collections::HashMap;
+use std::error::Error;
 
 pub(crate) enum ControlCommand {
     Publish(GossipsubMessage, oneshot::Sender<()>),
-    Subscribe(TopicHash, oneshot::Sender<Subscription>),
+    Subscribe(TopicHash, oneshot::Sender<Result<Subscription, SubscriptionError>>),
     Unsubscribed(TopicHash),
-    Heartbeat, // Ls(oneshot::Sender<Vec<Topic>>),
-               // GetPeers(Topic, oneshot::Sender<Vec<PeerId>>)
+    Heartbeat,
+    // Ls(oneshot::Sender<Vec<Topic>>),
+    // GetPeers(Topic, oneshot::Sender<Vec<PeerId>>)
+    GetFanoutPeer(oneshot::Sender<HashMap<TopicHash, BTreeSet<PeerId>>>),
+    GetMeshPeer(oneshot::Sender<HashMap<TopicHash, BTreeSet<PeerId>>>),
+    _GetKnownTopicByPeer(oneshot::Sender<Vec<TopicHash>>),
 }
 
 #[derive(Clone)]
@@ -73,7 +81,7 @@ impl Control {
         // unimplemented!()
         let (tx, rx) = oneshot::channel();
         let _ = self.control_sender.send(ControlCommand::Subscribe(topic, tx)).await;
-        rx.await.map_err(|_| SubscriptionError::PublishError(InsufficientPeers))
+        rx.await.map_err(|_| SubscriptionError::PublishError(InsufficientPeers))?
     }
 
     pub async fn unsubscribe(&self, topic: TopicHash) {
@@ -93,11 +101,22 @@ impl Control {
         unimplemented!()
     }
 
-    // /// List peers we are currently pubsubbing with.
-    // pub async fn get_peers(&mut self, topic: Topic) -> Result<Vec<PeerId>> {
-    //     unimplemented!()
+    // pub async fn get_peer_topic(&mut self, peer_id: PeerId) -> Result<HashMap<TopicHash, BTreeSet<PeerId>>, Box<dyn Error>> {
     //     let (tx, rx) = oneshot::channel();
-    //     self.control_sender.send(ControlCommand::GetPeers(topic, tx)).await?;
-    //     Ok(rx.await?)
+    //     self.control_sender.send()
     // }
+
+    /// List peers which we are currently exchanging only simple message.
+    pub async fn dump_fanout_peer(&mut self) -> Result<HashMap<TopicHash, BTreeSet<PeerId>>, Box<dyn Error>> {
+        let (tx, rx) = oneshot::channel();
+        self.control_sender.send(ControlCommand::GetFanoutPeer(tx)).await?;
+        Ok(rx.await?)
+    }
+
+    /// List peers which we are currently exchanging full message.
+    pub async fn dump_mesh_peer(&mut self) -> Result<HashMap<TopicHash, BTreeSet<PeerId>>, Box<dyn Error>> {
+        let (tx, rx) = oneshot::channel();
+        self.control_sender.send(ControlCommand::GetMeshPeer(tx)).await?;
+        Ok(rx.await?)
+    }
 }

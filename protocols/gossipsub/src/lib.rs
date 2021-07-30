@@ -146,6 +146,9 @@ mod types;
 #[cfg(test)]
 extern crate derive_builder;
 
+#[allow(unused_mut)]
+#[allow(clippy::let_and_return)]
+pub mod cli;
 mod rpc_proto;
 
 // pub use self::behaviour::{Gossipsub, GossipsubEvent, MessageAuthenticity};
