@@ -195,7 +195,7 @@ impl Default for KademliaProtocolConfig {
             protocol_name: ProtocolId::new(DEFAULT_PROTO_NAME, 0),
             max_packet_size: DEFAULT_MAX_PACKET_SIZE,
             max_reuse_count: DEFAULT_MAX_REUSE_TRIES,
-            client_mode: false
+            client_mode: false,
         }
     }
 }
@@ -290,7 +290,9 @@ impl ProtocolHandler for KadProtocolHandler {
         }
     }
 
-    fn client_mode(&self) -> bool { self.config.client_mode }
+    fn client_mode(&self) -> bool {
+        self.config.client_mode
+    }
 
     fn box_clone(&self) -> IProtocolHandler {
         Box::new(self.clone())

@@ -1514,9 +1514,20 @@ where
         self.swarm = Some(swarm);
 
         // start provider gc timer
-        self.start_provider_gc_timer();
+        let gc_timer = std::env::var_os("KAD_GC_TIMER")
+            .map(|i| i.into_string().unwrap().parse::<bool>().unwrap())
+            .unwrap_or(true);
+        if gc_timer {
+            self.start_provider_gc_timer();
+        }
+
         // start refresh timer
-        self.start_refresh_timer();
+        let refresh_timer = std::env::var_os("KAD_REFRESH_TIMER")
+            .map(|i| i.into_string().unwrap().parse::<bool>().unwrap())
+            .unwrap_or(true);
+        if refresh_timer {
+            self.start_refresh_timer();
+        }
 
         // well, self 'move' explicitly,
         let mut kad = self;

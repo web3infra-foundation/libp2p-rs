@@ -28,7 +28,7 @@ use crate::{
     FloodsubConfig, FloodsubError, Topic, FLOOD_SUB_ID,
 };
 use futures::channel::mpsc::UnboundedReceiver;
-use libp2prs_core::{PeerId, WriteEx, ProtocolId};
+use libp2prs_core::{PeerId, ProtocolId, WriteEx};
 use libp2prs_runtime::task;
 use libp2prs_swarm::protocol_handler::{IProtocolHandler, ProtocolImpl};
 use libp2prs_swarm::substream::Substream;

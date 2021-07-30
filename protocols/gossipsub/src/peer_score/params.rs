@@ -31,11 +31,7 @@ const DEFAULT_DECAY_TO_ZERO: f64 = 0.1;
 /// Computes the decay factor for a parameter, assuming the `decay_interval` is 1s
 /// and that the value decays to zero if it drops below 0.01.
 pub fn score_parameter_decay(decay: Duration) -> f64 {
-    score_parameter_decay_with_base(
-        decay,
-        Duration::from_secs(DEFAULT_DECAY_INTERVAL),
-        DEFAULT_DECAY_TO_ZERO,
-    )
+    score_parameter_decay_with_base(decay, Duration::from_secs(DEFAULT_DECAY_INTERVAL), DEFAULT_DECAY_TO_ZERO)
 }
 
 /// Computes the decay factor for a parameter using base as the `decay_interval`.
@@ -174,10 +170,7 @@ impl PeerScoreParams {
     pub fn validate(&self) -> Result<(), String> {
         for (topic, params) in self.topics.iter() {
             if let Err(e) = params.validate() {
-                return Err(format!(
-                    "Invalid score parameters for topic {}: {}",
-                    topic, e
-                ));
+                return Err(format!("Invalid score parameters for topic {}: {}", topic, e));
             }
         }
 
@@ -188,9 +181,7 @@ impl PeerScoreParams {
 
         // check the IP colocation factor
         if self.ip_colocation_factor_weight > 0f64 {
-            return Err(
-                "Invalid ip_colocation_factor_weight; must be negative (or 0 to disable)".into(),
-            );
+            return Err("Invalid ip_colocation_factor_weight; must be negative (or 0 to disable)".into());
         }
         if self.ip_colocation_factor_weight != 0f64 && self.ip_colocation_factor_threshold < 1f64 {
             return Err("Invalid ip_colocation_factor_threshold; must be at least 1".into());
@@ -198,13 +189,9 @@ impl PeerScoreParams {
 
         // check the behaviour penalty
         if self.behaviour_penalty_weight > 0f64 {
-            return Err(
-                "Invalid behaviour_penalty_weight; must be negative (or 0 to disable)".into(),
-            );
+            return Err("Invalid behaviour_penalty_weight; must be negative (or 0 to disable)".into());
         }
-        if self.behaviour_penalty_weight != 0f64
-            && (self.behaviour_penalty_decay <= 0f64 || self.behaviour_penalty_decay >= 1f64)
-        {
+        if self.behaviour_penalty_weight != 0f64 && (self.behaviour_penalty_decay <= 0f64 || self.behaviour_penalty_decay >= 1f64) {
             return Err("invalid behaviour_penalty_decay; must be between 0 and 1".into());
         }
 
@@ -333,43 +320,32 @@ impl TopicScoreParams {
         }
 
         if self.first_message_deliveries_weight < 0f64 {
-            return Err(
-                "Invalid first_message_deliveries_weight; must be positive (or 0 to disable)",
-            );
+            return Err("Invalid first_message_deliveries_weight; must be positive (or 0 to disable)");
         }
         if self.first_message_deliveries_weight != 0f64
-            && (self.first_message_deliveries_decay <= 0f64
-                || self.first_message_deliveries_decay >= 1f64)
+            && (self.first_message_deliveries_decay <= 0f64 || self.first_message_deliveries_decay >= 1f64)
         {
             return Err("Invalid first_message_deliveries_decay; must be between 0 and 1");
         }
-        if self.first_message_deliveries_weight != 0f64 && self.first_message_deliveries_cap <= 0f64
-        {
+        if self.first_message_deliveries_weight != 0f64 && self.first_message_deliveries_cap <= 0f64 {
             return Err("Invalid first_message_deliveries_cap must be positive");
         }
 
         if self.mesh_message_deliveries_weight > 0f64 {
-            return Err(
-                "Invalid mesh_message_deliveries_weight; must be negative (or 0 to disable)",
-            );
+            return Err("Invalid mesh_message_deliveries_weight; must be negative (or 0 to disable)");
         }
         if self.mesh_message_deliveries_weight != 0f64
-            && (self.mesh_message_deliveries_decay <= 0f64
-                || self.mesh_message_deliveries_decay >= 1f64)
+            && (self.mesh_message_deliveries_decay <= 0f64 || self.mesh_message_deliveries_decay >= 1f64)
         {
             return Err("Invalid mesh_message_deliveries_decay; must be between 0 and 1");
         }
         if self.mesh_message_deliveries_weight != 0f64 && self.mesh_message_deliveries_cap <= 0f64 {
             return Err("Invalid mesh_message_deliveries_cap must be positive");
         }
-        if self.mesh_message_deliveries_weight != 0f64
-            && self.mesh_message_deliveries_threshold <= 0f64
-        {
+        if self.mesh_message_deliveries_weight != 0f64 && self.mesh_message_deliveries_threshold <= 0f64 {
             return Err("Invalid mesh_message_deliveries_threshold; must be positive");
         }
-        if self.mesh_message_deliveries_weight != 0f64
-            && self.mesh_message_deliveries_activation < Duration::from_secs(1)
-        {
+        if self.mesh_message_deliveries_weight != 0f64 && self.mesh_message_deliveries_activation < Duration::from_secs(1) {
             return Err("Invalid mesh_message_deliveries_activation; must be at least 1s");
         }
 
@@ -385,13 +361,9 @@ impl TopicScoreParams {
 
         // check P4
         if self.invalid_message_deliveries_weight > 0f64 {
-            return Err(
-                "Invalid invalid_message_deliveries_weight; must be negative (or 0 to disable)",
-            );
+            return Err("Invalid invalid_message_deliveries_weight; must be negative (or 0 to disable)");
         }
-        if self.invalid_message_deliveries_decay <= 0f64
-            || self.invalid_message_deliveries_decay >= 1f64
-        {
+        if self.invalid_message_deliveries_decay <= 0f64 || self.invalid_message_deliveries_decay >= 1f64 {
             return Err("Invalid invalid_message_deliveries_decay; must be between 0 and 1");
         }
         Ok(())
