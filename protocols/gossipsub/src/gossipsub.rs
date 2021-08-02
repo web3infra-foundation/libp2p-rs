@@ -64,6 +64,7 @@ use futures::prelude::future::Either;
 use futures::{channel::mpsc, prelude::*, select, StreamExt};
 use libp2prs_runtime::task;
 use std::{cmp::Ordering::Equal, fmt::Debug};
+use std::option::Option::Some;
 
 // #[cfg(test)]
 // mod tests;
@@ -1287,16 +1288,18 @@ impl<D, F> Gossipsub<D, F>
             }
             PeerEvent::DeadPeer(rpid) => {
                 log::trace!("peer {} has disconnected", rpid);
-                if self.swarm.is_some() {
-                    let mut control = self.swarm.clone().unwrap();
-                    task::block_on(async {
-                        let still_connected = control.still_connected(rpid).await;
-                        if let Ok(true) = still_connected {
-                            let _ = self.tx.send(HandlerEvent::PeerEvent(PeerEvent::NewPeer(rpid)));
-                            return;
-                        }
-                    });
-                }
+                // if self.swarm.is_some() {
+                //     let mut control = self.swarm.clone().unwrap();
+                //     let mut sender = self.tx.clone();
+                //     task::spawn(async move {
+                //         let still_connected = control.still_connected(rpid).await;
+                //         if let Ok(true) = still_connected {
+                //             let _ = sender.send(HandlerEvent::PeerEvent(PeerEvent::NewPeer(rpid)));
+                //         }
+                //         log::info!("Spawn finished");
+                //     });
+                //     return;
+                // }
                 self.handle_remove_dead_peer(rpid);
             }
         }
@@ -2665,6 +2668,7 @@ impl<D, F> Gossipsub<D, F>
 
     /// Takes each control action mapping and turns it into a message
     fn flush_control_pool(&mut self) {
+        trace!("Flush control_message pool");
         for (peer, controls) in self.control_pool.drain().collect::<Vec<_>>() {
             if self
                 .send_message(
@@ -2884,7 +2888,7 @@ fn get_random_peers_dynamic(
     // if we have less than needed, return them
     let n = n_map(gossip_peers.len());
     if gossip_peers.len() <= n {
-        debug!("RANDOM PEERS: Got {:?} peers", gossip_peers.len());
+        debug!("Less than needed, actually got {:?} peers", gossip_peers.len());
         return gossip_peers.into_iter().collect();
     }
 

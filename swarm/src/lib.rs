@@ -627,9 +627,9 @@ impl Swarm {
                     let _ = reply.send(r);
                 });
             }
-            SwarmControlCmd::IsConnected(peer_id, sender) => {
-                let _ = sender.send(self.connections_by_peer.contains_key(&peer_id));
-            }
+            // SwarmControlCmd::IsConnected(peer_id, sender) => {
+            //     let _ = sender.send(self.connections_by_peer.contains_key(&peer_id));
+            // }
         }
         Ok(())
     }

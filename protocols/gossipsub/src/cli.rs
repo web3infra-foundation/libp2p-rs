@@ -19,10 +19,8 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::control::Control;
-use crate::subscription::Subscription;
 use crate::TopicHash;
 use libp2prs_runtime::task;
-use std::collections::HashMap;
 use xcli::{App, CmdExeCode, Command, XcliError, XcliResult};
 
 const GOSSIP: &str = "gossip";

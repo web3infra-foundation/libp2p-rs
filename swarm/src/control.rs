@@ -69,8 +69,8 @@ pub enum SwarmControlCmd {
     Dump(DumpCommand),
     /// Start calculate speed
     Rate(oneshot::Sender<(f64, f64)>),
-    /// Check peer connected either or not
-    IsConnected(PeerId, oneshot::Sender<bool>),
+    // /// Check peer connected either or not
+    // IsConnected(PeerId, oneshot::Sender<bool>),
 }
 
 /// The dump commands can be used to dump internal data of Swarm.
@@ -265,12 +265,12 @@ impl Control {
         rx.await?
     }
 
-    /// Check connection still alive or not.
-    pub async fn still_connected(&mut self, peer_id: PeerId) -> Result<bool> {
-        let (tx, rx) = oneshot::channel();
-        self.sender.send(SwarmControlCmd::IsConnected(peer_id, tx)).await?;
-        Ok(rx.await?)
-    }
+    // /// Check connection still alive or not.
+    // pub async fn still_connected(&mut self, peer_id: PeerId) -> Result<bool> {
+    //     let (tx, rx) = oneshot::channel();
+    //     self.sender.send(SwarmControlCmd::IsConnected(peer_id, tx)).await?;
+    //     Ok(rx.await?)
+    // }
 
     /// Close the swarm.
     pub fn close(&mut self) {
