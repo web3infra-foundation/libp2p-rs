@@ -192,6 +192,10 @@ impl Connection {
         self.handle = Some(handle);
     }
 
+    pub fn get_direction(&self) -> Direction {
+        self.dir
+    }
+
     /// Opens a sub stream with the protocols specified
     pub fn open_stream<T: Send + 'static>(
         &mut self,

@@ -605,6 +605,11 @@ impl Swarm {
                     let _ = reply.send(r);
                 });
             }
+            SwarmControlCmd::LatencyByID(peer_id, reply) => {
+                let _ = self.on_retrieve_latency_by_peer(peer_id, |r| {
+                    let _ = reply.send(r);
+                });
+            }
             SwarmControlCmd::Dump(cmd) => match cmd {
                 DumpCommand::Connections(peer_id, reply) => {
                     let _ = self.on_retrieve_connection_views(peer_id, |r| {
@@ -754,6 +759,11 @@ impl Swarm {
     /// Retrieves each peer's latency
     fn on_retrieve_latency(&self, f: impl FnOnce(Vec<(PeerId, Duration)>)) -> Result<()> {
         f(self.peer_store.list_latency());
+        Ok(())
+    }
+    /// Retrieves peer's latency by peer_id
+    fn on_retrieve_latency_by_peer(&self, pid: PeerId, f: impl FnOnce(Option<Duration>)) -> Result<()> {
+        f(self.peer_store.get_latency(&pid));
         Ok(())
     }
     /// Starts Swarm background runtime

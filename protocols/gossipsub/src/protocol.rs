@@ -44,6 +44,7 @@ use crate::types::{
     GossipsubControlAction, GossipsubRpc, GossipsubSubscription, GossipsubSubscriptionAction, MessageId, PeerInfo, PeerKind,
     RawGossipsubMessage,
 };
+use libp2prs_swarm::connection::Direction;
 
 pub(crate) const SIGNING_PREFIX: &[u8] = b"libp2p-pubsub:";
 
@@ -54,7 +55,7 @@ pub(crate) enum PeerEvent {
     /// which protocol. This message only occurs once per connection.
     PeerKind(PeerId, PeerKind),
     /// A peer is newly found connected.
-    NewPeer(PeerId),
+    NewPeer(PeerId, Direction),
     /// A peer is found disconnected.
     DeadPeer(PeerId),
 }
@@ -207,7 +208,8 @@ impl UpgradeInfo for GossipsubHandler {
 impl Notifiee for GossipsubHandler {
     fn connected(&mut self, conn: &mut Connection) {
         let peer_id = conn.remote_peer();
-        let _ = self.tx.unbounded_send(HandlerEvent::PeerEvent(PeerEvent::NewPeer(peer_id)));
+        let direct = conn.get_direction();
+        let _ = self.tx.unbounded_send(HandlerEvent::PeerEvent(PeerEvent::NewPeer(peer_id, direct)));
     }
 
     fn disconnected(&mut self, conn: &mut Connection) {

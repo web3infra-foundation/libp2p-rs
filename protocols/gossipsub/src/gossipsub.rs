@@ -63,8 +63,9 @@ use futures::channel::mpsc::UnboundedSender;
 use futures::prelude::future::Either;
 use futures::{channel::mpsc, prelude::*, select, StreamExt};
 use libp2prs_runtime::task;
-use std::{cmp::Ordering::Equal, fmt::Debug};
+use libp2prs_swarm::connection::Direction;
 use std::option::Option::Some;
+use std::{cmp::Ordering::Equal, fmt::Debug};
 
 // #[cfg(test)]
 // mod tests;
@@ -1117,11 +1118,15 @@ impl<D, F> Gossipsub<D, F>
     }
 
     // Always wait to send message.
-    fn handle_new_peer(&mut self, rpid: PeerId) {
+    fn handle_new_peer(&mut self, rpid: PeerId, dir: Direction) {
         if self.blacklisted_peers.contains(&rpid) {
             log::warn!("Remote PeerId {:?} is in blacklist, cannot open stream", rpid);
             return;
         }
+
+        // if dir == Direction::Outbound {
+        //     self.outbound_peers.insert(rpid);
+        // }
 
         let mut swarm = self.swarm.clone().expect("swarm??");
         let evt_tx = self.tx.clone();
@@ -1282,9 +1287,9 @@ impl<D, F> Gossipsub<D, F>
                 // occur.
                 self.peer_protocols.entry(rpid).or_insert(kind);
             }
-            PeerEvent::NewPeer(rpid) => {
+            PeerEvent::NewPeer(rpid, direction) => {
                 log::trace!("new peer {} has connected", rpid);
-                self.handle_new_peer(rpid);
+                self.handle_new_peer(rpid, direction);
             }
             PeerEvent::DeadPeer(rpid) => {
                 log::trace!("peer {} has disconnected", rpid);

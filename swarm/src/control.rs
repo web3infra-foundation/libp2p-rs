@@ -63,8 +63,10 @@ pub enum SwarmControlCmd {
     NetworkInfo(oneshot::Sender<NetworkInfo>),
     /// Retrieve network information of Swarm.
     IdentifyInfo(oneshot::Sender<IdentifyInfo>),
-    /// Send
+    /// Get the TTL of all peers in PeerStore.
     PeerLatency(oneshot::Sender<Vec<(PeerId, Duration)>>),
+    /// Get the TTL by specific peer.
+    LatencyByID(PeerId, oneshot::Sender<Option<Duration>>),
     /// Dump stream info
     Dump(DumpCommand),
     /// Start calculate speed
@@ -239,6 +241,13 @@ impl Control {
     pub async fn dump_latency(&mut self) -> Result<Vec<(PeerId, Duration)>> {
         let (tx, rx) = oneshot::channel();
         self.sender.send(SwarmControlCmd::PeerLatency(tx)).await?;
+        Ok(rx.await?)
+    }
+
+    /// Dump latency time by specific peer.
+    pub async fn latency_by_peer(&mut self, peer_id: PeerId) -> Result<Option<Duration>> {
+        let (tx, rx) = oneshot::channel();
+        self.sender.send(SwarmControlCmd::LatencyByID(peer_id, tx)).await?;
         Ok(rx.await?)
     }
 

@@ -30,6 +30,7 @@ use std::net::IpAddr;
 use std::time::{Duration, Instant};
 
 mod params;
+
 use crate::error::ValidationError;
 pub use params::{score_parameter_decay, score_parameter_decay_with_base, PeerScoreParams, PeerScoreThresholds, TopicScoreParams};
 
@@ -753,6 +754,7 @@ impl PeerScore {
     /// message was received within the P3 window.
     fn mark_duplicate_message_delivery(&mut self, peer_id: &PeerId, topic_hash: &TopicHash, validated_time: Option<Instant>) {
         if let Some(peer_stats) = self.peer_stats.get_mut(peer_id) {
+            // Get peer_stat by peer_id
             let now = if validated_time.is_some() { Some(Instant::now()) } else { None };
             if let Some(topic_stats) = peer_stats.stats_or_default_mut(topic_hash.clone(), &self.params) {
                 if let MeshStatus::Active { .. } = topic_stats.mesh_status {
