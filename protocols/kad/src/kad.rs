@@ -1489,6 +1489,14 @@ where
                 let peer_no_addr = self.get_peer_without_addr();
                 let _ = reply.send(Ok(peer_no_addr));
             }
+            Some(ControlCommand::ClosestByBucket(key, reply)) => {
+                let nearest_peer = self
+                    .kbuckets
+                    .closest(&kbucket::Key::new(key))
+                    .map(|i| i.node.key.preimage().clone())
+                    .collect::<Vec<_>>();
+                let _ = reply.send(Ok(nearest_peer));
+            }
             None => {
                 return Err(KadError::Closing(1));
             }

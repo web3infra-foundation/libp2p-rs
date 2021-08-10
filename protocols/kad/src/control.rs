@@ -69,6 +69,8 @@ pub(crate) enum ControlCommand {
     RemoveNode(PeerId),
     /// Show all peers without multiaddress
     NotAddressPeer(oneshot::Sender<Result<Vec<PeerId>>>),
+    /// Get nearest KBuckets info by
+    ClosestByBucket(record::Key, oneshot::Sender<Result<Vec<PeerId>>>),
 }
 
 /// The dump commands can be used to dump internal data of Kad-DHT.
@@ -154,6 +156,12 @@ impl Control {
         rx.await?
     }
 
+    pub async fn bucket_lookup(&mut self, key: record::Key) -> Result<Vec<PeerId>> {
+        let (tx, rx) = oneshot::channel();
+        self.control_sender.send(ControlCommand::ClosestByBucket(key, tx)).await?;
+        rx.await?
+    }
+
     pub async fn find_peer(&mut self, peer_id: &PeerId) -> Result<KadPeer> {
         let (tx, rx) = oneshot::channel();
         self.control_sender.send(ControlCommand::FindPeer(*peer_id, tx)).await?;
@@ -231,6 +239,14 @@ impl Routing for Control {
             .into_iter()
             .map(|item| item.node_id)
             .collect();
+        Ok(peer)
+    }
+
+    async fn bucket_lookup(&mut self, key: Vec<u8>) -> std::result::Result<Vec<PeerId>, TransportError> {
+        let peer = self
+            .bucket_lookup(Key::new(&key))
+            .await
+            .map_err(|e| TransportError::Routing(e.into()))?;
         Ok(peer)
     }
 

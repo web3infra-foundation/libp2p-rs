@@ -47,6 +47,9 @@ pub trait Routing: Send {
     /// Lookups the closer peers with given key
     async fn lookup(&mut self, key: Vec<u8>) -> Result<Vec<PeerId>, TransportError>;
 
+    /// Lookups the closer peers in local buckets with given key
+    async fn bucket_lookup(&mut self, key: Vec<u8>) -> Result<Vec<PeerId>, TransportError>;
+
     fn box_clone(&self) -> IRouting;
 }
 
