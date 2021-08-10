@@ -1522,7 +1522,7 @@ where
         self.swarm = Some(swarm);
 
         // start provider gc timer
-        let gc_timer = std::env::var_os("KAD_GC_TIMER")
+        let gc_timer = std::env::var_os("LIBP2P_KAD_GC_TIMER")
             .map(|i| i.into_string().unwrap().parse::<bool>().unwrap())
             .unwrap_or(true);
         if gc_timer {
@@ -1530,7 +1530,7 @@ where
         }
 
         // start refresh timer
-        let refresh_timer = std::env::var_os("KAD_REFRESH_TIMER")
+        let refresh_timer = std::env::var_os("LIBP2P_KAD_REFRESH_TIMER")
             .map(|i| i.into_string().unwrap().parse::<bool>().unwrap())
             .unwrap_or(true);
         if refresh_timer {
