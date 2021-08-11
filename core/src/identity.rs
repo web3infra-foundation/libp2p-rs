@@ -79,6 +79,11 @@ impl Keypair {
         Keypair::Ed25519(ed25519::Keypair::generate_fixed())
     }
 
+    /// Generate a Ed25519 keypair with seed, used for test only.
+    pub fn generate_ed25519_with_seed(bytes: [u8; 32]) -> Keypair {
+        Keypair::Ed25519(ed25519::Keypair::generate_with_seed(bytes))
+    }
+
     /// Generate a new Ed25519 keypair.
     pub fn generate_ed25519() -> Keypair {
         Keypair::Ed25519(ed25519::Keypair::generate())

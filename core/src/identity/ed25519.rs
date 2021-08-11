@@ -39,6 +39,11 @@ impl Keypair {
         Keypair::from(SecretKey::from_bytes(bytes).unwrap())
     }
 
+    /// Generate a fixed Ed25519 keypair, used for test puepose only.
+    pub fn generate_with_seed(bytes: [u8; 32]) -> Keypair {
+        Keypair::from(SecretKey::from_bytes(bytes).unwrap())
+    }
+
     /// Generate a new Ed25519 keypair.
     pub fn generate() -> Keypair {
         Keypair::from(SecretKey::generate())

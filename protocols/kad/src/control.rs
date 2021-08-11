@@ -27,7 +27,7 @@ use libp2prs_core::routing::{IRouting, Routing};
 use libp2prs_core::transport::TransportError;
 use libp2prs_core::{Multiaddr, PeerId};
 
-use crate::kad::{KBucketView, KademliaStats, StorageStats};
+use crate::kad::{KBucketView, KademliaStats, StorageStats, Ledger};
 use crate::protocol::{KadMessengerView, KadPeer};
 use crate::query::PeerRecord;
 use crate::record::Key;
@@ -82,6 +82,8 @@ pub enum DumpCommand {
     Entries(oneshot::Sender<Vec<KBucketView>>),
     /// Dump the Kad statistics.
     Statistics(oneshot::Sender<KademliaStats>),
+    /// Dump ledgers of all peers.
+    Ledgers(Option<PeerId>, oneshot::Sender<Vec<(PeerId, Ledger)>>),
     /// Dump the Kad Messengers.
     Messengers(oneshot::Sender<Vec<KadMessengerView>>),
 }
@@ -126,6 +128,12 @@ impl Control {
     pub async fn dump_statistics(&mut self) -> Result<KademliaStats> {
         let (tx, rx) = oneshot::channel();
         self.control_sender.send(ControlCommand::Dump(DumpCommand::Statistics(tx))).await?;
+        Ok(rx.await?)
+    }
+
+    pub async fn dump_ledgers(&mut self, peer_id: Option<PeerId>) -> Result<Vec<(PeerId, Ledger)>> {
+        let (tx, rx) = oneshot::channel();
+        self.control_sender.send(ControlCommand::Dump(DumpCommand::Ledgers(peer_id, tx))).await?;
         Ok(rx.await?)
     }
 

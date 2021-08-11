@@ -18,23 +18,24 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use futures::{
-    channel::{mpsc, oneshot},
-    prelude::*,
-};
-use libp2prs_core::peerstore::PeerStore;
-use libp2prs_core::{Multiaddr, PeerId, ProtocolId, PublicKey};
-use std::sync::Arc;
-use std::time::Duration;
-
 use crate::connection::{ConnectionId, ConnectionView};
 use crate::identify::IdentifyInfo;
 use crate::metrics::metric::Metric;
 use crate::network::NetworkInfo;
 use crate::substream::{StreamId, Substream, SubstreamView};
 use crate::{SwarmError, SwarmStats, SWARM_EXIT_FLAG};
+use futures::{
+    channel::{mpsc, oneshot},
+    prelude::*,
+};
+use libp2prs_core::peerstore::PeerStore;
+use libp2prs_core::transport::TransportError;
+use libp2prs_core::{Multiaddr, PeerId, ProtocolId, PublicKey};
+use libp2prs_runtime::task;
 use std::collections::hash_map::IntoIter;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
+use std::time::Duration;
 
 type Result<T> = std::result::Result<T, SwarmError>;
 
@@ -204,6 +205,41 @@ impl Control {
         let (tx, rx) = oneshot::channel();
         self.sender.send(SwarmControlCmd::NewStream(peer_id, pids, false, tx)).await?;
         rx.await?
+    }
+
+    /// Open a new outbound stream towards the remote peer within timeout.
+    ///
+    /// It will lookup the peer store for address of the peer,
+    /// otherwise initiate the routing interface for address querying,
+    /// when routing is enabled. In the end, it will open an outgoing
+    /// sub-stream when the connection is eventually established.
+    pub async fn new_stream_with_timeout(
+        &mut self,
+        peer_id: PeerId,
+        pids: Vec<ProtocolId>,
+        timeout: Option<Duration>,
+    ) -> Result<Substream> {
+        let (tx, rx) = oneshot::channel();
+        self.sender.send(SwarmControlCmd::NewStream(peer_id, pids, true, tx)).await?;
+        match timeout {
+            Some(timeout) => task::timeout(timeout, rx).await.map_or_else(|_| Err(SwarmError::from(TransportError::Timeout)), |a| a?),
+            None => rx.await?,
+        }
+    }
+
+    /// Open a new outbound stream towards the remote peer within timeout, without routing.
+    pub async fn new_stream_no_routing_with_timeout(
+        &mut self,
+        peer_id: PeerId,
+        pids: Vec<ProtocolId>,
+        timeout: Option<Duration>,
+    ) -> Result<Substream> {
+        let (tx, rx) = oneshot::channel();
+        self.sender.send(SwarmControlCmd::NewStream(peer_id, pids, false, tx)).await?;
+        match timeout {
+            Some(timeout) => task::timeout(timeout, rx).await.map_or_else(|_| Err(SwarmError::from(TransportError::Timeout)), |a| a?),
+            None => rx.await?,
+        }
     }
 
     /// Retrieve the all listened addresses from Swarm.

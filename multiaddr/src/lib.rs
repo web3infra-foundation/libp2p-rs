@@ -160,6 +160,21 @@ impl Multiaddr {
         is_private
     }
 
+    pub fn is_ipv6_addr(&self) -> bool {
+        let mut is_ipv6 = false;
+        let components = self.iter().collect::<Vec<_>>();
+        for comp in components.iter() {
+            match comp {
+                protocol::Protocol::Ip6(ipv6_addr) => {
+                    is_ipv6 = true;
+                    //TODO: unstable feature, ipv6_addr.is_unique_local()||ipv6_addr.is_unicast_link_local();
+                }
+                _ => {}
+            }
+        }
+        is_ipv6
+    }
+
     /// we don't consume FD's for relay addresses for now as they will be consumed when the Relay Transport actually dials the Relay server.
     /// That dial call will also pass through this limiter with the address of the relay server i.e. non-relay address.
     pub fn should_consume_fd(&self) -> bool {

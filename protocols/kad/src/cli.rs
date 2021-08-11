@@ -97,6 +97,10 @@ pub fn dht_cli_commands<'a>() -> Command<'a> {
         .about("dump no addr peer")
         .usage("noaddr")
         .action(cli_get_not_exist_multiaddr_peer);
+    let dump_ledgers_cmd = Command::new_with_alias("ledgers", "led")
+        .about("dump ledgers")
+        .usage("ledgers")
+        .action(cli_dump_ledgers);
 
     Command::new_with_alias(DHT, "d")
         .about("Kad-DHT")
@@ -109,6 +113,7 @@ pub fn dht_cli_commands<'a>() -> Command<'a> {
         .subcommand(dump_kbucket_cmd)
         .subcommand(dump_messenger_cmd)
         .subcommand(dump_stats_cmd)
+        .subcommand(dump_ledgers_cmd)
         .subcommand(find_peer_cmd)
         .subcommand(get_value_cmd)
         .subcommand(put_value_cmd)
@@ -187,6 +192,8 @@ fn cli_dump_storage(app: &App, args: &[&str]) -> XcliResult {
 
     task::block_on(async {
         let storage_stat = kad.dump_storage().await.unwrap();
+        let plen = storage_stat.provider.len();
+        let rlen = storage_stat.record.len();
         println!("Providers: ");
         for provider in storage_stat.provider {
             println!("{} {:?} {:?}", provider.provider, provider.time_received, provider.key);
@@ -199,6 +206,7 @@ fn cli_dump_storage(app: &App, args: &[&str]) -> XcliResult {
                 record.key, record.value, record.time_received, record.publisher
             );
         }
+        println!("Total {} providers, {} records", plen, rlen);
     });
 
     Ok(CmdExeCode::Ok)
@@ -245,6 +253,25 @@ fn cli_dump_statistics(app: &App, _args: &[&str]) -> XcliResult {
         println!("Fixed query tx error   : {}", stats.query.fixed_tx_error);
         println!("Kad tx messages        : {:?}", stats.query.message_tx);
         println!("Kad rx messages        : {:?}", stats.message_rx);
+    });
+
+    Ok(CmdExeCode::Ok)
+}
+
+fn cli_dump_ledgers(app: &App, args: &[&str]) -> XcliResult {
+    let mut kad = handler(app);
+
+    let peer = match args.len() {
+        0 => None,
+        1 => Some(PeerId::from_str(args[0]).map_err(|e| XcliError::BadArgument(e.to_string()))?),
+        _ => return Err(XcliError::MismatchArgument(1, args.len())),
+    };
+
+    task::block_on(async {
+        let ledgers = kad.dump_ledgers(peer).await.unwrap();
+        println!("peer                                                     ledger");
+        ledgers.iter().for_each(|(p, l)| println!("{:52}  succeed: {} cost: {:?}, failed: {} cost {:?}", p, l.succeed, l.succeed_cost.checked_div(l.succeed), l.failed, l.failed_cost.checked_div(l.failed)));
+        println!("Total {} peers", ledgers.len());
     });
 
     Ok(CmdExeCode::Ok)

@@ -254,6 +254,7 @@ fn cli_show_peers(app: &App, args: &[&str]) -> XcliResult {
         peers.iter().for_each(|v| {
             println!("{:52} {:5} {:?}", v, swarm.pinned(v), swarm.get_addrs(v));
         });
+        println!("Total {} peers", peers.len());
     }
     Ok(CmdExeCode::Ok)
 }

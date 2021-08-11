@@ -48,6 +48,9 @@ use crate::store::RecordStore;
 use crate::{kbucket, record, KadError, ProviderRecord, Record};
 use libp2prs_core::peerstore::{ADDRESS_TTL, PROVIDER_ADDR_TTL};
 use libp2prs_swarm::protocol_handler::{IProtocolHandler, ProtocolImpl};
+use libp2prs_core::metricmap::MetricMap;
+use std::ops::Add;
+use std::fmt::{Display, Formatter};
 
 type Result<T> = std::result::Result<T, KadError>;
 
@@ -67,6 +70,8 @@ pub struct Kademlia<TStore> {
 
     /// The statistics of iterative and fixed queries.
     query_stats: Arc<QueryStatsAtomic>,
+
+    ledgers: Arc<MetricMap<PeerId, Ledger>>,
 
     /// The statistics of Kad DHT.
     stats: KademliaStats,
@@ -148,6 +153,32 @@ pub struct MessageStats {
 pub struct StorageStats {
     pub(crate) provider: Vec<ProviderRecord>,
     pub(crate) record: Vec<Record>,
+}
+
+#[derive(Copy, Clone, Default, Debug)]
+pub struct Ledger {
+    pub succeed: u32,
+    pub succeed_cost: Duration,
+    pub failed: u32,
+    pub failed_cost: Duration,
+}
+
+impl Display for Ledger {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "succeed {}, failed {}", self.succeed, self.failed)
+    }
+}
+
+impl Add for Ledger {
+    type Output = Self;
+
+    fn add(mut self, rhs: Self) -> Self::Output {
+        self.succeed += rhs.succeed;
+        self.succeed_cost += rhs.succeed_cost;
+        self.failed += rhs.failed;
+        self.failed_cost += rhs.failed_cost;
+        self
+    }
 }
 
 /// The configuration for the `Kademlia` behaviour.
@@ -295,6 +326,18 @@ impl KademliaConfig {
         self.protocol_config.set_max_packet_size(size);
         self
     }
+
+    /// Set timeout of new substream.
+    pub fn with_new_stream_timeout(mut self, timeout: Duration) -> Self {
+        self.protocol_config.set_new_stream_timeout(timeout);
+        self
+    }
+
+    /// Set timeout of substream read and write.
+    pub fn with_read_write_timeout(mut self, timeout: Duration) -> Self {
+        self.protocol_config.set_read_write_timeout(timeout);
+        self
+    }
 }
 
 /// KadPoster is used to generate ProtocolEvent to Kad main loop.
@@ -349,6 +392,7 @@ where
             refreshing: false,
             query_config: config.query_config,
             query_stats: Arc::new(Default::default()),
+            ledgers: Arc::new(Default::default()),
             stats: Default::default(),
             messengers: None,
             connected_peers: Default::default(),
@@ -541,6 +585,7 @@ where
             seeds,
             self.poster(),
             self.query_stats.clone(),
+            self.ledgers.clone(),
         )
     }
 
@@ -789,6 +834,18 @@ where
     fn dump_statistics(&mut self) -> KademliaStats {
         self.stats.query = self.query_stats.to_view();
         self.stats.clone()
+    }
+
+    fn dump_ledgers(&mut self, peer: Option<PeerId>) -> Vec<(PeerId, Ledger)> {
+        // let ls = self.ledgers.iterator().unwrap().collect::<Vec<(PeerId, Ledger)>>();
+        match peer {
+            Some(p) => {
+                self.ledgers.load(&p).map_or_else(|| vec![], |l| vec![(p, l)])
+            }
+            None => {
+                self.ledgers.iterator().unwrap().collect::<Vec<(PeerId, Ledger)>>()
+            }
+        }
     }
 
     // TODO:
@@ -1480,6 +1537,9 @@ where
                 }
                 DumpCommand::Statistics(reply) => {
                     let _ = reply.send(self.dump_statistics());
+                }
+                DumpCommand::Ledgers(peer, reply) => {
+                    let _ = reply.send(self.dump_ledgers(peer));
                 }
                 DumpCommand::Messengers(reply) => {
                     let _ = reply.send(self.dump_messengers());
