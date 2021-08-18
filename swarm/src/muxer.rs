@@ -70,7 +70,9 @@ impl Muxer {
     }
 
     pub(crate) fn supported_protocols(&self) -> impl IntoIterator<Item = ProtocolId> + '_ {
-        self.protocol_handlers.keys().cloned()
+        self.protocol_handlers
+            .iter()
+            .filter_map(|p| if p.1.client_mode() { Some(p.0.clone()) } else { None })
     }
 
     pub(crate) async fn select_inbound(
