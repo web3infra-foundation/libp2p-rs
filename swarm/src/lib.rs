@@ -340,6 +340,12 @@ pub struct Swarm {
     next_tid: TransactionId,
     /// The dialer post-processing hashmap.
     dial_transactions: FnvHashMap<TransactionId, DialCallback>,
+
+    /// Filter private multiaddr when dialing
+    filter_private: bool,
+
+    /// Filter loopback address when dialing
+    filter_loopback: bool,
 }
 
 #[allow(dead_code)]
@@ -388,6 +394,8 @@ impl Swarm {
             dialer: dial::AsyncDialer::new(),
             next_tid: 0,
             dial_transactions: Default::default(),
+            filter_private: false,
+            filter_loopback: true,
         }
     }
     fn assign_cid(&mut self) -> usize {
@@ -467,6 +475,16 @@ impl Swarm {
         self.muxer.add_protocol_handler(Box::new(handler));
         let handler = IdentifyPushHandler::new(config, self.event_sender.clone());
         self.muxer.add_protocol_handler(Box::new(handler));
+        self
+    }
+    /// Modifies filter rule about private address.
+    pub fn with_filter_private(mut self, filter: bool) -> Self {
+        self.filter_private = filter;
+        self
+    }
+    /// Modifies filter rule about loopback address.
+    pub fn with_filter_loopback(mut self, filter: bool) -> Self {
+        self.filter_loopback = filter;
         self
     }
 
@@ -1024,7 +1042,20 @@ impl Swarm {
         }
         // then check addrs, return error if None while routing is not available
         let addrs = match self.peer_store.get_addrs(&peer_id) {
-            Some(list) if !list.is_empty() => dial::EitherDialAddr::Addresses(list),
+            Some(mut list) if !list.is_empty() =>
+                {
+                    if self.filter_private {
+                        list = list.into_iter()
+                            .filter(|addr| !addr.is_private_addr()).collect();
+                    }
+
+                    if self.filter_loopback {
+                        list = list.into_iter()
+                            .filter(|addr| !addr.is_loopback_addr()).collect();
+                    }
+
+                    dial::EitherDialAddr::Addresses(list)
+                }
             _ => {
                 if use_routing && self.routing.is_some() {
                     // ok, clone the routing interface into EitherDialAddr
@@ -1469,7 +1500,7 @@ impl Swarm {
     /// * `observed_addr` - should be an address a remote observes you as, which can be obtained for
     /// example with the identify protocol.
     ///
-    fn address_translation<'a>(&'a self, observed_addr: &'a Multiaddr) -> impl Iterator<Item = Multiaddr> + 'a {
+    fn address_translation<'a>(&'a self, observed_addr: &'a Multiaddr) -> impl Iterator<Item=Multiaddr> + 'a {
         let mut addrs: Vec<_> = self
             .listened_addrs
             .iter()

@@ -409,6 +409,7 @@ impl Connection {
     /// Starts the Identify service on this connection.
     pub(crate) fn start_identify(&mut self) {
         let cid = self.id();
+        let remote_peer = self.remote_peer();
         let stream_muxer = self.stream_muxer.clone();
         let mut tx = self.tx.clone();
         let ctrl = self.ctrl.clone();
@@ -425,7 +426,7 @@ impl Connection {
                 }
                 Err(err) => {
                     // looks like the peer doesn't support the protocol
-                    log::info!("Identify protocol not supported: {:?} {:?}", cid, err);
+                    log::info!("Identify protocol from {:?} not supported: {:?} {:?}", remote_peer, cid, err);
                     let _ = tx
                         .send(SwarmEvent::StreamError {
                             cid,
