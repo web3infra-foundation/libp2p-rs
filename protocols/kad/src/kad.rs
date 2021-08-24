@@ -241,6 +241,16 @@ impl KademliaConfig {
         self
     }
 
+    /// Sets the io-timeout for stream.
+    ///
+    ///
+    pub fn with_io_timeout(mut self, dial_timeout: Duration, read_timeout: Duration, write_timeout: Duration)->Self{
+        self.protocol_config.set_new_stream_timeout(dial_timeout);
+        self.protocol_config.set_read_stream_timeout(read_timeout);
+        self.protocol_config.set_write_stream_timeout(write_timeout);
+        self
+    }
+
     /// Sets the timeout for a single query.
     ///
     /// > **Note**: A single query usually comprises at least as many requests
@@ -333,9 +343,15 @@ impl KademliaConfig {
         self
     }
 
-    /// Set timeout of substream read and write.
-    pub fn with_read_write_timeout(mut self, timeout: Duration) -> Self {
-        self.protocol_config.set_read_write_timeout(timeout);
+    /// Set timeout of substream read.
+    pub fn with_read_timeout(mut self, timeout: Duration) -> Self {
+        self.protocol_config.set_read_stream_timeout(timeout);
+        self
+    }
+
+    /// Set timeout of substream write.
+    pub fn with_write_timeout(mut self, timeout: Duration) -> Self {
+        self.protocol_config.set_write_stream_timeout(timeout);
         self
     }
 }

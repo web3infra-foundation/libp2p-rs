@@ -165,9 +165,11 @@ pub struct KademliaProtocolConfig {
     /// to the routing table of any node.
     client_mode: bool,
     /// Timeout of new substream.
-    new_stream_timeout:  Option<Duration>,
-    /// Timeout of substream read and write.
-    read_write_timeout: Option<Duration>,
+    new_stream_timeout: Option<Duration>,
+    /// Stream read timeout
+    read_timeout: Option<Duration>,
+    /// Stream write timeout
+    write_timeout: Option<Duration>,
 }
 
 impl KademliaProtocolConfig {
@@ -197,9 +199,14 @@ impl KademliaProtocolConfig {
         self.new_stream_timeout = Some(timeout);
     }
 
-    /// Set timeout of substream read and write.
-    pub fn set_read_write_timeout(&mut self, timeout: Duration) {
-        self.read_write_timeout = Some(timeout);
+    /// Set timeout of substream read.
+    pub fn set_read_stream_timeout(&mut self, timeout: Duration) {
+        self.read_timeout = Some(timeout);
+    }
+
+    /// Set timeout of substream write.
+    pub fn set_write_stream_timeout(&mut self, timeout: Duration) {
+        self.write_timeout = Some(timeout);
     }
 }
 
@@ -211,7 +218,8 @@ impl Default for KademliaProtocolConfig {
             max_reuse_count: DEFAULT_MAX_REUSE_TRIES,
             client_mode: false,
             new_stream_timeout: None,
-            read_write_timeout: None
+            read_timeout: None,
+            write_timeout: None
         }
     }
 }
@@ -337,7 +345,12 @@ pub struct KadMessengerView {
 impl KadMessenger {
     pub(crate) async fn build(mut swarm: SwarmControl, peer: PeerId, config: KademliaProtocolConfig) -> Result<Self, KadError> {
         // open a new stream, without routing, so that Swarm wouldn't do routing for us
-        let stream = swarm.new_stream_no_routing_with_timeout(peer, vec![config.protocol_name().to_owned()], config.new_stream_timeout).await?.with_timeout(config.read_write_timeout);
+        let stream = swarm
+            .new_stream_no_routing_with_timeout(peer,
+                                                vec![config.protocol_name().to_owned()],
+                                                config.new_stream_timeout).await?
+            .with_read_timeout(config.read_timeout)
+            .with_write_timeout(config.write_timeout);
         Ok(Self {
             stream,
             config,
