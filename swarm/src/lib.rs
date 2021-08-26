@@ -1028,6 +1028,8 @@ impl Swarm {
             EitherDialAddr::Addresses(addrs),
             self.event_sender.clone(),
             tid,
+            self.filter_private,
+            self.filter_loopback
         );
     }
 
@@ -1073,7 +1075,8 @@ impl Swarm {
         let tid = self.assign_tid();
         self.dial_transactions.insert(tid, Box::new(f));
         self.dialer
-            .dial(peer_id, self.transports.clone(), addrs, self.event_sender.clone(), tid);
+            .dial(peer_id, self.transports.clone(), addrs, self.event_sender.clone(), tid
+            ,self.filter_private, self.filter_loopback);
     }
 
     fn get_best_conn(&mut self, peer_id: &PeerId) -> Option<&mut connection::Connection> {

@@ -363,6 +363,8 @@ struct DialParam {
     backoff: DialBackoff,
     stats: Arc<DialerStats>,
     attempts: u32,
+    filter_private: bool,
+    filter_loopback: bool,
 }
 
 impl Drop for AsyncDialer {
@@ -403,6 +405,8 @@ impl AsyncDialer {
         addrs: EitherDialAddr,
         mut event_sender: mpsc::UnboundedSender<SwarmEvent>,
         tid: TransactionId,
+        filter_private: bool,
+        filter_loopback: bool,
     ) {
         let dial_param = DialParam {
             transports,
@@ -413,6 +417,8 @@ impl AsyncDialer {
             backoff: self.backoff.clone(),
             stats: self.stats.clone(),
             attempts: self.attempts,
+            filter_private,
+            filter_loopback,
         };
 
         self.stats.total_attempts.fetch_add(1, Ordering::SeqCst);
@@ -493,7 +499,7 @@ impl AsyncDialer {
         let peer_id = param.peer_id;
         log::debug!("[Dialer] dialing for {:?}", peer_id);
 
-        let addrs_origin = match &mut param.addrs {
+        let mut addrs_origin = match &mut param.addrs {
             EitherDialAddr::Addresses(addrs) => addrs.clone(),
             EitherDialAddr::DHT(routing) => match routing.find_peer(&peer_id).await {
                 Ok(addrs) => addrs,
@@ -503,6 +509,16 @@ impl AsyncDialer {
                 }
             },
         };
+
+        if param.filter_private {
+            addrs_origin = addrs_origin.into_iter()
+                .filter(|addr| !addr.is_private_addr()).collect();
+        }
+
+        if param.filter_loopback {
+            addrs_origin = addrs_origin.into_iter()
+                .filter(|addr| !addr.is_loopback_addr()).collect();
+        }
 
         // TODO: filter Known Undialables address ,If there is no address  can dial return SwarmError::NoGoodAddresses
 
