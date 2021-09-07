@@ -164,12 +164,12 @@ impl Multiaddr {
         let mut is_ipv6 = false;
         let components = self.iter().collect::<Vec<_>>();
         for comp in components.iter() {
-            match comp {
-                protocol::Protocol::Ip6(ipv6_addr) => {
-                    is_ipv6 = true;
-                    //TODO: unstable feature, ipv6_addr.is_unique_local()||ipv6_addr.is_unicast_link_local();
-                }
-                _ => {}
+            if let protocol::Protocol::Ip6(_ipv6_addr) = comp {
+                // protocol::Protocol::Ip6(_ipv6_addr) => {
+                is_ipv6 = true;
+                //TODO: unstable feature, ipv6_addr.is_unique_local()||ipv6_addr.is_unicast_link_local();
+                // }
+                // _ => {}
             }
         }
         is_ipv6

@@ -65,7 +65,7 @@ const BACKOFF_COEF: Duration = Duration::from_secs(1);
 /// BACKOFF_MAX is the maximum backoff time (default: 300s).
 const BACKOFF_MAX: Duration = Duration::from_secs(300);
 
-const PUBLIC_IPS: [&str; 4] = ["47.75.221.15", "47.244.137.22", "47.244.56.200", "47.90.106.218"];
+// const PUBLIC_IPS: [&str; 4] = ["47.75.221.15", "47.244.137.22", "47.244.56.200", "47.90.106.218"];
 
 /// Statistics of dialer.
 #[derive(Default)]
@@ -398,6 +398,7 @@ impl AsyncDialer {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn dial(
         &self,
         peer_id: PeerId,
@@ -595,7 +596,7 @@ impl AsyncDialer {
             log::debug!("[Dialer] job for {:?} finished, seq={} ...", peer_id, i);
 
             match r {
-                Some((Ok(stream_muxer), addr, cost)) => {
+                Some((Ok(stream_muxer), addr, _cost)) => {
                     let reported_pid = stream_muxer.remote_peer();
 
                     // verify if the PeerId matches expectation, otherwise,

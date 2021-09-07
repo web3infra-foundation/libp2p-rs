@@ -177,7 +177,8 @@ where
     ///
     /// The buckets are ordered by proximity to the `local_key`, i.e. the first
     /// bucket is the closest bucket (containing at most one key).
-    pub fn iter<'a>(&'a mut self) -> impl Iterator<Item = KBucketRef<'a, TKey, TVal>> + 'a {
+    /// pub fn iter<'a>(&'a mut self) -> impl Iterator<Item = KBucketRef<'a, TKey, TVal>> + 'a {
+    pub fn iter(&'_ mut self) -> impl Iterator<Item = KBucketRef<'_, TKey, TVal>> + '_ {
         self.buckets.iter_mut().enumerate().map(move |(i, b)| KBucketRef {
             index: BucketIndex(i),
             bucket: b,

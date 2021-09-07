@@ -3,7 +3,6 @@ use crate::error::SecioError;
 
 use aes::{Aes128Ctr, Aes128};
 use aes::cipher::generic_array::GenericArray;
-use aes::BlockCipher;
 use aes::cipher::{FromBlockCipher, StreamCipher, NewBlockCipher};
 
 pub static CTR128LEN: usize = 16;

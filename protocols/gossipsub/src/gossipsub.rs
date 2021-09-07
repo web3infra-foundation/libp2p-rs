@@ -24,7 +24,6 @@ use std::{
     collections::HashSet,
     collections::{BTreeSet, HashMap},
     fmt,
-    iter::FromIterator,
     // net::IpAddr,
     sync::Arc,
     time::Duration,
@@ -1118,7 +1117,7 @@ impl<D, F> Gossipsub<D, F>
     }
 
     // Always wait to send message.
-    fn handle_new_peer(&mut self, rpid: PeerId, dir: Direction) {
+    fn handle_new_peer(&mut self, rpid: PeerId, _dir: Direction) {
         if self.blacklisted_peers.contains(&rpid) {
             log::warn!("Remote PeerId {:?} is in blacklist, cannot open stream", rpid);
             return;
@@ -1454,7 +1453,7 @@ impl<D, F> Gossipsub<D, F>
         if self.explicit_peers.contains(peer_id) {
             warn!("GRAFT: ignoring request from direct peer {}", peer_id);
             // this is possibly a bug from non-reciprocal configuration; send a PRUNE for all topics
-            to_prune_topics = HashSet::from_iter(topics.into_iter());
+            to_prune_topics = topics.into_iter().collect();
             // but don't PX
             do_px = false
         } else {
@@ -1963,11 +1962,7 @@ impl<D, F> Gossipsub<D, F>
 
                     // if the mesh needs peers add the peer to the mesh
                     if !self.explicit_peers.contains(propagation_source)
-                        && match self.peer_protocols.get(propagation_source) {
-                        Some(PeerKind::Gossipsubv1_1) => true,
-                        Some(PeerKind::Gossipsub) => true,
-                        _ => false,
-                    }
+                        && matches!(self.peer_protocols.get(propagation_source), Some(PeerKind::Gossipsubv1_1) | Some(PeerKind::Gossipsub))
                         && !Self::score_below_threshold_from_scores(&self.peer_score, propagation_source, |_| 0.0).0
                         && !self.backoffs.is_backoff_with_slack(&subscription.topic_hash, propagation_source)
                     {
@@ -2880,11 +2875,7 @@ fn get_random_peers_dynamic(
             .iter()
             .cloned()
             .filter(|p| {
-                f(p) && match peer_protocols.get(p) {
-                    Some(PeerKind::Gossipsub) => true,
-                    Some(PeerKind::Gossipsubv1_1) => true,
-                    _ => false,
-                }
+                f(p) && matches!(peer_protocols.get(p), Some(PeerKind::Gossipsub) | Some(PeerKind::Gossipsubv1_1))
             })
             .collect(),
         None => Vec::new(),

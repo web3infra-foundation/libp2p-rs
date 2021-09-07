@@ -856,7 +856,7 @@ where
         // let ls = self.ledgers.iterator().unwrap().collect::<Vec<(PeerId, Ledger)>>();
         match peer {
             Some(p) => {
-                self.ledgers.load(&p).map_or_else(|| vec![], |l| vec![(p, l)])
+                self.ledgers.load(&p).map_or_else(Vec::new, |l| vec![(p, l)])
             }
             None => {
                 self.ledgers.iterator().unwrap().collect::<Vec<(PeerId, Ledger)>>()
@@ -1569,7 +1569,7 @@ where
                 let nearest_peer = self
                     .kbuckets
                     .closest(&kbucket::Key::new(key))
-                    .map(|i| i.node.key.preimage().clone())
+                    .map(|i| *i.node.key.preimage())
                     .collect::<Vec<_>>();
                 let _ = reply.send(Ok(nearest_peer));
             }
