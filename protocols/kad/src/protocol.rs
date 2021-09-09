@@ -195,18 +195,18 @@ impl KademliaProtocolConfig {
     }
 
     /// Set timeout of new substream.
-    pub fn set_new_stream_timeout(&mut self, timeout: Duration) {
-        self.new_stream_timeout = Some(timeout);
+    pub fn set_new_stream_timeout(&mut self, timeout: Option<Duration>) {
+        self.new_stream_timeout = timeout;
     }
 
     /// Set timeout of substream read.
-    pub fn set_read_stream_timeout(&mut self, timeout: Duration) {
-        self.read_timeout = Some(timeout);
+    pub fn set_read_stream_timeout(&mut self, timeout: Option<Duration>) {
+        self.read_timeout = timeout;
     }
 
     /// Set timeout of substream write.
-    pub fn set_write_stream_timeout(&mut self, timeout: Duration) {
-        self.write_timeout = Some(timeout);
+    pub fn set_write_stream_timeout(&mut self, timeout: Option<Duration>) {
+        self.write_timeout = timeout;
     }
 }
 

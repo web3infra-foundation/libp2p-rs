@@ -244,7 +244,7 @@ impl KademliaConfig {
     /// Sets the io-timeout for stream.
     ///
     ///
-    pub fn with_io_timeout(mut self, dial_timeout: Duration, read_timeout: Duration, write_timeout: Duration)->Self{
+    pub fn with_io_timeout(mut self, dial_timeout: Option<Duration>, read_timeout: Option<Duration>, write_timeout: Option<Duration>)->Self{
         self.protocol_config.set_new_stream_timeout(dial_timeout);
         self.protocol_config.set_read_stream_timeout(read_timeout);
         self.protocol_config.set_write_stream_timeout(write_timeout);
@@ -338,19 +338,19 @@ impl KademliaConfig {
     }
 
     /// Set timeout of new substream.
-    pub fn with_new_stream_timeout(mut self, timeout: Duration) -> Self {
+    pub fn with_new_stream_timeout(mut self, timeout: Option<Duration>) -> Self {
         self.protocol_config.set_new_stream_timeout(timeout);
         self
     }
 
     /// Set timeout of substream read.
-    pub fn with_read_timeout(mut self, timeout: Duration) -> Self {
+    pub fn with_read_timeout(mut self, timeout: Option<Duration>) -> Self {
         self.protocol_config.set_read_stream_timeout(timeout);
         self
     }
 
     /// Set timeout of substream write.
-    pub fn with_write_timeout(mut self, timeout: Duration) -> Self {
+    pub fn with_write_timeout(mut self, timeout: Option<Duration>) -> Self {
         self.protocol_config.set_write_stream_timeout(timeout);
         self
     }
