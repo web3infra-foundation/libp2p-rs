@@ -475,7 +475,7 @@ impl AsyncDialer {
             let active_param = dial_param.clone();
             let r = AsyncDialer::dial_addrs(active_param).await;
             if let Err(e) = r {
-                log::debug!("[Dialer] dialer failed at attempt={} error={:?}", dial_count, e);
+                log::error!("[Dialer] dialer failed at attempt={} error={:?}", dial_count, e);
                 if dial_count < dial_param.attempts {
                     log::debug!(
                         "[Dialer] All addresses of {:?} cannot be dialed to. Now try dialing again, attempts={}",
