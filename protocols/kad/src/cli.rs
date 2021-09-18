@@ -253,6 +253,8 @@ fn cli_dump_statistics(app: &App, _args: &[&str]) -> XcliResult {
         println!("Fixed query tx error   : {}", stats.query.fixed_tx_error);
         println!("Kad tx messages        : {:?}", stats.query.message_tx);
         println!("Kad rx messages        : {:?}", stats.message_rx);
+        println!("Total providers records: {}", stats.total_provider_records);
+        println!("Total kv records       : {}", stats.total_kv_records);
     });
 
     Ok(CmdExeCode::Ok)

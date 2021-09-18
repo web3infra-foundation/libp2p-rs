@@ -137,6 +137,8 @@ pub struct KademliaStats {
     pub total_refreshes: usize,
     pub query: QueryStats,
     pub message_rx: MessageStats,
+    pub total_provider_records: usize,
+    pub total_kv_records: usize,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -848,8 +850,11 @@ where
     }
 
     fn dump_statistics(&mut self) -> KademliaStats {
-        self.stats.query = self.query_stats.to_view();
-        self.stats.clone()
+        let mut stats = self.stats.clone();
+        stats.query = self.query_stats.to_view();
+        stats.total_provider_records = self.store.providers_count();
+        stats.total_kv_records = self.store.records_count();
+        stats
     }
 
     fn dump_ledgers(&mut self, peer: Option<PeerId>) -> Vec<(PeerId, Ledger)> {

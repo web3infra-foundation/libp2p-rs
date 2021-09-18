@@ -65,6 +65,9 @@ pub trait RecordStore<'a> {
     /// Gets an iterator over all (value-) records currently stored.
     fn all_records(&'a self) -> Self::RecordsIter;
 
+    /// Gets currently stored records count.
+    fn records_count(&'a self) -> usize;
+
     /// Runs GC for all stored records. As a result, all outdated items
     /// will be removed from storage.
     fn gc_records(&'a mut self, ttl: Duration);
@@ -84,6 +87,9 @@ pub trait RecordStore<'a> {
 
     /// Gets an iterator over all stored provider records.
     fn all_providers(&'a self) -> Self::ProviderIter;
+
+    /// Gets currently stored providers count.
+    fn providers_count(&'a self) -> usize;
 
     /// Runs GC for all stored providers. As a result, all outdated items
     /// will be removed from storage.

@@ -106,7 +106,7 @@ fn run_server(bootstrap_peer: PeerId, bootstrap_addr: Multiaddr) {
         let config = KademliaConfig::default()
             .with_refresh_interval(None)
             .with_query_timeout(Duration::from_secs(90))
-            .with_new_stream_timeout(Duration::from_secs(8));
+            .with_new_stream_timeout(Some(Duration::from_secs(8)));
 
         let store = MemoryStore::new(*swarm.local_peer_id());
         let kad = Kademlia::with_config(*swarm.local_peer_id(), store, config);
