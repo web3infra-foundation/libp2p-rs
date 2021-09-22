@@ -1916,7 +1916,7 @@ impl<D, F> Gossipsub<D, F>
         let subscribed_topics = match self.peer_topics.get_mut(propagation_source) {
             Some(topics) => topics,
             None => {
-                error!("Subscription by unknown peer: {}", propagation_source.to_string());
+                debug!("Subscription by unknown peer: {}", propagation_source.to_string());
                 return;
             }
         };
