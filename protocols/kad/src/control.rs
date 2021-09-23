@@ -239,6 +239,11 @@ impl Routing for Control {
         Ok(())
     }
 
+    async fn cancel_provide(&mut self, key: Vec<u8>) -> std::result::Result<(), TransportError> {
+        let _ = self.unprovide(key).await.map_err(|e| TransportError::Routing(e.into()))?;
+        Ok(())
+    }
+
     async fn lookup(&mut self, key: Vec<u8>) -> std::result::Result<Vec<PeerId>, TransportError> {
         let peer = self
             .lookup(Key::new(&key))
