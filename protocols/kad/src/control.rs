@@ -145,6 +145,12 @@ impl Control {
         Ok(rx.await?)
     }
 
+    pub async fn dump_providers(&mut self, key: Key) -> Result<Vec<ProviderRecord>> {
+        let (tx, rx) = oneshot::channel();
+        self.control_sender.send(ControlCommand::Dump(DumpCommand::Providers(key, tx))).await?;
+        Ok(rx.await?)
+    }
+
     /// Initiates bootstrapping.
     ///
     /// Most likely it should be invoked once upon Kad startup.
