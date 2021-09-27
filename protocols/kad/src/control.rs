@@ -31,7 +31,7 @@ use crate::kad::{KBucketView, KademliaStats, StorageStats, Ledger};
 use crate::protocol::{KadMessengerView, KadPeer};
 use crate::query::PeerRecord;
 use crate::record::Key;
-use crate::{record, KadError};
+use crate::{record, KadError, ProviderRecord};
 
 type Result<T> = std::result::Result<T, KadError>;
 
@@ -86,6 +86,8 @@ pub enum DumpCommand {
     Ledgers(Option<PeerId>, oneshot::Sender<Vec<(PeerId, Ledger)>>),
     /// Dump the Kad Messengers.
     Messengers(oneshot::Sender<Vec<KadMessengerView>>),
+    /// Dump providers of key int the local storage
+    Providers(Key, oneshot::Sender<Vec<ProviderRecord>>),
 }
 
 #[derive(Clone)]
