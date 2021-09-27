@@ -145,7 +145,8 @@ impl Control {
         Ok(rx.await?)
     }
 
-    pub async fn dump_providers(&mut self, key: Key) -> Result<Vec<ProviderRecord>> {
+    pub async fn dump_providers(&mut self, key: Vec<u8>) -> Result<Vec<ProviderRecord>> {
+        let key = record::Key::from(key);
         let (tx, rx) = oneshot::channel();
         self.control_sender.send(ControlCommand::Dump(DumpCommand::Providers(key, tx))).await?;
         Ok(rx.await?)
