@@ -30,6 +30,7 @@ use std::sync::atomic::Ordering::SeqCst;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
+use std::collections::HashMap;
 
 pub struct Metric {
     /// The accumulative counter of packets sent.
@@ -42,14 +43,14 @@ pub struct Metric {
     byte_recv: AtomicUsize,
 
     /// A hashmap that key is protocol name and value is a counter of bytes received.
-    protocol_in: MetricMap<String, usize>,
+    protocol_in: MetricMap<String, Arc<AtomicUsize>>,
     /// A hashmap that key is protocol name and value is a counter of bytes sent.
-    protocol_out: MetricMap<String, usize>,
+    protocol_out: MetricMap<String, Arc<AtomicUsize>>,
 
     /// A hashmap that key is peer_id and value is a counter of bytes received.
-    peer_in: MetricMap<PeerId, usize>,
+    peer_in: MetricMap<PeerId, Arc<AtomicUsize>>,
     /// A hashmap that key is peer_id and value is a counter of bytes sent.
-    peer_out: MetricMap<PeerId, usize>,
+    peer_out: MetricMap<PeerId, Arc<AtomicUsize>>,
 
     recv_snapshot: Arc<RwLock<SnapShot>>,
     send_snapshot: Arc<RwLock<SnapShot>>,
@@ -108,15 +109,15 @@ impl Metric {
     #[inline]
     pub(crate) fn log_sent_stream(&self, protocol: &ProtocolId, count: usize, peer_id: &PeerId) {
         self.protocol_out
-            .store_or_modify(&protocol.to_string(), count, |_, value| value.add(count));
-        self.peer_out.store_or_modify(peer_id, count, |_, value| value.add(count));
+            .store_or_modify(&protocol.to_string(), Arc::new(AtomicUsize::new(count)), |_, value| { let _ = value.fetch_add(count, SeqCst); });
+        self.peer_out.store_or_modify(peer_id, Arc::new(AtomicUsize::new(count)), |_, value| { let _ = value.fetch_add(count, SeqCst); });
     }
 
     #[inline]
     pub(crate) fn log_recv_stream(&self, protocol: &ProtocolId, count: usize, peer_id: &PeerId) {
         self.protocol_in
-            .store_or_modify(&protocol.to_string(), count, |_, value| value.add(count));
-        self.peer_in.store_or_modify(peer_id, count, |_, value| value.add(count));
+            .store_or_modify(&protocol.to_string(), Arc::new(AtomicUsize::new(count)), |_, value| { let _ = value.fetch_add(count, SeqCst); });
+        self.peer_in.store_or_modify(peer_id, Arc::new(AtomicUsize::new(count)), |_, value| { let _ = value.fetch_add(count, SeqCst); });
     }
 
     /// Get count & bytes about received package
@@ -131,36 +132,52 @@ impl Metric {
 
     /// Get in&out bytes by protocol_id
     pub fn get_protocol_in_and_out(&self, protocol_id: &str) -> (Option<usize>, Option<usize>) {
-        let protocol_in = self.protocol_in.load(&protocol_id.to_string());
-        let protocol_out = self.protocol_out.load(&protocol_id.to_string());
+        let protocol_in = self.protocol_in.load(&protocol_id.to_string()).map(|i| i.load(SeqCst));
+        let protocol_out = self.protocol_out.load(&protocol_id.to_string()).map(|i| i.load(SeqCst));
         (protocol_in, protocol_out)
     }
 
     /// Get in&out bytes by peer_id
     pub fn get_peer_in_and_out(&self, peer_id: &PeerId) -> (Option<usize>, Option<usize>) {
-        let peer_in = self.peer_in.load(peer_id);
-        let peer_out = self.peer_out.load(peer_id);
+        let peer_in = self.peer_in.load(peer_id).map(|count| count.load(SeqCst));
+        let peer_out = self.peer_out.load(peer_id).map(|count| count.load(SeqCst));
         (peer_in, peer_out)
     }
 
     /// Get an iterator that key is peer_id and value is input bytes.
     pub fn get_peers_in_list(&self) -> IntoIter<PeerId, usize> {
-        self.peer_in.iterator().unwrap()
+        let mut map = HashMap::new();
+        for (_, (protocol, count)) in self.peer_in.iterator().unwrap().enumerate() {
+            let _ = map.insert(protocol, count.load(SeqCst));
+        };
+        map.into_iter()
     }
 
     /// Get an iterator that key is peer_id and value is output bytes.
     pub fn get_peers_out_list(&self) -> IntoIter<PeerId, usize> {
-        self.peer_out.iterator().unwrap()
+        let mut map = HashMap::new();
+        for (_, (protocol, count)) in self.peer_out.iterator().unwrap().enumerate() {
+            let _ = map.insert(protocol, count.load(SeqCst));
+        };
+        map.into_iter()
     }
 
     /// Get an iterator that key is protocol and value is input bytes.
     pub fn get_protocols_in_list(&self) -> IntoIter<String, usize> {
-        self.protocol_in.iterator().unwrap()
+        let mut map = HashMap::new();
+        for (_, (protocol, count)) in self.protocol_in.iterator().unwrap().enumerate() {
+            let _ = map.insert(protocol, count.load(SeqCst));
+        };
+        map.into_iter()
     }
 
     /// Get an iterator that key is protocol and value is output bytes.
     pub fn get_protocols_out_list(&self) -> IntoIter<String, usize> {
-        self.protocol_out.iterator().unwrap()
+        let mut map = HashMap::new();
+        for (_, (protocol, count)) in self.protocol_out.iterator().unwrap().enumerate() {
+            let _ = map.insert(protocol, count.load(SeqCst));
+        };
+        map.into_iter()
     }
 
     /// Get rates about received bytes per seconds

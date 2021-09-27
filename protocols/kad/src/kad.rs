@@ -49,8 +49,10 @@ use crate::{kbucket, record, KadError, ProviderRecord, Record};
 use libp2prs_core::peerstore::{ADDRESS_TTL, PROVIDER_ADDR_TTL};
 use libp2prs_swarm::protocol_handler::{IProtocolHandler, ProtocolImpl};
 use libp2prs_core::metricmap::MetricMap;
-use std::ops::Add;
+// use std::ops::Add;
 use std::fmt::{Display, Formatter};
+use std::sync::atomic::{AtomicU32, AtomicU64};
+use std::sync::atomic::Ordering::SeqCst;
 
 type Result<T> = std::result::Result<T, KadError>;
 
@@ -157,29 +159,27 @@ pub struct StorageStats {
     pub(crate) record: Vec<Record>,
 }
 
-#[derive(Copy, Clone, Default, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct Ledger {
-    pub succeed: u32,
-    pub succeed_cost: Duration,
-    pub failed: u32,
-    pub failed_cost: Duration,
+    pub succeed: Arc<AtomicU32>,
+    pub succeed_cost: Arc<AtomicU64>,
+    pub failed: Arc<AtomicU32>,
+    pub failed_cost: Arc<AtomicU64>,
 }
 
 impl Display for Ledger {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "succeed {}, failed {}", self.succeed, self.failed)
+        write!(f, "succeed {}, failed {}", self.succeed.load(SeqCst), self.failed.load(SeqCst))
     }
 }
 
-impl Add for Ledger {
-    type Output = Self;
+impl Ledger {
 
-    fn add(mut self, rhs: Self) -> Self::Output {
-        self.succeed += rhs.succeed;
-        self.succeed_cost += rhs.succeed_cost;
-        self.failed += rhs.failed;
-        self.failed_cost += rhs.failed_cost;
-        self
+    pub(crate) fn add(&mut self, rhs: Ledger) {
+        self.succeed.fetch_add(rhs.succeed.load(SeqCst), SeqCst);
+        self.succeed_cost.fetch_add(rhs.succeed_cost.load(SeqCst), SeqCst);
+        self.failed.fetch_add(rhs.failed.load(SeqCst), SeqCst);
+        self.failed_cost.fetch_add(rhs.failed_cost.load(SeqCst), SeqCst);
     }
 }
 
@@ -246,7 +246,7 @@ impl KademliaConfig {
     /// Sets the io-timeout for stream.
     ///
     ///
-    pub fn with_io_timeout(mut self, dial_timeout: Option<Duration>, read_timeout: Option<Duration>, write_timeout: Option<Duration>)->Self{
+    pub fn with_io_timeout(mut self, dial_timeout: Option<Duration>, read_timeout: Option<Duration>, write_timeout: Option<Duration>) -> Self {
         self.protocol_config.set_new_stream_timeout(dial_timeout);
         self.protocol_config.set_read_stream_timeout(read_timeout);
         self.protocol_config.set_write_stream_timeout(write_timeout);
@@ -378,8 +378,8 @@ impl KadPoster {
 }
 
 impl<TStore> Kademlia<TStore>
-where
-    for<'a> TStore: RecordStore<'a> + Send + 'static,
+    where
+            for<'a> TStore: RecordStore<'a> + Send + 'static,
 {
     /// Creates a new `Kademlia` network behaviour with a default configuration.
     pub fn new(id: PeerId, store: TStore) -> Self {
@@ -563,7 +563,7 @@ where
     }
 
     /// Returns an iterator over all non-empty buckets in the routing table.
-    fn kbuckets(&mut self) -> impl Iterator<Item = kbucket::KBucketRef<'_, kbucket::Key<PeerId>, PeerInfo>> {
+    fn kbuckets(&mut self) -> impl Iterator<Item=kbucket::KBucketRef<'_, kbucket::Key<PeerId>, PeerInfo>> {
         self.kbuckets.iter().filter(|b| !b.is_empty())
     }
 
@@ -571,8 +571,8 @@ where
     ///
     /// Returns `None` if the given key refers to the local key.
     pub fn kbucket<K>(&mut self, key: K) -> Option<kbucket::KBucketRef<'_, kbucket::Key<PeerId>, PeerInfo>>
-    where
-        K: Borrow<[u8]> + Clone,
+        where
+            K: Borrow<[u8]> + Clone,
     {
         self.kbuckets.bucket(&kbucket::Key::new(key))
     }
@@ -609,8 +609,8 @@ where
 
     /// Initiates an iterative lookup for the closest peers to the given key.
     fn get_closest_peers<F>(&mut self, key: record::Key, f: F)
-    where
-        F: FnOnce(Result<Vec<KadPeer>>) + Send + 'static,
+        where
+            F: FnOnce(Result<Vec<KadPeer>>) + Send + 'static,
     {
         log::debug!("finding closest peers {:?}", key);
 
@@ -629,8 +629,8 @@ where
     /// The result of this operation is delivered into the callback
     /// Fn(Result<Option<KadPeer>>).
     fn find_peer<F>(&mut self, peer_id: PeerId, f: F)
-    where
-        F: FnOnce(Result<KadPeer>) + Send + 'static,
+        where
+            F: FnOnce(Result<KadPeer>) + Send + 'static,
     {
         log::debug!("finding peer {:?}", peer_id);
 
@@ -661,8 +661,8 @@ where
     /// The result of this operation is delivered into the callback
     /// Fn(Result<Vec<KadPeer>>).
     fn find_providers<F>(&mut self, key: record::Key, count: usize, f: F)
-    where
-        F: FnOnce(Result<Vec<KadPeer>>) + Send + 'static,
+        where
+            F: FnOnce(Result<Vec<KadPeer>>) + Send + 'static,
     {
         log::debug!("finding providers {:?}", key);
 
@@ -701,8 +701,8 @@ where
     /// The result of this operation is delivered into the callback
     /// Fn(Result<Vec<PeerRecord>>).
     fn get_record<F>(&mut self, key: record::Key, f: F)
-    where
-        F: FnOnce(Result<PeerRecord>) + Send + 'static,
+        where
+            F: FnOnce(Result<PeerRecord>) + Send + 'static,
     {
         log::debug!("getting record {:?}", key);
 
@@ -762,8 +762,8 @@ where
     /// The result of this operation is delivered into the callback
     /// Fn(Result<()>).
     fn put_record<F>(&mut self, key: record::Key, value: Vec<u8>, f: F)
-    where
-        F: FnOnce(Result<()>) + Send + 'static,
+        where
+            F: FnOnce(Result<()>) + Send + 'static,
     {
         log::debug!("putting record {:?}", key);
 
@@ -929,8 +929,8 @@ where
     /// The result of this operation is delivered into the callback
     /// Fn(Result<()>).
     fn start_providing<F>(&mut self, key: record::Key, f: F)
-    where
-        F: FnOnce(Result<()>) + Send + 'static,
+        where
+            F: FnOnce(Result<()>) + Send + 'static,
     {
         log::debug!("start providing {:?}", key);
 
@@ -1030,7 +1030,7 @@ where
                     } else {
                         swarm.get_addrs(&node_id)
                     }
-                    .unwrap_or_default();
+                        .unwrap_or_default();
 
                     Some(KadPeer {
                         node_id,
@@ -1587,8 +1587,8 @@ where
 }
 
 impl<TStore> ProtocolImpl for Kademlia<TStore>
-where
-    for<'a> TStore: RecordStore<'a> + Send + 'static,
+    where
+            for<'a> TStore: RecordStore<'a> + Send + 'static,
 {
     fn handlers(&self) -> Vec<IProtocolHandler> {
         let p = Box::new(KadProtocolHandler::new(self.protocol_config.clone(), self.poster()));
@@ -1596,8 +1596,8 @@ where
     }
 
     fn start(mut self, swarm: SwarmControl) -> Option<task::TaskHandle<()>>
-    where
-        Self: Sized,
+        where
+            Self: Sized,
     {
         self.messengers = Some(MessengerManager::new(swarm.clone(), self.protocol_config.clone()));
         self.swarm = Some(swarm);
