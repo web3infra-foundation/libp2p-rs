@@ -876,6 +876,10 @@ impl<TStore> Kademlia<TStore>
         StorageStats { provider, record }
     }
 
+    fn dump_providers(&mut self, key: record::Key) -> Vec<ProviderRecord> {
+        self.store.providers(&key)
+    }
+
     fn dump_kbuckets(&mut self) -> Vec<KBucketView> {
         let swarm = self.swarm.as_ref().expect("must be Some");
         let connected = &self.connected_peers;
@@ -1564,6 +1568,9 @@ impl<TStore> Kademlia<TStore>
                 }
                 DumpCommand::Messengers(reply) => {
                     let _ = reply.send(self.dump_messengers());
+                }
+                DumpCommand::Providers(key, reply) => {
+                    let _ = reply.send(self.dump_providers(key));
                 }
             },
             Some(ControlCommand::NotAddressPeer(reply)) => {

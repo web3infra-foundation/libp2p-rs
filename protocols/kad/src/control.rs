@@ -31,7 +31,7 @@ use crate::kad::{KBucketView, KademliaStats, StorageStats, Ledger};
 use crate::protocol::{KadMessengerView, KadPeer};
 use crate::query::PeerRecord;
 use crate::record::Key;
-use crate::{record, KadError};
+use crate::{record, KadError, ProviderRecord};
 
 type Result<T> = std::result::Result<T, KadError>;
 
@@ -86,6 +86,8 @@ pub enum DumpCommand {
     Ledgers(Option<PeerId>, oneshot::Sender<Vec<(PeerId, Ledger)>>),
     /// Dump the Kad Messengers.
     Messengers(oneshot::Sender<Vec<KadMessengerView>>),
+    /// Dump providers of key int the local storage
+    Providers(Key, oneshot::Sender<Vec<ProviderRecord>>),
 }
 
 #[derive(Clone)]
@@ -140,6 +142,13 @@ impl Control {
     pub async fn dump_messengers(&mut self) -> Result<Vec<KadMessengerView>> {
         let (tx, rx) = oneshot::channel();
         self.control_sender.send(ControlCommand::Dump(DumpCommand::Messengers(tx))).await?;
+        Ok(rx.await?)
+    }
+
+    pub async fn dump_providers(&mut self, key: Vec<u8>) -> Result<Vec<ProviderRecord>> {
+        let key = record::Key::from(key);
+        let (tx, rx) = oneshot::channel();
+        self.control_sender.send(ControlCommand::Dump(DumpCommand::Providers(key, tx))).await?;
         Ok(rx.await?)
     }
 
