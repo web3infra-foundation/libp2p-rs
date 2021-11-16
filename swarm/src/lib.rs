@@ -1273,7 +1273,7 @@ impl Swarm {
                 h.await;
             }
 
-            log::debug!("{:?} accept-runtime exiting...", stream_muxer);
+            log::info!("{:?} accept-runtime exiting...", stream_muxer);
         });
 
         // now we have the handle, move it into Connection

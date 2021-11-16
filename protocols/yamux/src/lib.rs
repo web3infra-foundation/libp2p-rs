@@ -177,10 +177,10 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> StreamMuxer for Yamux<T
                     match conn.next_stream().await {
                         Ok(Some(s)) => {
                             if let Err(e) = sender.send(Ok(s)).await {
+                                log::error!("failed to send incoming stream {:?}", e);
                                 if e.is_disconnected() {
                                     break;
                                 }
-                                log::warn!("{:?}", e);
                             }
                         }
                         Ok(None) => {
@@ -191,6 +191,7 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> StreamMuxer for Yamux<T
                             break;
                         }
                         Err(e) => {
+                            log::error!("yamux connection error {:?}", e);
                             if let Err(err) = sender.send(Err(e)).await {
                                 log::warn!("{:?}", err);
                             }

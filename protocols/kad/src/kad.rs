@@ -530,7 +530,7 @@ impl<TStore> Kademlia<TStore>
                     if let Some(s) = self.swarm.as_ref() {
                         s.unpin(&peer)
                     }
-                    log::debug!("removed {:?}", entry.value());
+                    log::error!("removed {:?}", entry.value());
                     Some(entry.remove())
                 } else {
                     entry.value().set_aliveness(None);
