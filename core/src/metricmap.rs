@@ -40,9 +40,9 @@ impl<K, V> fmt::Debug for MetricMap<K, V> {
 }
 
 impl<K, V> Default for MetricMap<K, V>
-    where
-        K: Eq + Hash + Clone + Debug,
-        V: Clone,
+where
+    K: Eq + Hash + Clone + Debug,
+    V: Clone,
 {
     fn default() -> Self {
         Self::new()
@@ -50,9 +50,9 @@ impl<K, V> Default for MetricMap<K, V>
 }
 
 impl<K, V> MetricMap<K, V>
-    where
-        K: Eq + Hash + Clone + Debug,
-        V: Clone,
+where
+    K: Eq + Hash + Clone + Debug,
+    V: Clone,
 {
     /// Create a new MetricMap
     pub fn new() -> Self {
@@ -68,18 +68,15 @@ impl<K, V> MetricMap<K, V>
 
         loop {
             let mut shared = self.data.load(SeqCst, &guard);
-
-            let mut new_hash;
-
             let mut_hash = unsafe { shared.deref_mut() };
 
             if let Some(old_value) = mut_hash.get_mut(key) {
                 let _ = on_modify(key, old_value);
                 return;
-            } else {
-                new_hash = mut_hash.clone();
-                new_hash.insert(key.clone(), value.clone());
             }
+
+            let mut new_hash = mut_hash.clone();
+            new_hash.insert(key.clone(), value.clone());
 
             let owned = Owned::new(new_hash);
 
@@ -158,8 +155,7 @@ mod tests {
     use crate::metricmap::MetricMap;
     use libp2prs_runtime::task;
     use smallvec::alloc::sync::Arc;
-    use std::sync::atomic::AtomicU32;
-    use std::sync::atomic::Ordering::SeqCst;
+    use std::ops::Add;
 
     #[test]
     pub fn test_store_and_modify() {
@@ -171,11 +167,11 @@ mod tests {
                 let k = key.clone();
                 let inside_map = inside_future_map.clone();
 
-                task::spawn(async move { inside_map.store_or_modify(&k, Arc::new(AtomicU32::new(index)), |_, value| { value.fetch_add(index, SeqCst); }) }).await;
+                task::spawn(async move { inside_map.store_or_modify(&k, index, |_, value| value.add(index)) }).await;
             }
         });
 
-        assert_eq!(map.load(&key).map(|i| i.load(SeqCst)), Some(120))
+        assert_eq!(map.load(&key), Some(120))
     }
 
     #[test]
@@ -189,22 +185,22 @@ mod tests {
                 let k = key.clone();
                 let inside_map = delete_map.clone();
 
-                task::spawn(async move { inside_map.store_or_modify(&k, Arc::new(AtomicU32::new(index)), |_, value| { value.fetch_add(index, SeqCst); }) }).await;
+                task::spawn(async move { inside_map.store_or_modify(&k, index, |_, value| value.add(index)) }).await;
             }
 
             map.delete(key.clone());
 
-            assert_eq!(map.load(&key).map(|i| i.load(SeqCst)), None);
+            assert_eq!(map.load(&key), None);
 
             for index in 0..20 {
                 let inside_map = delete_map.clone();
                 let k = key.clone();
-                task::spawn(async move { inside_map.store_or_modify(&k, Arc::new(AtomicU32::new(index)), |_, value| { value.fetch_add(index, SeqCst); }) }).await;
+                task::spawn(async move { inside_map.store_or_modify(&k, index, |_, value| value.add(index)) }).await;
             }
         });
 
         map.delete(key.clone());
 
-        assert_eq!(map.load(&key).map(|i| i.load(SeqCst)), None)
+        assert_eq!(map.load(&key), None)
     }
 }
