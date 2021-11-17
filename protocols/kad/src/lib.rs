@@ -29,12 +29,12 @@ pub mod kad;
 pub mod kbucket;
 pub mod protocol;
 pub mod record;
+pub mod task_limit;
+pub mod cli;
 
 mod addresses;
-pub mod cli;
 mod control;
 mod query;
-mod task_limit;
 
 pub use control::Control;
 
