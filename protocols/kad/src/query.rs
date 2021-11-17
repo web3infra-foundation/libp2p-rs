@@ -34,7 +34,7 @@ use libp2prs_swarm::Control as SwarmControl;
 use crate::kbucket::{Distance, Key};
 use crate::{record, KadError, ALPHA_VALUE, BETA_VALUE, K_VALUE};
 
-use crate::kad::{KadPoster, MessageStats, MessengerManager, Ledger};
+use crate::kad::{KadPoster, Ledger, MessageStats, MessengerManager};
 use crate::protocol::{KadConnectionType, KadPeer, ProtocolEvent};
 use crate::task_limit::TaskLimiter;
 use libp2prs_core::metricmap::MetricMap;
@@ -199,8 +199,8 @@ impl FixedQuery {
     }
 
     pub(crate) fn run<F>(self, f: F)
-        where
-            F: FnOnce(Result<()>) + Send + 'static,
+    where
+        F: FnOnce(Result<()>) + Send + 'static,
     {
         log::debug!("run fixed query {:?}", self.query_type);
 
@@ -438,15 +438,15 @@ impl ClosestPeers {
         self.closest_peers.get(&distance).map(|p| p.peer.clone())
     }
 
-    fn peers_filter(&self, num: usize, p: impl FnMut(&&PeerWithState) -> bool) -> impl Iterator<Item=&PeerWithState> {
+    fn peers_filter(&self, num: usize, p: impl FnMut(&&PeerWithState) -> bool) -> impl Iterator<Item = &PeerWithState> {
         self.closest_peers.values().filter(p).take(num)
     }
 
-    fn peers_in_state_mut(&mut self, state: PeerState, num: usize) -> impl Iterator<Item=&mut PeerWithState> {
+    fn peers_in_state_mut(&mut self, state: PeerState, num: usize) -> impl Iterator<Item = &mut PeerWithState> {
         self.closest_peers.values_mut().filter(move |peer| peer.state == state).take(num)
     }
 
-    fn peers_in_states(&self, states: Vec<PeerState>, num: usize) -> impl Iterator<Item=&PeerWithState> {
+    fn peers_in_states(&self, states: Vec<PeerState>, num: usize) -> impl Iterator<Item = &PeerWithState> {
         self.closest_peers
             .values()
             .filter(move |peer| states.contains(&peer.state))
@@ -557,6 +557,8 @@ pub(crate) struct IterativeQuery {
     stats: Arc<QueryStatsAtomic>,
     /// The ledger of all peer.
     ledgers: Arc<MetricMap<PeerId, Ledger>>,
+    // kad iter query limiter
+    iter_qry_limiter_tx: Option<mpsc::Sender<futures::future::BoxFuture<'static, ()>>>,
 }
 
 impl IterativeQuery {
@@ -572,6 +574,7 @@ impl IterativeQuery {
         poster: KadPoster,
         stats: Arc<QueryStatsAtomic>,
         ledgers: Arc<MetricMap<PeerId, Ledger>>,
+        iter_qry_limiter_tx: mpsc::Sender<futures::future::BoxFuture<'static, ()>>,
     ) -> Self {
         Self {
             key,
@@ -584,6 +587,7 @@ impl IterativeQuery {
             poster,
             stats,
             ledgers,
+            iter_qry_limiter_tx: Some(iter_qry_limiter_tx),
         }
     }
 
@@ -730,9 +734,9 @@ impl IterativeQuery {
         false
     }
 
-    pub(crate) fn run<F>(self, f: F)
-        where
-            F: FnOnce(Result<QueryResult>) + Send + 'static,
+    pub(crate) fn run<F>(mut self, f: F)
+    where
+        F: FnOnce(Result<QueryResult>) + Send + 'static,
     {
         log::debug!("run iterative query {:?} for {:?}", self.query_type, self.key);
 
@@ -743,144 +747,145 @@ impl IterativeQuery {
             return;
         }
 
-        // update stats
-        let index = self.stats.iter_query_executed.fetch_add(1, Ordering::SeqCst);
+        let mut tx = self.iter_qry_limiter_tx.take().unwrap();
 
-        let mut me = self;
-        let alpha_value = me.config.alpha_value.get();
-        let beta_value = me.config.beta_value.get();
-        let k_value = me.config.k_value.get();
-        let timeout = me.config.timeout;
-        let start = Instant::now();
+        let job = async move {
+            // update stats
+            let index = self.stats.iter_query_executed.fetch_add(1, Ordering::SeqCst);
 
-        // closest_peers is used to retrieve the closer peers. It is a sorted btree-map, which is
-        // indexed by Distance of the peer. The queried 'key' is used to calculate the distance.
-        let mut closest_peers = ClosestPeers::new(me.key.clone());
-        // prepare the query result
-        let mut query_results = QueryResult {
-            closest_peers: None,
-            found_peer: None,
-            providers: None,
-            records: None,
-            cache_peers: None,
-        };
+            let mut me = self;
+            let alpha_value = me.config.alpha_value.get();
+            let beta_value = me.config.beta_value.get();
+            let k_value = me.config.k_value.get();
+            let timeout = me.config.timeout;
+            let start = Instant::now();
 
-        // extract local PeerRecord or Providers from QueryType
-        // local items are parts of the final result
-        match &mut me.query_type {
-            QueryType::GetProviders { count: _, local } => {
-                query_results.providers = local.take();
+            // closest_peers is used to retrieve the closer peers. It is a sorted btree-map, which is
+            // indexed by Distance of the peer. The queried 'key' is used to calculate the distance.
+            let mut closest_peers = ClosestPeers::new(me.key.clone());
+            // prepare the query result
+            let mut query_results = QueryResult {
+                closest_peers: None,
+                found_peer: None,
+                providers: None,
+                records: None,
+                cache_peers: None,
+            };
+
+            // extract local PeerRecord or Providers from QueryType
+            // local items are parts of the final result
+            match &mut me.query_type {
+                QueryType::GetProviders { count: _, local } => {
+                    query_results.providers = local.take();
+                }
+                QueryType::GetRecord { quorum: _, local } => {
+                    query_results.records = local.take();
+                }
+                _ => {}
             }
-            QueryType::GetRecord { quorum: _, local } => {
-                query_results.records = local.take();
-            }
-            _ => {}
-        }
 
-        // the channel used to deliver the result of each jobs
-        let (mut tx, mut rx) = mpsc::channel(alpha_value);
+            // the channel used to deliver the result of each jobs
+            let (mut tx, mut rx) = mpsc::channel(alpha_value);
 
-        // statistics for this iterative query
-        // This stat has to be referred by thwo futures: query & deadline, so it is implemented as
-        // an Arc<Atomic...>
-        let stats = me.stats.clone();
-        // deadline for an iterative query
-        let deadline = async move {
-            task::sleep(timeout).await;
-            stats.iter_query_timeout.fetch_add(1, Ordering::SeqCst);
-            log::info!("iterative query timeout");
-        };
+            // statistics for this iterative query
+            // This stat has to be referred by thwo futures: query & deadline, so it is implemented as
+            // an Arc<Atomic...>
+            let stats = me.stats.clone();
+            // deadline for an iterative query
+            let deadline = async move {
+                task::sleep(timeout).await;
+                stats.iter_query_timeout.fetch_add(1, Ordering::SeqCst);
+                log::info!("iterative query timeout");
+            };
 
-        // clone stats and move into query
-        let stats = me.stats.clone();
-        // a runtime for query
-        let query = async move {
-            let seeds = me
-                .seeds
-                .iter()
-                .map(|k| {
-                    let id = k.clone().into_preimage();
-                    KadPeer {
-                        node_id: id,
-                        multiaddrs: me.swarm.get_addrs(&id).unwrap_or_default(),
-                        connection_ty: KadConnectionType::CanConnect,
+            // clone stats and move into query
+            let stats = me.stats.clone();
+            // a runtime for query
+            let query = async move {
+                let seeds = me
+                    .seeds
+                    .iter()
+                    .map(|k| {
+                        let id = k.clone().into_preimage();
+                        KadPeer {
+                            node_id: id,
+                            multiaddrs: me.swarm.get_addrs(&id).unwrap_or_default(),
+                            connection_ty: KadConnectionType::CanConnect,
+                        }
+                    })
+                    .collect();
+
+                // deliver the seeds to kick off the initial query
+                let _ = tx
+                    .send(QueryUpdate::Queried {
+                        source: me.local_id,
+                        closer: seeds,
+                        provider: None,
+                        record: None,
+                        duration: Duration::from_secs(0),
+                    })
+                    .await;
+
+                // starting iterative querying for all selected peers...
+                loop {
+                    // note that the first update comes from the initial seeds
+                    let update = rx.next().await.expect("must");
+                    let is_completed = me.handle_update(update, &mut query_results, &mut closest_peers).await;
+                    if is_completed {
+                        log::debug!("iterative query completed due to value found");
+                        break;
                     }
-                })
-                .collect();
 
-            // deliver the seeds to kick off the initial query
-            let _ = tx
-                .send(QueryUpdate::Queried {
-                    source: me.local_id,
-                    closer: seeds,
-                    provider: None,
-                    record: None,
-                    duration: Duration::from_secs(0),
-                })
-                .await;
+                    // starvation, if no peer to contact and no pending query
+                    if closest_peers.is_starved() {
+                        //return true, LookupStarvation, nil
+                        log::debug!("iterative query terminated due to starvation(no peer to contact and no pending query)");
+                        break;
+                    }
+                    // meet the k_value? meaning lookup completed
+                    if closest_peers.can_terminate(beta_value) {
+                        //return true, LookupCompleted, nil
+                        log::debug!("iterative query terminated due to no more closer peer");
+                        break;
+                    }
 
-            // starting iterative querying for all selected peers...
-            loop {
-                // note that the first update comes from the initial seeds
-                let update = rx.next().await.expect("must");
-                let is_completed = me.handle_update(update, &mut query_results, &mut closest_peers).await;
-                if is_completed {
-                    log::debug!("iterative query completed due to value found");
-                    break;
-                }
+                    // calculate the maximum number of queries we could be running
+                    // Note: NumWaiting will be updated before invoking job.execute()
+                    let num_jobs = alpha_value.checked_sub(closest_peers.num_of_state(PeerState::Waiting)).unwrap();
 
-                // starvation, if no peer to contact and no pending query
-                if closest_peers.is_starved() {
-                    //return true, LookupStarvation, nil
-                    log::debug!("iterative query terminated due to starvation(no peer to contact and no pending query)");
-                    break;
-                }
-                // meet the k_value? meaning lookup completed
-                if closest_peers.can_terminate(beta_value) {
-                    //return true, LookupCompleted, nil
-                    log::debug!("iterative query terminated due to no more closer peer");
-                    break;
-                }
+                    log::debug!("iterative query, starting {} query jobs at most", num_jobs);
 
-                // calculate the maximum number of queries we could be running
-                // Note: NumWaiting will be updated before invoking job.execute()
-                let num_jobs = alpha_value.checked_sub(closest_peers.num_of_state(PeerState::Waiting)).unwrap();
+                    let peer_iter = closest_peers.peers_in_state_mut(PeerState::NotContacted, num_jobs);
+                    for peer in peer_iter {
+                        //closest_peers.set_peer_state(&peer, PeerState::Waiting);
+                        peer.state = PeerState::Waiting;
+                        let peer_id = peer.peer.node_id;
 
-                log::debug!("iterative query, starting {} query jobs at most", num_jobs);
+                        log::debug!("creating query job for {:?}", peer_id);
 
-                let peer_iter = closest_peers.peers_in_state_mut(PeerState::NotContacted, num_jobs);
-                for peer in peer_iter {
-                    //closest_peers.set_peer_state(&peer, PeerState::Waiting);
-                    peer.state = PeerState::Waiting;
-                    let peer_id = peer.peer.node_id;
+                        stats.iterative.requests.fetch_add(1, Ordering::SeqCst);
 
-                    log::debug!("creating query job for {:?}", peer_id);
-
-                    stats.iterative.requests.fetch_add(1, Ordering::SeqCst);
-
-                    let job = QueryJob {
-                        key: me.key.clone(),
-                        qt: me.query_type.clone(),
-                        messengers: me.messengers.clone(),
-                        peer: peer_id,
-                        addrs: me.swarm.get_addrs(&peer_id).unwrap_or_default(),
-                        stats: stats.clone(),
-                        ledgers: me.ledgers.clone(),
-                        tx: tx.clone(),
-                    };
+                        let job = QueryJob {
+                            key: me.key.clone(),
+                            qt: me.query_type.clone(),
+                            messengers: me.messengers.clone(),
+                            peer: peer_id,
+                            addrs: me.swarm.get_addrs(&peer_id).unwrap_or_default(),
+                            stats: stats.clone(),
+                            ledgers: me.ledgers.clone(),
+                            tx: tx.clone(),
+                        };
 
                     let mut tx = tx.clone();
                     let _ = task::spawn(async move {
                         let stats = job.stats.clone();
                         let ledgers = job.ledgers.clone();
                         let pid = job.peer;
-                        let addrs = job.addrs.clone();
                         let start = Instant::now();
                         let r = job.execute().await;
                         let cost = start.elapsed();
                         if r.is_err() {
-                            let public_ips: Vec<Multiaddr> = addrs.into_iter().filter(|addr| !addr.is_private_addr() && !addr.is_ipv6_addr()).collect();
-                            log::error!("index {}， cost {:?}, failed to talk to {}, all private ip {} err={:?}", index, cost, pid, public_ips.is_empty(), r);
+                            log::trace!("job {}, cost {:?}, failed to connect to {}, err={:?}", index, cost, pid, r);
                             stats.iterative.failure.fetch_add(1, Ordering::SeqCst);
                             ledgers.store_or_modify(&pid, |ledger| { ledger.failure_increase(cost.as_millis() as u64); });
                             let _ = tx.send(QueryUpdate::Unreachable(peer_id)).await;
@@ -893,15 +898,15 @@ impl IterativeQuery {
                 }
             }
 
-            // collect the query result
-            let wanted_states = vec![PeerState::NotContacted, PeerState::Waiting, PeerState::Succeeded];
-            let peers = closest_peers
-                .peers_in_states(wanted_states, k_value)
-                .map(|p| p.peer.clone())
-                .collect::<Vec<_>>();
+                // collect the query result
+                let wanted_states = vec![PeerState::NotContacted, PeerState::Waiting, PeerState::Succeeded];
+                let peers = closest_peers
+                    .peers_in_states(wanted_states, k_value)
+                    .map(|p| p.peer.clone())
+                    .collect::<Vec<_>>();
 
-            log::debug!("iterative query, return {} closer peers", peers.len());
-            log::debug!(
+                log::debug!("iterative query, return {} closer peers", peers.len());
+                log::debug!(
                 "Closest Peers in details: Unreachable:{} NotContacted:{} Waiting:{} Succeeded:{}",
                 closest_peers.num_of_state(PeerState::Unreachable),
                 closest_peers.num_of_state(PeerState::NotContacted),
@@ -909,26 +914,37 @@ impl IterativeQuery {
                 closest_peers.num_of_state(PeerState::Succeeded)
             );
 
-            if !peers.is_empty() {
-                query_results.closest_peers = Some(peers);
-            }
+                if !peers.is_empty() {
+                    query_results.closest_peers = Some(peers);
+                }
 
-            stats.iter_query_completed.fetch_add(1, Ordering::SeqCst);
+                let job_finished = stats.iter_query_completed.fetch_add(1, Ordering::SeqCst);
+                let job_started = stats.iter_query_executed.load(Ordering::Relaxed);
 
-            // calculate how long this iterative query lasts
-            let duration = start.elapsed();
+                // calculate how long this iterative query lasts
+                let duration = start.elapsed();
 
-            log::info!("index {}, iterative query report : {:?} {:?}", index, stats.iterative.to_view(), duration);
+                log::info!(
+                "job {} done, iterative query report : {:?} {:?} {}/{}",
+                index,
+                stats.iterative.to_view(),
+                duration,
+                job_started,
+                job_finished
+            );
 
-            Ok(query_results)
-        };
+                Ok(query_results)
+            };
 
-        task::spawn(async {
             let either = futures::future::select(query.boxed(), deadline.boxed()).await;
             match either {
                 Either::Left((result, _)) => f(result),
                 Either::Right((_, _)) => f(Err(KadError::Timeout)),
             }
+        }.boxed();
+
+        task::spawn(async move {
+            tx.send(job).await;
         });
     }
 }

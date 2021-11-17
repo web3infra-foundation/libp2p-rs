@@ -73,14 +73,14 @@ fn main() {
 }
 
 lazy_static! {
-    static ref SERVER_KEY: identity::Keypair = identity::Keypair::generate_ed25519_with_seed([8u8; 32]);
+    static ref SERVER_KEY: identity::Keypair = identity::Keypair::generate_ed25519_with_seed([7u8; 32]);
 }
 
 #[allow(clippy::empty_loop)]
 fn run_server(bootstrap_peer: PeerId, bootstrap_addr: Multiaddr) {
     let keys = SERVER_KEY.clone();
 
-    let listen_addr1: Multiaddr = "/ip4/0.0.0.0/tcp/8086".parse().unwrap();
+    let listen_addr1: Multiaddr = "/ip4/0.0.0.0/tcp/8085".parse().unwrap();
 
     let dh = Keypair::<X25519Spec>::new().into_authentic(&keys).unwrap();
 
@@ -94,6 +94,8 @@ fn run_server(bootstrap_peer: PeerId, bootstrap_addr: Multiaddr) {
 
     let mut swarm = Swarm::new(keys.public())
         .with_transport(Box::new(tu))
+        .with_filter_private(false)
+        .with_filter_loopback(false)
         .with_identify(IdentifyConfig::new(false));
 
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());

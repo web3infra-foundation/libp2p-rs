@@ -154,6 +154,8 @@ fn run_client() {
     let swarm = Swarm::new(keys.public())
         .with_transport(Box::new(tu))
         .with_transport(Box::new(tu2))
+        .with_filter_private(false)
+        .with_filter_loopback(false)
         .with_ping(PingConfig::new().with_unsolicited(false).with_interval(Duration::from_secs(1)))
         .with_identify(IdentifyConfig::new(false));
 
