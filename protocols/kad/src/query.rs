@@ -22,7 +22,7 @@ use futures::channel::mpsc;
 use futures::future::Either;
 use futures::{FutureExt, SinkExt, StreamExt};
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering, AtomicU64};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::{num::NonZeroUsize, time::Duration, time::Instant};
 
@@ -574,10 +574,10 @@ impl IterativeQuery {
         ledgers: Arc<MetricMap<PeerId, Ledger>>,
     ) -> Self {
         Self {
-            query_type,
             key,
             swarm,
             messengers,
+            query_type,
             local_id,
             config,
             seeds,
@@ -882,23 +882,11 @@ impl IterativeQuery {
                             let public_ips: Vec<Multiaddr> = addrs.into_iter().filter(|addr| !addr.is_private_addr() && !addr.is_ipv6_addr()).collect();
                             log::error!("index {}， cost {:?}, failed to talk to {}, all private ip {} err={:?}", index, cost, pid, public_ips.is_empty(), r);
                             stats.iterative.failure.fetch_add(1, Ordering::SeqCst);
-                            let addition = Ledger {
-                                succeed: Arc::new(AtomicU32::new(0)),
-                                succeed_cost: Default::default(),
-                                failed: Arc::new(AtomicU32::new(1)),
-                                failed_cost: Arc::new(AtomicU64::new(cost.as_millis() as u64)),
-                            };
-                            ledgers.store_or_modify(&pid, addition.clone(), |_, ledger| { let _ = ledger.add(addition.clone()); });
+                            ledgers.store_or_modify(&pid, |ledger| { ledger.failure_increase(cost.as_millis() as u64); });
                             let _ = tx.send(QueryUpdate::Unreachable(peer_id)).await;
                         } else {
                             // log::info!("index {}， cost {:?}, succeed to talk to {}", index, cost, pid);
-                            let addition = Ledger {
-                                succeed: Arc::new(AtomicU32::new(1)),
-                                succeed_cost: Arc::new(AtomicU64::new(cost.as_millis() as u64)),
-                                failed: Arc::new(AtomicU32::new(0)),
-                                failed_cost: Default::default(),
-                            };
-                            ledgers.store_or_modify(&pid, addition.clone(), |_, ledger| { let _ = ledger.add(addition.clone()); });
+                            ledgers.store_or_modify(&pid, |ledger| { ledger.success_increase(cost.as_millis() as u64); });
                             stats.iterative.success.fetch_add(1, Ordering::SeqCst);
                         }
                     });

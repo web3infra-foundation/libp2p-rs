@@ -27,6 +27,7 @@ use libp2prs_runtime::task;
 use crate::ping::ping;
 use crate::Control;
 use std::time::Duration;
+use std::option::Option::Some;
 
 const SWRM: &str = "swarm";
 
@@ -84,6 +85,12 @@ pub fn swarm_cli_commands<'a>() -> Command<'a> {
                 .usage("rate")
                 .action(cli_dump_rate),
         )
+        .subcommand(
+            Command::new_with_alias("traffic", "t")
+                .about("display each peer's traffic status")
+                .usage("traffic [PeerId]")
+                .action(cli_dump_peer_traffic),
+        )
 }
 
 fn handler(app: &App) -> Control {
@@ -119,6 +126,36 @@ fn cli_show_id(app: &App, _args: &[&str]) -> XcliResult {
     });
 
     Ok(CmdExeCode::Ok)
+}
+
+fn cli_dump_peer_traffic(app: &App, args: &[&str]) -> XcliResult {
+    let mut swarm = handler(app);
+
+    let peer = match args.len() {
+        0 => None,
+        1 => Some(PeerId::from_str(args[0]).map_err(|e| XcliError::BadArgument(e.to_string()))?),
+        _ => return Err(XcliError::MismatchArgument(1, args.len()))
+    };
+
+
+    task::block_on(async {
+        match swarm.dump_network_traffic_by_peer(peer).await {
+            Ok(Some(v)) => {
+                println!("Remote-Peer-Id                                       Bytes(received)      Bytes(sent)          Packets(received)    Packets(sent)");
+                for (peer, view) in v {
+                    println!("{:52} {: <20} {:<20} {:<20} {}", peer, view.r.bytes_recv, view.r.bytes_sent, view.packets_recv, view.packets_sent)
+                };
+                Ok(CmdExeCode::Ok)
+            }
+            Ok(None) => {
+                println!("No traffic.");
+                Ok(CmdExeCode::Ok)
+            }
+            Err(e) => {
+                Err(XcliError::Other(e.to_string()))
+            }
+        }
+    })
 }
 
 fn cli_close_swarm(app: &App, _args: &[&str]) -> XcliResult {

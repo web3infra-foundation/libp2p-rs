@@ -40,9 +40,9 @@ impl<K, V> fmt::Debug for MetricMap<K, V> {
 }
 
 impl<K, V> Default for MetricMap<K, V>
-where
-    K: Eq + Hash + Clone + Debug,
-    V: Clone,
+    where
+        K: Eq + Hash + Clone + Debug,
+        V: Default + Clone,
 {
     fn default() -> Self {
         Self::new()
@@ -50,9 +50,9 @@ where
 }
 
 impl<K, V> MetricMap<K, V>
-where
-    K: Eq + Hash + Clone + Debug,
-    V: Clone,
+    where
+        K: Eq + Hash + Clone + Debug,
+        V: Default + Clone,
 {
     /// Create a new MetricMap
     pub fn new() -> Self {
@@ -63,7 +63,7 @@ where
 
     /// If map contains key, replaces original value with the result that return by F.
     /// Otherwise, create a new key-value and insert.
-    pub fn store_or_modify<F: Fn(&K, &mut V)>(&self, key: &K, value: V, on_modify: F) {
+    pub fn store_or_modify<F: Fn(&V)>(&self, key: &K, on_modify: F) {
         let guard = crossbeam_epoch::pin();
 
         loop {
@@ -71,11 +71,13 @@ where
             let mut_hash = unsafe { shared.deref_mut() };
 
             if let Some(old_value) = mut_hash.get_mut(key) {
-                let _ = on_modify(key, old_value);
+                let _ = on_modify(old_value);
                 return;
             }
 
             let mut new_hash = mut_hash.clone();
+            let value = V::default();
+            on_modify(&value);
             new_hash.insert(key.clone(), value.clone());
 
             let owned = Owned::new(new_hash);
@@ -101,10 +103,7 @@ where
 
         let hmap = unsafe { shared.as_ref().unwrap() };
 
-        match hmap.get(key) {
-            Some(value) => Some(value.clone()),
-            None => None,
-        }
+        hmap.get(key).cloned()
     }
 
     pub fn delete(&self, key: K) {
@@ -143,10 +142,7 @@ where
 
         let shared = self.data.load(SeqCst, &guard);
 
-        match unsafe { shared.as_ref() } {
-            Some(map) => Some(map.clone().into_iter()),
-            None => None,
-        }
+        unsafe { shared.as_ref() }.map(|map| map.clone().into_iter())
     }
 }
 
@@ -155,29 +151,30 @@ mod tests {
     use crate::metricmap::MetricMap;
     use libp2prs_runtime::task;
     use smallvec::alloc::sync::Arc;
-    use std::ops::Add;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering::SeqCst;
 
     #[test]
     pub fn test_store_and_modify() {
         let key = String::from("abc");
-        let map = Arc::new(MetricMap::new());
+        let map: Arc<MetricMap<String, Arc<AtomicUsize>>> = Arc::new(MetricMap::new());
         task::block_on(async {
             let inside_future_map = map.clone();
             for index in 0..16 {
                 let k = key.clone();
                 let inside_map = inside_future_map.clone();
 
-                task::spawn(async move { inside_map.store_or_modify(&k, index, |_, value| value.add(index)) }).await;
+                task::spawn(async move { inside_map.store_or_modify(&k, |value| { value.fetch_add(index, SeqCst); }) }).await;
             }
         });
 
-        assert_eq!(map.load(&key), Some(120))
+        assert_eq!(map.load(&key).map(|i| i.load(SeqCst)), Some(120))
     }
 
     #[test]
     pub fn test_delete() {
         let key = String::from("abc");
-        let map = Arc::new(MetricMap::new());
+        let map: Arc<MetricMap<String, Arc<AtomicUsize>>> = Arc::new(MetricMap::new());
 
         task::block_on(async {
             let delete_map = map.clone();
@@ -185,22 +182,22 @@ mod tests {
                 let k = key.clone();
                 let inside_map = delete_map.clone();
 
-                task::spawn(async move { inside_map.store_or_modify(&k, index, |_, value| value.add(index)) }).await;
+                task::spawn(async move { inside_map.store_or_modify(&k, |value| { value.fetch_add(index, SeqCst); }) }).await;
             }
 
             map.delete(key.clone());
 
-            assert_eq!(map.load(&key), None);
+            assert_eq!(map.load(&key).map(|i| i.load(SeqCst)), None);
 
             for index in 0..20 {
                 let inside_map = delete_map.clone();
                 let k = key.clone();
-                task::spawn(async move { inside_map.store_or_modify(&k, index, |_, value| value.add(index)) }).await;
+                task::spawn(async move { inside_map.store_or_modify(&k, |value| { value.fetch_add(index, SeqCst); }) }).await;
             }
         });
 
         map.delete(key.clone());
 
-        assert_eq!(map.load(&key), None)
+        assert_eq!(map.load(&key).map(|i| i.load(SeqCst)), None)
     }
 }

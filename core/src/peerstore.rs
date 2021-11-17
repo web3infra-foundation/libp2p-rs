@@ -329,12 +329,16 @@ impl PeerStore {
 
     /// Update rtt by peer_id
     pub fn record_latency(&self, peer_id: &PeerId, rtt: Duration) {
-        self.m.store_or_modify(peer_id, Arc::new(AtomicU64::new(rtt.as_millis() as u64)), |_, value| {
+        self.m.store_or_modify(peer_id, |value| {
             let _ = value.fetch_update(SeqCst, SeqCst, |v| {
-                let ewma_f64 = v as f64;
-                let next_f64 = rtt.as_millis() as f64;
-                let peer_rtt = (1.0_f64 - LATENCY_EWMA_SMOOTHING) * ewma_f64 + LATENCY_EWMA_SMOOTHING * next_f64;
-                Some(peer_rtt as u64)
+                if v != 0 {
+                    let ewma_f64 = v as f64;
+                    let next_f64 = rtt.as_millis() as f64;
+                    let peer_rtt = (1.0_f64 - LATENCY_EWMA_SMOOTHING) * ewma_f64 + LATENCY_EWMA_SMOOTHING * next_f64;
+                    Some(peer_rtt as u64)
+                } else {
+                    Some(rtt.as_millis() as u64)
+                }
             });
         });
     }

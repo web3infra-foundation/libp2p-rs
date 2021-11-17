@@ -174,12 +174,14 @@ impl Display for Ledger {
 }
 
 impl Ledger {
+    pub(crate) fn failure_increase(&self, cost: u64){
+        self.failed.fetch_add(1,SeqCst);
+        self.failed_cost.fetch_add(cost, SeqCst);
+    }
 
-    pub(crate) fn add(&mut self, rhs: Ledger) {
-        self.succeed.fetch_add(rhs.succeed.load(SeqCst), SeqCst);
-        self.succeed_cost.fetch_add(rhs.succeed_cost.load(SeqCst), SeqCst);
-        self.failed.fetch_add(rhs.failed.load(SeqCst), SeqCst);
-        self.failed_cost.fetch_add(rhs.failed_cost.load(SeqCst), SeqCst);
+    pub(crate) fn success_increase(&self, cost: u64){
+        self.succeed.fetch_add(1,SeqCst);
+        self.succeed_cost.fetch_add(cost, SeqCst);
     }
 }
 

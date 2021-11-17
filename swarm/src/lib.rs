@@ -644,6 +644,10 @@ impl Swarm {
                         let _ = reply.send(r);
                     });
                 }
+                DumpCommand::NetworkTrafficByPeerID(peer_id, reply) => {
+                    let v = self.metric.get_traffic_by_peer(peer_id);
+                    let _ = reply.send(v);
+                }
             },
             SwarmControlCmd::Rate(reply) => {
                 let _ = self.on_retrieve_rate(|r| {
@@ -1029,7 +1033,7 @@ impl Swarm {
             self.event_sender.clone(),
             tid,
             self.filter_private,
-            self.filter_loopback
+            self.filter_loopback,
         );
     }
 
@@ -1076,7 +1080,7 @@ impl Swarm {
         self.dial_transactions.insert(tid, Box::new(f));
         self.dialer
             .dial(peer_id, self.transports.clone(), addrs, self.event_sender.clone(), tid
-            ,self.filter_private, self.filter_loopback);
+                  , self.filter_private, self.filter_loopback);
     }
 
     fn get_best_conn(&mut self, peer_id: &PeerId) -> Option<&mut connection::Connection> {

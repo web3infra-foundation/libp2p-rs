@@ -27,46 +27,108 @@ use std::collections::hash_map::IntoIter;
 use std::fmt;
 use std::ops::{Add, Mul, Sub};
 use std::sync::atomic::Ordering::SeqCst;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 use std::collections::HashMap;
 
 pub struct Metric {
-    /// The accumulative counter of packets sent.
-    pkt_sent: AtomicUsize,
-    /// The accumulative counter of packets received.
-    pkt_recv: AtomicUsize,
-    /// The accumulative counter of bytes sent.
-    byte_sent: AtomicUsize,
-    /// The accumulative counter of bytes received.
-    byte_recv: AtomicUsize,
+    /// The accumulative counter of packets and bytes.
+    node_stat: RecordByteAndPacket,
 
-    /// A hashmap that key is protocol name and value is a counter of bytes received.
-    protocol_in: MetricMap<String, Arc<AtomicUsize>>,
-    /// A hashmap that key is protocol name and value is a counter of bytes sent.
-    protocol_out: MetricMap<String, Arc<AtomicUsize>>,
+    /// A map that record bytes and packets by peer_id.
+    group_by_peer: MetricMap<PeerId, RecordByteAndPacket>,
 
-    /// A hashmap that key is peer_id and value is a counter of bytes received.
-    peer_in: MetricMap<PeerId, Arc<AtomicUsize>>,
-    /// A hashmap that key is peer_id and value is a counter of bytes sent.
-    peer_out: MetricMap<PeerId, Arc<AtomicUsize>>,
+    /// A map that record bytes by protocol.
+    group_by_protocol: MetricMap<String, RecordByte>,
 
+    /// Snapshot is used to calculate instant rate.
     recv_snapshot: Arc<RwLock<SnapShot>>,
     send_snapshot: Arc<RwLock<SnapShot>>,
+}
+
+/// Records count for both bytes and packets.
+#[derive(Default, Clone)]
+pub struct RecordByteAndPacket {
+    r: RecordByte,
+    packets_recv: Arc<AtomicUsize>,
+    packets_sent: Arc<AtomicUsize>,
+}
+
+impl RecordByteAndPacket {
+    /// Add sent counter.
+    fn add_sent(&self, n: usize) {
+        self.r.add_sent(n);
+        self.packets_sent.fetch_add(1, SeqCst);
+    }
+
+    /// Add received counter.
+    fn add_received(&self, n: usize) {
+        self.r.add_received(n);
+        self.packets_recv.fetch_add(1, SeqCst);
+    }
+}
+
+/// Records count for bytes.
+#[derive(Default, Clone)]
+pub struct RecordByte {
+    bytes_recv: Arc<AtomicUsize>,
+    bytes_sent: Arc<AtomicUsize>,
+}
+
+impl RecordByte {
+    fn add_sent(&self, n: usize) {
+        self.bytes_sent.fetch_add(n, SeqCst);
+    }
+
+    fn add_received(&self, n: usize) {
+        self.bytes_recv.fetch_add(n, SeqCst);
+    }
+}
+
+#[derive(Debug)]
+pub struct RecordByteAndPacketView {
+    pub r: RecordByteView,
+    pub packets_recv: usize,
+    pub packets_sent: usize,
+}
+
+impl From<RecordByteAndPacket> for RecordByteAndPacketView {
+    fn from(origin: RecordByteAndPacket) -> Self {
+        RecordByteAndPacketView {
+            r: origin.r.into(),
+            packets_recv: origin.packets_recv.load(SeqCst),
+            packets_sent: origin.packets_sent.load(SeqCst),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct RecordByteView {
+    pub bytes_recv: usize,
+    pub bytes_sent: usize,
+}
+
+impl From<RecordByte> for RecordByteView {
+    fn from(r: RecordByte) -> Self {
+        RecordByteView {
+            bytes_recv: r.bytes_recv.load(SeqCst),
+            bytes_sent: r.bytes_sent.load(SeqCst),
+        }
+    }
 }
 
 impl fmt::Debug for Metric {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Metric")
-            .field("pkt_sent", &self.pkt_sent)
-            .field("pkt_recv", &self.pkt_recv)
-            .field("byte_sent", &self.byte_sent)
-            .field("byte_recv", &self.byte_recv)
-            .field("protocol_in", &self.protocol_in)
-            .field("protocol_out", &self.protocol_out)
-            .field("peer_in", &self.peer_in)
-            .field("peer_out", &self.peer_out)
+            .field("pkt_sent", &self.node_stat.packets_sent.load(SeqCst))
+            .field("pkt_recv", &self.node_stat.packets_recv.load(SeqCst))
+            .field("byte_sent", &self.node_stat.r.bytes_sent.load(SeqCst))
+            .field("byte_recv", &self.node_stat.r.bytes_recv.load(SeqCst))
+            // .field("bytes_recv", &self.group_by_protocol)
+            // .field("bytes_sent", &self.output.bytes_sent)
+            // .field("peer_in", &self.input.peer_in)
+            // .field("peer_out", &self.output.peer_out)
             .finish()
     }
 }
@@ -81,14 +143,9 @@ impl Metric {
     /// Create a new metric
     pub fn new() -> Metric {
         Metric {
-            pkt_sent: AtomicUsize::new(0),
-            pkt_recv: AtomicUsize::new(0),
-            byte_sent: AtomicUsize::new(0),
-            byte_recv: AtomicUsize::new(0),
-            protocol_in: MetricMap::new(),
-            protocol_out: MetricMap::new(),
-            peer_in: MetricMap::new(),
-            peer_out: MetricMap::new(),
+            node_stat: Default::default(),
+            group_by_peer: Default::default(),
+            group_by_protocol: Default::default(),
             recv_snapshot: Arc::new(Default::default()),
             send_snapshot: Arc::new(Default::default()),
         }
@@ -96,59 +153,57 @@ impl Metric {
 
     #[inline]
     pub(crate) fn log_recv_msg(&self, n: usize) {
-        self.pkt_recv.fetch_add(1, Ordering::SeqCst);
-        self.byte_recv.fetch_add(n, Ordering::SeqCst);
+        self.node_stat.add_received(n);
     }
 
     #[inline]
     pub(crate) fn log_sent_msg(&self, n: usize) {
-        self.pkt_sent.fetch_add(1, Ordering::SeqCst);
-        self.byte_sent.fetch_add(n, Ordering::SeqCst);
+        self.node_stat.add_sent(n);
     }
 
     #[inline]
     pub(crate) fn log_sent_stream(&self, protocol: &ProtocolId, count: usize, peer_id: &PeerId) {
-        self.protocol_out
-            .store_or_modify(&protocol.to_string(), Arc::new(AtomicUsize::new(count)), |_, value| { let _ = value.fetch_add(count, SeqCst); });
-        self.peer_out.store_or_modify(peer_id, Arc::new(AtomicUsize::new(count)), |_, value| { let _ = value.fetch_add(count, SeqCst); });
+        self.group_by_protocol
+            .store_or_modify(&protocol.to_string(),  |value| { value.add_sent(count); });
+        self.group_by_peer.store_or_modify(peer_id,  |value| { value.add_sent(count) });
     }
 
     #[inline]
     pub(crate) fn log_recv_stream(&self, protocol: &ProtocolId, count: usize, peer_id: &PeerId) {
-        self.protocol_in
-            .store_or_modify(&protocol.to_string(), Arc::new(AtomicUsize::new(count)), |_, value| { let _ = value.fetch_add(count, SeqCst); });
-        self.peer_in.store_or_modify(peer_id, Arc::new(AtomicUsize::new(count)), |_, value| { let _ = value.fetch_add(count, SeqCst); });
+        self.group_by_protocol
+            .store_or_modify(&protocol.to_string(),  |value| { value.add_received(count); });
+        self.group_by_peer.store_or_modify(peer_id,  |value| { value.add_received(count); });
     }
 
     /// Get count & bytes about received package
     pub fn get_recv_count_and_size(&self) -> (usize, usize) {
-        (self.pkt_recv.load(SeqCst), self.byte_recv.load(SeqCst))
+        (self.node_stat.packets_recv.load(SeqCst), self.node_stat.r.bytes_recv.load(SeqCst))
     }
 
     /// Get count & bytes about sent package
     pub fn get_sent_count_and_size(&self) -> (usize, usize) {
-        (self.pkt_sent.load(SeqCst), self.byte_sent.load(SeqCst))
+        (self.node_stat.packets_sent.load(SeqCst), self.node_stat.r.bytes_sent.load(SeqCst))
     }
 
     /// Get in&out bytes by protocol_id
     pub fn get_protocol_in_and_out(&self, protocol_id: &str) -> (Option<usize>, Option<usize>) {
-        let protocol_in = self.protocol_in.load(&protocol_id.to_string()).map(|i| i.load(SeqCst));
-        let protocol_out = self.protocol_out.load(&protocol_id.to_string()).map(|i| i.load(SeqCst));
+        let protocol_in = self.group_by_protocol.load(&protocol_id.to_string()).map(|item| item.bytes_recv.load(SeqCst));
+        let protocol_out = self.group_by_protocol.load(&protocol_id.to_string()).map(|item| item.bytes_sent.load(SeqCst));
         (protocol_in, protocol_out)
     }
 
     /// Get in&out bytes by peer_id
     pub fn get_peer_in_and_out(&self, peer_id: &PeerId) -> (Option<usize>, Option<usize>) {
-        let peer_in = self.peer_in.load(peer_id).map(|count| count.load(SeqCst));
-        let peer_out = self.peer_out.load(peer_id).map(|count| count.load(SeqCst));
+        let peer_in = self.group_by_peer.load(peer_id).map(|item| item.r.bytes_recv.load(SeqCst));
+        let peer_out = self.group_by_peer.load(peer_id).map(|item| item.r.bytes_sent.load(SeqCst));
         (peer_in, peer_out)
     }
 
     /// Get an iterator that key is peer_id and value is input bytes.
     pub fn get_peers_in_list(&self) -> IntoIter<PeerId, usize> {
         let mut map = HashMap::new();
-        for (_, (protocol, count)) in self.peer_in.iterator().unwrap().enumerate() {
-            let _ = map.insert(protocol, count.load(SeqCst));
+        for (_, (peer, p_metric)) in self.group_by_peer.iterator().unwrap().enumerate() {
+            let _ = map.insert(peer, p_metric.r.bytes_recv.load(SeqCst));
         };
         map.into_iter()
     }
@@ -156,8 +211,8 @@ impl Metric {
     /// Get an iterator that key is peer_id and value is output bytes.
     pub fn get_peers_out_list(&self) -> IntoIter<PeerId, usize> {
         let mut map = HashMap::new();
-        for (_, (protocol, count)) in self.peer_out.iterator().unwrap().enumerate() {
-            let _ = map.insert(protocol, count.load(SeqCst));
+        for (_, (peer, p_metric)) in self.group_by_peer.iterator().unwrap().enumerate() {
+            let _ = map.insert(peer, p_metric.r.bytes_sent.load(SeqCst));
         };
         map.into_iter()
     }
@@ -165,8 +220,8 @@ impl Metric {
     /// Get an iterator that key is protocol and value is input bytes.
     pub fn get_protocols_in_list(&self) -> IntoIter<String, usize> {
         let mut map = HashMap::new();
-        for (_, (protocol, count)) in self.protocol_in.iterator().unwrap().enumerate() {
-            let _ = map.insert(protocol, count.load(SeqCst));
+        for (_, (protocol, p_metric)) in self.group_by_protocol.iterator().unwrap().enumerate() {
+            let _ = map.insert(protocol, p_metric.bytes_recv.load(SeqCst));
         };
         map.into_iter()
     }
@@ -174,10 +229,20 @@ impl Metric {
     /// Get an iterator that key is protocol and value is output bytes.
     pub fn get_protocols_out_list(&self) -> IntoIter<String, usize> {
         let mut map = HashMap::new();
-        for (_, (protocol, count)) in self.protocol_out.iterator().unwrap().enumerate() {
-            let _ = map.insert(protocol, count.load(SeqCst));
+        for (_, (protocol, p_metric)) in self.group_by_protocol.iterator().unwrap().enumerate() {
+            let _ = map.insert(protocol, p_metric.bytes_sent.load(SeqCst));
         };
         map.into_iter()
+    }
+
+    pub fn get_traffic_by_peer(&self, peer_id: Option<PeerId>) -> Option<Vec<(PeerId, RecordByteAndPacketView)>> {
+        if peer_id.is_none() {
+            let v = self.group_by_peer.iterator().unwrap()
+                .map(|(p, v)| (p, v.into()))
+                .collect::<Vec<(PeerId, RecordByteAndPacketView)>>();
+            return Some(v);
+        }
+        self.group_by_peer.load(&peer_id.unwrap()).map(|p| vec![(peer_id.unwrap(), p.into())])
     }
 
     /// Get rates about received bytes per seconds
@@ -208,7 +273,7 @@ impl Metric {
         snapshot.set_last_update_time(now);
 
         let time_multiplier = 1.0 / tdiff.unwrap().as_secs_f64();
-        let total = self.byte_recv.load(SeqCst);
+        let total = self.node_stat.r.bytes_recv.load(SeqCst);
         log::trace!("Input Bytes: {}", total);
         let diff = total as i64 - snapshot.total();
         let instant = time_multiplier.mul(diff as f64);
@@ -236,7 +301,7 @@ impl Metric {
         snapshot.set_last_update_time(now);
 
         let time_multiplier = 1.0 / tdiff.unwrap().as_secs_f64();
-        let total = self.byte_sent.load(SeqCst);
+        let total = self.node_stat.r.bytes_sent.load(SeqCst);
         log::trace!("Output Bytes: {}", total);
         let diff = total as i64 - snapshot.total();
         let instant = time_multiplier.mul(diff as f64);
@@ -269,11 +334,12 @@ mod tests {
 
     #[test]
     fn test_sent_package_and_byte() {
+        env_logger::init();
         let metric = Arc::new(generate_metrics());
 
         task::block_on(async {
             let mut t = Vec::new();
-            for index in 0..16 {
+            for index in 0..160 {
                 let m = metric.clone();
                 t.push(task::spawn(async move {
                     m.log_sent_msg(index);
@@ -284,7 +350,7 @@ mod tests {
             }
         });
 
-        assert_eq!(metric.get_sent_count_and_size(), (16, 120));
+        assert_eq!(metric.get_sent_count_and_size(), (160, 12720));
     }
 
     #[test]
@@ -293,7 +359,7 @@ mod tests {
 
         task::block_on(async {
             let mut t = Vec::new();
-            for index in 0..16 {
+            for index in 0..160 {
                 let m = metric.clone();
                 t.push(task::spawn(async move {
                     m.log_recv_msg(index);
@@ -304,7 +370,7 @@ mod tests {
             }
         });
 
-        assert_eq!(metric.get_recv_count_and_size(), (16, 120));
+        assert_eq!(metric.get_recv_count_and_size(), (160, 12720));
     }
 
     #[test]
@@ -317,13 +383,13 @@ mod tests {
         let protocol = ProtocolId::new(b"/test/1.0.0", 110);
         task::block_on(async {
             let mut t = Vec::new();
-            for i in 0..16 {
+            for index in 0..160 {
                 let m = metric.clone();
                 let pid = peer_id;
                 let protocol = protocol.clone();
                 t.push(task::spawn(async move {
-                    m.log_sent_stream(&protocol, i, &pid);
-                    m.log_recv_stream(&protocol, i, &pid);
+                    m.log_sent_stream(&protocol, index, &pid);
+                    m.log_recv_stream(&protocol, index, &pid);
                 }));
             }
 
@@ -332,7 +398,7 @@ mod tests {
             }
         });
 
-        assert_eq!(metric.get_peer_in_and_out(&peer_id), (Some(120), Some(120)));
-        assert_eq!(metric.get_protocol_in_and_out(&protocol.to_string()), (Some(120), Some(120)));
+        assert_eq!(metric.get_peer_in_and_out(&peer_id), (Some(12720), Some(12720)));
+        assert_eq!(metric.get_protocol_in_and_out(&protocol.to_string()), (Some(12720), Some(12720)));
     }
 }

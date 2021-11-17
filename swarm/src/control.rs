@@ -20,7 +20,7 @@
 
 use crate::connection::{ConnectionId, ConnectionView};
 use crate::identify::IdentifyInfo;
-use crate::metrics::metric::Metric;
+use crate::metrics::metric::{Metric, RecordByteAndPacketView};
 use crate::network::NetworkInfo;
 use crate::substream::{StreamId, Substream, SubstreamView};
 use crate::{SwarmError, SwarmStats, SWARM_EXIT_FLAG};
@@ -86,6 +86,10 @@ pub enum DumpCommand {
     Streams(PeerId, oneshot::Sender<Result<Vec<SubstreamView>>>),
     /// Dump all statistics of Swarm.
     Statistics(oneshot::Sender<Result<SwarmStats>>),
+    /// Dump network info by peer_id.
+    NetworkTrafficByPeerID(Option<PeerId>, oneshot::Sender<Option<Vec<(PeerId, RecordByteAndPacketView)>>>),
+    // /// Dump all peer's network info whether is connected or not.
+    // NetworkInfo
 }
 
 /// The `Swarm` controller.
@@ -308,6 +312,13 @@ impl Control {
         let (tx, rx) = oneshot::channel();
         self.sender.send(SwarmControlCmd::Dump(DumpCommand::Statistics(tx))).await?;
         rx.await?
+    }
+
+    /// Dump network traffic by peer_id
+    pub async fn dump_network_traffic_by_peer(&mut self, peer_id: Option<PeerId>) -> Result<Option<Vec<(PeerId, RecordByteAndPacketView)>>> {
+        let (tx, rx) = oneshot::channel();
+        self.sender.send(SwarmControlCmd::Dump(DumpCommand::NetworkTrafficByPeerID(peer_id, tx))).await?;
+        rx.await.map_err(|_| SwarmError::Internal)
     }
 
     // /// Check connection still alive or not.
