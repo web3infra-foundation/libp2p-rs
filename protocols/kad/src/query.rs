@@ -22,7 +22,7 @@ use futures::channel::mpsc;
 use futures::future::Either;
 use futures::{FutureExt, SinkExt, StreamExt};
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering, AtomicU64};
+use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::{num::NonZeroUsize, time::Duration, time::Instant};
 
@@ -34,7 +34,7 @@ use libp2prs_swarm::Control as SwarmControl;
 use crate::kbucket::{Distance, Key};
 use crate::{record, KadError, ALPHA_VALUE, BETA_VALUE, K_VALUE};
 
-use crate::kad::{KadPoster, MessageStats, MessengerManager, Ledger};
+use crate::kad::{KadPoster, Ledger, MessageStats, MessengerManager};
 use crate::protocol::{KadConnectionType, KadPeer, ProtocolEvent};
 use crate::task_limit::TaskLimiter;
 use libp2prs_core::metricmap::MetricMap;
@@ -199,8 +199,8 @@ impl FixedQuery {
     }
 
     pub(crate) fn run<F>(self, f: F)
-        where
-            F: FnOnce(Result<()>) + Send + 'static,
+    where
+        F: FnOnce(Result<()>) + Send + 'static,
     {
         log::debug!("run fixed query {:?}", self.query_type);
 
@@ -438,15 +438,15 @@ impl ClosestPeers {
         self.closest_peers.get(&distance).map(|p| p.peer.clone())
     }
 
-    fn peers_filter(&self, num: usize, p: impl FnMut(&&PeerWithState) -> bool) -> impl Iterator<Item=&PeerWithState> {
+    fn peers_filter(&self, num: usize, p: impl FnMut(&&PeerWithState) -> bool) -> impl Iterator<Item = &PeerWithState> {
         self.closest_peers.values().filter(p).take(num)
     }
 
-    fn peers_in_state_mut(&mut self, state: PeerState, num: usize) -> impl Iterator<Item=&mut PeerWithState> {
+    fn peers_in_state_mut(&mut self, state: PeerState, num: usize) -> impl Iterator<Item = &mut PeerWithState> {
         self.closest_peers.values_mut().filter(move |peer| peer.state == state).take(num)
     }
 
-    fn peers_in_states(&self, states: Vec<PeerState>, num: usize) -> impl Iterator<Item=&PeerWithState> {
+    fn peers_in_states(&self, states: Vec<PeerState>, num: usize) -> impl Iterator<Item = &PeerWithState> {
         self.closest_peers
             .values()
             .filter(move |peer| states.contains(&peer.state))
@@ -731,8 +731,8 @@ impl IterativeQuery {
     }
 
     pub(crate) fn run<F>(self, f: F)
-        where
-            F: FnOnce(Result<QueryResult>) + Send + 'static,
+    where
+        F: FnOnce(Result<QueryResult>) + Send + 'static,
     {
         log::debug!("run iterative query {:?} for {:?}", self.query_type, self.key);
 
@@ -874,13 +874,11 @@ impl IterativeQuery {
                         let stats = job.stats.clone();
                         let ledgers = job.ledgers.clone();
                         let pid = job.peer;
-                        let addrs = job.addrs.clone();
                         let start = Instant::now();
                         let r = job.execute().await;
                         let cost = start.elapsed();
                         if r.is_err() {
-                            let public_ips: Vec<Multiaddr> = addrs.into_iter().filter(|addr| !addr.is_private_addr() && !addr.is_ipv6_addr()).collect();
-                            log::error!("index {}， cost {:?}, failed to talk to {}, all private ip {} err={:?}", index, cost, pid, public_ips.is_empty(), r);
+                            log::trace!("job {}, cost {:?}, failed to connect to {}, err={:?}", index, cost, pid, r);
                             stats.iterative.failure.fetch_add(1, Ordering::SeqCst);
                             let addition = Ledger {
                                 succeed: Arc::new(AtomicU32::new(0)),
@@ -888,7 +886,9 @@ impl IterativeQuery {
                                 failed: Arc::new(AtomicU32::new(1)),
                                 failed_cost: Arc::new(AtomicU64::new(cost.as_millis() as u64)),
                             };
-                            ledgers.store_or_modify(&pid, addition.clone(), |_, ledger| { let _ = ledger.add(addition.clone()); });
+                            ledgers.store_or_modify(&pid, addition.clone(), |_, ledger| {
+                                let _ = ledger.add(addition.clone());
+                            });
                             let _ = tx.send(QueryUpdate::Unreachable(peer_id)).await;
                         } else {
                             // log::info!("index {}， cost {:?}, succeed to talk to {}", index, cost, pid);
@@ -898,7 +898,9 @@ impl IterativeQuery {
                                 failed: Arc::new(AtomicU32::new(0)),
                                 failed_cost: Default::default(),
                             };
-                            ledgers.store_or_modify(&pid, addition.clone(), |_, ledger| { let _ = ledger.add(addition.clone()); });
+                            ledgers.store_or_modify(&pid, addition.clone(), |_, ledger| {
+                                let _ = ledger.add(addition.clone());
+                            });
                             stats.iterative.success.fetch_add(1, Ordering::SeqCst);
                         }
                     });
@@ -925,12 +927,20 @@ impl IterativeQuery {
                 query_results.closest_peers = Some(peers);
             }
 
-            stats.iter_query_completed.fetch_add(1, Ordering::SeqCst);
+            let job_finished = stats.iter_query_completed.fetch_add(1, Ordering::SeqCst);
+            let job_started = stats.iter_query_executed.load(Ordering::Relaxed);
 
             // calculate how long this iterative query lasts
             let duration = start.elapsed();
 
-            log::info!("index {}, iterative query report : {:?} {:?}", index, stats.iterative.to_view(), duration);
+            log::info!(
+                "job {} done, iterative query report : {:?} {:?} {}/{}",
+                index,
+                stats.iterative.to_view(),
+                duration,
+                job_started,
+                job_finished
+            );
 
             Ok(query_results)
         };
