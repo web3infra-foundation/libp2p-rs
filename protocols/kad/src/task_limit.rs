@@ -18,10 +18,10 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+use futures::channel::oneshot;
 use futures::{channel::mpsc, SinkExt, StreamExt};
 use std::future::Future;
 use std::num::NonZeroUsize;
-use futures::channel::oneshot;
 
 use crate::KadError;
 use libp2prs_runtime::task;
@@ -104,12 +104,13 @@ impl LimitedTaskMgr {
             loop {
                 match rx.next().await {
                     Some(_) => {
-                        log::trace!("received job done notification msg");
+                        log::info!("received job done notification msg");
                         rx_token.next().await;
                     }
                     None => {
-                        log::debug!("LimitedTaskMgr channel closed...");
-                        return Ok::<(), KadError>(())
+                        log::info!("LimitedTaskMgr channel closed...");
+                        rx_token.close();
+                        return Ok::<(), KadError>(());
                     }
                 }
             }
@@ -121,17 +122,18 @@ impl LimitedTaskMgr {
             tx,
             handles: vec![],
         }
-
     }
 
     pub fn spawn<F>(&mut self, future: F)
-        where
-            F: Future<Output = Result<()>> + Send + 'static,
+    where
+        F: Future<Output = Result<()>> + Send + 'static,
     {
         let mut tx_token = self.tx_token.clone();
         let mut tx = self.tx.clone();
         let handle = task::spawn(async move {
-            let _ = tx_token.send(()).await;
+            let r = tx_token.send(()).await;
+            log::info!("{:?}", r);
+            r?;
             let r = future.await;
             let _ = tx.send(()).await;
             r
@@ -140,7 +142,15 @@ impl LimitedTaskMgr {
         self.handles.push(handle);
     }
 
-    pub async fn wait(self) -> (usize, usize) {
+    pub async fn shutdown(mut self) {
+        for h in self.handles {
+            //h.cancel().await;
+        }
+        self.tx_token.close_channel();
+        self.tx.close_channel();
+    }
+
+    pub async fn wait(mut self) -> (usize, usize) {
         let count = self.handles.len();
         let mut success = 0;
         for h in self.handles {
@@ -148,6 +158,8 @@ impl LimitedTaskMgr {
                 success += 1;
             }
         }
+        self.tx_token.close_channel();
+        self.tx.close_channel();
         (count, success)
     }
 }
@@ -196,7 +208,6 @@ mod tests {
         }
 
         assert_eq!(limiter.handles.len(), 10);
-
 
         // block_on(async move {
         //     for _ in 0..10 {

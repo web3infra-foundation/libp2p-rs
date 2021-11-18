@@ -734,7 +734,7 @@ impl IterativeQuery {
         false
     }
 
-    pub(crate) fn run<F>(mut self, f: F)
+    pub(crate) async fn run<F>(mut self, f: F) -> Result<()>
     where
         F: FnOnce(Result<QueryResult>) + Send + 'static,
     {
@@ -744,7 +744,7 @@ impl IterativeQuery {
         if self.seeds.is_empty() {
             log::info!("no seeds, abort running");
             f(Err(KadError::NoKnownPeers));
-            return;
+            return Ok::<(), KadError>(());
         }
 
         let mut tx = self.iter_qry_limiter_tx.take().unwrap();
@@ -876,27 +876,31 @@ impl IterativeQuery {
                             tx: tx.clone(),
                         };
 
-                    let mut tx = tx.clone();
-                    let _ = task::spawn(async move {
-                        let stats = job.stats.clone();
-                        let ledgers = job.ledgers.clone();
-                        let pid = job.peer;
-                        let start = Instant::now();
-                        let r = job.execute().await;
-                        let cost = start.elapsed();
-                        if r.is_err() {
-                            log::trace!("job {}, cost {:?}, failed to connect to {}, err={:?}", index, cost, pid, r);
-                            stats.iterative.failure.fetch_add(1, Ordering::SeqCst);
-                            ledgers.store_or_modify(&pid, |ledger| { ledger.failure_increase(cost.as_millis() as u64); });
-                            let _ = tx.send(QueryUpdate::Unreachable(peer_id)).await;
-                        } else {
-                            // log::info!("index {}， cost {:?}, succeed to talk to {}", index, cost, pid);
-                            ledgers.store_or_modify(&pid, |ledger| { ledger.success_increase(cost.as_millis() as u64); });
-                            stats.iterative.success.fetch_add(1, Ordering::SeqCst);
-                        }
-                    });
+                        let mut tx = tx.clone();
+                        let _ = task::spawn(async move {
+                            let stats = job.stats.clone();
+                            let ledgers = job.ledgers.clone();
+                            let pid = job.peer;
+                            let start = Instant::now();
+                            let r = job.execute().await;
+                            let cost = start.elapsed();
+                            if r.is_err() {
+                                log::trace!("job {}, cost {:?}, failed to connect to {}, err={:?}", index, cost, pid, r);
+                                stats.iterative.failure.fetch_add(1, Ordering::SeqCst);
+                                ledgers.store_or_modify(&pid, |ledger| {
+                                    ledger.failure_increase(cost.as_millis() as u64);
+                                });
+                                let _ = tx.send(QueryUpdate::Unreachable(peer_id)).await;
+                            } else {
+                                // log::info!("index {}， cost {:?}, succeed to talk to {}", index, cost, pid);
+                                ledgers.store_or_modify(&pid, |ledger| {
+                                    ledger.success_increase(cost.as_millis() as u64);
+                                });
+                                stats.iterative.success.fetch_add(1, Ordering::SeqCst);
+                            }
+                        });
+                    }
                 }
-            }
 
                 // collect the query result
                 let wanted_states = vec![PeerState::NotContacted, PeerState::Waiting, PeerState::Succeeded];
@@ -907,12 +911,12 @@ impl IterativeQuery {
 
                 log::debug!("iterative query, return {} closer peers", peers.len());
                 log::debug!(
-                "Closest Peers in details: Unreachable:{} NotContacted:{} Waiting:{} Succeeded:{}",
-                closest_peers.num_of_state(PeerState::Unreachable),
-                closest_peers.num_of_state(PeerState::NotContacted),
-                closest_peers.num_of_state(PeerState::Waiting),
-                closest_peers.num_of_state(PeerState::Succeeded)
-            );
+                    "Closest Peers in details: Unreachable:{} NotContacted:{} Waiting:{} Succeeded:{}",
+                    closest_peers.num_of_state(PeerState::Unreachable),
+                    closest_peers.num_of_state(PeerState::NotContacted),
+                    closest_peers.num_of_state(PeerState::Waiting),
+                    closest_peers.num_of_state(PeerState::Succeeded)
+                );
 
                 if !peers.is_empty() {
                     query_results.closest_peers = Some(peers);
@@ -925,13 +929,13 @@ impl IterativeQuery {
                 let duration = start.elapsed();
 
                 log::info!(
-                "job {} done, iterative query report : {:?} {:?} {}/{}",
-                index,
-                stats.iterative.to_view(),
-                duration,
-                job_started,
-                job_finished
-            );
+                    "job {} done, iterative query report : {:?} {:?} {}/{}",
+                    index,
+                    stats.iterative.to_view(),
+                    duration,
+                    job_started,
+                    job_finished
+                );
 
                 Ok(query_results)
             };
@@ -941,11 +945,14 @@ impl IterativeQuery {
                 Either::Left((result, _)) => f(result),
                 Either::Right((_, _)) => f(Err(KadError::Timeout)),
             }
-        }.boxed();
+        };
+        job.await;
 
-        task::spawn(async move {
-            tx.send(job).await;
-        });
+        Ok::<(), KadError>(())
+        //
+        // task::spawn(async move {
+        //     tx.send(job).await;
+        // });
     }
 }
 
