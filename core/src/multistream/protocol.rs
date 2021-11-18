@@ -337,6 +337,7 @@ impl From<io::Error> for ProtocolError {
     }
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<io::Error> for ProtocolError {
     fn into(self) -> io::Error {
         if let ProtocolError::IoError(e) = self {

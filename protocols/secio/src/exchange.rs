@@ -34,6 +34,7 @@ pub enum KeyAgreement {
     EcdhP384,
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<&'static agreement::Algorithm> for KeyAgreement {
     #[inline]
     fn into(self) -> &'static agreement::Algorithm {

@@ -259,7 +259,7 @@ impl FloodSub {
                 continue;
             }
 
-            self.connected_peers.get(&pid).map(|tx| tx.unbounded_send(rpc.clone()));
+            self.connected_peers.get(pid).map(|tx| tx.unbounded_send(rpc.clone()));
         }
     }
 

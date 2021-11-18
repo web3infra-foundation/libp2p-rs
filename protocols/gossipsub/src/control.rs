@@ -50,7 +50,7 @@ pub struct Control {
 
 impl Control {
     pub(crate) fn new(control_sender: mpsc::UnboundedSender<ControlCommand>, config: GossipsubConfig) -> Self {
-        Control { control_sender, config }
+        Control { config, control_sender }
     }
     /// Closes the floodsub main loop.
     pub fn close(&mut self) {

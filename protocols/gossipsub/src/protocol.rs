@@ -150,7 +150,7 @@ impl GossipsubHandler {
             }
         };
 
-        let source = match PeerId::from_bytes(&from) {
+        let source = match PeerId::from_bytes(from) {
             Ok(v) => v,
             Err(_) => {
                 debug!("Signature verification failed: Invalid Peer Id");
@@ -168,7 +168,7 @@ impl GossipsubHandler {
 
         // If there is a key value in the protobuf, use that key otherwise the key must be
         // obtained from the inlined source peer_id.
-        let public_key = match message.key.as_ref().map(|key| PublicKey::from_protobuf_encoding(&key)) {
+        let public_key = match message.key.as_ref().map(|key| PublicKey::from_protobuf_encoding(key)) {
             Some(Ok(key)) => key,
             _ => match PublicKey::from_protobuf_encoding(&source.to_bytes()[2..]) {
                 Ok(v) => v,

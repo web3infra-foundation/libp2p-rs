@@ -78,7 +78,7 @@ impl<K, V> MetricMap<K, V>
             let mut new_hash = mut_hash.clone();
             let value = V::default();
             on_modify(&value);
-            new_hash.insert(key.clone(), value.clone());
+            new_hash.insert(key.clone(), value);
 
             let owned = Owned::new(new_hash);
 

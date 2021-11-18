@@ -320,7 +320,7 @@ fn construct_fail() {
     ];
 
     for address in &addresses {
-        assert!(address.parse::<Multiaddr>().is_err(), address.to_string());
+        assert!(address.parse::<Multiaddr>().is_err(), "{}", address.to_string());
     }
 }
 

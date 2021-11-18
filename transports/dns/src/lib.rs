@@ -113,9 +113,10 @@ where
             error!("DNS resolver crashed");
             TransportError::ResolveFail(name.clone())
         })?;
-        let list = list.map(|s| s.ip()).collect::<Vec<_>>();
+        // let list = list.map(|s| s.ip()).collect::<Vec<_>>();
 
         let outcome = list
+            .map(|s|s.ip())
             .into_iter()
             .filter_map(|addr| {
                 if (dns4 && addr.is_ipv4()) || (dns6 && addr.is_ipv6()) {

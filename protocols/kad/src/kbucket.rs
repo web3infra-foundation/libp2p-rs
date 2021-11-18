@@ -70,6 +70,7 @@
 mod bucket;
 mod entry;
 mod key;
+
 use primitive_types::U256;
 
 pub use entry::*;
@@ -139,9 +140,9 @@ impl BucketIndex {
 }
 
 impl<TKey, TVal> KBucketsTable<TKey, TVal>
-where
-    TKey: Clone + AsRef<KeyBytes>,
-    TVal: Clone,
+    where
+        TKey: Clone + AsRef<KeyBytes>,
+        TVal: Clone,
 {
     /// Creates a new, empty Kademlia routing table with entries partitioned
     /// into buckets as per the Kademlia protocol.
@@ -178,7 +179,7 @@ where
     /// The buckets are ordered by proximity to the `local_key`, i.e. the first
     /// bucket is the closest bucket (containing at most one key).
     /// pub fn iter<'a>(&'a mut self) -> impl Iterator<Item = KBucketRef<'a, TKey, TVal>> + 'a {
-    pub fn iter(&'_ mut self) -> impl Iterator<Item = KBucketRef<'_, TKey, TVal>> + '_ {
+    pub fn iter(&'_ mut self) -> impl Iterator<Item=KBucketRef<'_, TKey, TVal>> + '_ {
         self.buckets.iter_mut().enumerate().map(move |(i, b)| KBucketRef {
             index: BucketIndex(i),
             bucket: b,
@@ -189,8 +190,8 @@ where
     ///
     /// Returns `None` if the given key refers to the local key.
     pub fn bucket_index<K>(&self, key: &K) -> Option<u32>
-    where
-        K: AsRef<KeyBytes>,
+        where
+            K: AsRef<KeyBytes>,
     {
         let d = self.local_key.as_ref().distance(key);
         d.ilog2()
@@ -200,13 +201,13 @@ where
     ///
     /// Returns `None` if the given key refers to the local key.
     pub fn bucket<K>(&mut self, key: &K) -> Option<KBucketRef<'_, TKey, TVal>>
-    where
-        K: AsRef<KeyBytes>,
+        where
+            K: AsRef<KeyBytes>,
     {
         let d = self.local_key.as_ref().distance(key);
         if let Some(index) = BucketIndex::new(&d) {
             let bucket = &mut self.buckets[index.0];
-            Some(KBucketRef { bucket, index })
+            Some(KBucketRef { index, bucket })
         } else {
             None
         }
@@ -214,9 +215,9 @@ where
 
     /// Returns an iterator over the keys closest to `target`, ordered by
     /// increasing distance.
-    pub fn closest_keys<'a, T>(&'a mut self, target: &'a T) -> impl Iterator<Item = TKey> + 'a
-    where
-        T: Clone + AsRef<KeyBytes>,
+    pub fn closest_keys<'a, T>(&'a mut self, target: &'a T) -> impl Iterator<Item=TKey> + 'a
+        where
+            T: Clone + AsRef<KeyBytes>,
     {
         let distance = self.local_key.as_ref().distance(target);
         ClosestIter {
@@ -230,10 +231,10 @@ where
 
     /// Returns an iterator over the nodes closest to the `target` key, ordered by
     /// increasing distance.
-    pub fn closest<'a, T>(&'a mut self, target: &'a T) -> impl Iterator<Item = EntryView<TKey, TVal>> + 'a
-    where
-        T: Clone + AsRef<KeyBytes>,
-        TVal: Clone,
+    pub fn closest<'a, T>(&'a mut self, target: &'a T) -> impl Iterator<Item=EntryView<TKey, TVal>> + 'a
+        where
+            T: Clone + AsRef<KeyBytes>,
+            TVal: Clone,
     {
         let distance = self.local_key.as_ref().distance(target);
         ClosestIter {
@@ -251,8 +252,8 @@ where
     /// The number of nodes between the local node and the target are
     /// calculated by backtracking from the target towards the local key.
     pub fn count_nodes_between<T>(&mut self, target: &T) -> usize
-    where
-        T: AsRef<KeyBytes>,
+        where
+            T: AsRef<KeyBytes>,
     {
         let local_key = self.local_key.clone();
         let distance = target.as_ref().distance(&local_key);
@@ -375,12 +376,12 @@ impl Iterator for ClosestBucketsIter {
 }
 
 impl<TTarget, TKey, TVal, TMap, TOut> Iterator for ClosestIter<'_, TTarget, TKey, TVal, TMap, TOut>
-where
-    TTarget: AsRef<KeyBytes>,
-    TKey: Clone + AsRef<KeyBytes>,
-    TVal: Clone,
-    TMap: Fn(&KBucket<TKey, TVal>) -> ArrayVec<[TOut; K_VALUE.get()]>,
-    TOut: AsRef<KeyBytes>,
+    where
+        TTarget: AsRef<KeyBytes>,
+        TKey: Clone + AsRef<KeyBytes>,
+        TVal: Clone,
+        TMap: Fn(&KBucket<TKey, TVal>) -> ArrayVec<[TOut; K_VALUE.get()]>,
+        TOut: AsRef<KeyBytes>,
 {
     type Item = TOut;
 
@@ -418,9 +419,9 @@ pub struct KBucketRef<'a, TKey, TVal> {
 }
 
 impl<'a, TKey, TVal> KBucketRef<'a, TKey, TVal>
-where
-    TKey: Clone + AsRef<KeyBytes>,
-    TVal: Clone,
+    where
+        TKey: Clone + AsRef<KeyBytes>,
+        TVal: Clone,
 {
     /// Returns the index for this bucket.
     pub fn index(&self) -> usize {
@@ -459,7 +460,7 @@ where
     }
 
     /// Returns an iterator over the entries in the bucket.
-    pub fn iter(&'a self) -> impl Iterator<Item = EntryRefView<'a, TKey, TVal>> {
+    pub fn iter(&'a self) -> impl Iterator<Item=EntryRefView<'a, TKey, TVal>> {
         self.bucket.iter().map(move |n| EntryRefView {
             node: NodeRefView {
                 key: &n.key,

@@ -224,6 +224,7 @@ impl GossipsubRpc {
     }
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<rpc_proto::Rpc> for GossipsubRpc {
     /// Converts the RPC into protobuf format.
     fn into(self) -> rpc_proto::Rpc {

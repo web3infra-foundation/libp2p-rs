@@ -73,6 +73,7 @@ impl From<io::Error> for PlaintextError {
     }
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<io::Error> for PlaintextError {
     fn into(self) -> io::Error {
         match self {

@@ -158,8 +158,8 @@ enum PublishConfig {
 impl PublishConfig {
     pub fn get_own_id(&self) -> Option<&PeerId> {
         match self {
-            Self::Signing { author, .. } => Some(&author),
-            Self::Author(author) => Some(&author),
+            Self::Signing { author, .. } => Some(author),
+            Self::Author(author) => Some(author),
             _ => None,
         }
     }
@@ -473,11 +473,11 @@ impl<D, F> Gossipsub<D, F>
     pub fn subscribe(&mut self, topic: &TopicHash) -> Result<bool, SubscriptionError> {
         debug!("Subscribing to topic: {}", topic);
         let topic_hash = topic;
-        if !self.subscription_filter.can_subscribe(&topic_hash) {
+        if !self.subscription_filter.can_subscribe(topic_hash) {
             return Err(SubscriptionError::NotAllowed);
         }
 
-        if self.mesh.get(&topic_hash).is_some() {
+        if self.mesh.get(topic_hash).is_some() {
             debug!("Topic: {} is already in the mesh.", topic);
             return Ok(false);
         }
@@ -505,7 +505,7 @@ impl<D, F> Gossipsub<D, F>
 
         // call JOIN(topic)
         // this will add new peers to the mesh for the topic
-        self.join(&topic_hash);
+        self.join(topic_hash);
         info!("Subscribed to topic: {}", topic);
         Ok(true)
     }
@@ -517,7 +517,7 @@ impl<D, F> Gossipsub<D, F>
         debug!("Unsubscribing from topic: {}", topic);
         let topic_hash = topic;
 
-        if self.mesh.get(&topic_hash).is_none() {
+        if self.mesh.get(topic_hash).is_none() {
             debug!("Already unsubscribed from topic: {:?}", topic_hash);
             // we are not subscribed
             return Ok(false);
@@ -546,7 +546,7 @@ impl<D, F> Gossipsub<D, F>
 
         // call LEAVE(topic)
         // this will remove the topic from the mesh
-        self.leave(&topic_hash);
+        self.leave(topic_hash);
 
         info!("Unsubscribed from topic: {:?}", topic_hash);
         Ok(true)
@@ -915,7 +915,7 @@ impl<D, F> Gossipsub<D, F>
             get_random_peers(
                 &self.topic_peers,
                 &self.peer_protocols,
-                &topic_hash,
+                topic_hash,
                 self.config.prune_peers(),
                 |p| p != peer && !self.score_below_threshold(p, |_| 0.0).0,
             )
@@ -1236,13 +1236,13 @@ impl<D, F> Gossipsub<D, F>
             // remove peer from all mappings
             for topic in topics {
                 // check the mesh for the topic
-                if let Some(mesh_peers) = self.mesh.get_mut(&topic) {
+                if let Some(mesh_peers) = self.mesh.get_mut(topic) {
                     // check if the peer is in the mesh and remove it
                     mesh_peers.remove(&peer_id);
                 }
 
                 // remove from topic_peers
-                if let Some(peer_list) = self.topic_peers.get_mut(&topic) {
+                if let Some(peer_list) = self.topic_peers.get_mut(topic) {
                     if !peer_list.remove(&peer_id) {
                         // debugging purposes
                         warn!("Disconnected node: {} not in topic_peers peer list", peer_id);
@@ -1252,7 +1252,7 @@ impl<D, F> Gossipsub<D, F>
                 }
 
                 // remove from fanout
-                self.fanout.get_mut(&topic).map(|peers| peers.remove(&peer_id));
+                self.fanout.get_mut(topic).map(|peers| peers.remove(&peer_id));
             }
 
             //forget px and outbound status for this peer
@@ -1558,7 +1558,7 @@ impl<D, F> Gossipsub<D, F>
 
     fn remove_peer_from_mesh(&mut self, peer_id: &PeerId, topic_hash: &TopicHash, backoff: Option<u64>, always_update_backoff: bool) {
         let mut update_backoff = always_update_backoff;
-        if let Some(peers) = self.mesh.get_mut(&topic_hash) {
+        if let Some(peers) = self.mesh.get_mut(topic_hash) {
             // remove the peer if it exists in the mesh
             if peers.remove(peer_id) {
                 info!(
@@ -1581,7 +1581,7 @@ impl<D, F> Gossipsub<D, F>
                 self.config.prune_backoff()
             };
             // is there a backoff specified by the peer? if so obey it.
-            self.backoffs.update_backoff(&topic_hash, peer_id, time);
+            self.backoffs.update_backoff(topic_hash, peer_id, time);
         }
     }
 
@@ -1687,7 +1687,7 @@ impl<D, F> Gossipsub<D, F>
             && if let Some(own_id) = self.publish_config.get_own_id() {
             own_id != propagation_source && raw_message.source.as_ref().map_or(false, |s| s == own_id)
         } else {
-            self.published_message_ids.contains(&msg_id)
+            self.published_message_ids.contains(msg_id)
         };
 
         if self_published {
@@ -2284,7 +2284,7 @@ impl<D, F> Gossipsub<D, F>
             self.fanout_last_pub.retain(|topic_hash, last_pub_time| {
                 if *last_pub_time + fanout_ttl < Instant::now() {
                     debug!("HEARTBEAT: Fanout topic removed due to timeout. Topic: {:?}", topic_hash);
-                    fanout.remove(&topic_hash);
+                    fanout.remove(topic_hash);
                     return false;
                 }
                 true
@@ -2303,7 +2303,7 @@ impl<D, F> Gossipsub<D, F>
                 // is the peer still subscribed to the topic?
                 match self.peer_topics.get(peer) {
                     Some(topics) => {
-                        if !topics.contains(&topic_hash) || score(peer) < publish_threshold {
+                        if !topics.contains(topic_hash) || score(peer) < publish_threshold {
                             debug!("HEARTBEAT: Peer removed from fanout for topic: {:?}", topic_hash);
                             to_remove_peers.push(*peer);
                         }
@@ -2388,7 +2388,7 @@ impl<D, F> Gossipsub<D, F>
     fn emit_gossip(&mut self) {
         let mut rng = thread_rng();
         for (topic_hash, peers) in self.mesh.iter().chain(self.fanout.iter()) {
-            let mut message_ids = self.mcache.get_gossip_message_ids(&topic_hash);
+            let mut message_ids = self.mcache.get_gossip_message_ids(topic_hash);
             if message_ids.is_empty() {
                 return;
             }
@@ -2408,7 +2408,7 @@ impl<D, F> Gossipsub<D, F>
             // dynamic number of peers to gossip based on `gossip_factor` with minimum `gossip_lazy`
             let n_map = |m| max(self.config.gossip_lazy(), (self.config.gossip_factor() * m as f64) as usize);
             // get gossip_lazy random peers
-            let to_msg_peers = get_random_peers_dynamic(&self.topic_peers, &self.peer_protocols, &topic_hash, n_map, |peer| {
+            let to_msg_peers = get_random_peers_dynamic(&self.topic_peers, &self.peer_protocols, topic_hash, n_map, |peer| {
                 !peers.contains(peer)
                     && !self.explicit_peers.contains(peer)
                     && !self.score_below_threshold(peer, |ts| ts.gossip_threshold).0
@@ -2534,7 +2534,7 @@ impl<D, F> Gossipsub<D, F>
         // add mesh peers
         let topic = &message.topic;
         // mesh
-        if let Some(mesh_peers) = self.mesh.get(&topic) {
+        if let Some(mesh_peers) = self.mesh.get(topic) {
             for peer_id in mesh_peers {
                 if Some(peer_id) != propagation_source && Some(peer_id) != message.source.as_ref() {
                     recipient_peers.insert(*peer_id);
@@ -2586,7 +2586,7 @@ impl<D, F> Gossipsub<D, F>
 
                 let signature = {
                     let message = rpc_proto::Message {
-                        from: Some(author.clone().to_bytes()),
+                        from: Some(author.to_bytes()),
                         data: Some(data.clone()),
                         seqno: Some(sequence_number.to_be_bytes().to_vec()),
                         topic: topic.clone().into_string(),

@@ -80,6 +80,7 @@ impl From<proto::message::ConnectionType> for KadConnectionType {
     }
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<proto::message::ConnectionType> for KadConnectionType {
     fn into(self) -> proto::message::ConnectionType {
         use proto::message::ConnectionType::*;
@@ -131,6 +132,7 @@ impl TryFrom<proto::message::Peer> for KadPeer {
     }
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<proto::message::Peer> for KadPeer {
     fn into(self) -> proto::message::Peer {
         proto::message::Peer {
@@ -144,6 +146,7 @@ impl Into<proto::message::Peer> for KadPeer {
     }
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<PeerId> for KadPeer {
     fn into(self) -> PeerId {
         self.node_id

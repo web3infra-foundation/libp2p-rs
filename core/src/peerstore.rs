@@ -89,6 +89,7 @@ struct AddrBookRecord {
     expiry: Instant,
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<Multiaddr> for AddrBookRecord {
     fn into(self) -> Multiaddr {
         self.addr

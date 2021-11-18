@@ -1,6 +1,4 @@
 use std::num::NonZeroUsize;
-use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
 use log::info;
 use libp2prs_kad::task_limit::LimitedTaskMgr;

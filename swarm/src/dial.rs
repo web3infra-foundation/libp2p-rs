@@ -340,6 +340,7 @@ impl DialBackoff {
 
 /// Represents whether dialing with addresses or using DHT to find peer
 #[derive(Clone)]
+#[allow(clippy::upper_case_acronyms)]
 pub(crate) enum EitherDialAddr {
     Addresses(Vec<Multiaddr>),
     DHT(IRouting),
@@ -695,7 +696,7 @@ mod tests {
             ab.add_peer(peer_id, dial_addr.clone()).await;
             ab.find_peer(&peer_id, &dial_addr).await
         });
-        assert_eq!(r, true);
+        assert!(r);
     }
 
     #[test]
@@ -713,7 +714,7 @@ mod tests {
             task::sleep(backoff_time).await;
             ab.find_peer(&peer_id, &dial_addr).await
         });
-        assert_eq!(r, false);
+        assert!(!r);
     }
 
     #[test]
@@ -735,8 +736,8 @@ mod tests {
 
         h.close_channel();
 
-        assert_eq!(r1, true);
-        assert_eq!(r2, true);
+        assert!(r1);
+        assert!(r2);
     }
 
     #[test]
@@ -759,7 +760,7 @@ mod tests {
             ab.entries.lock().await.get(&peer_id).is_none()
         });
 
-        assert_eq!(r1, true);
-        assert_eq!(r2, false);
+        assert!(r1);
+        assert!(r2);
     }
 }

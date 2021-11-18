@@ -944,7 +944,7 @@ impl IterativeQuery {
         }.boxed();
 
         task::spawn(async move {
-            tx.send(job).await;
+            let _ = tx.send(job).await;
         });
     }
 }

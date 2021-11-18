@@ -66,7 +66,7 @@ impl PeerId {
 
     /// Parses a `PeerId` from bytes.
     pub fn from_bytes(data: &[u8]) -> Result<PeerId, Error> {
-        Ok(PeerId::from_multihash(Multihash::from_bytes(&data)?).map_err(|mh| Error::UnsupportedCode(mh.code()))?)
+        PeerId::from_multihash(Multihash::from_bytes(data)?).map_err(|mh| Error::UnsupportedCode(mh.code()))
     }
 
     /// Tries to turn a `Multihash` into a `PeerId`.
@@ -93,12 +93,12 @@ impl PeerId {
     }
 
     /// Returns a raw bytes representation of this `PeerId`.
-    pub fn to_bytes(&self) -> Vec<u8> {
+    pub fn to_bytes(self) -> Vec<u8> {
         self.multihash.to_bytes()
     }
 
     /// Returns a base-58 encoded string of this `PeerId`.
-    pub fn to_base58(&self) -> String {
+    pub fn to_base58(self) -> String {
         bs58::encode(self.to_bytes()).into_string()
     }
 

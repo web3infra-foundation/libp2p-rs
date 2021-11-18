@@ -92,6 +92,7 @@ impl From<io::Error> for SecioError {
     }
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<io::Error> for SecioError {
     fn into(self) -> io::Error {
         match self {

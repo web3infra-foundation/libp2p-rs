@@ -128,7 +128,7 @@ fn build_client_tls_config(options: &ClientTlsConfig) -> tls::Config {
 }
 // Build tls server config
 fn build_server_tls_config(options: &ServerTlsConfig) -> tls::Config {
-    let (pk, certs) = load_config(&options).unwrap();
+    let (pk, certs) = load_config(options).unwrap();
     log::trace!("pk  {:?}", &pk);
     log::trace!("certs  {:?}", &certs);
     let cert_iter = certs.into_iter().map(|c| tls::Certificate::new(c.0));

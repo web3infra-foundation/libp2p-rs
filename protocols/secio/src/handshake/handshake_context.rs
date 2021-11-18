@@ -156,7 +156,7 @@ impl HandshakeContext<Local> {
                 ctx.finish()
             };
 
-            oh1.as_ref().cmp(&oh2.as_ref())
+            oh1.as_ref().cmp(oh2.as_ref())
         };
 
         let chosen_exchange = {

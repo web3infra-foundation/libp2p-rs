@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn test_task_limiter2() {
         let mut limiter = LimitedTaskMgr::new(NonZeroUsize::new(2).unwrap());
-        let count = Arc::new(AtomicUsize::new(0));
+        // let count = Arc::new(AtomicUsize::new(0));
 
         for _ in 0..10 {
             limiter.spawn(async move {
