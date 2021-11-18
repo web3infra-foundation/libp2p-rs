@@ -422,6 +422,9 @@ where
 
         let (iter_qry_limiter_tx, iter_qry_limiter_rx) = mpsc::channel(config.iterative_query_concurrency as usize);
 
+        let iter_qry_parallelism = std::env::var("ITER_QRY_PARALLELISM")
+            .map_or(32, |s| s.parse().unwrap_or(32));
+
         Kademlia {
             store,
             swarm: None,
@@ -429,7 +432,7 @@ where
             event_tx,
             control_tx,
             control_rx,
-            iter_qry_limiter: LimitedTaskMgr::new(NonZeroUsize::new(50).unwrap()),
+            iter_qry_limiter: LimitedTaskMgr::new(NonZeroUsize::new(iter_qry_parallelism).unwrap()),
             iter_qry_limiter_tx,
             iter_qry_limiter_rx,
             kbuckets: KBucketsTable::new(local_key),
