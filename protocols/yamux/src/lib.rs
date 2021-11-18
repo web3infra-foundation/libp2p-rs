@@ -184,7 +184,7 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> StreamMuxer for Yamux<T
                             }
                         }
                         Ok(None) => {
-                            log::info!("{:?} background-task exiting...", conn);
+                            log::debug!("{:?} yamux task exiting...", conn);
                             if let Err(e) = sender.send(Err(yamux::ConnectionError::Closed)).await {
                                 log::warn!("{:?}", e);
                             }
@@ -314,13 +314,19 @@ impl Config {
     /// Creates a new Yamux `Config` in client mode, regardless of whether
     /// it will be used for an inbound or outbound upgrade.
     pub fn client() -> Self {
-        Config { mode: Some(yamux::Mode::Client), ..Default::default() }
+        Config {
+            mode: Some(yamux::Mode::Client),
+            ..Default::default()
+        }
     }
 
     /// Creates a new Yamux `Config` in server mode, regardless of whether
     /// it will be used for an inbound or outbound upgrade.
     pub fn server() -> Self {
-        Config { mode: Some(yamux::Mode::Server), ..Default::default() }
+        Config {
+            mode: Some(yamux::Mode::Server),
+            ..Default::default()
+        }
     }
 
     /// Sets the size (in bytes) of the receive window per substream.

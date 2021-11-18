@@ -653,10 +653,9 @@ impl Swarm {
                 let _ = self.on_retrieve_rate(|r| {
                     let _ = reply.send(r);
                 });
-            }
-            // SwarmControlCmd::IsConnected(peer_id, sender) => {
-            //     let _ = sender.send(self.connections_by_peer.contains_key(&peer_id));
-            // }
+            } // SwarmControlCmd::IsConnected(peer_id, sender) => {
+              //     let _ = sender.send(self.connections_by_peer.contains_key(&peer_id));
+              // }
         }
         Ok(())
     }
@@ -1048,20 +1047,17 @@ impl Swarm {
         }
         // then check addrs, return error if None while routing is not available
         let addrs = match self.peer_store.get_addrs(&peer_id) {
-            Some(mut list) if !list.is_empty() =>
-                {
-                    if self.filter_private {
-                        list = list.into_iter()
-                            .filter(|addr| !addr.is_private_addr()).collect();
-                    }
-
-                    if self.filter_loopback {
-                        list = list.into_iter()
-                            .filter(|addr| !addr.is_loopback_addr()).collect();
-                    }
-
-                    dial::EitherDialAddr::Addresses(list)
+            Some(mut list) if !list.is_empty() => {
+                if self.filter_private {
+                    list = list.into_iter().filter(|addr| !addr.is_private_addr()).collect();
                 }
+
+                if self.filter_loopback {
+                    list = list.into_iter().filter(|addr| !addr.is_loopback_addr()).collect();
+                }
+
+                dial::EitherDialAddr::Addresses(list)
+            }
             _ => {
                 if use_routing && self.routing.is_some() {
                     // ok, clone the routing interface into EitherDialAddr
@@ -1078,9 +1074,15 @@ impl Swarm {
         // allocate transaction id and push box::f into hashmap for post-processing
         let tid = self.assign_tid();
         self.dial_transactions.insert(tid, Box::new(f));
-        self.dialer
-            .dial(peer_id, self.transports.clone(), addrs, self.event_sender.clone(), tid
-                  , self.filter_private, self.filter_loopback);
+        self.dialer.dial(
+            peer_id,
+            self.transports.clone(),
+            addrs,
+            self.event_sender.clone(),
+            tid,
+            self.filter_private,
+            self.filter_loopback,
+        );
     }
 
     fn get_best_conn(&mut self, peer_id: &PeerId) -> Option<&mut connection::Connection> {
@@ -1264,7 +1266,7 @@ impl Swarm {
                         }
                     }
                     Err(error) => {
-                        log::debug!("connection closed {:?} {:?}", cid, error);
+                        log::debug!("connection closed {:?} {:?}, exiting loop...", cid, error);
                         let _ = tx.send(SwarmEvent::ConnectionClosed { cid, error }).await;
                         // something happened, break the loop then exit the Task
                         break;
@@ -1276,8 +1278,6 @@ impl Swarm {
             if let Some(h) = task_handle {
                 h.await;
             }
-
-            log::info!("{:?} accept-runtime exiting...", stream_muxer);
         });
 
         // now we have the handle, move it into Connection
@@ -1431,7 +1431,7 @@ impl Swarm {
                     self.peer_store.record_latency(&peer_id, rtt);
                 }
                 Err(_) => {
-                    log::info!("reach the max ping failure count, closing {:?}", connection);
+                    log::debug!("reach the max ping failure count, closing {:?}", connection);
                     connection.close();
                 }
             }
@@ -1507,7 +1507,7 @@ impl Swarm {
     /// * `observed_addr` - should be an address a remote observes you as, which can be obtained for
     /// example with the identify protocol.
     ///
-    fn address_translation<'a>(&'a self, observed_addr: &'a Multiaddr) -> impl Iterator<Item=Multiaddr> + 'a {
+    fn address_translation<'a>(&'a self, observed_addr: &'a Multiaddr) -> impl Iterator<Item = Multiaddr> + 'a {
         let mut addrs: Vec<_> = self
             .listened_addrs
             .iter()
