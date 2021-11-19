@@ -555,7 +555,7 @@ where
 
         match self.kbuckets.entry(&key) {
             kbucket::Entry::Present(mut entry) => {
-                if forced || !entry.value().is_permanent() {
+                if forced {
                     // unpin the peer, so GC can run normally
                     if let Some(s) = self.swarm.as_ref() {
                         s.unpin(&peer)
