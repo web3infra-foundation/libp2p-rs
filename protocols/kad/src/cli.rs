@@ -256,6 +256,7 @@ fn cli_dump_statistics(app: &App, _args: &[&str]) -> XcliResult {
         println!("Kad rx messages        : {:?}", stats.message_rx);
         println!("Total providers records: {}", stats.total_provider_records);
         println!("Total kv records       : {}", stats.total_kv_records);
+        println!("Task Limiter           : {:?}", stats.task);
     });
 
     Ok(CmdExeCode::Ok)

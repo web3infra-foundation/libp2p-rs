@@ -50,8 +50,7 @@ use libp2prs_core::metricmap::MetricMap;
 use libp2prs_core::peerstore::{ADDRESS_TTL, PROVIDER_ADDR_TTL};
 use libp2prs_swarm::protocol_handler::{IProtocolHandler, ProtocolImpl};
 // use std::ops::Add;
-use crate::task_limit::LimitedTaskMgr;
-use futures::future::BoxFuture;
+use crate::task_limit::{TaskLimiter, Snapshot};
 use std::fmt::{Display, Formatter};
 use std::sync::atomic::Ordering::SeqCst;
 use std::sync::atomic::{AtomicU32, AtomicU64};
@@ -135,9 +134,7 @@ pub struct Kademlia<TStore> {
     control_rx: mpsc::UnboundedReceiver<ControlCommand>,
 
     // Concurrency of iterative queries
-    iter_qry_limiter: LimitedTaskMgr,
-    iter_qry_limiter_tx: mpsc::Sender<BoxFuture<'static, ()>>,
-    iter_qry_limiter_rx: mpsc::Receiver<BoxFuture<'static, ()>>,
+    iter_qry_limiter: TaskLimiter<()>,
 }
 
 /// The statistics of Kademlia.
@@ -148,6 +145,7 @@ pub struct KademliaStats {
     pub message_rx: MessageStats,
     pub total_provider_records: usize,
     pub total_kv_records: usize,
+    pub task: Snapshot,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -204,7 +202,7 @@ pub struct KademliaConfig {
     record_ttl: Duration,
     provider_ttl: Duration,
     check_kad_peer_interval: Duration,
-    iterative_query_concurrency: u16,
+    iter_qry_parallelism: usize,
 }
 
 impl Default for KademliaConfig {
@@ -230,7 +228,7 @@ impl Default for KademliaConfig {
             record_ttl: Duration::from_secs(36 * 60 * 60),
             provider_ttl: Duration::from_secs(24 * 60 * 60),
             check_kad_peer_interval,
-            iterative_query_concurrency: 10,
+            iter_qry_parallelism: 16,
         }
     }
 }
@@ -374,8 +372,8 @@ impl KademliaConfig {
     }
 
     /// Set Concurrency of iterative queries.
-    pub fn with_iterative_query_concurrency(mut self, concurrency: u16) -> Self {
-        self.iterative_query_concurrency = concurrency;
+    pub fn with_iter_qry_parallelism(mut self, parallelism: usize) -> Self {
+        self.iter_qry_parallelism = parallelism;
         self
     }
 }
@@ -420,11 +418,6 @@ where
         let (event_tx, event_rx) = mpsc::unbounded();
         let (control_tx, control_rx) = mpsc::unbounded();
 
-        let (iter_qry_limiter_tx, iter_qry_limiter_rx) = mpsc::channel(config.iterative_query_concurrency as usize);
-
-        let iter_qry_parallelism = std::env::var("ITER_QRY_PARALLELISM")
-            .map_or(32, |s| s.parse().unwrap_or(32));
-
         Kademlia {
             store,
             swarm: None,
@@ -432,9 +425,7 @@ where
             event_tx,
             control_tx,
             control_rx,
-            iter_qry_limiter: LimitedTaskMgr::new(NonZeroUsize::new(iter_qry_parallelism).unwrap()),
-            iter_qry_limiter_tx,
-            iter_qry_limiter_rx,
+            iter_qry_limiter: TaskLimiter::new(NonZeroUsize::new(config.iter_qry_parallelism).unwrap(), false),
             kbuckets: KBucketsTable::new(local_key),
             protocol_config: config.protocol_config,
             refreshing: false,
@@ -634,7 +625,6 @@ where
             self.poster(),
             self.query_stats.clone(),
             self.ledgers.clone(),
-            self.iter_qry_limiter_tx.clone(),
         )
     }
 
@@ -891,6 +881,7 @@ where
         stats.query = self.query_stats.to_view();
         stats.total_provider_records = self.store.providers_count();
         stats.total_kv_records = self.store.records_count();
+        stats.task = self.iter_qry_limiter.stat();
         stats
     }
 
@@ -1219,9 +1210,6 @@ where
                 }
                 cmd = self.control_rx.next() => {
                     self.on_control_command(cmd)?;
-                }
-                fut = self.iter_qry_limiter_rx.next() => {
-                    self.on_iterative_query(fut)?;
                 }
             }
         }
@@ -1627,13 +1615,6 @@ where
         }
         Ok(())
     }
-
-    fn on_iterative_query(&mut self, fut: Option<BoxFuture<'static, ()>>) -> Result<()> {
-        if let Some(fut) = fut {
-            task::spawn(fut);
-        }
-        Ok(())
-    }
 }
 
 impl<TStore> ProtocolImpl for Kademlia<TStore>
@@ -1684,6 +1665,8 @@ where
             if let Some(h) = kad.provider_timer_handle.take() {
                 h.cancel().await;
             }
+
+            kad.iter_qry_limiter.shutdown().await;
 
             log::info!("Kad main loop exited");
         }))

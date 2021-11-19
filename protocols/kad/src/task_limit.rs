@@ -19,148 +19,246 @@
 // DEALINGS IN THE SOFTWARE.
 
 use futures::channel::oneshot;
-use futures::{channel::mpsc, SinkExt, StreamExt};
+use futures::{channel::mpsc, SinkExt, StreamExt, FutureExt};
 use std::future::Future;
 use std::num::NonZeroUsize;
 
 use crate::KadError;
 use libp2prs_runtime::task;
+use std::sync::{Arc, atomic::{AtomicBool, AtomicUsize, Ordering::SeqCst}};
+use futures::future::BoxFuture;
+use std::collections::VecDeque;
 
-/// The runtime limiter could be used to limit the maximum count of running runtime
-/// in parallel.
-pub(crate) struct TaskLimiter {
-    parallelism: NonZeroUsize,
-    tx: mpsc::Sender<()>,
-    rx: mpsc::Receiver<()>,
-    handles: Vec<task::TaskHandle<Result<()>>>,
+#[derive(Clone, Default)]
+struct Termination(Arc<AtomicBool>);
+
+impl Termination {
+    fn terminate(&self) {
+        self.0.store(false, SeqCst);
+    }
+
+    fn terminated(&self) -> bool {
+        self.0.load(SeqCst)
+    }
 }
 
-impl TaskLimiter {
-    pub(crate) fn new(parallelism: NonZeroUsize) -> Self {
-        let (mut tx, rx) = mpsc::channel(parallelism.get());
-        for _ in 0..parallelism.get() {
-            tx.try_send(()).expect("must be ok");
-        }
+#[derive(Default)]
+struct Stat {
+    parallelism: usize,
+    accepted: AtomicUsize,
+    spawned: AtomicUsize,
+    executed: AtomicUsize,
+    crashed: AtomicUsize,
+}
 
-        Self {
+#[derive(Clone, Debug)]
+pub struct Snapshot {
+    pub parallelism: usize,
+    pub accepted: usize,
+    pub spawned: usize,
+    pub executed: usize,
+    pub crashed: usize,
+    pub running: usize,
+}
+
+impl Stat {
+    fn new(parallelism: usize) -> Arc<Stat> {
+        Arc::new(Stat {
             parallelism,
-            tx,
-            rx,
-            handles: vec![],
-        }
+            ..Default::default()
+        })
     }
 
-    pub(crate) async fn run<F>(&mut self, future: F)
-    where
-        F: Future<Output = Result<()>> + Send + 'static,
-    {
-        self.rx.next().await.expect("must be Some");
-        let mut tx = self.tx.clone();
-        let handle = task::spawn(async move {
-            let r = future.await;
-            let _ = tx.send(()).await;
-            r
-        });
-
-        self.handles.push(handle);
+    fn accepted(self: &Arc<Self>) {
+        self.accepted.fetch_add(1, SeqCst);
     }
 
-    pub(crate) async fn wait(self) -> (usize, usize) {
-        let count = self.handles.len();
-        let mut success = 0;
-        for h in self.handles {
-            if h.await.map_or(false, |r| r.is_ok()) {
-                success += 1;
-            }
+    fn spawned(self: &Arc<Self>) {
+        self.spawned.fetch_add(1, SeqCst);
+    }
+
+    fn executed(self: &Arc<Self>) {
+        self.executed.fetch_add(1, SeqCst);
+    }
+
+    fn crashed(self: &Arc<Self>) {
+        self.crashed.fetch_add(1, SeqCst);
+    }
+
+    fn snapshot(self: &Arc<Self>) -> Snapshot {
+        let parallelism = self.parallelism;
+        let accepted = self.accepted.load(SeqCst);
+        let spawned = self.spawned.load(SeqCst);
+        let executed = self.executed.load(SeqCst);
+        let crashed = self.crashed.load(SeqCst);
+        let running = spawned - executed - crashed;
+
+        Snapshot {
+            parallelism,
+            accepted,
+            spawned,
+            executed,
+            crashed,
+            running,
         }
-        (count, success)
     }
 }
 
-type Result<T> = std::result::Result<T, KadError>;
+struct Guard(Option<(mpsc::Sender<()>, Arc<Stat>)>);
 
-#[derive(Debug)]
-pub enum TaskLimiterCommand {
-    GetToken(oneshot::Sender<Result<()>>),
-    PutToken,
+impl Drop for Guard {
+    fn drop(&mut self) {
+        if let Some((mut sender, stat)) = self.0.take() {
+            let _ = sender.try_send(());
+            stat.crashed();
+        }
+    }
 }
 
 /// The runtime limiter could be used to limit the maximum count of running runtime
 /// in parallel.
-pub struct LimitedTaskMgr {
-    parallelism: NonZeroUsize,
-    tx_token: mpsc::Sender<()>,
-    tx: mpsc::UnboundedSender<()>,
-    handles: Vec<task::TaskHandle<Result<()>>>,
+pub struct TaskLimiter<T> {
+    stat: Arc<Stat>,
+
+    terminator: (Termination, mpsc::Sender<()>),
+    enqueue: mpsc::UnboundedSender<BoxFuture<'static, ()>>,
+
+    handle: task::TaskHandle<()>,
+
+    // waits: Option<mpsc::UnboundedReceiver<T>>,
+    waits: Option<Vec<oneshot::Receiver<T>>>,
 }
 
-impl LimitedTaskMgr {
-    pub fn new(parallelism: NonZeroUsize) -> Self {
-        let (tx_token, mut rx_token) = mpsc::channel(parallelism.get());
-        let (tx, mut rx) = mpsc::unbounded();
+impl<T> TaskLimiter<T>
+where
+    T: Send + 'static,
+{
+    pub fn new(parallelism: NonZeroUsize, waitable: bool) -> Self {
 
-        // start the background task manager
-        task::spawn(async move {
+        let parallelism = parallelism.get();
+
+        let (enqueue, mut dequeue) = mpsc::unbounded::<BoxFuture<_>>();
+        let (mut token_release, mut token_acquire) = mpsc::channel(parallelism);
+
+        // pre-filled token
+        for _ in 0..parallelism {
+            token_release.try_send(()).unwrap();
+        }
+
+        let termination = Termination::default();
+
+        let terminator = (termination.clone(), token_release.clone());
+
+        let stat = Stat::new(parallelism);
+
+        let stat_clone = stat.clone();
+
+        let handle = task::spawn(async move {
+
+            let mut handles = VecDeque::with_capacity(parallelism);
+
             loop {
-                match rx.next().await {
-                    Some(_) => {
-                        log::info!("received job done notification msg");
-                        rx_token.next().await;
+                if termination.terminated() {
+                    // ignore the fut in the queue
+                    break;
+                }
+                if let Some(fut) = dequeue.next().await {
+                    if token_acquire.next().await.is_none() {
+                        break;
                     }
-                    None => {
-                        log::info!("LimitedTaskMgr channel closed...");
-                        rx_token.close();
-                        return Ok::<(), KadError>(());
+                    if termination.terminated() {
+                        // ignore the fut
+                        break;
                     }
+                    let token_release = token_release.clone();
+                    let stat = stat_clone.clone();
+
+                    let handle = task::spawn(async move {
+                        stat.spawned();
+                        let mut guard = Guard(Some((token_release, stat)));
+                        fut.await;
+                        let (mut token_release, stat) = guard.0.take().unwrap();
+                        token_release.send(()).await.unwrap();
+                        stat.executed();
+                    });
+
+                    let _ignore = handles.pop_back(); // if some, must executed or panic
+
+                    handles.push_front(handle);
+                } else {
+                    break;
                 }
             }
+
+            for handle in handles {
+                handle.cancel().await;
+            }
         });
 
+        let waits = {
+            if waitable {
+                Some(Default::default())
+            } else {
+                None
+            }
+        };
+
         Self {
-            parallelism,
-            tx_token,
-            tx,
-            handles: vec![],
+            stat,
+            terminator,
+            enqueue,
+            handle,
+            waits,
         }
     }
 
-    pub fn spawn<F>(&mut self, future: F)
+    pub fn spawn<Fut>(&mut self, fut: Fut)
     where
-        F: Future<Output = Result<()>> + Send + 'static,
+        Fut: Future<Output = T> + Send + 'static,
     {
-        let mut tx_token = self.tx_token.clone();
-        let mut tx = self.tx.clone();
-        let handle = task::spawn(async move {
-            let r = tx_token.send(()).await;
-            log::info!("{:?}", r);
-            r?;
-            let r = future.await;
-            let _ = tx.send(()).await;
-            r
-        });
+        let fut = {
+            if let Some(waits) = &mut self.waits {
+                let (fin, wait) = oneshot::channel();
+                waits.push(wait);
+                async move {
+                    let ret = fut.await;
+                    let _ignore = fin.send(ret);
+                }.boxed()
+            } else {
+                fut.map(|_| ()).boxed()
+            }
+        };
 
-        self.handles.push(handle);
+        self.enqueue.unbounded_send(fut).expect("send");
+        self.stat.accepted();
     }
 
     pub async fn shutdown(mut self) {
-        for h in self.handles {
-            //h.cancel().await;
-        }
-        self.tx_token.close_channel();
-        self.tx.close_channel();
+        // terminate
+        self.terminator.0.terminate();
+        self.terminator.1.close_channel();
+        self.enqueue.close_channel();
+        self.handle.await;
     }
 
-    pub async fn wait(mut self) -> (usize, usize) {
-        let count = self.handles.len();
+    pub async fn wait<P>(self, predicate: P) -> (usize, usize)
+        where
+            P: Fn(T) -> bool,
+    {
+        let waits = self.waits.unwrap_or_else(|| panic!("unwaitable"));
+
+        let count = waits.len();
         let mut success = 0;
-        for h in self.handles {
-            if h.await.map_or(false, |r| r.is_ok()) {
+        for w in waits {
+            if w.await.map_or(false, |ret| predicate(ret)) {
                 success += 1;
             }
         }
-        self.tx_token.close_channel();
-        self.tx.close_channel();
         (count, success)
+    }
+
+    pub fn stat(&self) -> Snapshot {
+        self.stat.snapshot()
     }
 }
 
@@ -172,57 +270,24 @@ mod tests {
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering::SeqCst;
     use std::sync::Arc;
-    use std::time::Duration;
 
     #[test]
     fn test_task_limiter() {
-        let mut limiter = TaskLimiter::new(NonZeroUsize::new(3).unwrap());
+        let mut limiter = TaskLimiter::new(NonZeroUsize::new(3).unwrap(), true);
         let count = Arc::new(AtomicUsize::new(0));
         block_on(async move {
             for _ in 0..10 {
                 let count = count.clone();
                 limiter
-                    .run(async move {
+                    .spawn(async move {
                         count.fetch_add(1, SeqCst);
                         Ok::<(), KadError>(())
-                    })
-                    .await;
+                    });
             }
 
-            let c = limiter.wait().await;
+            let c = limiter.wait(|ret| ret.is_ok()).await;
             assert_eq!(c.0, 10);
             assert_eq!(count.load(SeqCst), 10);
         });
-    }
-
-    #[test]
-    fn test_task_limiter2() {
-        let mut limiter = LimitedTaskMgr::new(NonZeroUsize::new(2).unwrap());
-        // let count = Arc::new(AtomicUsize::new(0));
-
-        for _ in 0..10 {
-            limiter.spawn(async move {
-                task::sleep(Duration::from_secs(1)).await;
-                Ok(())
-            });
-        }
-
-        assert_eq!(limiter.handles.len(), 10);
-
-        // block_on(async move {
-        //     for _ in 0..10 {
-        //         let count = count.clone();
-        //         limiter
-        //             .run(async move {
-        //                 count.fetch_add(1, SeqCst);
-        //                 Ok::<(), KadError>(())
-        //             })
-        //             .await;
-        //     }
-        //
-        //     let c = limiter.wait().await;
-        //     assert_eq!(c.0, 10);
-        //     assert_eq!(count.load(SeqCst), 10);
-        // });
     }
 }
