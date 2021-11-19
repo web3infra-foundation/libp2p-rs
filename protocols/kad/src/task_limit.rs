@@ -51,7 +51,7 @@ struct Stat {
     crashed: AtomicUsize,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Snapshot {
     pub parallelism: usize,
     pub accepted: usize,
@@ -270,6 +270,7 @@ mod tests {
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering::SeqCst;
     use std::sync::Arc;
+    use std::time::Duration;
 
     #[test]
     fn test_task_limiter() {
@@ -288,6 +289,30 @@ mod tests {
             let c = limiter.wait(|ret| ret.is_ok()).await;
             assert_eq!(c.0, 10);
             assert_eq!(count.load(SeqCst), 10);
+        });
+    }
+
+    #[test]
+    fn test_crash() {
+        env_logger::builder().filter_level(log::LevelFilter::Info).is_test(true).init();
+        let mut limiter = TaskLimiter::new(NonZeroUsize::new(3).unwrap(), true);
+        block_on(async move {
+
+            limiter.spawn(async move {
+                Ok::<(), KadError>(())
+            });
+
+            limiter.spawn(async move {
+                panic!("test crash");
+            });
+
+            task::sleep(Duration::from_secs(3)).await;
+
+            log::info!("{:?}", limiter.stat());
+
+            let c = limiter.wait(|ret| ret.is_ok()).await;
+            assert_eq!(c.0, 2);
+            assert_eq!(c.1, 1);
         });
     }
 }
