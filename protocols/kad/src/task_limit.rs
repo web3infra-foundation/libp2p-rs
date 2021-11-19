@@ -26,8 +26,8 @@ use std::num::NonZeroUsize;
 use crate::KadError;
 use libp2prs_runtime::task;
 use std::sync::{Arc, atomic::{AtomicBool, AtomicUsize, Ordering::SeqCst}};
-use futures::future::BoxFuture;
-use std::collections::VecDeque;
+use futures::future::{BoxFuture, Either, select};
+use std::collections::{HashMap};
 
 #[derive(Clone, Default)]
 struct Termination(Arc<AtomicBool>);
@@ -48,7 +48,8 @@ struct Stat {
     accepted: AtomicUsize,
     spawned: AtomicUsize,
     executed: AtomicUsize,
-    crashed_or_canceled: AtomicUsize,
+    crashed: AtomicUsize,
+    canceled: AtomicUsize,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -57,7 +58,8 @@ pub struct Snapshot {
     pub accepted: usize,
     pub spawned: usize,
     pub executed: usize,
-    pub crashed_or_canceled: usize,
+    pub crashed: usize,
+    pub canceled: usize,
     pub running: usize,
 }
 
@@ -81,8 +83,12 @@ impl Stat {
         self.executed.fetch_add(1, SeqCst);
     }
 
-    fn crashed_or_canceled(self: &Arc<Self>) {
-        self.crashed_or_canceled.fetch_add(1, SeqCst);
+    fn crashed(self: &Arc<Self>) {
+        self.crashed.fetch_add(1, SeqCst);
+    }
+
+    fn canceled(self: &Arc<Self>) {
+        self.canceled.fetch_add(1, SeqCst);
     }
 
     fn snapshot(self: &Arc<Self>) -> Snapshot {
@@ -90,28 +96,28 @@ impl Stat {
         let accepted = self.accepted.load(SeqCst);
         let spawned = self.spawned.load(SeqCst);
         let executed = self.executed.load(SeqCst);
-        let crashed_or_canceled = self.crashed_or_canceled.load(SeqCst);
-        let running = spawned - executed - crashed_or_canceled;
+        let crashed = self.crashed.load(SeqCst);
+        let canceled = self.canceled.load(SeqCst);
+        let running = spawned - executed - crashed - canceled;
 
         Snapshot {
             parallelism,
             accepted,
             spawned,
             executed,
-            crashed_or_canceled,
+            crashed,
+            canceled,
             running,
         }
     }
 }
 
-struct Guard(Option<(mpsc::Sender<()>, Arc<Stat>)>);
+struct Guard(Option<(usize, mpsc::Sender<(usize, bool)>)>);
 
 impl Drop for Guard {
     fn drop(&mut self) {
-        log::info!("guard drop");
-        if let Some((mut sender, stat)) = self.0.take() {
-            let _ = sender.try_send(());
-            stat.crashed_or_canceled();
+        if let Some((id, mut sender)) = self.0.take() {
+            let _ = sender.try_send((id, false));
         }
     }
 }
@@ -156,36 +162,54 @@ where
 
         let handle = task::spawn(async move {
 
-            let mut handles = VecDeque::with_capacity(parallelism);
+            let mut handles = HashMap::with_capacity(parallelism);
+            let mut task_id = 0;
+            let (done_tx, mut done_rx) = mpsc::channel(parallelism);
 
-            loop {
+            'outer: loop {
                 if termination.terminated() {
                     // ignore the fut in the queue
                     break;
                 }
                 if let Some(fut) = dequeue.next().await {
-                    if token_acquire.next().await.is_none() {
-                        break;
+                    loop {
+                        match select(token_acquire.next(), done_rx.next()).await {
+                            Either::Left((token, _)) => {
+                                if token.is_none() {
+                                    break 'outer;
+                                }
+                                if termination.terminated() {
+                                    // ignore the fut
+                                    break 'outer;
+                                }
+                                // let token_release = token_release.clone();
+                                task_id += 1;
+                                let done_tx = done_tx.clone();
+                                let stat = stat_clone.clone();
+
+                                let handle = task::spawn(async move {
+                                    stat.spawned();
+                                    let mut guard = Guard(Some((task_id, done_tx)));
+                                    fut.await;
+                                    let (id, mut done) = guard.0.take().unwrap();
+                                    let _ = done.send((id, true)).await;
+                                });
+
+                                handles.insert(task_id, handle);
+                                break;
+                            },
+                            Either::Right((ret, _)) => {
+                                let (id, executed) = ret.unwrap();
+                                handles.remove(&id);
+                                let _ = token_release.send(()).await;
+                                if executed {
+                                    stat_clone.executed();
+                                } else {
+                                    stat_clone.crashed();
+                                }
+                            }
+                        }
                     }
-                    if termination.terminated() {
-                        // ignore the fut
-                        break;
-                    }
-                    let token_release = token_release.clone();
-                    let stat = stat_clone.clone();
-
-                    let handle = task::spawn(async move {
-                        stat.spawned();
-                        let mut guard = Guard(Some((token_release, stat)));
-                        fut.await;
-                        let (mut token_release, stat) = guard.0.take().unwrap();
-                        let _ = token_release.send(()).await;
-                        stat.executed();
-                    });
-
-                    let _ignore = handles.pop_back(); // if some, must executed or panic
-
-                    handles.push_front(handle);
                 } else {
                     break;
                 }
@@ -193,8 +217,23 @@ where
 
             log::info!("exiting task limiter");
 
-            for handle in handles {
+            while let Ok(Some((id, executed))) = done_rx.try_next() {
+                handles.remove(&id);
+                if executed {
+                    stat_clone.executed();
+                } else {
+                    stat_clone.crashed();
+                }
+            }
+
+            for (_, handle) in handles {
                 let _ = handle.cancel().await;
+            }
+
+            // collect canceled
+            while let Ok(Some((_id, executed))) = done_rx.try_next() {
+                debug_assert!(!executed);
+                stat_clone.canceled();
             }
         });
 
@@ -261,14 +300,7 @@ where
     }
 
     pub fn stat(&self) -> Snapshot {
-        let mut st = self.stat.snapshot();
-        if self.terminator.0.terminated() {
-            // add canceled
-            // FIXME guard drop not call for every running fut, why?
-            st.crashed_or_canceled += st.running;
-            st.running = 0;
-        }
-        st
+        self.stat.snapshot()
     }
 }
 
@@ -349,7 +381,7 @@ mod tests {
             }
 
             // wait task to spawn
-            task::sleep(Duration::from_millis(200)).await;
+            task::sleep(Duration::from_millis(100)).await;
 
             let stat = limiter.stat();
             assert_eq!(stat.accepted, 5, "not equal accepted");
@@ -359,7 +391,7 @@ mod tests {
             let _ = rx.next().await.unwrap();
 
             // wait task to spawn
-            task::sleep(Duration::from_millis(200)).await;
+            task::sleep(Duration::from_millis(100)).await;
 
             let stat = limiter.stat();
             assert_eq!(stat.executed, 1, "not equal executed");
@@ -368,7 +400,7 @@ mod tests {
             limiter.shutdown().await;
 
             // wait guard drop
-            task::sleep(Duration::from_millis(200)).await;
+            task::sleep(Duration::from_millis(100)).await;
 
 
             let stat = limiter.stat();
@@ -377,11 +409,9 @@ mod tests {
             assert_eq!(stat.accepted, 5, "not equal accepted2");
             assert_eq!(stat.spawned, 4, "not equal spawned2");
             assert_eq!(stat.executed, 1, "not equal executed2");
-            assert_eq!(stat.crashed_or_canceled, 3, "not equal crashed_or_canceled");
+            assert_eq!(stat.crashed, 0, "not equal crashed");
+            assert_eq!(stat.canceled, 3, "not equal canceled");
             assert_eq!(stat.running, 0, "not equal running3");
-
-
-            task::sleep(Duration::from_millis(5000)).await;
         });
     }
 }
