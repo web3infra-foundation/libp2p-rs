@@ -216,7 +216,7 @@ impl FixedQuery {
         stats.fixed_query_executed.fetch_add(1, Ordering::SeqCst);
 
         let me = self;
-        let mut limiter = TaskLimiter::new(me.config.alpha_value, true);
+        let mut limiter = TaskLimiter::new(me.config.alpha_value);
         let message_stats = stats.clone();
         task::spawn(async move {
             for peer in me.peers {
@@ -244,7 +244,7 @@ impl FixedQuery {
                         Ok::<(), KadError>(())
                     });
             }
-            let (c, s) = limiter.wait(|ret| ret.is_ok()).await;
+            let (c, s) = limiter.wait().await;
             log::info!("data announced to total {} peers, success={}", c, s);
 
             // update tx error
@@ -729,7 +729,7 @@ impl IterativeQuery {
         false
     }
 
-    pub(crate) async fn run<F>(self, f: F)
+    pub(crate) async fn run<F>(self, f: F) -> Result<()>
     where
         F: FnOnce(Result<QueryResult>) + Send + 'static,
     {
@@ -739,7 +739,7 @@ impl IterativeQuery {
         if self.seeds.is_empty() {
             log::info!("no seeds, abort running");
             f(Err(KadError::NoKnownPeers));
-            return;
+            return Ok(());
         }
 
         // update stats
@@ -937,6 +937,7 @@ impl IterativeQuery {
             Either::Left((result, _)) => f(result),
             Either::Right((_, _)) => f(Err(KadError::Timeout)),
         }
+        Ok(())
     }
 }
 

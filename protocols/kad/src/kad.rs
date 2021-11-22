@@ -134,7 +134,7 @@ pub struct Kademlia<TStore> {
     control_rx: mpsc::UnboundedReceiver<ControlCommand>,
 
     // Concurrency of iterative queries
-    iter_qry_limiter: TaskLimiter<()>,
+    iter_qry_limiter: TaskLimiter,
 }
 
 /// The statistics of Kademlia.
@@ -425,7 +425,7 @@ where
             event_tx,
             control_tx,
             control_rx,
-            iter_qry_limiter: TaskLimiter::new(NonZeroUsize::new(config.iter_qry_parallelism).unwrap(), false),
+            iter_qry_limiter: TaskLimiter::new(NonZeroUsize::new(config.iter_qry_parallelism).unwrap()),
             kbuckets: KBucketsTable::new(local_key),
             protocol_config: config.protocol_config,
             refreshing: false,
