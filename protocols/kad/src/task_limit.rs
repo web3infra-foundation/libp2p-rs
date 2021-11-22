@@ -72,38 +72,40 @@ impl TaskLimiter {
                     // ignore the fut in the queue
                     break;
                 }
-                if let Some(fut) = dequeue.next().await {
-                    if token_acquire.next().await.is_none() || termination.terminated() {
-                        // ignore the fut
-                        break;
-                    }
-
-                    task_id += 1;
-                    let inner = GuardInner{
-                        task_id,
-                        handles: handles.clone(),
-                        token_release: token_release.clone(),
-                        stat: stat_clone.clone(),
-                        termination: termination.clone(),
-                    };
-
-                    let stat = stat_clone.clone();
-
-                    let handle = task::spawn(async move {
-                        stat.spawned();
-                        let mut guard = Guard(Some(inner));
-                        let ret: Result = fut.await;
-                        if ret.is_ok() {
-                            stat.success();
-                        }
-                        guard.0.take().unwrap().feedback(true);
-                        ret
-                    });
-
-                    handles.lock().unwrap().insert(task_id, handle);
+                let fut = if let Some(fut) = dequeue.next().await {
+                    fut
                 } else {
                     break;
+                };
+
+                if token_acquire.next().await.is_none() || termination.terminated() {
+                    // ignore the fut
+                    break;
                 }
+
+                task_id += 1;
+                let inner = GuardInner{
+                    task_id,
+                    handles: handles.clone(),
+                    token_release: token_release.clone(),
+                    stat: stat_clone.clone(),
+                    termination: termination.clone(),
+                };
+
+                let stat = stat_clone.clone();
+
+                let handle = task::spawn(async move {
+                    stat.spawned();
+                    let mut guard = Guard(Some(inner));
+                    let ret: Result = fut.await;
+                    if ret.is_ok() {
+                        stat.success();
+                    }
+                    guard.0.take().unwrap().feedback(true);
+                    ret
+                });
+
+                handles.lock().unwrap().insert(task_id, handle);
             }
 
             log::info!("exiting task limiter");
