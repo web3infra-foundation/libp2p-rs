@@ -244,11 +244,11 @@ impl FixedQuery {
                         Ok::<(), KadError>(())
                     });
             }
-            let (c, s) = limiter.wait().await;
-            log::info!("data announced to total {} peers, success={}", c, s);
+            let stat = limiter.wait().await;
+            log::info!("data announced to KAD network, stats={:?}", stat);
 
             // update tx error
-            stats.fixed_tx_error.fetch_add(c - s, Ordering::SeqCst);
+            stats.fixed_tx_error.fetch_add(stat.executed - stat.succeeded, Ordering::SeqCst);
             // update stats
             stats.fixed_query_completed.fetch_add(1, Ordering::SeqCst);
 

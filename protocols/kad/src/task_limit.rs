@@ -33,18 +33,18 @@ pub type Result = std::result::Result<(), KadError>;
 /// The runtime limiter could be used to limit the maximum count of running runtime
 /// in parallel.
 pub struct TaskLimiter {
-    stat: Option<Arc<Stat>>,
-
+    stat: Arc<Stat>,
     terminator: (Termination, mpsc::Sender<()>),
     enqueue: mpsc::UnboundedSender<BoxFuture<'static, Result>>,
-
-    handle: Option<task::TaskHandle<()>>,
+    handle: task::TaskHandle<Snapshot>,
 }
 
 impl TaskLimiter {
     pub fn new(parallelism: NonZeroUsize) -> Self {
 
         let parallelism = parallelism.get();
+
+        log::info!("task-limiter: starting with parallelism={}, ...", parallelism);
 
         let (enqueue, mut dequeue) = mpsc::unbounded::<BoxFuture<_>>();
         let (mut token_release, mut token_acquire) = mpsc::channel(parallelism);
@@ -55,30 +55,28 @@ impl TaskLimiter {
         }
 
         let termination = Termination::default();
-
         let terminator = (termination.clone(), token_release.clone());
-
         let stat = Stat::new(parallelism);
 
         let stat_clone = stat.clone();
-
         let handle = task::spawn(async move {
-
-            let handles = Arc::new(Mutex::new(HashMap::with_capacity(parallelism)));
+            let handles = Arc::new(Mutex::new(HashMap::with_capacity(5 * parallelism)));
             let mut task_id = 0;
-
             loop {
-                if termination.terminated() {
+                // terminated ??
+                if termination.is_terminated() {
                     // ignore the fut in the queue
                     break;
                 }
+                // channel is closed ?
                 let fut = if let Some(fut) = dequeue.next().await {
                     fut
                 } else {
                     break;
                 };
 
-                if token_acquire.next().await.is_none() || termination.terminated() {
+                // recheck if it is terminated
+                if token_acquire.next().await.is_none() || termination.is_terminated() {
                     // ignore the fut
                     break;
                 }
@@ -92,9 +90,9 @@ impl TaskLimiter {
                     termination: termination.clone(),
                 };
 
+                // clone the stat and move it into the task
                 let stat = stat_clone.clone();
-
-                let handle = task::spawn(async move {
+                let task = task::spawn(async move {
                     stat.spawned();
                     let mut guard = Guard(Some(inner));
                     let ret: Result = fut.await;
@@ -105,40 +103,40 @@ impl TaskLimiter {
                     ret
                 });
 
-                handles.lock().unwrap().insert(task_id, handle);
+                // put the spawned task handle into the task map
+                handles.lock().unwrap().insert(task_id, task);
             }
 
-            log::info!("exiting task limiter");
+            log::info!("task-limiter: exiting...");
 
             let handles = {
                 let mut map = handles.lock().unwrap();
 
                 let mut handles = Vec::with_capacity(map.len());
-
                 let keys = map.keys().cloned().collect::<Vec<_>>();
-
                 for key in keys {
                     handles.push(map.remove(&key).unwrap());
                 }
                 handles
             };
 
-            if termination.terminated() {
-                for handle in handles {
+            for handle in handles {
+                if termination.is_terminated() {
                     let _ = handle.cancel().await;
-                }
-            } else {
-                for handle in handles {
+                } else {
                     handle.await;
                 }
             }
+
+            // return the snapshot of statistics
+            stat_clone.snapshot()
         });
 
         Self {
-            stat: Some(stat),
+            stat,
             terminator,
             enqueue,
-            handle: Some(handle),
+            handle,
         }
     }
 
@@ -147,29 +145,24 @@ impl TaskLimiter {
         Fut: Future<Output = Result> + Send + 'static,
     {
         self.enqueue.unbounded_send(fut.boxed()).expect("send");
-        self.stat.as_ref().unwrap().accepted();
+        self.stat.accepted();
     }
 
-    pub async fn shutdown(mut self) {
+    pub async fn shutdown(mut self) -> Snapshot {
         // terminate
         self.terminator.0.terminate();
         self.terminator.1.close_channel();
         self.enqueue.close_channel();
-        self.handle.take().unwrap().await;
+        self.handle.await.unwrap_or_default()
     }
 
-    pub async fn wait(mut self) -> (usize, usize) {
-
+    pub async fn wait(self) -> Snapshot {
         self.enqueue.close_channel();
-        self.handle.take().unwrap().await;
-
-        let st = self.stat();
-
-        (st.accepted, st.succeeded)
+        self.handle.await.unwrap_or_default()
     }
 
     pub fn stat(&self) -> Snapshot {
-        self.stat.as_ref().unwrap().snapshot()
+        self.stat.snapshot()
     }
 }
 
@@ -181,7 +174,7 @@ impl Termination {
         self.0.store(true, SeqCst);
     }
 
-    fn terminated(&self) -> bool {
+    fn is_terminated(&self) -> bool {
         self.0.load(SeqCst)
     }
 }
@@ -281,7 +274,7 @@ impl GuardInner {
         if normal {
             self.stat.executed();
         } else {
-            if self.termination.terminated() {
+            if self.termination.is_terminated() {
                 self.stat.canceled();
             } else {
                 self.stat.crashed();
@@ -327,7 +320,7 @@ mod tests {
             }
 
             let c = limiter.wait().await;
-            assert_eq!(c.0, 10, "total");
+            assert_eq!(c.executed, 10, "total");
             assert_eq!(count.load(SeqCst), 10, "count");
         });
     }
@@ -355,8 +348,10 @@ mod tests {
             log::info!("{:?}", limiter.stat());
 
             let c = limiter.wait().await;
-            assert_eq!(c.0, 3);
-            assert_eq!(c.1, 1);
+            assert_eq!(c.spawned, 3);
+            assert_eq!(c.executed, 2);
+            assert_eq!(c.succeeded, 1);
+            assert_eq!(c.crashed, 1);
         });
     }
 
@@ -396,14 +391,11 @@ mod tests {
             assert_eq!(stat.executed, 1, "not equal executed");
             assert_eq!(stat.running, 3, "not equal running2");
 
-            let st = limiter.stat.take().unwrap();
-
-            limiter.shutdown().await;
+            let stat = limiter.shutdown().await;
 
             // wait guard drop
             task::sleep(Duration::from_millis(100)).await;
 
-            let stat = st.snapshot();
             log::info!("{:?}", stat);
 
             assert_eq!(stat.accepted, 5, "not equal accepted2");
