@@ -29,7 +29,6 @@ pub mod kad;
 pub mod kbucket;
 pub mod protocol;
 pub mod record;
-pub mod task_limit;
 pub mod cli;
 
 mod addresses;

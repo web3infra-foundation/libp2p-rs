@@ -18,27 +18,26 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use futures::{channel::mpsc, FutureExt, StreamExt};
-use std::future::Future;
-use std::num::NonZeroUsize;
-
-use crate::KadError;
-use futures::future::BoxFuture;
-use libp2prs_runtime::task::{self, TaskHandle};
-use std::collections::HashMap;
-use std::sync::{
-    atomic::{AtomicBool, AtomicUsize, Ordering::SeqCst},
-    Arc, Mutex,
+use std::{
+    collections::HashMap,
+    future::Future,
+    num::NonZeroUsize,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicUsize, Ordering::SeqCst},
+    },
 };
 
-pub type Result = std::result::Result<(), KadError>;
+use futures::{channel::mpsc, future::BoxFuture, FutureExt, StreamExt};
+
+use crate::task::{self, TaskHandle};
 
 /// The runtime limiter could be used to limit the maximum count of running runtime
 /// in parallel.
 pub struct TaskLimiter {
     stat: Arc<Stat>,
     terminator: (Termination, mpsc::Sender<()>),
-    enqueue: mpsc::UnboundedSender<BoxFuture<'static, Result>>,
+    enqueue: mpsc::UnboundedSender<BoxFuture<'static, bool>>,
     handle: task::TaskHandle<Snapshot>,
 }
 
@@ -97,12 +96,10 @@ impl TaskLimiter {
                 let task = task::spawn(async move {
                     stat.spawned();
                     let mut guard = Guard(Some(inner));
-                    let ret: Result = fut.await;
-                    if ret.is_ok() {
+                    if fut.await {
                         stat.success();
                     }
                     guard.0.take().unwrap().feedback(true);
-                    ret
                 });
 
                 // put the spawned task handle into the task map
@@ -142,11 +139,13 @@ impl TaskLimiter {
         }
     }
 
-    pub fn spawn<Fut>(&mut self, fut: Fut)
-    where
-        Fut: Future<Output = Result> + Send + 'static,
+    pub fn spawn<T, E, Fut>(&mut self, fut: Fut)
+        where
+            T: Send + 'static,
+            E: Send + 'static,
+            Fut: Future<Output = std::result::Result<T, E>> + Send + 'static,
     {
-        self.enqueue.unbounded_send(fut.boxed()).expect("send");
+        self.enqueue.unbounded_send(fut.map(|ret| ret.is_ok()).boxed()).expect("send");
         self.stat.accepted();
     }
 
@@ -259,12 +258,22 @@ impl Stat {
     }
 }
 
+/// prevent future task panic from causing token to be swallowed
 struct Guard(Option<GuardInner>);
+
+impl Drop for Guard {
+    fn drop(&mut self) {
+        if let Some(inner) = self.0.take() {
+            inner.feedback(false);
+        }
+    }
+}
+
 
 struct GuardInner {
     task_id: usize,
     token_release: mpsc::Sender<()>,
-    handles: Arc<Mutex<HashMap<usize, TaskHandle<Result>>>>,
+    handles: Arc<Mutex<HashMap<usize, TaskHandle<()>>>>,
     stat: Arc<Stat>,
     termination: Termination,
 }
@@ -281,14 +290,6 @@ impl GuardInner {
             } else {
                 self.stat.crashed();
             }
-        }
-    }
-}
-
-impl Drop for Guard {
-    fn drop(&mut self) {
-        if let Some(inner) = self.0.take() {
-            inner.feedback(false);
         }
     }
 }
@@ -315,7 +316,7 @@ mod tests {
                 let count = count.clone();
                 limiter.spawn(async move {
                     count.fetch_add(1, SeqCst);
-                    Ok(())
+                    Ok::<(), ()>(())
                 });
             }
 
@@ -325,18 +326,20 @@ mod tests {
         });
     }
 
+    async fn crash() -> std::result::Result<(), ()> {
+        panic!("test crash");
+    }
+
     #[test]
     fn test_crash() {
         env_logger::builder().filter_level(log::LevelFilter::Info).is_test(true).init();
         let mut limiter = TaskLimiter::new(NonZeroUsize::new(3).unwrap());
         block_on(async move {
-            limiter.spawn(async move { Ok(()) });
+            limiter.spawn(async move { Ok::<(), ()>(()) });
 
-            limiter.spawn(async move {
-                panic!("test crash");
-            });
+            limiter.spawn(crash());
 
-            limiter.spawn(async move { Err(KadError::Internal) });
+            limiter.spawn(async move { Err::<(), ()>(()) });
 
             task::sleep(Duration::from_millis(100)).await;
 
@@ -363,7 +366,7 @@ mod tests {
                     log::info!("running {}", i);
                     tx.send(()).await.unwrap();
                     log::info!("done {}", i);
-                    Ok(())
+                    Ok::<(), ()>(())
                 });
             }
 
@@ -413,7 +416,7 @@ mod tests {
                     log::info!("running {}", i);
                     tx.send(()).await.unwrap();
                     log::info!("done {}", i);
-                    Ok(())
+                    Ok::<(), ()>(())
                 });
             }
 
