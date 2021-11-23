@@ -20,9 +20,9 @@ fn main() {
 
     task::block_on(async {
         task::sleep(Duration::from_secs(1)).await;
-        //limiter.shutdown().await;
-        limiter.wait().await;
-        task::sleep(Duration::from_secs(20)).await;
+        let stat = limiter.shutdown().await;
+        //let stat = limiter.wait().await;
+        info!("stat={:?}", stat);
     })
 
     //assert_eq!(limiter.handles.len(), 10);

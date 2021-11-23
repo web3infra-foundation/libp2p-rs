@@ -50,7 +50,7 @@ use libp2prs_core::metricmap::MetricMap;
 use libp2prs_core::peerstore::{ADDRESS_TTL, PROVIDER_ADDR_TTL};
 use libp2prs_swarm::protocol_handler::{IProtocolHandler, ProtocolImpl};
 // use std::ops::Add;
-use crate::task_limit::{TaskLimiter, Snapshot};
+use crate::task_limit::{Snapshot, TaskLimiter};
 use std::fmt::{Display, Formatter};
 use std::sync::atomic::Ordering::SeqCst;
 use std::sync::atomic::{AtomicU32, AtomicU64};
@@ -760,7 +760,7 @@ where
                         if let Some(cache_peers) = r.cache_peers {
                             let record = record.record;
                             let fixed_query = FixedQuery::new(QueryType::PutRecord { record }, messengers, config, cache_peers, stats);
-                            fixed_query.run(|_| {});
+                            task::spawn(fixed_query.run(|_| {}));
                         }
                     }
 
@@ -814,7 +814,7 @@ where
             } else {
                 let peers = peers.unwrap().into_iter().map(KadPeer::into).collect::<Vec<_>>();
                 let fixed_query = FixedQuery::new(QueryType::PutRecord { record }, messengers, config, peers, stats);
-                fixed_query.run(f);
+                task::spawn(fixed_query.run(f));
             }
         });
     }
@@ -978,7 +978,7 @@ where
             } else {
                 let peers = peers.unwrap().into_iter().map(KadPeer::into).collect();
                 let fixed_query = FixedQuery::new(QueryType::AddProvider { provider, addresses }, messengers, config, peers, stats);
-                fixed_query.run(f);
+                task::spawn(fixed_query.run(f));
             }
         });
     }

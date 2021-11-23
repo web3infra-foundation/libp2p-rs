@@ -18,15 +18,18 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use futures::{channel::mpsc, StreamExt, FutureExt};
+use futures::{channel::mpsc, FutureExt, StreamExt};
 use std::future::Future;
 use std::num::NonZeroUsize;
 
 use crate::KadError;
-use libp2prs_runtime::task::{self, TaskHandle};
-use std::sync::{Arc, atomic::{AtomicBool, AtomicUsize, Ordering::SeqCst}, Mutex};
 use futures::future::BoxFuture;
-use std::collections::{HashMap};
+use libp2prs_runtime::task::{self, TaskHandle};
+use std::collections::HashMap;
+use std::sync::{
+    atomic::{AtomicBool, AtomicUsize, Ordering::SeqCst},
+    Arc, Mutex,
+};
 
 pub type Result = std::result::Result<(), KadError>;
 
@@ -41,10 +44,9 @@ pub struct TaskLimiter {
 
 impl TaskLimiter {
     pub fn new(parallelism: NonZeroUsize) -> Self {
-
         let parallelism = parallelism.get();
 
-        log::info!("task-limiter: starting with parallelism={}, ...", parallelism);
+        log::debug!("task-limiter: starting with parallelism={}, ...", parallelism);
 
         let (enqueue, mut dequeue) = mpsc::unbounded::<BoxFuture<_>>();
         let (mut token_release, mut token_acquire) = mpsc::channel(parallelism);
@@ -82,7 +84,7 @@ impl TaskLimiter {
                 }
 
                 task_id += 1;
-                let inner = GuardInner{
+                let inner = GuardInner {
                     task_id,
                     handles: handles.clone(),
                     token_release: token_release.clone(),
@@ -107,7 +109,7 @@ impl TaskLimiter {
                 handles.lock().unwrap().insert(task_id, task);
             }
 
-            log::info!("task-limiter: exiting...");
+            log::debug!("task-limiter: exiting...");
 
             let handles = {
                 let mut map = handles.lock().unwrap();
@@ -291,17 +293,16 @@ impl Drop for Guard {
     }
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use super::*;
     use futures::executor::block_on;
+    use futures::SinkExt;
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering::SeqCst;
     use std::sync::Arc;
     use std::time::Duration;
-    use futures::SinkExt;
 
     #[test]
     fn test_task_limiter() {
@@ -312,11 +313,10 @@ mod tests {
         block_on(async move {
             for _ in 0..10 {
                 let count = count.clone();
-                limiter
-                    .spawn(async move {
-                        count.fetch_add(1, SeqCst);
-                        Ok(())
-                    });
+                limiter.spawn(async move {
+                    count.fetch_add(1, SeqCst);
+                    Ok(())
+                });
             }
 
             let c = limiter.wait().await;
@@ -330,18 +330,13 @@ mod tests {
         env_logger::builder().filter_level(log::LevelFilter::Info).is_test(true).init();
         let mut limiter = TaskLimiter::new(NonZeroUsize::new(3).unwrap());
         block_on(async move {
-
-            limiter.spawn(async move {
-                Ok(())
-            });
+            limiter.spawn(async move { Ok(()) });
 
             limiter.spawn(async move {
                 panic!("test crash");
             });
 
-            limiter.spawn(async move {
-                Err(KadError::Internal)
-            });
+            limiter.spawn(async move { Err(KadError::Internal) });
 
             task::sleep(Duration::from_millis(100)).await;
 
@@ -357,11 +352,9 @@ mod tests {
 
     #[test]
     fn test_limit() {
-
         env_logger::builder().filter_level(log::LevelFilter::Info).is_test(true).init();
         let mut limiter = TaskLimiter::new(NonZeroUsize::new(3).unwrap());
         block_on(async move {
-
             let (tx, mut rx) = mpsc::channel(0);
 
             for i in 1..=5 {
@@ -409,11 +402,9 @@ mod tests {
 
     #[test]
     fn test_finish() {
-
         env_logger::builder().filter_level(log::LevelFilter::Info).is_test(true).init();
         let mut limiter = TaskLimiter::new(NonZeroUsize::new(1).unwrap());
         block_on(async move {
-
             let (tx, mut rx) = mpsc::channel(0);
 
             for i in 1..=2 {
@@ -447,7 +438,6 @@ mod tests {
             let stat = limiter.stat();
             assert_eq!(stat.executed, 2, "not equal executed");
             assert_eq!(stat.running, 0, "not equal running2");
-
         });
     }
 }
