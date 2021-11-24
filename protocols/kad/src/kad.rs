@@ -32,7 +32,10 @@ use futures::{
 };
 
 use libp2prs_core::{Multiaddr, PeerId, ProtocolId};
-use libp2prs_runtime::{task, limit::{Snapshot, TaskLimiter}};
+use libp2prs_runtime::{
+    limit::{Snapshot, TaskLimiter},
+    task,
+};
 use libp2prs_swarm::Control as SwarmControl;
 
 use crate::control::{Control, ControlCommand, DumpCommand};
@@ -227,7 +230,7 @@ impl Default for KademliaConfig {
             record_ttl: Duration::from_secs(36 * 60 * 60),
             provider_ttl: Duration::from_secs(24 * 60 * 60),
             check_kad_peer_interval,
-            iter_qry_parallelism: 16,
+            iter_qry_parallelism: 50,
         }
     }
 }

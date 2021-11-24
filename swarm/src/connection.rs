@@ -353,7 +353,7 @@ impl Connection {
                     }
                     Err(err) => {
                         // looks like the peer doesn't support the protocol
-                        log::info!("Ping protocol not supported: {:?} {:?}", cid, err);
+                        log::debug!("Ping protocol not supported: {:?} {:?}", cid, err);
                         let _ = tx
                             .send(SwarmEvent::StreamError {
                                 cid,

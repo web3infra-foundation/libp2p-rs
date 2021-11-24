@@ -163,7 +163,10 @@ impl DialLimiter {
                 self.dial_limit,
             );
             dj.stats.dialing_limit.fetch_add(1, Ordering::SeqCst);
-            let _ = dj.tx.send((Err(SwarmError::ConcurrentDialLimit(self.dial_limit)), dj.addr, Default::default())).await;
+            let _ = dj
+                .tx
+                .send((Err(SwarmError::ConcurrentDialLimit(self.dial_limit)), dj.addr, Default::default()))
+                .await;
             return;
         }
 
@@ -513,13 +516,11 @@ impl AsyncDialer {
         };
 
         if param.filter_private {
-            addrs_origin = addrs_origin.into_iter()
-                .filter(|addr| !addr.is_private_addr()).collect();
+            addrs_origin = addrs_origin.into_iter().filter(|addr| !addr.is_private_addr()).collect();
         }
 
         if param.filter_loopback {
-            addrs_origin = addrs_origin.into_iter()
-                .filter(|addr| !addr.is_loopback_addr()).collect();
+            addrs_origin = addrs_origin.into_iter().filter(|addr| !addr.is_loopback_addr()).collect();
         }
 
         // TODO: filter Known Undialables address ,If there is no address  can dial return SwarmError::NoGoodAddresses
@@ -618,10 +619,13 @@ impl AsyncDialer {
                     }
                 }
                 Some((Err(err), addr, cost)) => {
-                    if !addr.is_private_addr() && !addr.is_ipv6_addr() {
-                        log::info!("[Dialer] job for {:?}, cost {:?}, failed: addr={:?},error={:?}", peer_id, cost, addr, err);
-                    }
-                    // log::debug!("[Dialer] job for {:?} failed: addr={:?},error={:?}", peer_id, addr.clone(), err);
+                    log::debug!(
+                        "[Dialer] job for {:?}, cost {:?}, failed: addr={:?},error={:?}",
+                        peer_id,
+                        cost,
+                        addr,
+                        err
+                    );
                     if let SwarmError::Transport(_) = err {
                         // add to backoff list if transport error reported
                         param.backoff.add_peer(peer_id, addr).await;
