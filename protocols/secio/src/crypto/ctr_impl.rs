@@ -1,10 +1,9 @@
-use crate::crypto::StreamCipher;
-
+use crate::crypto::StreamCipher as Crypto_StreamCipher;
 use crate::error::SecioError;
 
-use aes_ctr::stream_cipher::generic_array::*;
-use aes_ctr::stream_cipher::{NewStreamCipher, SyncStreamCipher};
-use aes_ctr::Aes128Ctr;
+use aes::{Aes128Ctr, Aes128};
+use aes::cipher::generic_array::GenericArray;
+use aes::cipher::{FromBlockCipher, StreamCipher, NewBlockCipher};
 
 pub static CTR128LEN: usize = 16;
 
@@ -16,8 +15,8 @@ impl CTRCipher {
     /// Create a CTRCipher
     pub fn new(key: &[u8], iv: &[u8]) -> Self {
         let iv = GenericArray::from_slice(iv);
-        let key = GenericArray::from_slice(key);
-        let cipher = Aes128Ctr::new(key, iv);
+        let aes_128 = Aes128::new(GenericArray::from_slice(key));
+        let cipher = Aes128Ctr::from_block_cipher(aes_128, iv);
         CTRCipher { cipher }
     }
 
@@ -36,7 +35,7 @@ impl CTRCipher {
     }
 }
 
-impl StreamCipher for CTRCipher {
+impl Crypto_StreamCipher for CTRCipher {
     fn encrypt(&mut self, input: &[u8]) -> Result<Vec<u8>, SecioError> {
         self.encrypt(input)
     }

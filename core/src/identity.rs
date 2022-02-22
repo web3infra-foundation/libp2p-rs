@@ -61,10 +61,27 @@ pub enum Keypair {
     Secp256k1(secp256k1::Keypair),
 }
 
+impl std::fmt::Debug for Keypair {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let kind = match self {
+            Keypair::Ed25519(_) => "Ed25519",
+            Keypair::Rsa(_) => "Rsa",
+            Keypair::Secp256k1(_) => "Secp256k1",
+        };
+
+        write!(fmt, "Keypair::{}", kind)
+    }
+}
+
 impl Keypair {
     /// Generate a fixed Ed25519 keypair, used for test only.
     pub fn generate_ed25519_fixed() -> Keypair {
         Keypair::Ed25519(ed25519::Keypair::generate_fixed())
+    }
+
+    /// Generate a Ed25519 keypair with seed, used for test only.
+    pub fn generate_ed25519_with_seed(bytes: [u8; 32]) -> Keypair {
+        Keypair::Ed25519(ed25519::Keypair::generate_with_seed(bytes))
     }
 
     /// Generate a new Ed25519 keypair.

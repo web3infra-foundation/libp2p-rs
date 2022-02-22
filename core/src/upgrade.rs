@@ -116,31 +116,47 @@ impl<T: AsRef<[u8]>> ProtocolName for T {
 /// provides more friendly Debug and Display, which can output a
 /// readable string instead of an array [...]
 #[derive(Clone, PartialOrd, PartialEq, Eq, Hash)]
-pub struct ProtocolId(&'static [u8]);
+pub struct ProtocolId {
+    name: Vec<u8>,
+    data: u64,
+}
+
+impl ProtocolId {
+    pub fn new<T: AsRef<[u8]>>(name: T, data: u64) -> Self {
+        Self {
+            name: name.as_ref().into(),
+            data,
+        }
+    }
+
+    pub fn data(&self) -> u64 {
+        self.data
+    }
+}
 
 impl fmt::Debug for ProtocolId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ProtocolId({})", String::from_utf8_lossy(&self.0))
+        write!(f, "ProtocolId({})", String::from_utf8_lossy(self.name.as_ref()))
     }
 }
 
 impl fmt::Display for ProtocolId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", String::from_utf8_lossy(&self.0))
+        write!(f, "{}", String::from_utf8_lossy(self.name.as_ref()))
+    }
+}
+
+impl AsRef<[u8]> for ProtocolId {
+    fn as_ref(&self) -> &[u8] {
+        self.name.as_ref()
     }
 }
 
 // impl ProtocolName for ProtocolId {
 //     fn protocol_name(&self) -> &[u8] {
-//         self.0.as_ref()
+//         self.name.as_ref()
 //     }
 // }
-
-impl AsRef<[u8]> for ProtocolId {
-    fn as_ref(&self) -> &[u8] {
-        self.0
-    }
-}
 
 // impl From<Bytes> for ProtocolId {
 //     fn from(value: Bytes) -> Self {
@@ -148,11 +164,11 @@ impl AsRef<[u8]> for ProtocolId {
 //     }
 // }
 
-impl From<&'static [u8]> for ProtocolId {
-    fn from(value: &'static [u8]) -> Self {
-        ProtocolId(value)
-    }
-}
+// impl From<&'static [u8]> for ProtocolId {
+//     fn from(value: &'static [u8]) -> Self {
+//         ProtocolId(value)
+//     }
+// }
 
 pub trait UpgradeInfo: Send {
     /// Opaque type representing a negotiable protocol.
@@ -222,8 +238,9 @@ mod tests {
 
     #[test]
     fn protocol_id() {
-        let p = ProtocolId::from(b"protocol" as &[u8]);
+        // let p = ProtocolId::from(b"protocol" as &[u8]);
+        let p = ProtocolId::new("protocol", 200);
 
-        assert_eq!(p.to_string(), "protocol");
+        assert_eq!(String::from_utf8(p.name).unwrap(), "protocol".to_string());
     }
 }

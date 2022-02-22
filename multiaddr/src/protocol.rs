@@ -414,31 +414,31 @@ impl<'a> Protocol<'a> {
                 w.write_all(encode::u32(DNS, &mut buf))?;
                 let bytes = s.as_bytes();
                 w.write_all(encode::usize(bytes.len(), &mut encode::usize_buffer()))?;
-                w.write_all(&bytes)?
+                w.write_all(bytes)?
             }
             Protocol::Dns4(s) => {
                 w.write_all(encode::u32(DNS4, &mut buf))?;
                 let bytes = s.as_bytes();
                 w.write_all(encode::usize(bytes.len(), &mut encode::usize_buffer()))?;
-                w.write_all(&bytes)?
+                w.write_all(bytes)?
             }
             Protocol::Dns6(s) => {
                 w.write_all(encode::u32(DNS6, &mut buf))?;
                 let bytes = s.as_bytes();
                 w.write_all(encode::usize(bytes.len(), &mut encode::usize_buffer()))?;
-                w.write_all(&bytes)?
+                w.write_all(bytes)?
             }
             Protocol::Dnsaddr(s) => {
                 w.write_all(encode::u32(DNSADDR, &mut buf))?;
                 let bytes = s.as_bytes();
                 w.write_all(encode::usize(bytes.len(), &mut encode::usize_buffer()))?;
-                w.write_all(&bytes)?
+                w.write_all(bytes)?
             }
             Protocol::Unix(s) => {
                 w.write_all(encode::u32(UNIX, &mut buf))?;
                 let bytes = s.as_bytes();
                 w.write_all(encode::usize(bytes.len(), &mut encode::usize_buffer()))?;
-                w.write_all(&bytes)?
+                w.write_all(bytes)?
             }
             Protocol::P2p(multihash) => {
                 w.write_all(encode::u32(P2P, &mut buf))?;
@@ -466,14 +466,14 @@ impl<'a> Protocol<'a> {
                 w.write_all(encode::u32(WS_WITH_PATH, &mut buf))?;
                 let bytes = s.as_bytes();
                 w.write_all(encode::usize(bytes.len(), &mut encode::usize_buffer()))?;
-                w.write_all(&bytes)?
+                w.write_all(bytes)?
             }
             Protocol::Wss(ref s) if s == "/" => w.write_all(encode::u32(WSS, &mut buf))?,
             Protocol::Wss(s) => {
                 w.write_all(encode::u32(WSS_WITH_PATH, &mut buf))?;
                 let bytes = s.as_bytes();
                 w.write_all(encode::usize(bytes.len(), &mut encode::usize_buffer()))?;
-                w.write_all(&bytes)?
+                w.write_all(bytes)?
             }
             Protocol::P2pWebSocketStar => w.write_all(encode::u32(P2P_WEBSOCKET_STAR, &mut buf))?,
             Protocol::P2pWebRtcStar => w.write_all(encode::u32(P2P_WEBRTC_STAR, &mut buf))?,

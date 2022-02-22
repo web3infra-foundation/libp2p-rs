@@ -39,6 +39,11 @@ impl Keypair {
         Keypair::from(SecretKey::from_bytes(bytes).unwrap())
     }
 
+    /// Generate a fixed Ed25519 keypair, used for test puepose only.
+    pub fn generate_with_seed(bytes: [u8; 32]) -> Keypair {
+        Keypair::from(SecretKey::from_bytes(bytes).unwrap())
+    }
+
     /// Generate a new Ed25519 keypair.
     pub fn generate() -> Keypair {
         Keypair::from(SecretKey::generate())
@@ -64,7 +69,7 @@ impl Keypair {
 
     /// Sign a message using the private key of this keypair.
     pub fn sign(&self, msg: &[u8]) -> Vec<u8> {
-        self.0.sign(&msg).to_bytes().to_vec()
+        self.0.sign(msg).to_bytes().to_vec()
     }
 
     /// Get the public key of this keypair.
@@ -118,8 +123,9 @@ pub struct PublicKey(ed25519::PublicKey);
 
 impl PublicKey {
     /// Verify the Ed25519 signature on a message using the public key.
-    pub fn verify(&self, msg: &[u8], sig: &[u8]) -> bool {
-        Signature::try_from(&sig[..]).and_then(|s| self.0.verify(msg, &s)).is_ok()
+    #[allow(clippy::redundant_slicing)]
+    pub fn verify(&self, msg: &[u8], signature: &[u8]) -> bool {
+        Signature::try_from(&signature[..]).and_then(|s| self.0.verify(msg, &s)).is_ok()
     }
 
     /// Encode the public key into a byte array in compressed form, i.e.

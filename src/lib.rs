@@ -53,6 +53,10 @@ pub use libp2prs_exporter as exporter;
 #[cfg_attr(docsrs, doc(cfg(any(feature = "floodsub-async-std", feature = "floodsub-tokio"))))]
 #[doc(inline)]
 pub use libp2prs_floodsub as floodsub;
+#[cfg(any(feature = "gossipsub-async-std", feature = "gossipsub-tokio"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "gossipsub-async-std", feature = "gossipsub-tokio"))))]
+#[doc(inline)]
+pub use libp2prs_gossipsub as gossipsub;
 #[cfg(feature = "infoserver")]
 #[cfg_attr(docsrs, doc(cfg(any(feature = "infoserver-async-std", feature = "infoserver-tokio"))))]
 #[doc(inline)]

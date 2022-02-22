@@ -10,9 +10,13 @@ categories = ["network-programming", "asynchronous"]
 edition = "2018"
 
 [dependencies]
+log = "0.4"
 futures = { version = "0.3", features = ["std", "executor"], default-features = false }
 once_cell = "1.5"
 
 async-std = { version = "1.8", optional = true, features = ["default"] }
 tokio = { version = "1.0", optional = true, features = ["rt-multi-thread", "net", "time"] }
 
+
+[dev-dependencies]
+env_logger = "0.8"

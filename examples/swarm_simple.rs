@@ -79,8 +79,8 @@ fn run_server() {
 
     struct MyProtocol;
     impl ProtocolImpl for MyProtocol {
-        fn handler(&self) -> IProtocolHandler {
-            Box::new(MyProtocolHandler)
+        fn handlers(&self) -> Vec<IProtocolHandler> {
+            vec![Box::new(MyProtocolHandler)]
         }
     }
 
@@ -91,7 +91,7 @@ fn run_server() {
         type Info = ProtocolId;
 
         fn protocol_info(&self) -> Vec<Self::Info> {
-            vec![PROTO_NAME.into()]
+            vec![ProtocolId::new(PROTO_NAME, 1011)]
         }
     }
 
@@ -154,6 +154,8 @@ fn run_client() {
     let swarm = Swarm::new(keys.public())
         .with_transport(Box::new(tu))
         .with_transport(Box::new(tu2))
+        .with_filter_private(false)
+        .with_filter_loopback(false)
         .with_ping(PingConfig::new().with_unsolicited(false).with_interval(Duration::from_secs(1)))
         .with_identify(IdentifyConfig::new(false));
 
@@ -173,13 +175,16 @@ fn run_client() {
     control.add_addrs(&remote_peer_id, addrs, ADDRESS_TTL);
 
     task::block_on(async move {
-        for _ in 0..2 {
+        for _ in 0..2i32 {
             // method 1
             //let mut connection = control.new_connection(remote_peer_id.clone()).await.unwrap();
             //let mut stream = connection.open_stream(vec![b"/my/1.0.0"], |r| r.unwrap()).await;
 
             // method 2
-            let mut stream = control.new_stream(remote_peer_id, vec![PROTO_NAME.into()]).await.unwrap();
+            let mut stream = control
+                .new_stream(remote_peer_id, vec![ProtocolId::new(PROTO_NAME, 1011)])
+                .await
+                .unwrap();
             log::info!("stream {:?} opened, writing something...", stream);
             let _ = stream.write_all(b"hello").await;
 

@@ -146,7 +146,6 @@ where
                 let la = o.local_multiaddr();
                 let ra = o.remote_multiaddr();
                 self.pnet
-                    .clone()
                     .handshake(o)
                     .await
                     .map(|io| ListenerEvent::Accepted(PnetStream { io, la, ra }))

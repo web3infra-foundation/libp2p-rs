@@ -43,7 +43,7 @@ impl Keypair {
     ///
     /// [RFC5208]: https://tools.ietf.org/html/rfc5208#section-5
     pub fn from_pkcs8(der: &mut [u8]) -> Result<Keypair, DecodingError> {
-        let kp = RsaKeyPair::from_pkcs8(&der).map_err(|e| DecodingError::new("RSA PKCS#8 PrivateKeyInfo").source(e))?;
+        let kp = RsaKeyPair::from_pkcs8(der).map_err(|e| DecodingError::new("RSA PKCS#8 PrivateKeyInfo").source(e))?;
         der.zeroize();
         Ok(Keypair(Arc::new(kp)))
     }
@@ -57,7 +57,7 @@ impl Keypair {
     pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>, SigningError> {
         let mut signature = vec![0; self.0.public_modulus_len()];
         let rng = SystemRandom::new();
-        match self.0.sign(&RSA_PKCS1_SHA256, &rng, &data, &mut signature) {
+        match self.0.sign(&RSA_PKCS1_SHA256, &rng, data, &mut signature) {
             Ok(()) => Ok(signature),
             Err(e) => Err(SigningError::new("RSA").source(e)),
         }

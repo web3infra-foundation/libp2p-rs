@@ -177,20 +177,21 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> StreamMuxer for Yamux<T
                     match conn.next_stream().await {
                         Ok(Some(s)) => {
                             if let Err(e) = sender.send(Ok(s)).await {
+                                log::error!("failed to send incoming stream {:?}", e);
                                 if e.is_disconnected() {
                                     break;
                                 }
-                                log::warn!("{:?}", e);
                             }
                         }
                         Ok(None) => {
-                            log::info!("{:?} background-task exiting...", conn);
+                            log::debug!("{:?} yamux task exiting...", conn);
                             if let Err(e) = sender.send(Err(yamux::ConnectionError::Closed)).await {
                                 log::warn!("{:?}", e);
                             }
                             break;
                         }
                         Err(e) => {
+                            log::error!("yamux connection error {:?}", e);
                             if let Err(err) = sender.send(Err(e)).await {
                                 log::warn!("{:?}", err);
                             }
@@ -313,17 +314,19 @@ impl Config {
     /// Creates a new Yamux `Config` in client mode, regardless of whether
     /// it will be used for an inbound or outbound upgrade.
     pub fn client() -> Self {
-        let mut cfg = Self::default();
-        cfg.mode = Some(yamux::Mode::Client);
-        cfg
+        Config {
+            mode: Some(yamux::Mode::Client),
+            ..Default::default()
+        }
     }
 
     /// Creates a new Yamux `Config` in server mode, regardless of whether
     /// it will be used for an inbound or outbound upgrade.
     pub fn server() -> Self {
-        let mut cfg = Self::default();
-        cfg.mode = Some(yamux::Mode::Server);
-        cfg
+        Config {
+            mode: Some(yamux::Mode::Server),
+            ..Default::default()
+        }
     }
 
     /// Sets the size (in bytes) of the receive window per substream.

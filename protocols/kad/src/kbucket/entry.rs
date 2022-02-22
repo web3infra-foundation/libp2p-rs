@@ -174,7 +174,7 @@ where
         let (node, _pos) = self
             .0
             .bucket
-            .remove(&self.0.key)
+            .remove(self.0.key)
             .expect("We can only build a PresentEntry if the entry is in the bucket; QED");
         EntryView { node }
     }

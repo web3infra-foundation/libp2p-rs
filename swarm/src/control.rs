@@ -18,23 +18,24 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+use crate::connection::{ConnectionId, ConnectionView};
+use crate::identify::IdentifyInfo;
+use crate::metrics::metric::{Metric, RecordByteAndPacketView};
+use crate::network::NetworkInfo;
+use crate::substream::{StreamId, Substream, SubstreamView};
+use crate::{SwarmError, SwarmStats, SWARM_EXIT_FLAG};
 use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
 };
 use libp2prs_core::peerstore::PeerStore;
+use libp2prs_core::transport::TransportError;
 use libp2prs_core::{Multiaddr, PeerId, ProtocolId, PublicKey};
-use std::sync::Arc;
-use std::time::Duration;
-
-use crate::connection::{ConnectionId, ConnectionView};
-use crate::identify::IdentifyInfo;
-use crate::metrics::metric::Metric;
-use crate::network::NetworkInfo;
-use crate::substream::{StreamId, Substream, SubstreamView};
-use crate::{SwarmError, SwarmStats, SWARM_EXIT_FLAG};
+use libp2prs_runtime::task;
 use std::collections::hash_map::IntoIter;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
+use std::time::Duration;
 
 type Result<T> = std::result::Result<T, SwarmError>;
 
@@ -63,8 +64,16 @@ pub enum SwarmControlCmd {
     NetworkInfo(oneshot::Sender<NetworkInfo>),
     /// Retrieve network information of Swarm.
     IdentifyInfo(oneshot::Sender<IdentifyInfo>),
-    ///
+    /// Get the TTL of all peers in PeerStore.
+    PeerLatency(oneshot::Sender<Vec<(PeerId, Duration)>>),
+    /// Get the TTL by specific peer.
+    LatencyByID(PeerId, oneshot::Sender<Option<Duration>>),
+    /// Dump stream info
     Dump(DumpCommand),
+    /// Start calculate speed
+    Rate(oneshot::Sender<(f64, f64)>),
+    // /// Check peer connected either or not
+    // IsConnected(PeerId, oneshot::Sender<bool>),
 }
 
 /// The dump commands can be used to dump internal data of Swarm.
@@ -77,6 +86,10 @@ pub enum DumpCommand {
     Streams(PeerId, oneshot::Sender<Result<Vec<SubstreamView>>>),
     /// Dump all statistics of Swarm.
     Statistics(oneshot::Sender<Result<SwarmStats>>),
+    /// Dump network info by peer_id.
+    NetworkTrafficByPeerID(Option<PeerId>, oneshot::Sender<Option<Vec<(PeerId, RecordByteAndPacketView)>>>),
+    // /// Dump all peer's network info whether is connected or not.
+    // NetworkInfo
 }
 
 /// The `Swarm` controller.
@@ -198,6 +211,41 @@ impl Control {
         rx.await?
     }
 
+    /// Open a new outbound stream towards the remote peer within timeout.
+    ///
+    /// It will lookup the peer store for address of the peer,
+    /// otherwise initiate the routing interface for address querying,
+    /// when routing is enabled. In the end, it will open an outgoing
+    /// sub-stream when the connection is eventually established.
+    pub async fn new_stream_with_timeout(
+        &mut self,
+        peer_id: PeerId,
+        pids: Vec<ProtocolId>,
+        timeout: Option<Duration>,
+    ) -> Result<Substream> {
+        let (tx, rx) = oneshot::channel();
+        self.sender.send(SwarmControlCmd::NewStream(peer_id, pids, true, tx)).await?;
+        match timeout {
+            Some(timeout) => task::timeout(timeout, rx).await.map_or_else(|_| Err(SwarmError::from(TransportError::Timeout)), |a| a?),
+            None => rx.await?,
+        }
+    }
+
+    /// Open a new outbound stream towards the remote peer within timeout, without routing.
+    pub async fn new_stream_no_routing_with_timeout(
+        &mut self,
+        peer_id: PeerId,
+        pids: Vec<ProtocolId>,
+        timeout: Option<Duration>,
+    ) -> Result<Substream> {
+        let (tx, rx) = oneshot::channel();
+        self.sender.send(SwarmControlCmd::NewStream(peer_id, pids, false, tx)).await?;
+        match timeout {
+            Some(timeout) => task::timeout(timeout, rx).await.map_or_else(|_| Err(SwarmError::from(TransportError::Timeout)), |a| a?),
+            None => rx.await?,
+        }
+    }
+
     /// Retrieve the all listened addresses from Swarm.
     ///
     /// All listened addresses on interface and the observed addresses
@@ -222,6 +270,28 @@ impl Control {
         Ok(rx.await?)
     }
 
+    /// Dump input and output bytes.
+    pub async fn dump_rate(&mut self) -> Result<(f64, f64)> {
+        let (tx, rx) = oneshot::channel();
+        self.sender.send(SwarmControlCmd::Rate(tx)).await?;
+        Ok(rx.await?)
+    }
+
+    /// Dump latency time for all peer.
+    pub async fn dump_latency(&mut self) -> Result<Vec<(PeerId, Duration)>> {
+        let (tx, rx) = oneshot::channel();
+        self.sender.send(SwarmControlCmd::PeerLatency(tx)).await?;
+        Ok(rx.await?)
+    }
+
+    /// Dump latency time by specific peer.
+    pub async fn latency_by_peer(&mut self, peer_id: PeerId) -> Result<Option<Duration>> {
+        let (tx, rx) = oneshot::channel();
+        self.sender.send(SwarmControlCmd::LatencyByID(peer_id, tx)).await?;
+        Ok(rx.await?)
+    }
+
+    /// Dump all connection info for specific peer_id.
     pub async fn dump_connections(&mut self, peer_id: Option<PeerId>) -> Result<Vec<ConnectionView>> {
         let (tx, rx) = oneshot::channel();
         self.sender
@@ -230,17 +300,33 @@ impl Control {
         Ok(rx.await?)
     }
 
+    /// Dump substream info for specific peer_id.
     pub async fn dump_streams(&mut self, peer_id: PeerId) -> Result<Vec<SubstreamView>> {
         let (tx, rx) = oneshot::channel();
         self.sender.send(SwarmControlCmd::Dump(DumpCommand::Streams(peer_id, tx))).await?;
         rx.await?
     }
 
+    /// Dump statistic of swarm.
     pub async fn dump_statistics(&mut self) -> Result<SwarmStats> {
         let (tx, rx) = oneshot::channel();
         self.sender.send(SwarmControlCmd::Dump(DumpCommand::Statistics(tx))).await?;
         rx.await?
     }
+
+    /// Dump network traffic by peer_id
+    pub async fn dump_network_traffic_by_peer(&mut self, peer_id: Option<PeerId>) -> Result<Option<Vec<(PeerId, RecordByteAndPacketView)>>> {
+        let (tx, rx) = oneshot::channel();
+        self.sender.send(SwarmControlCmd::Dump(DumpCommand::NetworkTrafficByPeerID(peer_id, tx))).await?;
+        rx.await.map_err(|_| SwarmError::Internal)
+    }
+
+    // /// Check connection still alive or not.
+    // pub async fn still_connected(&mut self, peer_id: PeerId) -> Result<bool> {
+    //     let (tx, rx) = oneshot::channel();
+    //     self.sender.send(SwarmControlCmd::IsConnected(peer_id, tx)).await?;
+    //     Ok(rx.await?)
+    // }
 
     /// Close the swarm.
     pub fn close(&mut self) {

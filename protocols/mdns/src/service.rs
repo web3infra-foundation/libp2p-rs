@@ -112,11 +112,11 @@ impl MdnsService {
 
             select! {
                 (data, from) = m_recv => {
-                    let packet = MdnsPacket::new_from_bytes(&data, from);
+                    let packet = MdnsPacket::new_from_bytes(data, from);
                     self.handle_received_packet(&socket, packet).await;
                 },
                 (data, from) = u_recv => {
-                    let packet = MdnsPacket::new_from_bytes(&data, from);
+                    let packet = MdnsPacket::new_from_bytes(data, from);
                     self.handle_received_packet(&socket, packet).await;
                 },
                 cmd = self.control_rx.next() => {
@@ -168,7 +168,7 @@ impl MdnsService {
                         // TODO: manage time-to-live of peer
                         let mut addrs: Vec<Multiaddr> = Vec::new();
                         for addr in peer.addresses() {
-                            if let Some(new_addr) = address_translation(&addr, &observed) {
+                            if let Some(new_addr) = address_translation(addr, &observed) {
                                 addrs.push(new_addr.clone())
                             }
                             addrs.push(addr.clone())

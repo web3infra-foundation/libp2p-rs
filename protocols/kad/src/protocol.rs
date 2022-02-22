@@ -80,6 +80,7 @@ impl From<proto::message::ConnectionType> for KadConnectionType {
     }
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<proto::message::ConnectionType> for KadConnectionType {
     fn into(self) -> proto::message::ConnectionType {
         use proto::message::ConnectionType::*;
@@ -131,6 +132,7 @@ impl TryFrom<proto::message::Peer> for KadPeer {
     }
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<proto::message::Peer> for KadPeer {
     fn into(self) -> proto::message::Peer {
         proto::message::Peer {
@@ -144,6 +146,7 @@ impl Into<proto::message::Peer> for KadPeer {
     }
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<PeerId> for KadPeer {
     fn into(self) -> PeerId {
         self.node_id
@@ -159,6 +162,17 @@ pub struct KademliaProtocolConfig {
     max_packet_size: usize,
     /// Maximum allowed reuse count of a substream, used by Messenger cache.
     max_reuse_count: usize,
+    /// Client mode of Kad.
+    /// Client mode Kad plays a client role in Kad-DHT network. It will not
+    /// claim supporting the Kad protocol. Consequently, it will not be added
+    /// to the routing table of any node.
+    client_mode: bool,
+    /// Timeout of new substream.
+    new_stream_timeout: Option<Duration>,
+    /// Stream read timeout
+    read_timeout: Option<Duration>,
+    /// Stream write timeout
+    write_timeout: Option<Duration>,
 }
 
 impl KademliaProtocolConfig {
@@ -177,14 +191,38 @@ impl KademliaProtocolConfig {
     pub fn set_max_packet_size(&mut self, size: usize) {
         self.max_packet_size = size;
     }
+
+    /// Modifies the mode of Kad.
+    pub fn set_client_mode(&mut self, client_mode: bool) {
+        self.client_mode = client_mode;
+    }
+
+    /// Set timeout of new substream.
+    pub fn set_new_stream_timeout(&mut self, timeout: Option<Duration>) {
+        self.new_stream_timeout = timeout;
+    }
+
+    /// Set timeout of substream read.
+    pub fn set_read_stream_timeout(&mut self, timeout: Option<Duration>) {
+        self.read_timeout = timeout;
+    }
+
+    /// Set timeout of substream write.
+    pub fn set_write_stream_timeout(&mut self, timeout: Option<Duration>) {
+        self.write_timeout = timeout;
+    }
 }
 
 impl Default for KademliaProtocolConfig {
     fn default() -> Self {
         KademliaProtocolConfig {
-            protocol_name: DEFAULT_PROTO_NAME.into(),
+            protocol_name: ProtocolId::new(DEFAULT_PROTO_NAME, 0),
             max_packet_size: DEFAULT_MAX_PACKET_SIZE,
             max_reuse_count: DEFAULT_MAX_REUSE_TRIES,
+            client_mode: false,
+            new_stream_timeout: None,
+            read_timeout: None,
+            write_timeout: None
         }
     }
 }
@@ -194,8 +232,6 @@ impl Default for KademliaProtocolConfig {
 pub struct KadProtocolHandler {
     /// The configuration of the protocol handler.
     config: KademliaProtocolConfig,
-    /// If false, we deny incoming requests.
-    allow_listening: bool,
     /// Time after which we close an idle connection.
     idle_timeout: Duration,
     /// Used to post ProtocolEvent to Kad main loop.
@@ -207,7 +243,6 @@ impl KadProtocolHandler {
     pub(crate) fn new(config: KademliaProtocolConfig, poster: KadPoster) -> Self {
         KadProtocolHandler {
             config,
-            allow_listening: false,
             idle_timeout: Duration::from_secs(10),
             poster,
         }
@@ -313,7 +348,12 @@ pub struct KadMessengerView {
 impl KadMessenger {
     pub(crate) async fn build(mut swarm: SwarmControl, peer: PeerId, config: KademliaProtocolConfig) -> Result<Self, KadError> {
         // open a new stream, without routing, so that Swarm wouldn't do routing for us
-        let stream = swarm.new_stream_no_routing(peer, vec![config.protocol_name().to_owned()]).await?;
+        let stream = swarm
+            .new_stream_no_routing_with_timeout(peer,
+                                                vec![config.protocol_name().to_owned()],
+                                                config.new_stream_timeout).await?
+            .with_read_timeout(config.read_timeout)
+            .with_write_timeout(config.write_timeout);
         Ok(Self {
             stream,
             config,

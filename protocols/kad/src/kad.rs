@@ -32,7 +32,10 @@ use futures::{
 };
 
 use libp2prs_core::{Multiaddr, PeerId, ProtocolId};
-use libp2prs_runtime::task;
+use libp2prs_runtime::{
+    limit::{Snapshot, TaskLimiter},
+    task,
+};
 use libp2prs_swarm::Control as SwarmControl;
 
 use crate::control::{Control, ControlCommand, DumpCommand};
@@ -46,8 +49,13 @@ use crate::kbucket::KBucketsTable;
 use crate::query::{FixedQuery, IterativeQuery, PeerRecord, QueryConfig, QueryStats, QueryStatsAtomic, QueryType};
 use crate::store::RecordStore;
 use crate::{kbucket, record, KadError, ProviderRecord, Record};
+use libp2prs_core::metricmap::MetricMap;
 use libp2prs_core::peerstore::{ADDRESS_TTL, PROVIDER_ADDR_TTL};
 use libp2prs_swarm::protocol_handler::{IProtocolHandler, ProtocolImpl};
+// use std::ops::Add;
+use std::fmt::{Display, Formatter};
+use std::sync::atomic::Ordering::SeqCst;
+use std::sync::atomic::{AtomicU32, AtomicU64};
 
 type Result<T> = std::result::Result<T, KadError>;
 
@@ -67,6 +75,8 @@ pub struct Kademlia<TStore> {
 
     /// The statistics of iterative and fixed queries.
     query_stats: Arc<QueryStatsAtomic>,
+
+    ledgers: Arc<MetricMap<PeerId, Ledger>>,
 
     /// The statistics of Kad DHT.
     stats: KademliaStats,
@@ -124,6 +134,9 @@ pub struct Kademlia<TStore> {
     /// the Kademlia main loop.
     control_tx: mpsc::UnboundedSender<ControlCommand>,
     control_rx: mpsc::UnboundedReceiver<ControlCommand>,
+
+    // Concurrency of iterative queries
+    iter_qry_limiter: TaskLimiter,
 }
 
 /// The statistics of Kademlia.
@@ -132,6 +145,9 @@ pub struct KademliaStats {
     pub total_refreshes: usize,
     pub query: QueryStats,
     pub message_rx: MessageStats,
+    pub total_provider_records: usize,
+    pub total_kv_records: usize,
+    pub task: Snapshot,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -150,6 +166,32 @@ pub struct StorageStats {
     pub(crate) record: Vec<Record>,
 }
 
+#[derive(Clone, Default, Debug)]
+pub struct Ledger {
+    pub succeed: Arc<AtomicU32>,
+    pub succeed_cost: Arc<AtomicU64>,
+    pub failed: Arc<AtomicU32>,
+    pub failed_cost: Arc<AtomicU64>,
+}
+
+impl Display for Ledger {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "succeed {}, failed {}", self.succeed.load(SeqCst), self.failed.load(SeqCst))
+    }
+}
+
+impl Ledger {
+    pub(crate) fn failure_increase(&self, cost: u64) {
+        self.failed.fetch_add(1, SeqCst);
+        self.failed_cost.fetch_add(cost, SeqCst);
+    }
+
+    pub(crate) fn success_increase(&self, cost: u64) {
+        self.succeed.fetch_add(1, SeqCst);
+        self.succeed_cost.fetch_add(cost, SeqCst);
+    }
+}
+
 /// The configuration for the `Kademlia` behaviour.
 ///
 /// The configuration is consumed by [`Kademlia::new`].
@@ -162,6 +204,7 @@ pub struct KademliaConfig {
     record_ttl: Duration,
     provider_ttl: Duration,
     check_kad_peer_interval: Duration,
+    iter_qry_parallelism: usize,
 }
 
 impl Default for KademliaConfig {
@@ -187,6 +230,7 @@ impl Default for KademliaConfig {
             record_ttl: Duration::from_secs(36 * 60 * 60),
             provider_ttl: Duration::from_secs(24 * 60 * 60),
             check_kad_peer_interval,
+            iter_qry_parallelism: 50,
         }
     }
 }
@@ -199,6 +243,29 @@ impl KademliaConfig {
     /// others, if that is desired.
     pub fn with_protocol_name(mut self, name: ProtocolId) -> Self {
         self.protocol_config.set_protocol_name(name);
+        self
+    }
+
+    /// Sets Kad client mode.
+    ///
+    /// Kademlia nodes can be configured to be running on the client mode.
+    pub fn with_client_mode(mut self, client_mode: bool) -> Self {
+        self.protocol_config.set_client_mode(client_mode);
+        self
+    }
+
+    /// Sets the io-timeout for stream.
+    ///
+    ///
+    pub fn with_io_timeout(
+        mut self,
+        dial_timeout: Option<Duration>,
+        read_timeout: Option<Duration>,
+        write_timeout: Option<Duration>,
+    ) -> Self {
+        self.protocol_config.set_new_stream_timeout(dial_timeout);
+        self.protocol_config.set_read_stream_timeout(read_timeout);
+        self.protocol_config.set_write_stream_timeout(write_timeout);
         self
     }
 
@@ -287,6 +354,30 @@ impl KademliaConfig {
         self.protocol_config.set_max_packet_size(size);
         self
     }
+
+    /// Set timeout of new substream.
+    pub fn with_new_stream_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.protocol_config.set_new_stream_timeout(timeout);
+        self
+    }
+
+    /// Set timeout of substream read.
+    pub fn with_read_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.protocol_config.set_read_stream_timeout(timeout);
+        self
+    }
+
+    /// Set timeout of substream write.
+    pub fn with_write_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.protocol_config.set_write_stream_timeout(timeout);
+        self
+    }
+
+    /// Set Concurrency of iterative queries.
+    pub fn with_iter_qry_parallelism(mut self, parallelism: usize) -> Self {
+        self.iter_qry_parallelism = parallelism;
+        self
+    }
 }
 
 /// KadPoster is used to generate ProtocolEvent to Kad main loop.
@@ -336,11 +427,13 @@ where
             event_tx,
             control_tx,
             control_rx,
+            iter_qry_limiter: TaskLimiter::new(NonZeroUsize::new(config.iter_qry_parallelism).unwrap()),
             kbuckets: KBucketsTable::new(local_key),
             protocol_config: config.protocol_config,
             refreshing: false,
             query_config: config.query_config,
             query_stats: Arc::new(Default::default()),
+            ledgers: Arc::new(Default::default()),
             stats: Default::default(),
             messengers: None,
             connected_peers: Default::default(),
@@ -411,7 +504,9 @@ where
                     let bucket = entry.bucket();
                     let candidate = bucket
                         .iter()
-                        .filter(|n| n.value.get_aliveness().map_or(true, |a| now.duration_since(a) > timeout))
+                        .filter(|n| {
+                            !n.value.is_permanent() && n.value.get_aliveness().map_or(true, |a| now.duration_since(a) > timeout)
+                        })
                         .min_by(|x, y| x.value.get_aliveness().cmp(&y.value.get_aliveness()));
 
                     if let Some(candidate) = candidate {
@@ -453,11 +548,12 @@ where
 
         match self.kbuckets.entry(&key) {
             kbucket::Entry::Present(mut entry) => {
-                if forced || !entry.value().is_permanent() {
+                if forced {
                     // unpin the peer, so GC can run normally
                     if let Some(s) = self.swarm.as_ref() {
                         s.unpin(&peer)
                     }
+                    log::error!("removed {:?}", entry.value());
                     Some(entry.remove())
                 } else {
                     entry.value().set_aliveness(None);
@@ -530,6 +626,7 @@ where
             seeds,
             self.poster(),
             self.query_stats.clone(),
+            self.ledgers.clone(),
         )
     }
 
@@ -542,9 +639,11 @@ where
 
         let q = self.prepare_iterative_query(QueryType::GetClosestPeers, key);
 
-        q.run(|r| {
+        let fut = q.run(|r| {
             f(r.and_then(|r| r.closest_peers.ok_or(KadError::NotFound)));
         });
+
+        self.iter_qry_limiter.spawn(fut);
     }
 
     /// Performs a lookup for the given PeerId.
@@ -574,9 +673,10 @@ where
 
         let q = self.prepare_iterative_query(QueryType::FindPeer, peer_id.into());
 
-        q.run(|r| {
+        let fut = q.run(|r| {
             f(r.and_then(|r| r.found_peer.ok_or(KadError::NotFound)));
         });
+        self.iter_qry_limiter.spawn(fut);
     }
 
     /// Performs a lookup for providers of a value to the given key.
@@ -592,6 +692,8 @@ where
     {
         log::debug!("finding providers {:?}", key);
 
+        // note that self.provider_peers would not return any duplicated peers. The record store do NOT
+        // allow duplicated records for a specific Key.
         let provider_peers = self.provider_peers(&key, None);
 
         if count != 0 && provider_peers.len() >= count {
@@ -601,10 +703,25 @@ where
             let local = if provider_peers.is_empty() { None } else { Some(provider_peers) };
             let q = self.prepare_iterative_query(QueryType::GetProviders { count, local }, key);
 
-            q.run(|r| {
+            let fut = q.run(|r| {
                 f(r.and_then(|r| r.providers.ok_or(KadError::NotFound)));
             });
+
+            self.iter_qry_limiter.spawn(fut);
         }
+    }
+
+    fn get_peer_without_addr(&mut self) -> Vec<PeerId> {
+        let mut no_addr_peer = vec![];
+        for kbucket in self.kbuckets.iter() {
+            for peer_entry in kbucket.iter() {
+                let peer_id = peer_entry.node.key.preimage();
+                if self.swarm.as_ref().unwrap().get_addrs(peer_id).is_none() {
+                    no_addr_peer.push(*peer_id);
+                }
+            }
+        }
+        no_addr_peer
     }
 
     /// Performs a lookup of a record to the given key.
@@ -638,14 +755,14 @@ where
             let local = if records.is_empty() { None } else { Some(records) };
             let q = self.prepare_iterative_query(QueryType::GetRecord { quorum, local }, key);
             let stats = self.query_stats.clone();
-            q.run(|r| {
+            let fut = q.run(|r| {
                 f(r.and_then(|r| {
                     let record = r.records.as_ref().map(|r| r.first().cloned());
                     if let Some(Some(record)) = record.clone() {
                         if let Some(cache_peers) = r.cache_peers {
                             let record = record.record;
                             let fixed_query = FixedQuery::new(QueryType::PutRecord { record }, messengers, config, cache_peers, stats);
-                            fixed_query.run(|_| {});
+                            task::spawn(fixed_query.run(|_| {}));
                         }
                     }
 
@@ -654,6 +771,7 @@ where
                     record.map_or(Err(KadError::NotFound), |r| r.map_or(Err(KadError::NotFound), Ok))
                 }));
             });
+            self.iter_qry_limiter.spawn(fut);
         }
     }
 
@@ -698,7 +816,7 @@ where
             } else {
                 let peers = peers.unwrap().into_iter().map(KadPeer::into).collect::<Vec<_>>();
                 let fixed_query = FixedQuery::new(QueryType::PutRecord { record }, messengers, config, peers, stats);
-                fixed_query.run(f);
+                task::spawn(fixed_query.run(f));
             }
         });
     }
@@ -761,8 +879,20 @@ where
     }
 
     fn dump_statistics(&mut self) -> KademliaStats {
-        self.stats.query = self.query_stats.to_view();
-        self.stats.clone()
+        let mut stats = self.stats.clone();
+        stats.query = self.query_stats.to_view();
+        stats.total_provider_records = self.store.providers_count();
+        stats.total_kv_records = self.store.records_count();
+        stats.task = self.iter_qry_limiter.stat();
+        stats
+    }
+
+    fn dump_ledgers(&mut self, peer: Option<PeerId>) -> Vec<(PeerId, Ledger)> {
+        // let ls = self.ledgers.iterator().unwrap().collect::<Vec<(PeerId, Ledger)>>();
+        match peer {
+            Some(p) => self.ledgers.load(&p).map_or_else(Vec::new, |l| vec![(p, l)]),
+            None => self.ledgers.iterator().unwrap().collect::<Vec<(PeerId, Ledger)>>(),
+        }
     }
 
     // TODO:
@@ -770,6 +900,10 @@ where
         let provider = self.store.all_providers().map(|item| item.into_owned()).collect();
         let record = self.store.all_records().map(|item| item.into_owned()).collect();
         StorageStats { provider, record }
+    }
+
+    fn dump_providers(&mut self, key: record::Key) -> Vec<ProviderRecord> {
+        self.store.providers(&key)
     }
 
     fn dump_kbuckets(&mut self) -> Vec<KBucketView> {
@@ -846,7 +980,7 @@ where
             } else {
                 let peers = peers.unwrap().into_iter().map(KadPeer::into).collect();
                 let fixed_query = FixedQuery::new(QueryType::AddProvider { provider, addresses }, messengers, config, peers, stats);
-                fixed_query.run(f);
+                task::spawn(fixed_query.run(f));
             }
         });
     }
@@ -1455,10 +1589,28 @@ where
                 DumpCommand::Statistics(reply) => {
                     let _ = reply.send(self.dump_statistics());
                 }
+                DumpCommand::Ledgers(peer, reply) => {
+                    let _ = reply.send(self.dump_ledgers(peer));
+                }
                 DumpCommand::Messengers(reply) => {
                     let _ = reply.send(self.dump_messengers());
                 }
+                DumpCommand::Providers(key, reply) => {
+                    let _ = reply.send(self.dump_providers(key));
+                }
             },
+            Some(ControlCommand::NotAddressPeer(reply)) => {
+                let peer_no_addr = self.get_peer_without_addr();
+                let _ = reply.send(Ok(peer_no_addr));
+            }
+            Some(ControlCommand::ClosestByBucket(key, reply)) => {
+                let nearest_peer = self
+                    .kbuckets
+                    .closest(&kbucket::Key::new(key))
+                    .map(|i| *i.node.key.preimage())
+                    .collect::<Vec<_>>();
+                let _ = reply.send(Ok(nearest_peer));
+            }
             None => {
                 return Err(KadError::Closing(1));
             }
@@ -1471,8 +1623,9 @@ impl<TStore> ProtocolImpl for Kademlia<TStore>
 where
     for<'a> TStore: RecordStore<'a> + Send + 'static,
 {
-    fn handler(&self) -> IProtocolHandler {
-        Box::new(KadProtocolHandler::new(self.protocol_config.clone(), self.poster()))
+    fn handlers(&self) -> Vec<IProtocolHandler> {
+        let p = Box::new(KadProtocolHandler::new(self.protocol_config.clone(), self.poster()));
+        vec![p]
     }
 
     fn start(mut self, swarm: SwarmControl) -> Option<task::TaskHandle<()>>
@@ -1483,9 +1636,20 @@ where
         self.swarm = Some(swarm);
 
         // start provider gc timer
-        self.start_provider_gc_timer();
+        let gc_timer = std::env::var_os("LIBP2P_KAD_GC_TIMER")
+            .map(|i| i.into_string().unwrap().parse::<bool>().unwrap())
+            .unwrap_or(true);
+        if gc_timer {
+            self.start_provider_gc_timer();
+        }
+
         // start refresh timer
-        self.start_refresh_timer();
+        let refresh_timer = std::env::var_os("LIBP2P_KAD_REFRESH_TIMER")
+            .map(|i| i.into_string().unwrap().parse::<bool>().unwrap())
+            .unwrap_or(true);
+        if refresh_timer {
+            self.start_refresh_timer();
+        }
 
         // well, self 'move' explicitly,
         let mut kad = self;
@@ -1503,6 +1667,8 @@ where
             if let Some(h) = kad.provider_timer_handle.take() {
                 h.cancel().await;
             }
+
+            kad.iter_qry_limiter.shutdown().await;
 
             log::info!("Kad main loop exited");
         }))

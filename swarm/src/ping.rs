@@ -107,7 +107,7 @@ impl PingConfig {
             timeout: Duration::from_secs(20),
             interval: Duration::from_secs(15),
             max_failures: NonZeroU32::new(1).expect("1 != 0"),
-            unsolicited: false,
+            unsolicited: true,
             keep_alive: false,
         }
     }
@@ -235,13 +235,13 @@ const PING_SIZE: usize = 32;
 impl UpgradeInfo for PingHandler {
     type Info = ProtocolId;
     fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![PING_PROTOCOL.into()]
+        vec![ProtocolId::new(PING_PROTOCOL, 0)]
     }
 }
 
 impl Notifiee for PingHandler {
     fn connected(&mut self, connection: &mut Connection) {
-        let config = self.config.clone();
+        let config = &self.config;
         if config.unsolicited() {
             log::trace!("starting Ping service for {:?}", connection);
             connection.start_ping(config.timeout(), config.interval(), config.max_failures());

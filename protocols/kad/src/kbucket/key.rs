@@ -87,6 +87,7 @@ impl<T> Key<T> {
     }
 }
 
+#[allow(clippy::from_over_into)]
 impl<T> Into<KeyBytes> for Key<T> {
     fn into(self) -> KeyBytes {
         self.bytes

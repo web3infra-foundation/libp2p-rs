@@ -33,6 +33,7 @@ rw-stream-sink = "0.2.0"
 bytes = "0.5"
 pin-project = "0.4"
 libp2p-pnet = "0.20.0"
+crossbeam-epoch = "0.9"
 
 ring = { version = "0.16.9", features = ["alloc", "std"], default-features = true }
 salsa20 = "0.7"

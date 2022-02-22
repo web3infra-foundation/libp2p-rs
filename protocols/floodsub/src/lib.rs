@@ -70,7 +70,7 @@ impl Topic {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.0 == ""
+        self.0.is_empty()
     }
 
     pub fn new<S>(name: S) -> Topic

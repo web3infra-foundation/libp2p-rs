@@ -28,15 +28,16 @@ use std::{num::NonZeroUsize, time::Duration, time::Instant};
 
 use libp2prs_core::peerstore::{PROVIDER_ADDR_TTL, TEMP_ADDR_TTL};
 use libp2prs_core::{Multiaddr, PeerId};
-use libp2prs_runtime::task;
+use libp2prs_runtime::{task, limit::TaskLimiter};
 use libp2prs_swarm::Control as SwarmControl;
 
 use crate::kbucket::{Distance, Key};
 use crate::{record, KadError, ALPHA_VALUE, BETA_VALUE, K_VALUE};
 
-use crate::kad::{KadPoster, MessageStats, MessengerManager};
+use crate::kad::{KadPoster, Ledger, MessageStats, MessengerManager};
 use crate::protocol::{KadConnectionType, KadPeer, ProtocolEvent};
-use crate::task_limit::TaskLimiter;
+use libp2prs_core::metricmap::MetricMap;
+// use std::ops::Add;
 
 /// Execution statistics of a query.
 #[derive(Debug, Clone, Default)]
@@ -196,7 +197,7 @@ impl FixedQuery {
         }
     }
 
-    pub(crate) fn run<F>(self, f: F)
+    pub(crate) async fn run<F>(self, f: F) -> Result<()>
     where
         F: FnOnce(Result<()>) + Send + 'static,
     {
@@ -206,7 +207,7 @@ impl FixedQuery {
         if self.peers.is_empty() {
             log::info!("no fixed peers, abort running");
             f(Err(KadError::NoKnownPeers));
-            return;
+            return Err(KadError::NoKnownPeers);
         }
 
         // update stats
@@ -216,43 +217,42 @@ impl FixedQuery {
         let me = self;
         let mut limiter = TaskLimiter::new(me.config.alpha_value);
         let message_stats = stats.clone();
-        task::spawn(async move {
-            for peer in me.peers {
-                // let record = record.clone();
-                let mut messengers = me.messengers.clone();
-                let qt = me.query_type.clone();
-                let stats = message_stats.clone();
 
-                limiter
-                    .run(async move {
-                        let mut ms = messengers.get_messenger(&peer).await?;
-                        match qt {
-                            QueryType::PutRecord { record } => {
-                                let _ = ms.send_put_value(record).await?;
-                                stats.message_tx.put_value.fetch_add(1, Ordering::SeqCst);
-                            }
-                            QueryType::AddProvider { provider, addresses } => {
-                                let _ = ms.send_add_provider(provider, addresses).await?;
-                                stats.message_tx.add_provider.fetch_add(1, Ordering::SeqCst);
-                            }
-                            _ => panic!("BUG"),
-                        }
-                        messengers.put_messenger(ms);
+        for peer in me.peers {
+            // let record = record.clone();
+            let mut messengers = me.messengers.clone();
+            let qt = me.query_type.clone();
+            let stats = message_stats.clone();
 
-                        Ok::<(), KadError>(())
-                    })
-                    .await;
-            }
-            let (c, s) = limiter.wait().await;
-            log::info!("data announced to total {} peers, success={}", c, s);
+            limiter.spawn(async move {
+                let mut ms = messengers.get_messenger(&peer).await?;
+                match qt {
+                    QueryType::PutRecord { record } => {
+                        let _ = ms.send_put_value(record).await?;
+                        stats.message_tx.put_value.fetch_add(1, Ordering::SeqCst);
+                    }
+                    QueryType::AddProvider { provider, addresses } => {
+                        let _ = ms.send_add_provider(provider, addresses).await?;
+                        stats.message_tx.add_provider.fetch_add(1, Ordering::SeqCst);
+                    }
+                    _ => panic!("BUG"),
+                }
+                messengers.put_messenger(ms);
 
-            // update tx error
-            stats.fixed_tx_error.fetch_add(c - s, Ordering::SeqCst);
-            // update stats
-            stats.fixed_query_completed.fetch_add(1, Ordering::SeqCst);
+                Ok::<(), KadError>(())
+            });
+        }
+        let stat = limiter.wait().await;
+        log::info!("data announced to KAD network, stats={:?}", stat);
 
-            f(Ok(()))
-        });
+        // update tx error
+        stats.fixed_tx_error.fetch_add(stat.executed - stat.succeeded, Ordering::SeqCst);
+        // update stats
+        stats.fixed_query_completed.fetch_add(1, Ordering::SeqCst);
+
+        f(Ok(()));
+
+        Ok(())
     }
 }
 
@@ -261,7 +261,9 @@ struct QueryJob {
     qt: QueryType,
     messengers: MessengerManager,
     peer: PeerId,
+    addrs: Vec<Multiaddr>,
     stats: Arc<QueryStatsAtomic>,
+    ledgers: Arc<MetricMap<PeerId, Ledger>>,
     tx: mpsc::Sender<QueryUpdate>,
 }
 
@@ -551,6 +553,8 @@ pub(crate) struct IterativeQuery {
     poster: KadPoster,
     /// The statistics.
     stats: Arc<QueryStatsAtomic>,
+    /// The ledger of all peer.
+    ledgers: Arc<MetricMap<PeerId, Ledger>>,
 }
 
 impl IterativeQuery {
@@ -565,17 +569,19 @@ impl IterativeQuery {
         seeds: Vec<Key<PeerId>>,
         poster: KadPoster,
         stats: Arc<QueryStatsAtomic>,
+        ledgers: Arc<MetricMap<PeerId, Ledger>>,
     ) -> Self {
         Self {
-            query_type,
             key,
             swarm,
             messengers,
+            query_type,
             local_id,
             config,
             seeds,
             poster,
             stats,
+            ledgers,
         }
     }
 
@@ -651,6 +657,7 @@ impl IterativeQuery {
                                 if let Some(mut old) = query_results.providers.take() {
                                     old.extend(provider);
                                     // remove duplicated peers
+                                    old.sort_unstable_by(|a, b| a.node_id.partial_cmp(&b.node_id).unwrap());
                                     old.dedup_by(|a, b| a.node_id == b.node_id);
                                     query_results.providers = Some(old);
                                 } else {
@@ -721,7 +728,7 @@ impl IterativeQuery {
         false
     }
 
-    pub(crate) fn run<F>(self, f: F)
+    pub(crate) async fn run<F>(self, f: F) -> Result<()>
     where
         F: FnOnce(Result<QueryResult>) + Send + 'static,
     {
@@ -731,11 +738,11 @@ impl IterativeQuery {
         if self.seeds.is_empty() {
             log::info!("no seeds, abort running");
             f(Err(KadError::NoKnownPeers));
-            return;
+            return Err(KadError::NoKnownPeers);
         }
 
         // update stats
-        self.stats.iter_query_executed.fetch_add(1, Ordering::SeqCst);
+        let index = self.stats.iter_query_executed.fetch_add(1, Ordering::SeqCst);
 
         let mut me = self;
         let alpha_value = me.config.alpha_value.get();
@@ -854,18 +861,32 @@ impl IterativeQuery {
                         qt: me.query_type.clone(),
                         messengers: me.messengers.clone(),
                         peer: peer_id,
+                        addrs: me.swarm.get_addrs(&peer_id).unwrap_or_default(),
                         stats: stats.clone(),
+                        ledgers: me.ledgers.clone(),
                         tx: tx.clone(),
                     };
 
                     let mut tx = tx.clone();
                     let _ = task::spawn(async move {
                         let stats = job.stats.clone();
+                        let ledgers = job.ledgers.clone();
+                        let pid = job.peer;
+                        let start = Instant::now();
                         let r = job.execute().await;
+                        let cost = start.elapsed();
                         if r.is_err() {
+                            log::trace!("job {}, cost {:?}, failed to connect to {}, err={:?}", index, cost, pid, r);
                             stats.iterative.failure.fetch_add(1, Ordering::SeqCst);
+                            ledgers.store_or_modify(&pid, |ledger| {
+                                ledger.failure_increase(cost.as_millis() as u64);
+                            });
                             let _ = tx.send(QueryUpdate::Unreachable(peer_id)).await;
                         } else {
+                            // log::info!("index {}， cost {:?}, succeed to talk to {}", index, cost, pid);
+                            ledgers.store_or_modify(&pid, |ledger| {
+                                ledger.success_increase(cost.as_millis() as u64);
+                            });
                             stats.iterative.success.fetch_add(1, Ordering::SeqCst);
                         }
                     });
@@ -892,23 +913,35 @@ impl IterativeQuery {
                 query_results.closest_peers = Some(peers);
             }
 
-            stats.iter_query_completed.fetch_add(1, Ordering::SeqCst);
+            let job_finished = stats.iter_query_completed.fetch_add(1, Ordering::SeqCst);
+            let job_started = stats.iter_query_executed.load(Ordering::Relaxed);
 
             // calculate how long this iterative query lasts
             let duration = start.elapsed();
 
-            log::info!("iterative query report : {:?} {:?}", stats.iterative.to_view(), duration);
+            log::info!(
+                "job {} done, iterative query report : {:?} {:?} {}/{}",
+                index,
+                stats.iterative.to_view(),
+                duration,
+                job_started,
+                job_finished
+            );
 
             Ok(query_results)
         };
 
-        task::spawn(async {
-            let either = futures::future::select(query.boxed(), deadline.boxed()).await;
-            match either {
-                Either::Left((result, _)) => f(result),
-                Either::Right((_, _)) => f(Err(KadError::Timeout)),
+        let either = futures::future::select(query.boxed(), deadline.boxed()).await;
+        return match either {
+            Either::Left((result, _)) => {
+                f(result);
+                Ok(())
             }
-        });
+            Either::Right((_, _)) => {
+                f(Err(KadError::Timeout));
+                Err(KadError::Timeout)
+            }
+        };
     }
 }
 
