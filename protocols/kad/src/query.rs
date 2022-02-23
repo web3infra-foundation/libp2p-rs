@@ -28,7 +28,7 @@ use std::{num::NonZeroUsize, time::Duration, time::Instant};
 
 use libp2prs_core::peerstore::{PROVIDER_ADDR_TTL, TEMP_ADDR_TTL};
 use libp2prs_core::{Multiaddr, PeerId};
-use libp2prs_runtime::{task, limit::TaskLimiter};
+use libp2prs_runtime::{limit::TaskLimiter, task};
 use libp2prs_swarm::Control as SwarmControl;
 
 use crate::kbucket::{Distance, Key};
@@ -364,6 +364,7 @@ impl PeerWithState {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum QueryUpdate {
     Queried {
         source: PeerId,
@@ -932,7 +933,7 @@ impl IterativeQuery {
         };
 
         let either = futures::future::select(query.boxed(), deadline.boxed()).await;
-        return match either {
+        match either {
             Either::Left((result, _)) => {
                 f(result);
                 Ok(())
@@ -941,7 +942,7 @@ impl IterativeQuery {
                 f(Err(KadError::Timeout));
                 Err(KadError::Timeout)
             }
-        };
+        }
     }
 }
 

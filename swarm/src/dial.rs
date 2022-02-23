@@ -765,6 +765,6 @@ mod tests {
         });
 
         assert!(r1);
-        assert!(r2);
+        assert!(!r2);
     }
 }

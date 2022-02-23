@@ -251,15 +251,15 @@ struct ListenerStats {
 
 #[derive(Debug)]
 pub struct ListenerStatsView {
-    total_connecton: usize,
-    total_error: usize,
+    _total_connecton: usize,
+    _total_error: usize,
 }
 
 impl From<&ListenerStats> for ListenerStatsView {
     fn from(s: &ListenerStats) -> Self {
         Self {
-            total_connecton: s.total_connecton.load(Ordering::Relaxed),
-            total_error: s.total_error.load(Ordering::Relaxed),
+            _total_connecton: s.total_connecton.load(Ordering::Relaxed),
+            _total_error: s.total_error.load(Ordering::Relaxed),
         }
     }
 }

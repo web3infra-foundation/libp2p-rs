@@ -23,8 +23,8 @@ use std::{
     future::Future,
     num::NonZeroUsize,
     sync::{
-        Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering::SeqCst},
+        Arc, Mutex,
     },
 };
 
@@ -140,10 +140,10 @@ impl TaskLimiter {
     }
 
     pub fn spawn<T, E, Fut>(&mut self, fut: Fut)
-        where
-            T: Send + 'static,
-            E: Send + 'static,
-            Fut: Future<Output = std::result::Result<T, E>> + Send + 'static,
+    where
+        T: Send + 'static,
+        E: Send + 'static,
+        Fut: Future<Output = std::result::Result<T, E>> + Send + 'static,
     {
         self.enqueue.unbounded_send(fut.map(|ret| ret.is_ok()).boxed()).expect("send");
         self.stat.accepted();
@@ -269,7 +269,6 @@ impl Drop for Guard {
     }
 }
 
-
 struct GuardInner {
     task_id: usize,
     token_release: mpsc::Sender<()>,
@@ -284,12 +283,10 @@ impl GuardInner {
         self.handles.lock().unwrap().remove(&self.task_id);
         if normal {
             self.stat.executed();
+        } else if self.termination.is_terminated() {
+            self.stat.canceled();
         } else {
-            if self.termination.is_terminated() {
-                self.stat.canceled();
-            } else {
-                self.stat.crashed();
-            }
+            self.stat.crashed();
         }
     }
 }
@@ -307,7 +304,7 @@ mod tests {
 
     #[test]
     fn test_task_limiter() {
-        env_logger::builder().filter_level(log::LevelFilter::Info).is_test(true).init();
+        // env_logger::builder().filter_level(log::LevelFilter::Info).is_test(true).init();
 
         let mut limiter = TaskLimiter::new(NonZeroUsize::new(3).unwrap());
         let count = Arc::new(AtomicUsize::new(0));
@@ -355,7 +352,7 @@ mod tests {
 
     #[test]
     fn test_limit() {
-        env_logger::builder().filter_level(log::LevelFilter::Info).is_test(true).init();
+        // env_logger::builder().filter_level(log::LevelFilter::Info).is_test(true).init();
         let mut limiter = TaskLimiter::new(NonZeroUsize::new(3).unwrap());
         block_on(async move {
             let (tx, mut rx) = mpsc::channel(0);
@@ -405,7 +402,7 @@ mod tests {
 
     #[test]
     fn test_finish() {
-        env_logger::builder().filter_level(log::LevelFilter::Info).is_test(true).init();
+        // env_logger::builder().filter_level(log::LevelFilter::Info).is_test(true).init();
         let mut limiter = TaskLimiter::new(NonZeroUsize::new(1).unwrap());
         block_on(async move {
             let (tx, mut rx) = mpsc::channel(0);

@@ -144,6 +144,7 @@ pub enum GossipsubEvent {
 
 /// A data structure for storing configuration for publishing messages. See [`MessageAuthenticity`]
 /// for further details.
+#[allow(clippy::large_enum_variant)]
 enum PublishConfig {
     Signing {
         keypair: Keypair,
@@ -317,9 +318,9 @@ pub struct Gossipsub<D: DataTransform = IdentityTransform, F: TopicSubscriptionF
 }
 
 impl<D, F> Gossipsub<D, F>
-    where
-        D: DataTransform + Default,
-        F: TopicSubscriptionFilter + Default,
+where
+    D: DataTransform + Default,
+    F: TopicSubscriptionFilter + Default,
 {
     /// Creates a [`Gossipsub`] struct given a set of parameters specified via a
     /// [`GossipsubConfig`]. This has no subscription filter and uses no compression.
@@ -329,9 +330,9 @@ impl<D, F> Gossipsub<D, F>
 }
 
 impl<D, F> Gossipsub<D, F>
-    where
-        D: DataTransform + Default,
-        F: TopicSubscriptionFilter,
+where
+    D: DataTransform + Default,
+    F: TopicSubscriptionFilter,
 {
     /// Creates a [`Gossipsub`] struct given a set of parameters specified via a
     /// [`GossipsubConfig`] and a custom subscription filter.
@@ -345,9 +346,9 @@ impl<D, F> Gossipsub<D, F>
 }
 
 impl<D, F> Gossipsub<D, F>
-    where
-        D: DataTransform,
-        F: TopicSubscriptionFilter + Default,
+where
+    D: DataTransform,
+    F: TopicSubscriptionFilter + Default,
 {
     /// Creates a [`Gossipsub`] struct given a set of parameters specified via a
     /// [`GossipsubConfig`] and a custom data transform.
@@ -357,9 +358,9 @@ impl<D, F> Gossipsub<D, F>
 }
 
 impl<D, F> Gossipsub<D, F>
-    where
-        D: DataTransform,
-        F: TopicSubscriptionFilter,
+where
+    D: DataTransform,
+    F: TopicSubscriptionFilter,
 {
     /// Creates a [`Gossipsub`] struct given a set of parameters specified via a
     /// [`GossipsubConfig`] and a custom subscription filter and data transform.
@@ -422,22 +423,22 @@ impl<D, F> Gossipsub<D, F>
 }
 
 impl<D, F> Gossipsub<D, F>
-    where
-        D: DataTransform,
-        F: TopicSubscriptionFilter,
+where
+    D: DataTransform,
+    F: TopicSubscriptionFilter,
 {
     /// Lists the hashes of the topics we are currently subscribed to.
-    pub fn topics(&self) -> impl Iterator<Item=&TopicHash> {
+    pub fn topics(&self) -> impl Iterator<Item = &TopicHash> {
         self.mesh.keys()
     }
 
     /// Lists all mesh peers for a certain topic hash.
-    pub fn mesh_peers(&self, topic_hash: &TopicHash) -> impl Iterator<Item=&PeerId> {
+    pub fn mesh_peers(&self, topic_hash: &TopicHash) -> impl Iterator<Item = &PeerId> {
         self.mesh.get(topic_hash).into_iter().map(|x| x.iter()).flatten()
     }
 
     /// Lists all mesh peers for all topics.
-    pub fn all_mesh_peers(&self) -> impl Iterator<Item=&PeerId> {
+    pub fn all_mesh_peers(&self) -> impl Iterator<Item = &PeerId> {
         let mut res = BTreeSet::new();
         for peers in self.mesh.values() {
             res.extend(peers);
@@ -446,7 +447,7 @@ impl<D, F> Gossipsub<D, F>
     }
 
     /// Lists all known peers and their associated subscribed topics.
-    pub fn all_peers(&self) -> impl Iterator<Item=(&PeerId, Vec<&TopicHash>)> {
+    pub fn all_peers(&self) -> impl Iterator<Item = (&PeerId, Vec<&TopicHash>)> {
         self.peer_topics
             .iter()
             .map(|(peer_id, topic_set)| (peer_id, topic_set.iter().collect()))
@@ -457,7 +458,7 @@ impl<D, F> Gossipsub<D, F>
     }
 
     /// Lists all known peers and their associated protocol.
-    pub fn peer_protocol(&self) -> impl Iterator<Item=(&PeerId, &PeerKind)> {
+    pub fn peer_protocol(&self) -> impl Iterator<Item = (&PeerId, &PeerKind)> {
         self.peer_protocols.iter()
     }
 
@@ -494,7 +495,7 @@ impl<D, F> Gossipsub<D, F>
                     }],
                     control_msgs: Vec::new(),
                 }
-                    .into_protobuf(),
+                .into_protobuf(),
             );
 
             for peer in peer_list {
@@ -535,7 +536,7 @@ impl<D, F> Gossipsub<D, F>
                     }],
                     control_msgs: Vec::new(),
                 }
-                    .into_protobuf(),
+                .into_protobuf(),
             );
 
             for peer in peer_list {
@@ -575,7 +576,7 @@ impl<D, F> Gossipsub<D, F>
                 messages: vec![raw_message.clone()],
                 control_msgs: Vec::new(),
             }
-                .into_protobuf(),
+            .into_protobuf(),
         );
 
         // check that the size doesn't exceed the max transmission size
@@ -919,9 +920,9 @@ impl<D, F> Gossipsub<D, F>
                 self.config.prune_peers(),
                 |p| p != peer && !self.score_below_threshold(p, |_| 0.0).0,
             )
-                .into_iter()
-                .map(|p| PeerInfo { peer_id: Some(p) })
-                .collect()
+            .into_iter()
+            .map(|p| PeerInfo { peer_id: Some(p) })
+            .collect()
         } else {
             Vec::new()
         };
@@ -1047,10 +1048,10 @@ impl<D, F> Gossipsub<D, F>
         match evt {
             Some(HandlerEvent::PeerEvent(pe)) => self.handle_peer_event(pe),
             Some(HandlerEvent::Message {
-                     propagation_source,
-                     rpc,
-                     invalid_messages,
-                 }) => self.handle_message_event(rpc, propagation_source, invalid_messages),
+                propagation_source,
+                rpc,
+                invalid_messages,
+            }) => self.handle_message_event(rpc, propagation_source, invalid_messages),
             Some(HandlerEvent::HeartBeat) => self.heartbeat(),
             None => panic!("shouldn't happen"),
         }
@@ -1196,7 +1197,7 @@ impl<D, F> Gossipsub<D, F>
                         subscriptions,
                         control_msgs: Vec::new(),
                     }
-                        .into_protobuf(),
+                    .into_protobuf(),
                 )
                 .is_err()
             {
@@ -1430,7 +1431,7 @@ impl<D, F> Gossipsub<D, F>
                         messages: message_list,
                         control_msgs: Vec::new(),
                     }
-                        .into_protobuf(),
+                    .into_protobuf(),
                 )
                 .is_err()
             {
@@ -1546,7 +1547,7 @@ impl<D, F> Gossipsub<D, F>
                         messages: Vec::new(),
                         control_msgs: prune_messages,
                     }
-                        .into_protobuf(),
+                    .into_protobuf(),
                 )
                 .is_err()
             {
@@ -1685,10 +1686,10 @@ impl<D, F> Gossipsub<D, F>
         // reject messages claiming to be from ourselves but not locally published
         let self_published = !self.config.allow_self_origin()
             && if let Some(own_id) = self.publish_config.get_own_id() {
-            own_id != propagation_source && raw_message.source.as_ref().map_or(false, |s| s == own_id)
-        } else {
-            self.published_message_ids.contains(msg_id)
-        };
+                own_id != propagation_source && raw_message.source.as_ref().map_or(false, |s| s == own_id)
+            } else {
+                self.published_message_ids.contains(msg_id)
+            };
 
         if self_published {
             debug!(
@@ -1858,7 +1859,7 @@ impl<D, F> Gossipsub<D, F>
                     subscriptions: vec![],
                     control_msgs: Vec::new(),
                 }
-                    .into_protobuf(),
+                .into_protobuf(),
             );
             for mesh_peer in peer_list.clone() {
                 let _ = self.send_message(mesh_peer, proto.clone());
@@ -1962,7 +1963,10 @@ impl<D, F> Gossipsub<D, F>
 
                     // if the mesh needs peers add the peer to the mesh
                     if !self.explicit_peers.contains(propagation_source)
-                        && matches!(self.peer_protocols.get(propagation_source), Some(PeerKind::Gossipsubv1_1) | Some(PeerKind::Gossipsub))
+                        && matches!(
+                            self.peer_protocols.get(propagation_source),
+                            Some(PeerKind::Gossipsubv1_1) | Some(PeerKind::Gossipsub)
+                        )
                         && !Self::score_below_threshold_from_scores(&self.peer_score, propagation_source, |_| 0.0).0
                         && !self.backoffs.is_backoff_with_slack(&subscription.topic_hash, propagation_source)
                     {
@@ -2020,16 +2024,16 @@ impl<D, F> Gossipsub<D, F>
         // heartbeat.
         if !grafts.is_empty()
             && self
-            .send_message(
-                *propagation_source,
-                GossipsubRpc {
-                    subscriptions: Vec::new(),
-                    messages: Vec::new(),
-                    control_msgs: grafts,
-                }
+                .send_message(
+                    *propagation_source,
+                    GossipsubRpc {
+                        subscriptions: Vec::new(),
+                        messages: Vec::new(),
+                        control_msgs: grafts,
+                    }
                     .into_protobuf(),
-            )
-            .is_err()
+                )
+                .is_err()
         {
             error!("Failed sending grafts. Message too large");
         }
@@ -2481,7 +2485,7 @@ impl<D, F> Gossipsub<D, F>
                         messages: Vec::new(),
                         control_msgs,
                     }
-                        .into_protobuf(),
+                    .into_protobuf(),
                 )
                 .is_err()
             {
@@ -2503,7 +2507,7 @@ impl<D, F> Gossipsub<D, F>
                         messages: Vec::new(),
                         control_msgs: remaining_prunes,
                     }
-                        .into_protobuf(),
+                    .into_protobuf(),
                 )
                 .is_err()
             {
@@ -2559,7 +2563,7 @@ impl<D, F> Gossipsub<D, F>
                     messages: vec![message.clone()],
                     control_msgs: Vec::new(),
                 }
-                    .into_protobuf(),
+                .into_protobuf(),
             );
 
             for peer in recipient_peers.iter() {
@@ -2678,7 +2682,7 @@ impl<D, F> Gossipsub<D, F>
                         messages: Vec::new(),
                         control_msgs: controls,
                     }
-                        .into_protobuf(),
+                    .into_protobuf(),
                 )
                 .is_err()
             {
@@ -2874,9 +2878,7 @@ fn get_random_peers_dynamic(
         Some(peer_list) => peer_list
             .iter()
             .cloned()
-            .filter(|p| {
-                f(p) && matches!(peer_protocols.get(p), Some(PeerKind::Gossipsub) | Some(PeerKind::Gossipsubv1_1))
-            })
+            .filter(|p| f(p) && matches!(peer_protocols.get(p), Some(PeerKind::Gossipsub) | Some(PeerKind::Gossipsubv1_1)))
             .collect(),
         None => Vec::new(),
     };

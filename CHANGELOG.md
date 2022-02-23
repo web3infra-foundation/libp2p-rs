@@ -1,3 +1,29 @@
+## 0.4.0 release (2022.2.23)
+### New Optimizations and changes
+
+- New:
+    * Gossip: A pub/sub protocol that supports focusing on one or more topics.
+- Optimization:
+    * Metric:
+        + use snapshot to calculate rate.
+    * Kad:
+        + set TaskLimiter parallelism to control iterator query.
+        + add environment variables.
+    * Cli: Add command
+        + swarm ping: ping a specific peer_id.
+        + dht pm: provide many keys to dht network.
+        + dht noaddr: search those peers that address is not in peerstore from KBucket.
+    * Substream
+        + add timeout to avoid long hang.
+- Dependencies updated:
+    * Secio:
+        + because of version yanked, replace aes-ctr to aes.
+    * Noise:
+        + updated rand and snow.
+- Bug fixed:
+    * MetricMap:
+        + Fixed swapping problem when insert new item.
+
 ## 0.3.0 release (2021.4.23)
 
 ### Changes

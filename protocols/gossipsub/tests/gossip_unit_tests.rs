@@ -129,7 +129,7 @@ fn dense_connect(v: Vec<Node>) {
 
 #[test]
 pub fn test_gossip_fanout() {
-    env_logger::init();
+    // env_logger::init();
     // fn prop() -> TestResult {
     let topic: Topic<IdentityHash> = Topic::new("Hello World");
     let node_list = new_node(20);
@@ -163,7 +163,7 @@ pub fn test_gossip_fanout() {
 pub fn test_gossip_fanout_maintenance() {
     fn prop() -> TestResult {
         let topic: Topic<IdentityHash> = Topic::new("Hello World");
-        let node_list = new_node(20);
+        let node_list = new_node(10);
         let mut subscription_list = vec![];
 
         task::block_on(async {

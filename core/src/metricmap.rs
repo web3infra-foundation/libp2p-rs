@@ -40,9 +40,9 @@ impl<K, V> fmt::Debug for MetricMap<K, V> {
 }
 
 impl<K, V> Default for MetricMap<K, V>
-    where
-        K: Eq + Hash + Clone + Debug,
-        V: Default + Clone,
+where
+    K: Eq + Hash + Clone + Debug,
+    V: Default + Clone,
 {
     fn default() -> Self {
         Self::new()
@@ -50,9 +50,9 @@ impl<K, V> Default for MetricMap<K, V>
 }
 
 impl<K, V> MetricMap<K, V>
-    where
-        K: Eq + Hash + Clone + Debug,
-        V: Default + Clone,
+where
+    K: Eq + Hash + Clone + Debug,
+    V: Default + Clone,
 {
     /// Create a new MetricMap
     pub fn new() -> Self {
@@ -164,7 +164,12 @@ mod tests {
                 let k = key.clone();
                 let inside_map = inside_future_map.clone();
 
-                task::spawn(async move { inside_map.store_or_modify(&k, |value| { value.fetch_add(index, SeqCst); }) }).await;
+                task::spawn(async move {
+                    inside_map.store_or_modify(&k, |value| {
+                        value.fetch_add(index, SeqCst);
+                    })
+                })
+                .await;
             }
         });
 
@@ -182,7 +187,12 @@ mod tests {
                 let k = key.clone();
                 let inside_map = delete_map.clone();
 
-                task::spawn(async move { inside_map.store_or_modify(&k, |value| { value.fetch_add(index, SeqCst); }) }).await;
+                task::spawn(async move {
+                    inside_map.store_or_modify(&k, |value| {
+                        value.fetch_add(index, SeqCst);
+                    })
+                })
+                .await;
             }
 
             map.delete(key.clone());
@@ -192,7 +202,12 @@ mod tests {
             for index in 0..20 {
                 let inside_map = delete_map.clone();
                 let k = key.clone();
-                task::spawn(async move { inside_map.store_or_modify(&k, |value| { value.fetch_add(index, SeqCst); }) }).await;
+                task::spawn(async move {
+                    inside_map.store_or_modify(&k, |value| {
+                        value.fetch_add(index, SeqCst);
+                    })
+                })
+                .await;
             }
         });
 

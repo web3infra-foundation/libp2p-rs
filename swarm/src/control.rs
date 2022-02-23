@@ -226,7 +226,9 @@ impl Control {
         let (tx, rx) = oneshot::channel();
         self.sender.send(SwarmControlCmd::NewStream(peer_id, pids, true, tx)).await?;
         match timeout {
-            Some(timeout) => task::timeout(timeout, rx).await.map_or_else(|_| Err(SwarmError::from(TransportError::Timeout)), |a| a?),
+            Some(timeout) => task::timeout(timeout, rx)
+                .await
+                .map_or_else(|_| Err(SwarmError::from(TransportError::Timeout)), |a| a?),
             None => rx.await?,
         }
     }
@@ -241,7 +243,9 @@ impl Control {
         let (tx, rx) = oneshot::channel();
         self.sender.send(SwarmControlCmd::NewStream(peer_id, pids, false, tx)).await?;
         match timeout {
-            Some(timeout) => task::timeout(timeout, rx).await.map_or_else(|_| Err(SwarmError::from(TransportError::Timeout)), |a| a?),
+            Some(timeout) => task::timeout(timeout, rx)
+                .await
+                .map_or_else(|_| Err(SwarmError::from(TransportError::Timeout)), |a| a?),
             None => rx.await?,
         }
     }
@@ -315,9 +319,14 @@ impl Control {
     }
 
     /// Dump network traffic by peer_id
-    pub async fn dump_network_traffic_by_peer(&mut self, peer_id: Option<PeerId>) -> Result<Option<Vec<(PeerId, RecordByteAndPacketView)>>> {
+    pub async fn dump_network_traffic_by_peer(
+        &mut self,
+        peer_id: Option<PeerId>,
+    ) -> Result<Option<Vec<(PeerId, RecordByteAndPacketView)>>> {
         let (tx, rx) = oneshot::channel();
-        self.sender.send(SwarmControlCmd::Dump(DumpCommand::NetworkTrafficByPeerID(peer_id, tx))).await?;
+        self.sender
+            .send(SwarmControlCmd::Dump(DumpCommand::NetworkTrafficByPeerID(peer_id, tx)))
+            .await?;
         rx.await.map_err(|_| SwarmError::Internal)
     }
 

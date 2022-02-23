@@ -60,7 +60,7 @@ pub struct NoiseConfig<P, C: Zeroize, R = ()> {
     local_priv_key: identity::Keypair,
     params: ProtocolParams,
     legacy: LegacyConfig,
-    remote: R,
+    _remote: R,
     _marker: std::marker::PhantomData<P>,
 }
 
@@ -83,7 +83,7 @@ where
             local_priv_key,
             params: C::params_xx(),
             legacy: LegacyConfig::default(),
-            remote: (),
+            _remote: (),
             _marker: std::marker::PhantomData,
         }
     }
@@ -161,7 +161,7 @@ where
  */
 
 /// Legacy configuration options.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct LegacyConfig {
     /// Whether to continue sending legacy handshake payloads,
     /// i.e. length-prefixed protobuf payloads inside a length-prefixed
@@ -173,13 +173,4 @@ pub struct LegacyConfig {
     /// noise frame. These payloads are not interoperable with other
     /// libp2p implementations.
     pub recv_legacy_handshake: bool,
-}
-
-impl Default for LegacyConfig {
-    fn default() -> Self {
-        Self {
-            send_legacy_handshake: false,
-            recv_legacy_handshake: false,
-        }
-    }
 }

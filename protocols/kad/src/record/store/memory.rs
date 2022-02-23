@@ -283,6 +283,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::redundant_closure)]
     fn providers_ordered_by_distance_to_key() {
         fn prop(providers: Vec<kbucket::Key<PeerId>>) -> bool {
             let mut store = MemoryStore::new(PeerId::random());

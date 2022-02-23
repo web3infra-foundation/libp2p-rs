@@ -43,6 +43,7 @@ pub(crate) enum ControlCommand {
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct Control {
     config: GossipsubConfig,
     control_sender: mpsc::UnboundedSender<ControlCommand>,

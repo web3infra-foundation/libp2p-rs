@@ -158,5 +158,5 @@ fn test_gossipsub_basic() {
         })
     }
 
-    QuickCheck::new().tests(20).quickcheck(prop as fn() -> _);
+    QuickCheck::new().tests(10).quickcheck(prop as fn() -> _);
 }

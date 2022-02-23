@@ -1,9 +1,9 @@
 use crate::crypto::StreamCipher as Crypto_StreamCipher;
 use crate::error::SecioError;
 
-use aes::{Aes128Ctr, Aes128};
 use aes::cipher::generic_array::GenericArray;
-use aes::cipher::{FromBlockCipher, StreamCipher, NewBlockCipher};
+use aes::cipher::{FromBlockCipher, NewBlockCipher, StreamCipher};
+use aes::{Aes128, Aes128Ctr};
 
 pub static CTR128LEN: usize = 16;
 

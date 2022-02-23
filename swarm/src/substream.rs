@@ -48,9 +48,9 @@ pub struct StreamId(usize);
 #[derive(Debug)]
 pub struct SubstreamInfo {
     /// The protocol of the sub stream.
-    protocol: ProtocolId,
+    _protocol: ProtocolId,
     /// The direction of the sub stream.
-    dir: Direction,
+    _dir: Direction,
 }
 
 #[derive(Debug)]
@@ -213,8 +213,8 @@ impl Substream {
     /// Returns the info of the sub stream.
     pub fn info(&self) -> SubstreamInfo {
         SubstreamInfo {
-            protocol: self.protocol().clone(),
-            dir: self.dir(),
+            _protocol: self.protocol().clone(),
+            _dir: self.dir(),
         }
     }
 }
