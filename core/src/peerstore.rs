@@ -345,13 +345,16 @@ impl PeerStore {
     }
 
     pub fn get_latency(&self, peer_id: &PeerId) -> Option<Duration> {
-        self.m.load(peer_id)
+        self.m
+            .load(peer_id)
             .map(|atomic_millis| Duration::from_millis(atomic_millis.load(SeqCst)))
     }
 
     /// Return latency info
     pub fn list_latency(&self) -> Vec<(PeerId, Duration)> {
-        self.m.iterator().unwrap()
+        self.m
+            .iterator()
+            .unwrap()
             .map(|(peer, atomic_millis)| (peer, Duration::from_millis(atomic_millis.load(SeqCst))))
             .collect::<Vec<_>>()
     }

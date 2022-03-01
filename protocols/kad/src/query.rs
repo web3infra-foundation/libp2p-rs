@@ -28,7 +28,7 @@ use std::{num::NonZeroUsize, time::Duration, time::Instant};
 
 use libp2prs_core::peerstore::{PROVIDER_ADDR_TTL, TEMP_ADDR_TTL};
 use libp2prs_core::{Multiaddr, PeerId};
-use libp2prs_runtime::{task, limit::TaskLimiter};
+use libp2prs_runtime::{limit::TaskLimiter, task};
 use libp2prs_swarm::Control as SwarmControl;
 
 use crate::kbucket::{Distance, Key};

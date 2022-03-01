@@ -268,10 +268,10 @@ impl Clone for ITransportEx {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pnet::*;
     use crate::transport::memory::MemoryTransport;
     use crate::transport::protector::ProtectorTransport;
     use crate::upgrade::dummy::DummyUpgrader;
-    use libp2p_pnet::*;
     #[test]
     fn test_dialer_and_listener() {
         // Setup listener.

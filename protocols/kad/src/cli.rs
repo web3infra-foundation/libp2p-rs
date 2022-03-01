@@ -25,8 +25,8 @@ use libp2prs_core::{Multiaddr, PeerId};
 use libp2prs_runtime::task;
 
 use crate::Control;
-use std::time::{Instant, Duration};
 use std::sync::atomic::Ordering::SeqCst;
+use std::time::{Duration, Instant};
 
 const DHT: &str = "dht";
 
@@ -274,7 +274,16 @@ fn cli_dump_ledgers(app: &App, args: &[&str]) -> XcliResult {
     task::block_on(async {
         let ledgers = kad.dump_ledgers(peer).await.unwrap();
         println!("peer                                                     ledger");
-        ledgers.iter().for_each(|(p, l)| println!("{:52}  succeed: {} cost: {:?}, failed: {} cost {:?}", p, l.succeed.load(SeqCst), Duration::from_millis(l.succeed_cost.load(SeqCst)).checked_div(l.succeed.load(SeqCst)), l.failed.load(SeqCst), Duration::from_millis(l.failed_cost.load(SeqCst)).checked_div(l.failed.load(SeqCst))));
+        ledgers.iter().for_each(|(p, l)| {
+            println!(
+                "{:52}  succeed: {} cost: {:?}, failed: {} cost {:?}",
+                p,
+                l.succeed.load(SeqCst),
+                Duration::from_millis(l.succeed_cost.load(SeqCst)).checked_div(l.succeed.load(SeqCst)),
+                l.failed.load(SeqCst),
+                Duration::from_millis(l.failed_cost.load(SeqCst)).checked_div(l.failed.load(SeqCst))
+            )
+        });
         println!("Total {} peers", ledgers.len());
     });
 

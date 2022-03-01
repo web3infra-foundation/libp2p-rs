@@ -21,16 +21,22 @@
 
 use crate::transport::ConnectionInfo;
 use crate::Multiaddr;
-use async_trait::async_trait;
 use futures::io;
-use libp2prs_traits::WriteEx;
+use futures::{
+    io::AsyncWrite,
+    ready,
+    task::{Context, Poll},
+};
 use log::trace;
+use pin_project::pin_project;
 use salsa20::cipher::SyncStreamCipher;
 use salsa20::XSalsa20;
-use std::fmt;
+use std::{fmt, pin::Pin};
 
 /// A writer that encrypts and forwards to an inner writer
+#[pin_project]
 pub struct CryptWriter<W> {
+    #[pin]
     inner: W,
     buf: Vec<u8>,
     cipher: XSalsa20,
@@ -38,7 +44,7 @@ pub struct CryptWriter<W> {
 
 impl<W> CryptWriter<W>
 where
-    W: WriteEx + 'static,
+    W: AsyncWrite,
 {
     /// Creates a new `CryptWriter` with the specified buffer capacity.
     pub fn with_capacity(capacity: usize, inner: W, cipher: XSalsa20) -> CryptWriter<W> {
@@ -48,32 +54,95 @@ where
             cipher,
         }
     }
-}
 
-#[async_trait]
-impl<W> WriteEx for CryptWriter<W>
-where
-    W: WriteEx + 'static,
-{
-    async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.buf.append(&mut buf.to_vec());
-        trace!("write bytes: {:?} ", self.buf);
-        self.cipher.apply_keystream(&mut self.buf[0..buf.len()]);
-        trace!("crypted bytes: {:?}", self.buf);
-        let size = self.inner.write2(&self.buf[..]).await?;
-        self.buf.drain(..);
-        Ok(size)
-    }
-
-    async fn flush2(&mut self) -> io::Result<()> {
-        self.inner.flush2().await
-    }
-    async fn close2(&mut self) -> io::Result<()> {
-        self.inner.close2().await
+    /// Gets a pinned mutable reference to the inner writer.
+    ///
+    /// It is inadvisable to directly write to the inner writer.
+    pub fn get_pin_mut(self: Pin<&mut Self>) -> Pin<&mut W> {
+        self.project().inner
     }
 }
 
-impl<W: WriteEx + fmt::Debug> fmt::Debug for CryptWriter<W> {
+/// Write the contents of a Vec<u8> into an AsyncWrite.
+///
+/// The handling 0 byte progress and the Interrupted error was taken from BufWriter in async_std.
+///
+/// If this fn returns Ready(Ok(())), the buffer has been completely flushed and is empty.
+fn poll_flush_buf<W: AsyncWrite>(inner: &mut Pin<&mut W>, buf: &mut Vec<u8>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+    let mut ret = Poll::Ready(Ok(()));
+    let mut written = 0;
+    let len = buf.len();
+    while written < len {
+        match inner.as_mut().poll_write(cx, &buf[written..]) {
+            Poll::Ready(Ok(n)) => {
+                if n > 0 {
+                    // we made progress, so try again
+                    written += n;
+                } else {
+                    // we got Ok but got no progress whatsoever, so bail out so we don't spin writing 0 bytes.
+                    ret = Poll::Ready(Err(io::Error::new(io::ErrorKind::WriteZero, "Failed to write buffered data")));
+                    break;
+                }
+            }
+            Poll::Ready(Err(e)) => {
+                // Interrupted is the only error that we consider to be recoverable by trying again
+                if e.kind() != io::ErrorKind::Interrupted {
+                    // for any other error, don't try again
+                    ret = Poll::Ready(Err(e));
+                    break;
+                }
+            }
+            Poll::Pending => {
+                ret = Poll::Pending;
+                break;
+            }
+        }
+    }
+    if written > 0 {
+        buf.drain(..written);
+    }
+    if let Poll::Ready(Ok(())) = ret {
+        debug_assert!(buf.is_empty());
+    }
+    ret
+}
+
+impl<W: AsyncWrite> AsyncWrite for CryptWriter<W> {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
+        let mut this = self.project();
+        // completely flush the buffer, returning pending if not possible
+        ready!(poll_flush_buf(&mut this.inner, this.buf, cx))?;
+        // if we get here, the buffer is empty
+        debug_assert!(this.buf.is_empty());
+        let res = Pin::new(&mut *this.buf).poll_write(cx, buf);
+        if let Poll::Ready(Ok(count)) = res {
+            this.cipher.apply_keystream(&mut this.buf[0..count]);
+            trace!("encrypted {} bytes", count);
+        } else {
+            debug_assert!(false);
+        };
+        // flush immediately afterwards, but if we get a pending we don't care
+        if let Poll::Ready(Err(e)) = poll_flush_buf(&mut this.inner, this.buf, cx) {
+            Poll::Ready(Err(e))
+        } else {
+            res
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let mut this = self.project();
+        ready!(poll_flush_buf(&mut this.inner, this.buf, cx))?;
+        this.inner.poll_flush(cx)
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let mut this = self.project();
+        ready!(poll_flush_buf(&mut this.inner, this.buf, cx))?;
+        this.inner.poll_close(cx)
+    }
+}
+
+impl<W: AsyncWrite + fmt::Debug> fmt::Debug for CryptWriter<W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("CryptWriter")
             .field("writer", &self.inner)

@@ -23,8 +23,8 @@ use std::{
     future::Future,
     num::NonZeroUsize,
     sync::{
-        Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering::SeqCst},
+        Arc, Mutex,
     },
 };
 
@@ -140,10 +140,10 @@ impl TaskLimiter {
     }
 
     pub fn spawn<T, E, Fut>(&mut self, fut: Fut)
-        where
-            T: Send + 'static,
-            E: Send + 'static,
-            Fut: Future<Output = std::result::Result<T, E>> + Send + 'static,
+    where
+        T: Send + 'static,
+        E: Send + 'static,
+        Fut: Future<Output = std::result::Result<T, E>> + Send + 'static,
     {
         self.enqueue.unbounded_send(fut.map(|ret| ret.is_ok()).boxed()).expect("send");
         self.stat.accepted();
@@ -268,7 +268,6 @@ impl Drop for Guard {
         }
     }
 }
-
 
 struct GuardInner {
     task_id: usize,

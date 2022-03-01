@@ -25,11 +25,11 @@
 //       be useful later for record store
 #![allow(dead_code)]
 
+pub mod cli;
 pub mod kad;
 pub mod kbucket;
 pub mod protocol;
 pub mod record;
-pub mod cli;
 
 mod addresses;
 mod control;

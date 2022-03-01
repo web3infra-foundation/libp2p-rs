@@ -222,7 +222,7 @@ impl Default for KademliaProtocolConfig {
             client_mode: false,
             new_stream_timeout: None,
             read_timeout: None,
-            write_timeout: None
+            write_timeout: None,
         }
     }
 }
@@ -349,9 +349,8 @@ impl KadMessenger {
     pub(crate) async fn build(mut swarm: SwarmControl, peer: PeerId, config: KademliaProtocolConfig) -> Result<Self, KadError> {
         // open a new stream, without routing, so that Swarm wouldn't do routing for us
         let stream = swarm
-            .new_stream_no_routing_with_timeout(peer,
-                                                vec![config.protocol_name().to_owned()],
-                                                config.new_stream_timeout).await?
+            .new_stream_no_routing_with_timeout(peer, vec![config.protocol_name().to_owned()], config.new_stream_timeout)
+            .await?
             .with_read_timeout(config.read_timeout)
             .with_write_timeout(config.write_timeout);
         Ok(Self {

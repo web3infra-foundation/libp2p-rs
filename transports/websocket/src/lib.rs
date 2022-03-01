@@ -181,7 +181,6 @@ mod tests {
         log::info!("{:?}", buf);
         vec![1, 23, 5] == buf
     }
-
     async fn client(dial_addr: Multiaddr, dns: bool) -> bool {
         let ws_config: WsConfig;
         if dns {

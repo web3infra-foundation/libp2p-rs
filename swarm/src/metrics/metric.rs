@@ -24,13 +24,13 @@ use crate::ProtocolId;
 use libp2prs_core::metricmap::MetricMap;
 use libp2prs_core::PeerId;
 use std::collections::hash_map::IntoIter;
+use std::collections::HashMap;
 use std::fmt;
 use std::ops::{Add, Mul, Sub};
-use std::sync::atomic::Ordering::SeqCst;
 use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering::SeqCst;
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
-use std::collections::HashMap;
 
 pub struct Metric {
     /// The accumulative counter of packets and bytes.
@@ -163,16 +163,20 @@ impl Metric {
 
     #[inline]
     pub(crate) fn log_sent_stream(&self, protocol: &ProtocolId, count: usize, peer_id: &PeerId) {
-        self.group_by_protocol
-            .store_or_modify(&protocol.to_string(),  |value| { value.add_sent(count); });
-        self.group_by_peer.store_or_modify(peer_id,  |value| { value.add_sent(count) });
+        self.group_by_protocol.store_or_modify(&protocol.to_string(), |value| {
+            value.add_sent(count);
+        });
+        self.group_by_peer.store_or_modify(peer_id, |value| value.add_sent(count));
     }
 
     #[inline]
     pub(crate) fn log_recv_stream(&self, protocol: &ProtocolId, count: usize, peer_id: &PeerId) {
-        self.group_by_protocol
-            .store_or_modify(&protocol.to_string(),  |value| { value.add_received(count); });
-        self.group_by_peer.store_or_modify(peer_id,  |value| { value.add_received(count); });
+        self.group_by_protocol.store_or_modify(&protocol.to_string(), |value| {
+            value.add_received(count);
+        });
+        self.group_by_peer.store_or_modify(peer_id, |value| {
+            value.add_received(count);
+        });
     }
 
     /// Get count & bytes about received package
@@ -187,8 +191,14 @@ impl Metric {
 
     /// Get in&out bytes by protocol_id
     pub fn get_protocol_in_and_out(&self, protocol_id: &str) -> (Option<usize>, Option<usize>) {
-        let protocol_in = self.group_by_protocol.load(&protocol_id.to_string()).map(|item| item.bytes_recv.load(SeqCst));
-        let protocol_out = self.group_by_protocol.load(&protocol_id.to_string()).map(|item| item.bytes_sent.load(SeqCst));
+        let protocol_in = self
+            .group_by_protocol
+            .load(&protocol_id.to_string())
+            .map(|item| item.bytes_recv.load(SeqCst));
+        let protocol_out = self
+            .group_by_protocol
+            .load(&protocol_id.to_string())
+            .map(|item| item.bytes_sent.load(SeqCst));
         (protocol_in, protocol_out)
     }
 
@@ -204,7 +214,7 @@ impl Metric {
         let mut map = HashMap::new();
         for (_, (peer, p_metric)) in self.group_by_peer.iterator().unwrap().enumerate() {
             let _ = map.insert(peer, p_metric.r.bytes_recv.load(SeqCst));
-        };
+        }
         map.into_iter()
     }
 
@@ -213,7 +223,7 @@ impl Metric {
         let mut map = HashMap::new();
         for (_, (peer, p_metric)) in self.group_by_peer.iterator().unwrap().enumerate() {
             let _ = map.insert(peer, p_metric.r.bytes_sent.load(SeqCst));
-        };
+        }
         map.into_iter()
     }
 
@@ -222,7 +232,7 @@ impl Metric {
         let mut map = HashMap::new();
         for (_, (protocol, p_metric)) in self.group_by_protocol.iterator().unwrap().enumerate() {
             let _ = map.insert(protocol, p_metric.bytes_recv.load(SeqCst));
-        };
+        }
         map.into_iter()
     }
 
@@ -231,18 +241,23 @@ impl Metric {
         let mut map = HashMap::new();
         for (_, (protocol, p_metric)) in self.group_by_protocol.iterator().unwrap().enumerate() {
             let _ = map.insert(protocol, p_metric.bytes_sent.load(SeqCst));
-        };
+        }
         map.into_iter()
     }
 
     pub fn get_traffic_by_peer(&self, peer_id: Option<PeerId>) -> Option<Vec<(PeerId, RecordByteAndPacketView)>> {
         if peer_id.is_none() {
-            let v = self.group_by_peer.iterator().unwrap()
+            let v = self
+                .group_by_peer
+                .iterator()
+                .unwrap()
                 .map(|(p, v)| (p, v.into()))
                 .collect::<Vec<(PeerId, RecordByteAndPacketView)>>();
             return Some(v);
         }
-        self.group_by_peer.load(&peer_id.unwrap()).map(|p| vec![(peer_id.unwrap(), p.into())])
+        self.group_by_peer
+            .load(&peer_id.unwrap())
+            .map(|p| vec![(peer_id.unwrap(), p.into())])
     }
 
     /// Get rates about received bytes per seconds
