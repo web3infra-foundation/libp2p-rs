@@ -66,7 +66,7 @@ pub mod either;
 
 pub mod peerstore;
 
-// pub mod pnet;
+pub mod pnet;
 pub mod translation;
 
 pub mod metricmap;

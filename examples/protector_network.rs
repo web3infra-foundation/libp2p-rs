@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use futures::{AsyncReadExt, AsyncWriteExt};
-use libp2p_pnet::{PnetConfig, PreSharedKey};
+use libp2prs_core::pnet::{PnetConfig, PreSharedKey};
 use log::{error, info};
 
 use libp2prs_core::transport::upgrade::TransportUpgrade;
