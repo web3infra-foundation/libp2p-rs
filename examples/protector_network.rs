@@ -30,12 +30,12 @@ use libp2prs_tcp::TcpConfig;
 
 use libp2prs_core::identity::Keypair;
 
+use futures::future::Either;
 use libp2prs_core::transport::ListenerEvent;
 use libp2prs_core::upgrade::Selector;
 use libp2prs_mplex as mplex;
 use libp2prs_secio as secio;
 use libp2prs_yamux as yamux;
-use futures::future::Either;
 
 fn main() {
     task::block_on(entry())

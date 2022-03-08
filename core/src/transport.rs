@@ -34,10 +34,10 @@ use std::{error::Error, fmt};
 
 use libp2prs_multiaddr::Multiaddr;
 
+use crate::either::EitherOutput;
 use crate::multistream::NegotiationError;
 use crate::pnet::PnetError;
 use futures::future::Either;
-use crate::either::EitherOutput;
 
 pub mod dummy;
 pub mod memory;
@@ -244,12 +244,8 @@ impl<A: TransportListener, B: TransportListener> TransportListener for Either<A,
 
     async fn accept(&mut self) -> Result<ListenerEvent<Self::Output>, TransportError> {
         match self {
-            Either::Left(a) => {
-                a.accept().await?.map(|o| Ok(EitherOutput::A(o)))
-            },
-            Either::Right(b) => {
-                b.accept().await?.map(|o| Ok(EitherOutput::B(o)))
-            }
+            Either::Left(a) => a.accept().await?.map(|o| Ok(EitherOutput::A(o))),
+            Either::Right(b) => b.accept().await?.map(|o| Ok(EitherOutput::B(o))),
         }
     }
 
@@ -287,41 +283,35 @@ impl<Output: Send> Transport for ITransport<Output> {
 
 #[async_trait]
 impl<A: Transport, B: Transport> Transport for Either<A, B>
-    where
-        A: 'static,
-        B: 'static,
-        A::Output: Send + 'static,
-        B::Output: Send + 'static,
+where
+    A: 'static,
+    B: 'static,
+    A::Output: Send + 'static,
+    B::Output: Send + 'static,
 {
     type Output = EitherOutput<A::Output, B::Output>;
 
     fn listen_on(&mut self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
         match self {
-            Either::Left(a) => {
-                a.listen_on(addr).map(|l| Box::new(Either::Left::<_, IListener<B::Output>>(l)) as IListener<Self::Output>)
-            },
-            Either::Right(b) => {
-                b.listen_on(addr).map(|l| Box::new(Either::Right::<IListener<A::Output>, _>(l)) as IListener<Self::Output>)
-            },
+            Either::Left(a) => a
+                .listen_on(addr)
+                .map(|l| Box::new(Either::Left::<_, IListener<B::Output>>(l)) as IListener<Self::Output>),
+            Either::Right(b) => b
+                .listen_on(addr)
+                .map(|l| Box::new(Either::Right::<IListener<A::Output>, _>(l)) as IListener<Self::Output>),
         }
     }
 
     async fn dial(&mut self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
         match self {
-            Either::Left(a) => {
-                a.dial(addr).await.map(|out| EitherOutput::A(out))
-            },
-            Either::Right(b) => {
-                b.dial(addr).await.map(|out| EitherOutput::B(out))
-            },
+            Either::Left(a) => a.dial(addr).await.map(EitherOutput::A),
+            Either::Right(b) => b.dial(addr).await.map(EitherOutput::B),
         }
     }
 
     fn box_clone(&self) -> ITransport<Self::Output> {
         match self {
-            Either::Left(a) => {
-                Box::new(Either::Left::<_, B>(a.box_clone()))
-            },
+            Either::Left(a) => Box::new(Either::Left::<_, B>(a.box_clone())),
             Either::Right(b) => Box::new(Either::Right::<A, _>(b.box_clone())),
         }
     }
@@ -333,7 +323,6 @@ impl<A: Transport, B: Transport> Transport for Either<A, B>
         }
     }
 }
-
 
 impl<TOutput: ConnectionInfo> Clone for ITransport<TOutput> {
     fn clone(&self) -> Self {
