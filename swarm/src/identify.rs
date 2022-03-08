@@ -188,7 +188,7 @@ impl IdentifyHandler {
 impl UpgradeInfo for IdentifyHandler {
     type Info = ProtocolId;
     fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![IDENTIFY_PROTOCOL.into()]
+        vec![ProtocolId::new(IDENTIFY_PROTOCOL, 0)]
     }
 }
 
@@ -252,7 +252,7 @@ impl IdentifyPushHandler {
 impl UpgradeInfo for IdentifyPushHandler {
     type Info = ProtocolId;
     fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![IDENTIFY_PUSH_PROTOCOL.into()]
+        vec![ProtocolId::new(IDENTIFY_PUSH_PROTOCOL, 0)]
     }
 }
 

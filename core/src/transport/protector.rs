@@ -24,6 +24,7 @@
 //! Libp2p nodes configured with a pre-shared key can only communicate with other nodes with
 //! the same key.
 
+use crate::pnet::{Pnet, PnetConfig, PnetOutput};
 use crate::transport::{ConnectionInfo, IListener, ITransport, ListenerEvent};
 use crate::{
     transport::{TransportError, TransportListener},
@@ -32,7 +33,6 @@ use crate::{
 use async_trait::async_trait;
 use futures::task::{Context, Poll};
 use futures::{AsyncRead, AsyncWrite};
-use libp2p_pnet::{PnetConfig, PnetOutput};
 use std::{io, pin::Pin};
 
 #[pin_project::pin_project]
@@ -146,7 +146,6 @@ where
                 let la = o.local_multiaddr();
                 let ra = o.remote_multiaddr();
                 self.pnet
-                    .clone()
                     .handshake(o)
                     .await
                     .map(|io| ListenerEvent::Accepted(PnetStream { io, la, ra }))

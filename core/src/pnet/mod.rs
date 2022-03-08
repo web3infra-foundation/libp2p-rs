@@ -22,10 +22,14 @@
 //! Libp2p nodes configured with a pre-shared key can only communicate with other nodes with
 //! the same key.
 
-mod crypt_reader;
 mod crypt_writer;
 
+use crate::transport::ConnectionInfo;
+use crate::Multiaddr;
+use async_trait::async_trait;
 use crypt_writer::CryptWriter;
+use futures::{task::Context, task::Poll};
+use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use log::trace;
 use rand::RngCore;
 use salsa20::{
@@ -33,6 +37,7 @@ use salsa20::{
     Salsa20, XSalsa20,
 };
 use sha3::{digest::ExtendableOutput, Shake128};
+use std::pin::Pin;
 use std::{
     error,
     fmt::{self, Write},
@@ -41,13 +46,6 @@ use std::{
     num::ParseIntError,
     str::FromStr,
 };
-
-use crate::pnet::crypt_reader::CryptReader;
-use crate::transport::ConnectionInfo;
-use crate::Multiaddr;
-use async_trait::async_trait;
-use libp2prs_traits::{ReadEx, WriteEx};
-use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 const KEY_SIZE: usize = 32;
 const NONCE_SIZE: usize = 24;
@@ -269,55 +267,81 @@ where
 
 /// The result of a handshake. This implements AsyncRead and AsyncWrite and can therefore
 /// be used as base for additional upgrades.
+#[pin_project::pin_project]
 pub struct PnetOutput<S> {
-    reader: CryptReader<S::Reader>,
-    writer: CryptWriter<S::Writer>,
-
+    #[pin]
+    inner: CryptWriter<S>,
+    read_cipher: XSalsa20,
     local_addr: Multiaddr,
     remote_addr: Multiaddr,
 }
 
-impl<S: ConnectionInfo + AsyncRead + AsyncWrite + Send + Unpin + 'static> PnetOutput<S> {
+impl<S: ConnectionInfo + AsyncRead + AsyncWrite> PnetOutput<S> {
     fn new(inner: S, write_cipher: XSalsa20, read_cipher: XSalsa20) -> Self {
         let local_addr = inner.local_multiaddr();
         let remote_addr = inner.remote_multiaddr();
-
-        let (r, w) = inner.split();
         Self {
-            reader: CryptReader::new(r, read_cipher),
-            writer: CryptWriter::with_capacity(WRITE_BUFFER_SIZE, w, write_cipher),
+            inner: CryptWriter::with_capacity(WRITE_BUFFER_SIZE, inner, write_cipher),
+            read_cipher,
             local_addr,
             remote_addr,
         }
     }
 }
 
-#[async_trait]
-impl<S> ReadEx for PnetOutput<S>
-where
-    S: SplittableReadWrite,
-{
-    async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.reader.read2(buf).await
+impl<S: AsyncRead + AsyncWrite> AsyncRead for PnetOutput<S> {
+    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<Result<usize, io::Error>> {
+        let this = self.project();
+        let result = this.inner.get_pin_mut().poll_read(cx, buf);
+        if let Poll::Ready(Ok(size)) = &result {
+            trace!("read {} bytes", size);
+            this.read_cipher.apply_keystream(&mut buf[..*size]);
+            trace!("decrypted {} bytes", size);
+        }
+        result
     }
 }
 
-#[async_trait]
-impl<S> WriteEx for PnetOutput<S>
-where
-    S: SplittableReadWrite,
-{
-    async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.writer.write2(buf).await
+impl<S: AsyncRead + AsyncWrite> AsyncWrite for PnetOutput<S> {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, io::Error>> {
+        self.project().inner.poll_write(cx, buf)
     }
 
-    async fn flush2(&mut self) -> io::Result<()> {
-        self.writer.flush2().await
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        self.project().inner.poll_flush(cx)
     }
-    async fn close2(&mut self) -> io::Result<()> {
-        self.writer.close2().await
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        self.project().inner.poll_close(cx)
     }
 }
+
+// #[async_trait]
+// impl<S> ReadEx for PnetOutput<S>
+// where
+//     S: SplittableReadWrite,
+// {
+//     async fn read2(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+//         self.reader.read2(buf).await
+//     }
+// }
+
+// #[async_trait]
+// impl<S> WriteEx for PnetOutput<S>
+// where
+//     S: SplittableReadWrite,
+// {
+//     async fn write2(&mut self, buf: &[u8]) -> io::Result<usize> {
+//         self.writer.write2(buf).await
+//     }
+
+//     async fn flush2(&mut self) -> io::Result<()> {
+//         self.writer.flush2().await
+//     }
+//     async fn close2(&mut self) -> io::Result<()> {
+//         self.writer.close2().await
+//     }
+// }
 
 impl<S: ConnectionInfo> ConnectionInfo for PnetOutput<S> {
     fn local_multiaddr(&self) -> Multiaddr {

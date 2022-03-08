@@ -72,8 +72,8 @@ fn run_server() {
     struct MyProtocolHandler;
 
     impl ProtocolImpl for MyProtocol {
-        fn handler(&self) -> IProtocolHandler {
-            Box::new(MyProtocolHandler)
+        fn handlers(&self) -> Vec<IProtocolHandler> {
+            vec![Box::new(MyProtocolHandler)]
         }
     }
 
@@ -81,7 +81,7 @@ fn run_server() {
         type Info = ProtocolId;
 
         fn protocol_info(&self) -> Vec<Self::Info> {
-            vec![PROTO_NAME.into()]
+            vec![ProtocolId::new(PROTO_NAME, 1011)]
         }
     }
 
@@ -153,7 +153,10 @@ fn run_client() {
             .unwrap();
         let mut handles = VecDeque::default();
         for _ in 0..100u32 {
-            let mut stream = control.new_stream(remote_peer_id, vec![PROTO_NAME.into()]).await.unwrap();
+            let mut stream = control
+                .new_stream(remote_peer_id, vec![ProtocolId::new(PROTO_NAME, 1011)])
+                .await
+                .unwrap();
             log::info!("stream {:?} opened, writing something...", stream);
 
             let handle = task::spawn(async move {

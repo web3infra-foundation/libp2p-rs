@@ -238,7 +238,8 @@ mod tests {
         }
 
         // Check that `single` disappeared from the list.
-        assert!(addresses.iter().find(|a| **a == single).is_none());
+        // assert!(addresses.iter().find(|a| **a == single).is_none());
+        assert!(!addresses.iter().any(|a| *a == single))
     }
 
     #[test]

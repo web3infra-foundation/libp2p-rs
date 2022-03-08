@@ -8,7 +8,6 @@ use rand::Rng;
 use std::{
     borrow::Cow,
     convert::TryFrom,
-    iter::FromIterator,
     net::{Ipv4Addr, Ipv6Addr},
     str::FromStr,
 };
@@ -65,7 +64,7 @@ struct Ma(Multiaddr);
 impl Arbitrary for Ma {
     fn arbitrary<G: Gen>(g: &mut G) -> Self {
         let iter = (0..g.next_u32() % 128).map(|_| Proto::arbitrary(g).0);
-        Ma(Multiaddr::from_iter(iter))
+        Ma(iter.collect())
     }
 }
 
@@ -150,7 +149,6 @@ fn multiaddr_eq() {
     assert_ne!(m1, m2);
     assert_ne!(m2, m1);
     assert_eq!(m2, m3);
-    assert_eq!(m1, m1);
 }
 
 #[test]
@@ -322,7 +320,7 @@ fn construct_fail() {
     ];
 
     for address in &addresses {
-        assert!(address.parse::<Multiaddr>().is_err(), address.to_string());
+        assert!(address.parse::<Multiaddr>().is_err(), "{}", address.to_string());
     }
 }
 

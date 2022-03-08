@@ -77,9 +77,9 @@ pub trait Notifiee {
 
 /// Common trait for describing a Swarm friendly protocol.
 pub trait ProtocolImpl {
-    /// Returns the trait object of the ProtocolHandler, which can be used by Swarm
-    /// to construct the protocol muxer.
-    fn handler(&self) -> IProtocolHandler;
+    /// Returns the trait object of the vector of ProtocolHandler supported by
+    /// this ProtocolImpl, which can be used by Swarm to construct the protocol muxer.
+    fn handlers(&self) -> Vec<IProtocolHandler>;
     /// start() will consume the ownership and start the protocol. An optional
     /// task handle might be returned by start(), and it could be used to track
     /// the lifetime of the protocol.
@@ -100,6 +100,14 @@ pub trait ProtocolHandler: UpgradeInfo + Notifiee {
     ///
     /// The `info` is the identifier of the protocol, as produced by `protocol_info`.
     async fn handle(&mut self, stream: Substream, info: <Self as UpgradeInfo>::Info) -> Result<(), Box<dyn Error>>;
+    /// The protocol handler is dummy. It will not become the supported protocols when
+    /// the Swarm multi-stream Muxer is trying to negotiate with other peers. On the other hand,
+    /// the handler is still working, sending/receiving protocol messages.
+    ///
+    /// It is disabled by default.
+    fn client_mode(&self) -> bool {
+        false
+    }
     /// This is to provide a clone method for the trait object.
     fn box_clone(&self) -> IProtocolHandler;
 }
@@ -125,8 +133,8 @@ impl DummyProtocol {
 }
 
 impl ProtocolImpl for DummyProtocol {
-    fn handler(&self) -> IProtocolHandler {
-        Box::new(DummyProtocolHandler)
+    fn handlers(&self) -> Vec<IProtocolHandler> {
+        vec![Box::new(DummyProtocolHandler)]
     }
 }
 
@@ -136,10 +144,7 @@ struct DummyProtocolHandler;
 impl UpgradeInfo for DummyProtocolHandler {
     type Info = ProtocolId;
     fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![
-            ProtocolId::from(b"/dummy/1.0.0" as &[u8]),
-            ProtocolId::from(b"/dummy/2.0.0" as &[u8]),
-        ]
+        vec![ProtocolId::new("/dummy/1.0.0", 0), ProtocolId::new("/dummy/2.0.0", 0)]
     }
 }
 

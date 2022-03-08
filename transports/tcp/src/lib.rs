@@ -154,7 +154,7 @@ impl Transport for TcpConfig {
         log::debug!("Dialing {}", addr);
 
         let stream = TcpStream::connect(&socket_addr).await?;
-        apply_config(&self, &stream)?;
+        apply_config(self, &stream)?;
 
         // figure out the local sock address
         let local_addr = stream.local_addr()?;

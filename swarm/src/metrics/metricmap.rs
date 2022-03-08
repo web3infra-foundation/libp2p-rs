@@ -175,7 +175,7 @@ mod tests {
                 let k = key.clone();
                 let inside_map = inside_future_map.clone();
 
-                task::spawn(async move { inside_map.store_or_modify(&k, index, |_, value| value.add(index)) }).await;
+                task::spawn(async move { inside_map.store_or_modify(&k, index, |value| value.add(index)) }).await;
             }
         });
 
@@ -193,7 +193,7 @@ mod tests {
                 let k = key.clone();
                 let inside_map = delete_map.clone();
 
-                task::spawn(async move { inside_map.store_or_modify(&k, index, |_, value| value.add(index)) }).await;
+                task::spawn(async move { inside_map.store_or_modify(&k, index, | value| value.add(index)) }).await;
             }
 
             map.delete(key.clone());
@@ -203,7 +203,7 @@ mod tests {
             for index in 0..20 {
                 let inside_map = delete_map.clone();
                 let k = key.clone();
-                task::spawn(async move { inside_map.store_or_modify(&k, index, |_, value| value.add(index)) }).await;
+                task::spawn(async move { inside_map.store_or_modify(&k, index, | value| value.add(index)) }).await;
             }
         });
 

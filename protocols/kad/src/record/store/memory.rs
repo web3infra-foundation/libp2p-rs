@@ -38,7 +38,7 @@ pub struct MemoryStore {
     /// The stored (regular) records.
     records: HashMap<Key, Record>,
     /// The stored provider records.
-    providers: HashMap<Key, SmallVec<[ProviderRecord; K_VALUE.get()]>>,
+    providers: HashMap<Key, SmallVec<[ProviderRecord; 3]>>,
 }
 
 /// Configuration for a `MemoryStore`.
@@ -90,7 +90,7 @@ impl MemoryStore {
 
 type RecordsIter<'a> = iter::Map<hash_map::Values<'a, Key, Record>, fn(&'a Record) -> Cow<'a, Record>>;
 type ProviderIter<'a> = iter::Map<
-    iter::Flatten<hash_map::Values<'a, Key, SmallVec<[ProviderRecord; 20]>>>,
+    iter::Flatten<hash_map::Values<'a, Key, SmallVec<[ProviderRecord; 3]>>>,
     fn(&'a ProviderRecord) -> Cow<'a, ProviderRecord>,
 >;
 
@@ -100,7 +100,7 @@ impl<'a> RecordStore<'a> for MemoryStore {
     type ProviderIter = ProviderIter<'a>;
 
     fn get(&'a self, k: &Key) -> Option<Cow<'_, Record>> {
-        self.records.get(k).map(Cow::Borrowed)
+        self.records.get(k.as_ref()).map(Cow::Borrowed)
     }
 
     fn put(&'a mut self, r: Record) -> Result<()> {
@@ -126,7 +126,7 @@ impl<'a> RecordStore<'a> for MemoryStore {
     }
 
     fn remove(&'a mut self, k: &Key) {
-        self.records.remove(k);
+        self.records.remove(k.as_ref());
     }
 
     fn all_records(&'a self) -> Self::RecordsIter {
@@ -179,7 +179,7 @@ impl<'a> RecordStore<'a> for MemoryStore {
     }
 
     fn providers(&'a self, key: &Key) -> Vec<ProviderRecord> {
-        self.providers.get(key).map_or_else(Vec::new, |ps| ps.clone().into_vec())
+        self.providers.get(key.as_ref()).map_or_else(Vec::new, |ps| ps.clone().into_vec())
     }
 
     fn all_providers(&'a self) -> Self::ProviderIter {
@@ -213,6 +213,14 @@ impl<'a> RecordStore<'a> for MemoryStore {
         provider_records.into_iter().for_each(|r| {
             self.remove_provider(&r.key, &r.provider);
         });
+    }
+
+    fn providers_count(&'a self) -> usize {
+        self.providers.len()
+    }
+
+    fn records_count(&'a self) -> usize {
+        self.records.len()
     }
 }
 
@@ -275,6 +283,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::redundant_closure)]
     fn providers_ordered_by_distance_to_key() {
         fn prop(providers: Vec<kbucket::Key<PeerId>>) -> bool {
             let mut store = MemoryStore::new(PeerId::random());
@@ -289,7 +298,8 @@ mod tests {
                 assert!(store.add_provider(r.clone()).is_ok());
             }
 
-            records.sort_by(|r1, r2| distance(r1).cmp(&distance(r2)));
+            // records.sort_by(|r1, r2| distance(r1).cmp(&distance(r2)));
+            records.sort_by_key(|r1| distance(r1));
             records.truncate(store.config.max_providers_per_key);
 
             records == store.providers(&key).to_vec()

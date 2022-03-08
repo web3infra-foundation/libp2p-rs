@@ -21,10 +21,13 @@
 use std::str::FromStr;
 use xcli::*;
 
-use libp2prs_core::{Multiaddr, PeerId};
+use libp2prs_core::{Multiaddr, PeerId, ProtocolId};
 use libp2prs_runtime::task;
 
+use crate::ping::ping;
 use crate::Control;
+use std::option::Option::Some;
+use std::time::Duration;
 
 const SWRM: &str = "swarm";
 
@@ -47,6 +50,12 @@ pub fn swarm_cli_commands<'a>() -> Command<'a> {
                 .action(cli_show_connections),
         )
         .subcommand(
+            Command::new_with_alias("ping", "p")
+                .about("ping other peerid")
+                .usage("ping [PeerId]")
+                .action(cli_ping),
+        )
+        .subcommand(
             Command::new_with_alias("peer", "pr")
                 .about("display peer information")
                 .usage("peer [PeerId]")
@@ -63,6 +72,24 @@ pub fn swarm_cli_commands<'a>() -> Command<'a> {
                 .about("disconnect a peer")
                 .usage("disconnect <PeerId>")
                 .action(cli_disconnect),
+        )
+        .subcommand(
+            Command::new_with_alias("latency", "lat")
+                .about("display latency that connected to each peer")
+                .usage("latency")
+                .action(cli_dump_peer_latency),
+        )
+        .subcommand(
+            Command::new_with_alias("rate", "r")
+                .about("display rate that connected to each peer")
+                .usage("rate")
+                .action(cli_dump_rate),
+        )
+        .subcommand(
+            Command::new_with_alias("traffic", "t")
+                .about("display each peer's traffic status")
+                .usage("traffic [PeerId]")
+                .action(cli_dump_peer_traffic),
         )
 }
 
@@ -89,15 +116,46 @@ fn cli_show_id(app: &App, _args: &[&str]) -> XcliResult {
             println!("Support Protocols : {:?}", identify.protocols);
             println!("Listening address : {:?}", identify.listen_addrs);
         }
+        let (recv_count, recv_bytes) = swarm.get_recv_count_and_size();
+        let (send_count, send_bytes) = swarm.get_sent_count_and_size();
+        println!("Received package: {}", recv_count);
+        println!("Sent package: {}", send_count);
 
-        println!(
-            "Metric: {:?} {:?}",
-            swarm.get_recv_count_and_size(),
-            swarm.get_sent_count_and_size()
-        );
+        println!("Received bytes: {}", recv_bytes);
+        println!("Sent bytes: {}", send_bytes);
     });
 
     Ok(CmdExeCode::Ok)
+}
+
+fn cli_dump_peer_traffic(app: &App, args: &[&str]) -> XcliResult {
+    let mut swarm = handler(app);
+
+    let peer = match args.len() {
+        0 => None,
+        1 => Some(PeerId::from_str(args[0]).map_err(|e| XcliError::BadArgument(e.to_string()))?),
+        _ => return Err(XcliError::MismatchArgument(1, args.len())),
+    };
+
+    task::block_on(async {
+        match swarm.dump_network_traffic_by_peer(peer).await {
+            Ok(Some(v)) => {
+                println!("Remote-Peer-Id                                       Bytes(received)      Bytes(sent)          Packets(received)    Packets(sent)");
+                for (peer, view) in v {
+                    println!(
+                        "{:52} {: <20} {:<20} {:<20} {}",
+                        peer, view.r.bytes_recv, view.r.bytes_sent, view.packets_recv, view.packets_sent
+                    )
+                }
+                Ok(CmdExeCode::Ok)
+            }
+            Ok(None) => {
+                println!("No traffic.");
+                Ok(CmdExeCode::Ok)
+            }
+            Err(e) => Err(XcliError::Other(e.to_string())),
+        }
+    })
 }
 
 fn cli_close_swarm(app: &App, _args: &[&str]) -> XcliResult {
@@ -120,6 +178,28 @@ fn cli_dump_statistics(app: &App, _args: &[&str]) -> XcliResult {
     Ok(CmdExeCode::Ok)
 }
 
+fn cli_dump_peer_latency(app: &App, _args: &[&str]) -> XcliResult {
+    let mut swarm = handler(app);
+
+    task::block_on(async {
+        let info = swarm.dump_latency().await.unwrap();
+        println!("Remote-Peer-Id                                       Latency");
+        info.iter().for_each(|item| println!("{:52} {:?}", item.0, item.1));
+    });
+    Ok(CmdExeCode::Ok)
+}
+
+fn cli_dump_rate(app: &App, _args: &[&str]) -> XcliResult {
+    let mut swarm = handler(app);
+
+    task::block_on(async {
+        let info = swarm.dump_rate().await.unwrap();
+        println!("Received-rates                Send-rates");
+        println!("{: <29} {: <29}", info.0.to_string() + " B/s", info.1.to_string() + " B/s");
+    });
+    Ok(CmdExeCode::Ok)
+}
+
 fn cli_show_connections(app: &App, args: &[&str]) -> XcliResult {
     let mut swarm = handler(app);
 
@@ -131,18 +211,62 @@ fn cli_show_connections(app: &App, args: &[&str]) -> XcliResult {
 
     task::block_on(async {
         let connections = swarm.dump_connections(peer).await.unwrap();
-        println!("CID   DIR Remote-Peer-Id                                       I/O  Local-Multiaddr  Remote-Multiaddr");
+        let mut ss = 0;
+        println!("CID   DIR Remote-Peer-Id                                       I/O Local-Multiaddr                  Remote-Multiaddr                 Latency");
         connections.iter().for_each(|v| {
             println!(
-                "{} {} {:52} {}/{}  {} {}",
-                v.id, v.dir, v.info.remote_peer_id, v.info.num_inbound_streams, v.info.num_outbound_streams, v.info.la, v.info.ra
+                "{} {} {:52} {}/{} {: <32} {: <32} {:?} // {} {}",
+                v.id,
+                v.dir,
+                v.info.remote_peer_id,
+                v.info.num_inbound_streams,
+                v.info.num_outbound_streams,
+                v.info.la.to_string(),
+                v.info.ra.to_string(),
+                v.route_trip_time,
+                v.rate_in,
+                v.rate_out
             );
             if true {
                 v.substreams.iter().for_each(|s| {
                     println!("      ({})", s);
                 });
             }
+
+            ss += v.substreams.len();
         });
+        println!("Total {} connections, {} sub-streams", connections.len(), ss);
+    });
+
+    Ok(CmdExeCode::Ok)
+}
+
+fn cli_ping(app: &App, args: &[&str]) -> XcliResult {
+    let mut swarm = handler(app);
+    let pid = match args.len() {
+        1 => PeerId::from_str(args[0]).map_err(|e| XcliError::BadArgument(e.to_string()))?,
+        _ => return Err(XcliError::MismatchArgument(1, args.len())),
+    };
+    task::block_on(async {
+        for _ in 0..4 {
+            let result_new_stream = swarm.new_stream(pid, vec![ProtocolId::new(b"/ipfs/ping/1.0.0", 0)]).await;
+            match result_new_stream {
+                Ok(stream) => match ping(stream, Duration::from_secs(1)).await {
+                    Ok(latency) => {
+                        println!("Time: {:?}", latency);
+                    }
+                    Err(e) => {
+                        log::debug!("Ping error: {:?}", e);
+                        println!("Request timeout");
+                    }
+                },
+                Err(e) => {
+                    log::debug!("New stream error: {:?}", e);
+                    println!("Request timeout");
+                }
+            }
+            task::sleep(Duration::from_secs(1)).await;
+        }
     });
 
     Ok(CmdExeCode::Ok)
@@ -167,6 +291,7 @@ fn cli_show_peers(app: &App, args: &[&str]) -> XcliResult {
         peers.iter().for_each(|v| {
             println!("{:52} {:5} {:?}", v, swarm.pinned(v), swarm.get_addrs(v));
         });
+        println!("Total {} peers", peers.len());
     }
     Ok(CmdExeCode::Ok)
 }

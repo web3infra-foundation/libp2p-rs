@@ -128,7 +128,7 @@ fn build_client_tls_config(options: &ClientTlsConfig) -> tls::Config {
 }
 // Build tls server config
 fn build_server_tls_config(options: &ServerTlsConfig) -> tls::Config {
-    let (pk, certs) = load_config(&options).unwrap();
+    let (pk, certs) = load_config(options).unwrap();
     log::trace!("pk  {:?}", &pk);
     log::trace!("certs  {:?}", &certs);
     let cert_iter = certs.into_iter().map(|c| tls::Certificate::new(c.0));
@@ -140,8 +140,8 @@ struct MyProtocol;
 struct MyProtocolHandler;
 
 impl ProtocolImpl for MyProtocol {
-    fn handler(&self) -> IProtocolHandler {
-        Box::new(MyProtocolHandler)
+    fn handlers(&self) -> Vec<IProtocolHandler> {
+        vec![Box::new(MyProtocolHandler)]
     }
 }
 
@@ -149,7 +149,7 @@ impl UpgradeInfo for MyProtocolHandler {
     type Info = ProtocolId;
 
     fn protocol_info(&self) -> Vec<Self::Info> {
-        vec![PROTO_NAME.into()]
+        vec![ProtocolId::new(PROTO_NAME, 1011)]
     }
 }
 
@@ -252,7 +252,10 @@ fn run_client() -> io::Result<()> {
 
     task::block_on(async move {
         control.connect_with_addrs(remote_peer_id, vec![addr]).await.unwrap();
-        let mut stream = control.new_stream(remote_peer_id, vec![PROTO_NAME.into()]).await.unwrap();
+        let mut stream = control
+            .new_stream(remote_peer_id, vec![ProtocolId::new(PROTO_NAME, 1011)])
+            .await
+            .unwrap();
         log::info!("stream {:?} opened, writing something...", stream);
 
         let msg = b"hello";

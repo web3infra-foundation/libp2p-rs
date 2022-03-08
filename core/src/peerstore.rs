@@ -27,8 +27,11 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use crate::metricmap::MetricMap;
 use crate::{PeerId, PublicKey};
 use libp2prs_multiaddr::Multiaddr;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering::SeqCst;
 
 pub const ADDRESS_TTL: Duration = Duration::from_secs(60 * 60);
 pub const TEMP_ADDR_TTL: Duration = Duration::from_secs(2 * 60);
@@ -39,9 +42,12 @@ pub const OWN_OBSERVED_ADDR_TTL: Duration = Duration::from_secs(10 * 60);
 pub const PERMANENT_ADDR_TTL: Duration = Duration::from_secs(u64::MAX - 1);
 pub const CONNECTED_ADDR_TTL: Duration = Duration::from_secs(u64::MAX - 2);
 
+pub const LATENCY_EWMA_SMOOTHING: f64 = 0.1_f64;
+
 #[derive(Default, Clone)]
 pub struct PeerStore {
     inner: Arc<Mutex<HashMap<PeerId, PeerRecord>>>,
+    m: Arc<MetricMap<PeerId, Arc<AtomicU64>>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -83,6 +89,7 @@ struct AddrBookRecord {
     expiry: Instant,
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<Multiaddr> for AddrBookRecord {
     fn into(self) -> Multiaddr {
         self.addr
@@ -319,6 +326,37 @@ impl PeerStore {
         } else {
             None
         }
+    }
+
+    /// Update rtt by peer_id
+    pub fn record_latency(&self, peer_id: &PeerId, rtt: Duration) {
+        self.m.store_or_modify(peer_id, |value| {
+            let _ = value.fetch_update(SeqCst, SeqCst, |v| {
+                if v != 0 {
+                    let ewma_f64 = v as f64;
+                    let next_f64 = rtt.as_millis() as f64;
+                    let peer_rtt = (1.0_f64 - LATENCY_EWMA_SMOOTHING) * ewma_f64 + LATENCY_EWMA_SMOOTHING * next_f64;
+                    Some(peer_rtt as u64)
+                } else {
+                    Some(rtt.as_millis() as u64)
+                }
+            });
+        });
+    }
+
+    pub fn get_latency(&self, peer_id: &PeerId) -> Option<Duration> {
+        self.m
+            .load(peer_id)
+            .map(|atomic_millis| Duration::from_millis(atomic_millis.load(SeqCst)))
+    }
+
+    /// Return latency info
+    pub fn list_latency(&self) -> Vec<(PeerId, Duration)> {
+        self.m
+            .iterator()
+            .unwrap()
+            .map(|(peer, atomic_millis)| (peer, Duration::from_millis(atomic_millis.load(SeqCst))))
+            .collect::<Vec<_>>()
     }
 }
 

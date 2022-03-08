@@ -251,15 +251,15 @@ struct ListenerStats {
 
 #[derive(Debug)]
 pub struct ListenerStatsView {
-    total_connecton: usize,
-    total_error: usize,
+    _total_connecton: usize,
+    _total_error: usize,
 }
 
 impl From<&ListenerStats> for ListenerStatsView {
     fn from(s: &ListenerStats) -> Self {
         Self {
-            total_connecton: s.total_connecton.load(Ordering::Relaxed),
-            total_error: s.total_error.load(Ordering::Relaxed),
+            _total_connecton: s.total_connecton.load(Ordering::Relaxed),
+            _total_error: s.total_error.load(Ordering::Relaxed),
         }
     }
 }
@@ -340,6 +340,12 @@ pub struct Swarm {
     next_tid: TransactionId,
     /// The dialer post-processing hashmap.
     dial_transactions: FnvHashMap<TransactionId, DialCallback>,
+
+    /// Filter private multiaddr when dialing
+    filter_private: bool,
+
+    /// Filter loopback address when dialing
+    filter_loopback: bool,
 }
 
 #[allow(dead_code)]
@@ -388,6 +394,8 @@ impl Swarm {
             dialer: dial::AsyncDialer::new(),
             next_tid: 0,
             dial_transactions: Default::default(),
+            filter_private: false,
+            filter_loopback: true,
         }
     }
     fn assign_cid(&mut self) -> usize {
@@ -424,9 +432,23 @@ impl Swarm {
     }
     /// Adds a protocol into Swarm.
     ///
-    /// A protocl must implement ProtocolImpl trait. See [Swarm::ProtocolImpl].
+    /// A protocol must implement ProtocolImpl trait. See [Swarm::ProtocolImpl].
     pub fn with_protocol<T: ProtocolImpl>(mut self, p: T) -> Self {
-        self.muxer.add_protocol_handler(p.handler());
+        for p in p.handlers() {
+            self.muxer.add_protocol_handler(p);
+        }
+        if let Some(task) = p.start(self.control()) {
+            self.tasks.push(task);
+        }
+        self
+    }
+    /// Starts a protocol but doesn't add its protocol handlers to the protocol muxer.
+    ///
+    /// It is typically useful when we only want the functionality of the client side
+    /// of the protocol.
+    ///
+    /// A protocol must implement ProtocolImpl trait. See [Swarm::ProtocolImpl].
+    pub fn with_protocol_no_handler<T: ProtocolImpl>(mut self, p: T) -> Self {
         if let Some(task) = p.start(self.control()) {
             self.tasks.push(task);
         }
@@ -453,6 +475,16 @@ impl Swarm {
         self.muxer.add_protocol_handler(Box::new(handler));
         let handler = IdentifyPushHandler::new(config, self.event_sender.clone());
         self.muxer.add_protocol_handler(Box::new(handler));
+        self
+    }
+    /// Modifies filter rule about private address.
+    pub fn with_filter_private(mut self, filter: bool) -> Self {
+        self.filter_private = filter;
+        self
+    }
+    /// Modifies filter rule about loopback address.
+    pub fn with_filter_loopback(mut self, filter: bool) -> Self {
+        self.filter_loopback = filter;
         self
     }
 
@@ -586,6 +618,16 @@ impl Swarm {
                     let _ = reply.send(r);
                 });
             }
+            SwarmControlCmd::PeerLatency(reply) => {
+                let _ = self.on_retrieve_latency(|r| {
+                    let _ = reply.send(r);
+                });
+            }
+            SwarmControlCmd::LatencyByID(peer_id, reply) => {
+                let _ = self.on_retrieve_latency_by_peer(peer_id, |r| {
+                    let _ = reply.send(r);
+                });
+            }
             SwarmControlCmd::Dump(cmd) => match cmd {
                 DumpCommand::Connections(peer_id, reply) => {
                     let _ = self.on_retrieve_connection_views(peer_id, |r| {
@@ -602,7 +644,18 @@ impl Swarm {
                         let _ = reply.send(r);
                     });
                 }
+                DumpCommand::NetworkTrafficByPeerID(peer_id, reply) => {
+                    let v = self.metric.get_traffic_by_peer(peer_id);
+                    let _ = reply.send(v);
+                }
             },
+            SwarmControlCmd::Rate(reply) => {
+                let _ = self.on_retrieve_rate(|r| {
+                    let _ = reply.send(r);
+                });
+            } // SwarmControlCmd::IsConnected(peer_id, sender) => {
+              //     let _ = sender.send(self.connections_by_peer.contains_key(&peer_id));
+              // }
         }
         Ok(())
     }
@@ -637,7 +690,7 @@ impl Swarm {
         let r = if let Some(ids) = self.connections_by_peer.get(&peer_id) {
             // close all connections related to the peer_id
             for id in ids {
-                if let Some(c) = self.connections_by_id.get_mut(&id) {
+                if let Some(c) = self.connections_by_id.get_mut(id) {
                     c.close()
                 }
             }
@@ -719,6 +772,21 @@ impl Swarm {
         f(self.get_stats());
         Ok(())
     }
+    /// Retrieves the rate.
+    fn on_retrieve_rate(&self, f: impl FnOnce((f64, f64))) -> Result<()> {
+        f(self.get_rate_statistic());
+        Ok(())
+    }
+    /// Retrieves each peer's latency
+    fn on_retrieve_latency(&self, f: impl FnOnce(Vec<(PeerId, Duration)>)) -> Result<()> {
+        f(self.peer_store.list_latency());
+        Ok(())
+    }
+    /// Retrieves peer's latency by peer_id
+    fn on_retrieve_latency_by_peer(&self, pid: PeerId, f: impl FnOnce(Option<Duration>)) -> Result<()> {
+        f(self.peer_store.get_latency(&pid));
+        Ok(())
+    }
     /// Starts Swarm background runtime
     /// handling the internal events and external controls
     pub fn start(self) {
@@ -740,6 +808,21 @@ impl Swarm {
             }
             log::info!("quitting Peerstore GC...");
         });
+
+        let (mut metric_tx, mut metric_rx) = mpsc::channel::<()>(0);
+        let metric = swarm.metric.clone();
+        task::spawn(async move {
+            log::info!("starting rate calculation...");
+            loop {
+                let either = future::select(metric_rx.next(), task::sleep(Duration::from_secs(1)).boxed()).await;
+                match either {
+                    Either::Left((_, _)) => break,
+                    Either::Right((_, _)) => metric.update(),
+                }
+            }
+            log::info!("quitting rate calculation...");
+        });
+
         task::spawn(async move {
             log::info!("starting Swarm main loop...");
 
@@ -751,6 +834,8 @@ impl Swarm {
 
             // close peerstore GC runtime
             tx.close_channel();
+
+            metric_tx.close_channel();
 
             if let Err(e) = swarm.peer_store.save_data() {
                 log::info!("PeerStore save data failed: {}", e);
@@ -772,6 +857,11 @@ impl Swarm {
             .filter(|c| peer_id.as_ref().map_or(true, |pid| pid == &c.remote_peer()))
             .filter(|c| !c.is_closing())
             .map(|c| c.to_view())
+            .map(|mut c| {
+                let rtt = self.peer_store.get_latency(&c.info.remote_peer_id);
+                c.route_trip_time = rtt;
+                c
+            })
             .collect()
     }
     fn get_substream_views(&self, peer_id: PeerId) -> Result<Vec<SubstreamView>> {
@@ -810,6 +900,10 @@ impl Swarm {
             num_connections_established: 0,
             num_active_streams,
         }
+    }
+    /// Returns rate in and out about the `Swarm`
+    fn get_rate_statistic(&self) -> (f64, f64) {
+        (self.metric.get_rate_in(), self.metric.get_rate_out())
     }
     /// Returns identify information about the `Swarm`.
     fn get_identify_info(&self) -> IdentifyInfo {
@@ -858,6 +952,7 @@ impl Swarm {
         let mut listen_addrs = self.external_addrs.iter().cloned().collect::<Vec<_>>();
         listen_addrs.extend(self.listened_addrs.to_vec());
 
+        listen_addrs.sort_unstable();
         listen_addrs.dedup();
 
         log::trace!("swarm self addresses: {:?}", listen_addrs);
@@ -936,6 +1031,8 @@ impl Swarm {
             EitherDialAddr::Addresses(addrs),
             self.event_sender.clone(),
             tid,
+            self.filter_private,
+            self.filter_loopback,
         );
     }
 
@@ -950,7 +1047,17 @@ impl Swarm {
         }
         // then check addrs, return error if None while routing is not available
         let addrs = match self.peer_store.get_addrs(&peer_id) {
-            Some(list) if !list.is_empty() => dial::EitherDialAddr::Addresses(list),
+            Some(mut list) if !list.is_empty() => {
+                if self.filter_private {
+                    list = list.into_iter().filter(|addr| !addr.is_private_addr()).collect();
+                }
+
+                if self.filter_loopback {
+                    list = list.into_iter().filter(|addr| !addr.is_loopback_addr()).collect();
+                }
+
+                dial::EitherDialAddr::Addresses(list)
+            }
             _ => {
                 if use_routing && self.routing.is_some() {
                     // ok, clone the routing interface into EitherDialAddr
@@ -967,8 +1074,15 @@ impl Swarm {
         // allocate transaction id and push box::f into hashmap for post-processing
         let tid = self.assign_tid();
         self.dial_transactions.insert(tid, Box::new(f));
-        self.dialer
-            .dial(peer_id, self.transports.clone(), addrs, self.event_sender.clone(), tid);
+        self.dialer.dial(
+            peer_id,
+            self.transports.clone(),
+            addrs,
+            self.event_sender.clone(),
+            tid,
+            self.filter_private,
+            self.filter_loopback,
+        );
     }
 
     fn get_best_conn(&mut self, peer_id: &PeerId) -> Option<&mut connection::Connection> {
@@ -1152,7 +1266,7 @@ impl Swarm {
                         }
                     }
                     Err(error) => {
-                        log::debug!("connection closed {:?} {:?}", cid, error);
+                        log::debug!("connection closed {:?} {:?}, exiting loop...", cid, error);
                         let _ = tx.send(SwarmEvent::ConnectionClosed { cid, error }).await;
                         // something happened, break the loop then exit the Task
                         break;
@@ -1164,8 +1278,6 @@ impl Swarm {
             if let Some(h) = task_handle {
                 h.await;
             }
-
-            log::debug!("{:?} accept-runtime exiting...", stream_muxer);
         });
 
         // now we have the handle, move it into Connection
@@ -1311,15 +1423,15 @@ impl Swarm {
 
         if let Some(connection) = self.connections_by_id.get_mut(&cid) {
             match result {
-                Ok(ttl) => {
+                Ok(rtt) => {
                     //let remote_peer_id = c.remote_peer();
-                    log::trace!("ping TTL={:?} for {:?}", ttl, connection);
+                    log::trace!("ping RTT={:?} for {:?}", rtt, connection);
                     // update peer store with the TTL
                     let peer_id = connection.stream_muxer().remote_peer();
-                    self.peer_store.update_addr(&peer_id, ttl);
+                    self.peer_store.record_latency(&peer_id, rtt);
                 }
                 Err(_) => {
-                    log::info!("reach the max ping failure count, closing {:?}", connection);
+                    log::debug!("reach the max ping failure count, closing {:?}", connection);
                     connection.close();
                 }
             }

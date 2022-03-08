@@ -170,7 +170,7 @@ mod tests {
         for i in 0..K_VALUE.get() - num_entries_start {
             let key = Key::from(PeerId::random());
             let node = Node { key, value: () };
-            assert_eq!(true, bucket.insert(node));
+            assert!(bucket.insert(node));
             assert_eq!(bucket.num_entries(), num_entries_start + i + 1);
         }
     }

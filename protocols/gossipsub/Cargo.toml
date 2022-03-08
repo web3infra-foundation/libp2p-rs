@@ -1,0 +1,52 @@
+[package]
+name = "libp2prs-gossipsub"
+description = "Gossipsub protocol for libp2p-rs"
+version = "0.3.0"
+authors = ["Netwarps Technologies admin@paradeum.com"]
+repository = "https://github.com/netwarps/libp2p-rs"
+keywords = ["peer-to-peer", "libp2p", "networking"]
+categories = ["network-programming", "asynchronous"]
+edition = "2018"
+
+[features]
+async-std = ["libp2prs-swarm/async-std", "libp2prs-runtime/async-std"]
+tokio = ["libp2prs-swarm/tokio", "libp2prs-runtime/tokio"]
+
+[dependencies]
+async-trait = "0.1"
+libp2prs-runtime = { path = "../../runtime", version = "0.3.0" }
+libp2prs-core = { path = "../../core", version = "0.3.0" }
+libp2prs-swarm = { path = "../../swarm", version = "0.3.0" }
+
+futures = { version = "0.3", features = ["std"], default-features = false }
+xcli = "0.5"
+bytes = "1.0"
+byteorder = "1.3.4"
+fnv = "1.0.7"
+wasm-timer = "0.2.4"
+unsigned-varint = "0.7.0"
+log = "0.4"
+prost = "0.7"
+rand = "0.7"
+smallvec = "1.6"
+nohash-hasher = "0.2"
+sha2 = "0.9"
+base64 = "0.13"
+hex_fmt = "0.3"
+regex = "1.4"
+lazy_static = "1.4"
+
+[dev-dependencies]
+env_logger = "0.8"
+libp2prs-mplex = { path = "../mplex", version = "0.3.0" }
+libp2prs-yamux = { path = "../yamux", version = "0.3.0" }
+libp2prs-secio = { path = "../secio", version = "0.3.0" }
+libp2prs-tcp = { path = "../../transports/tcp", version = "0.3.0", features = ["async-std"] }
+lazy_static = "1.4"
+quickcheck = "0.9"
+hex = "0.4.2"
+derive_builder = "0.10.0"
+
+
+[build-dependencies]
+prost-build = "0.7"

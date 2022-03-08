@@ -27,10 +27,11 @@ use libp2prs_core::routing::{IRouting, Routing};
 use libp2prs_core::transport::TransportError;
 use libp2prs_core::{Multiaddr, PeerId};
 
-use crate::kad::{KBucketView, KademliaStats, StorageStats};
+use crate::kad::{KBucketView, KademliaStats, Ledger, StorageStats};
 use crate::protocol::{KadMessengerView, KadPeer};
 use crate::query::PeerRecord;
-use crate::{record, KadError};
+use crate::record::Key;
+use crate::{record, KadError, ProviderRecord};
 
 type Result<T> = std::result::Result<T, KadError>;
 
@@ -66,6 +67,10 @@ pub(crate) enum ControlCommand {
     AddNode(PeerId, Vec<Multiaddr>),
     /// Removes a peer from Kad KBuckets, also removes it from Peerstore.
     RemoveNode(PeerId),
+    /// Show all peers without multiaddress
+    NotAddressPeer(oneshot::Sender<Result<Vec<PeerId>>>),
+    /// Get nearest KBuckets info by
+    ClosestByBucket(record::Key, oneshot::Sender<Result<Vec<PeerId>>>),
 }
 
 /// The dump commands can be used to dump internal data of Kad-DHT.
@@ -77,8 +82,12 @@ pub enum DumpCommand {
     Entries(oneshot::Sender<Vec<KBucketView>>),
     /// Dump the Kad statistics.
     Statistics(oneshot::Sender<KademliaStats>),
+    /// Dump ledgers of all peers.
+    Ledgers(Option<PeerId>, oneshot::Sender<Vec<(PeerId, Ledger)>>),
     /// Dump the Kad Messengers.
     Messengers(oneshot::Sender<Vec<KadMessengerView>>),
+    /// Dump providers of key int the local storage
+    Providers(Key, oneshot::Sender<Vec<ProviderRecord>>),
 }
 
 #[derive(Clone)]
@@ -124,9 +133,26 @@ impl Control {
         Ok(rx.await?)
     }
 
+    pub async fn dump_ledgers(&mut self, peer_id: Option<PeerId>) -> Result<Vec<(PeerId, Ledger)>> {
+        let (tx, rx) = oneshot::channel();
+        self.control_sender
+            .send(ControlCommand::Dump(DumpCommand::Ledgers(peer_id, tx)))
+            .await?;
+        Ok(rx.await?)
+    }
+
     pub async fn dump_messengers(&mut self) -> Result<Vec<KadMessengerView>> {
         let (tx, rx) = oneshot::channel();
         self.control_sender.send(ControlCommand::Dump(DumpCommand::Messengers(tx))).await?;
+        Ok(rx.await?)
+    }
+
+    pub async fn dump_providers(&mut self, key: Vec<u8>) -> Result<Vec<ProviderRecord>> {
+        let key = record::Key::from(key);
+        let (tx, rx) = oneshot::channel();
+        self.control_sender
+            .send(ControlCommand::Dump(DumpCommand::Providers(key, tx)))
+            .await?;
         Ok(rx.await?)
     }
 
@@ -148,6 +174,12 @@ impl Control {
     pub async fn lookup(&mut self, key: record::Key) -> Result<Vec<KadPeer>> {
         let (tx, rx) = oneshot::channel();
         self.control_sender.send(ControlCommand::Lookup(key, tx)).await?;
+        rx.await?
+    }
+
+    pub async fn bucket_lookup(&mut self, key: record::Key) -> Result<Vec<PeerId>> {
+        let (tx, rx) = oneshot::channel();
+        self.control_sender.send(ControlCommand::ClosestByBucket(key, tx)).await?;
         rx.await?
     }
 
@@ -190,6 +222,12 @@ impl Control {
         self.control_sender.send(ControlCommand::FindProviders(key, count, tx)).await?;
         rx.await?
     }
+
+    pub async fn show_no_addr_peer(&mut self) -> Result<Vec<PeerId>> {
+        let (tx, rx) = oneshot::channel();
+        self.control_sender.send(ControlCommand::NotAddressPeer(tx)).await?;
+        rx.await?
+    }
 }
 
 /// Implements `Routing` for Kad Control. Therefore, Kad control can be used
@@ -212,6 +250,30 @@ impl Routing for Control {
     async fn provide(&mut self, key: Vec<u8>) -> std::result::Result<(), TransportError> {
         let _ = self.provide(key).await.map_err(|e| TransportError::Routing(e.into()))?;
         Ok(())
+    }
+
+    async fn cancel_provide(&mut self, key: Vec<u8>) -> std::result::Result<(), TransportError> {
+        let _ = self.unprovide(key).await.map_err(|e| TransportError::Routing(e.into()))?;
+        Ok(())
+    }
+
+    async fn lookup(&mut self, key: Vec<u8>) -> std::result::Result<Vec<PeerId>, TransportError> {
+        let peer = self
+            .lookup(Key::new(&key))
+            .await
+            .map_err(|e| TransportError::Routing(e.into()))?
+            .into_iter()
+            .map(|item| item.node_id)
+            .collect();
+        Ok(peer)
+    }
+
+    async fn bucket_lookup(&mut self, key: Vec<u8>) -> std::result::Result<Vec<PeerId>, TransportError> {
+        let peer = self
+            .bucket_lookup(Key::new(&key))
+            .await
+            .map_err(|e| TransportError::Routing(e.into()))?;
+        Ok(peer)
     }
 
     fn box_clone(&self) -> IRouting {

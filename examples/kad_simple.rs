@@ -39,6 +39,7 @@ use libp2prs_yamux as yamux;
 
 use libp2prs_kad::cli::dht_cli_commands;
 use libp2prs_swarm::cli::swarm_cli_commands;
+use libp2prs_swarm::ping::PingConfig;
 use std::convert::TryFrom;
 use std::time::Duration;
 use xcli::*;
@@ -72,14 +73,14 @@ fn main() {
 }
 
 lazy_static! {
-    static ref SERVER_KEY: identity::Keypair = identity::Keypair::generate_ed25519_fixed();
+    static ref SERVER_KEY: identity::Keypair = identity::Keypair::generate_ed25519_with_seed([7u8; 32]);
 }
 
 #[allow(clippy::empty_loop)]
 fn run_server(bootstrap_peer: PeerId, bootstrap_addr: Multiaddr) {
     let keys = SERVER_KEY.clone();
 
-    let listen_addr1: Multiaddr = "/ip4/0.0.0.0/tcp/8086".parse().unwrap();
+    let listen_addr1: Multiaddr = "/ip4/0.0.0.0/tcp/8085".parse().unwrap();
 
     let dh = Keypair::<X25519Spec>::new().into_authentic(&keys).unwrap();
 
@@ -93,6 +94,8 @@ fn run_server(bootstrap_peer: PeerId, bootstrap_addr: Multiaddr) {
 
     let mut swarm = Swarm::new(keys.public())
         .with_transport(Box::new(tu))
+        .with_filter_private(false)
+        .with_filter_loopback(false)
         .with_identify(IdentifyConfig::new(false));
 
     log::info!("Swarm created, local-peer-id={:?}", swarm.local_peer_id());
@@ -104,14 +107,18 @@ fn run_server(bootstrap_peer: PeerId, bootstrap_addr: Multiaddr) {
         // build Kad
         let config = KademliaConfig::default()
             .with_refresh_interval(None)
-            .with_query_timeout(Duration::from_secs(90));
+            .with_query_timeout(Duration::from_secs(90))
+            .with_new_stream_timeout(Some(Duration::from_secs(8)));
 
         let store = MemoryStore::new(*swarm.local_peer_id());
         let kad = Kademlia::with_config(*swarm.local_peer_id(), store, config);
         let mut kad_control = kad.control();
 
         // update Swarm to support Kad and Routing
-        swarm = swarm.with_protocol(kad).with_routing(Box::new(kad_control.clone()));
+        swarm = swarm
+            .with_protocol(kad)
+            .with_routing(Box::new(kad_control.clone()))
+            .with_ping(PingConfig::new());
         swarm.start();
 
         let bootstrapper = vec![(bootstrap_peer, bootstrap_addr)];

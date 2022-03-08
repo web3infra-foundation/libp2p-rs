@@ -167,6 +167,9 @@ impl Connection {
             dir: self.dir,
             info: self.info(),
             substreams: self.substreams.clone(),
+            route_trip_time: None,
+            rate_in: 0,
+            rate_out: 0,
         }
     }
 
@@ -187,6 +190,10 @@ impl Connection {
     /// Sets the runtime handle of the connection.
     pub(crate) fn set_handle(&mut self, handle: task::TaskHandle<()>) {
         self.handle = Some(handle);
+    }
+
+    pub fn get_direction(&self) -> Direction {
+        self.dir
     }
 
     /// Opens a sub stream with the protocols specified
@@ -308,7 +315,7 @@ impl Connection {
         let stream_muxer = self.stream_muxer.clone();
         let mut tx = self.tx.clone();
         let flag = self.ping_running.clone();
-        let pids = vec![PING_PROTOCOL.into()];
+        let pids = vec![ProtocolId::new(PING_PROTOCOL, 0)];
         let ctrl = self.ctrl.clone();
         let metric = self.metric.clone();
 
@@ -346,7 +353,7 @@ impl Connection {
                     }
                     Err(err) => {
                         // looks like the peer doesn't support the protocol
-                        log::info!("Ping protocol not supported: {:?} {:?}", cid, err);
+                        log::debug!("Ping protocol not supported: {:?} {:?}", cid, err);
                         let _ = tx
                             .send(SwarmEvent::StreamError {
                                 cid,
@@ -355,20 +362,32 @@ impl Connection {
                             })
                             .await;
 
+                        fail_cnt += 1;
                         Err(err)
                     }
                 };
 
-                if fail_cnt >= max_failures {
+                if r.is_ok() {
                     let _ = tx
                         .send(SwarmEvent::PingResult {
                             cid,
                             result: r.map_err(|e| e.into()),
                         })
                         .await;
-
+                } else if fail_cnt >= max_failures {
                     break;
                 }
+
+                // if fail_cnt >= max_failures {
+                //     let _ = tx
+                //         .send(SwarmEvent::PingResult {
+                //             cid,
+                //             result: r.map_err(|e| e.into()),
+                //         })
+                //         .await;
+                //
+                //     break;
+                // }
             }
 
             log::debug!("ping runtime exiting...");
@@ -390,10 +409,11 @@ impl Connection {
     /// Starts the Identify service on this connection.
     pub(crate) fn start_identify(&mut self) {
         let cid = self.id();
+        let remote_peer = self.remote_peer();
         let stream_muxer = self.stream_muxer.clone();
         let mut tx = self.tx.clone();
         let ctrl = self.ctrl.clone();
-        let pids = vec![IDENTIFY_PROTOCOL.into()];
+        let pids = vec![ProtocolId::new(IDENTIFY_PROTOCOL, 0)];
         let metric = self.metric.clone();
 
         let handle = task::spawn(async move {
@@ -406,7 +426,7 @@ impl Connection {
                 }
                 Err(err) => {
                     // looks like the peer doesn't support the protocol
-                    log::info!("Identify protocol not supported: {:?} {:?}", cid, err);
+                    log::info!("Identify protocol from {:?} not supported: {:?} {:?}", remote_peer, cid, err);
                     let _ = tx
                         .send(SwarmEvent::StreamError {
                             cid,
@@ -442,7 +462,7 @@ impl Connection {
     pub(crate) fn start_identify_push(&mut self) {
         let cid = self.id();
         let stream_muxer = self.stream_muxer.clone();
-        let pids = vec![IDENTIFY_PUSH_PROTOCOL.into()];
+        let pids = vec![ProtocolId::new(IDENTIFY_PUSH_PROTOCOL, 0)];
         let metric = self.metric.clone();
 
         let mut ctrl = self.ctrl.clone();
@@ -521,6 +541,12 @@ pub struct ConnectionView {
     pub info: ConnectionInfo,
     /// Handler that processes substreams.
     pub substreams: SmallVec<[SubstreamView; 8]>,
+    /// rtt
+    pub route_trip_time: Option<Duration>,
+    ///
+    pub rate_in: usize,
+    ///
+    pub rate_out: usize,
 }
 
 impl fmt::Display for ConnectionView {
@@ -560,7 +586,7 @@ async fn open_stream_internal(
             Ok(stream)
         }
         Err(err) => {
-            log::debug!("failed outbound protocol selection {:?} {:?}", cid, err);
+            log::debug!("failed outbound protocol selection {:?} {:?} with peer: {:?}", cid, err, ra);
             Err(TransportError::NegotiationError(err))
         }
     }

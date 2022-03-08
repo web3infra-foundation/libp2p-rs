@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use futures::{AsyncReadExt, AsyncWriteExt};
-use libp2p_pnet::{PnetConfig, PreSharedKey};
+use libp2prs_core::pnet::{PnetConfig, PreSharedKey};
 use log::{error, info};
 
 use libp2prs_core::transport::upgrade::TransportUpgrade;
@@ -30,6 +30,7 @@ use libp2prs_tcp::TcpConfig;
 
 use libp2prs_core::identity::Keypair;
 
+use futures::future::Either;
 use libp2prs_core::transport::ListenerEvent;
 use libp2prs_core::upgrade::Selector;
 use libp2prs_mplex as mplex;
@@ -51,19 +52,24 @@ async fn entry() {
     }
 }
 
-fn build_pet_config() -> ProtectorTransport<DnsConfig<TcpConfig>> {
-    let psk = "/key/swarm/psk/1.0.0/\n/base16/\n6189c5cf0b87fb800c1a9feeda73c6ab5e998db48fb9e6a978575c770ceef683"
-        .parse::<PreSharedKey>()
-        .unwrap();
-    let pnet = PnetConfig::new(psk);
-    ProtectorTransport::new(DnsConfig::new(TcpConfig::default()), pnet)
+fn build_transport(private: bool) -> Either<ProtectorTransport<DnsConfig<TcpConfig>>, DnsConfig<TcpConfig>> {
+    let tcp = DnsConfig::new(TcpConfig::default());
+    if private {
+        let psk = "/key/swarm/psk/1.0.0/\n/base16/\n6189c5cf0b87fb800c1a9feeda73c6ab5e998db48fb9e6a978575c770ceef683"
+            .parse::<PreSharedKey>()
+            .unwrap();
+        let pnet = PnetConfig::new(psk);
+        Either::Left(ProtectorTransport::new(tcp, pnet))
+    } else {
+        Either::Right(tcp)
+    }
 }
 
 async fn run_server() {
     let listen_addr: Multiaddr = "/ip4/127.0.0.1/tcp/38087".parse().unwrap();
     let sec = secio::Config::new(Keypair::generate_secp256k1());
     let mux = Selector::new(yamux::Config::server(), mplex::Config::new());
-    let mut tu = TransportUpgrade::new(build_pet_config(), mux, sec);
+    let mut tu = TransportUpgrade::new(build_transport(true), mux, sec);
 
     let mut listener = tu.listen_on(listen_addr).unwrap();
 
@@ -109,7 +115,7 @@ async fn run_client() {
     let sec = secio::Config::new(Keypair::generate_secp256k1());
     let mux = Selector::new(yamux::Config::client(), mplex::Config::new());
 
-    let mut tu = TransportUpgrade::new(build_pet_config(), mux, sec);
+    let mut tu = TransportUpgrade::new(build_transport(true), mux, sec);
 
     let mut stream_muxer = tu.dial(addr).await.expect("listener is started already");
     info!("open a new connection: {:?}", stream_muxer);

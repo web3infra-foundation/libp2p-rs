@@ -44,6 +44,15 @@ pub trait Routing: Send {
     /// Starts announcing the given key to the content routing network.
     async fn provide(&mut self, key: Vec<u8>) -> Result<(), TransportError>;
 
+    /// Stops announcing the given key to the content routing network.
+    async fn cancel_provide(&mut self, key: Vec<u8>) -> Result<(), TransportError>;
+
+    /// Lookups the closer peers with given key
+    async fn lookup(&mut self, key: Vec<u8>) -> Result<Vec<PeerId>, TransportError>;
+
+    /// Lookups the closer peers in local buckets with given key
+    async fn bucket_lookup(&mut self, key: Vec<u8>) -> Result<Vec<PeerId>, TransportError>;
+
     fn box_clone(&self) -> IRouting;
 }
 

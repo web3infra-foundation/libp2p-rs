@@ -14,6 +14,7 @@ default = [
   "dns-async-std",
   "exporter",
   "floodsub-async-std",
+  "gossipsub-async-std",
   "infoserver",
   "kad-async-std",
   "rt-async-std",
@@ -30,6 +31,7 @@ default = [
 tokio = [
   "dns-tokio",
   "floodsub-tokio",
+  "gossipsub-tokio",
   "kad-tokio",
   "rt-tokio",
   "mdns-tokio",
@@ -51,6 +53,9 @@ dns-tokio = ["libp2prs-dns/tokio"]
 
 floodsub-async-std = ["libp2prs-floodsub/async-std"]
 floodsub-tokio = ["libp2prs-floodsub/tokio"]
+
+gossipsub-async-std = ["libp2prs-gossipsub/async-std"]
+gossipsub-tokio = ["libp2prs-gossipsub/tokio"]
 
 infoserver = ["libp2prs-infoserver"]
 exporter = ["libp2prs-exporter"]
@@ -89,6 +94,7 @@ libp2prs-secio = { path = "protocols/secio", version = "0.3.0", optional = true 
 libp2prs-plaintext = { path = "protocols/plaintext", version = "0.3.0", optional = true }
 libp2prs-noise = { path = "protocols/noise", version = "0.3.0", optional = true }
 libp2prs-floodsub = { path = "protocols/floodsub", version = "0.3.0", optional = true }
+libp2prs-gossipsub = { path = "protocols/gossipsub", version = "0.3.0", optional = true }
 libp2prs-mdns = { path = "protocols/mdns", version = "0.3.0", optional = true }
 libp2prs-tcp = { path = "transports/tcp", version = "0.3.0", optional = true }
 libp2prs-dns = { path = "transports/dns", version = "0.3.0", optional = true }
@@ -135,6 +141,7 @@ members = [
   "protocols/plaintext",
   "protocols/noise",
   "protocols/floodsub",
+  "protocols/gossipsub",
   "protocols/mdns",
   "protocols/kad",
   "core",

@@ -25,16 +25,15 @@
 //       be useful later for record store
 #![allow(dead_code)]
 
+pub mod cli;
 pub mod kad;
 pub mod kbucket;
 pub mod protocol;
 pub mod record;
 
 mod addresses;
-pub mod cli;
 mod control;
 mod query;
-mod task_limit;
 
 pub use control::Control;
 

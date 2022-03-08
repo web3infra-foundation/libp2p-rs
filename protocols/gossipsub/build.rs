@@ -1,5 +1,4 @@
-// Copyright 2019 Parity Technologies (UK) Ltd.
-// Copyright 2020 Netwarps Ltd.
+// Copyright 2020 Parity Technologies (UK) Ltd.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
 // copy of this software and associated documentation files (the "Software"),
@@ -19,37 +18,6 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_trait::async_trait;
-use futures::io::Error;
-use libp2prs_traits::ReadEx;
-use salsa20::cipher::SyncStreamCipher;
-use salsa20::XSalsa20;
-
-pub struct CryptReader<R> {
-    inner: R,
-    cipher: XSalsa20,
-}
-
-impl<R> CryptReader<R>
-where
-    R: ReadEx + 'static,
-{
-    /// Creates a new `CryptReader`.
-    pub fn new(inner: R, cipher: XSalsa20) -> Self {
-        CryptReader { inner, cipher }
-    }
-}
-
-#[async_trait]
-impl<R> ReadEx for CryptReader<R>
-where
-    R: ReadEx + 'static,
-{
-    async fn read2(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
-        let size = self.inner.read2(buf).await?;
-        log::trace!("read {} bytes", size);
-        self.cipher.apply_keystream(&mut buf[..size]);
-        log::trace!("decrypted {} bytes", size);
-        Ok(size)
-    }
+fn main() {
+    prost_build::compile_protos(&["src/rpc.proto", "src/compat.proto"], &["src"]).unwrap();
 }

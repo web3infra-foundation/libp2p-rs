@@ -128,7 +128,7 @@ impl Graph {
 fn multi_hop_propagation() {
     fn prop(num_nodes: u8, seed: u64) -> TestResult {
         task::block_on(async {
-            if num_nodes < 2 || num_nodes > 100 {
+            if !(2..=100).contains(&num_nodes) {
                 return TestResult::discard();
             }
 

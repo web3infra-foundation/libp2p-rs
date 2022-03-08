@@ -25,6 +25,8 @@ use libp2prs_core::{Multiaddr, PeerId};
 use libp2prs_runtime::task;
 
 use crate::Control;
+use std::sync::atomic::Ordering::SeqCst;
+use std::time::{Duration, Instant};
 
 const DHT: &str = "dht";
 
@@ -67,6 +69,14 @@ pub fn dht_cli_commands<'a>() -> Command<'a> {
         .about("providing key to dht")
         .usage("provide <key>")
         .action(cli_providing);
+    let providing_many_cmd = Command::new_with_alias("pm", "pm")
+        .about("providing many keys to dht")
+        .usage("pm <count> <num-of-worker>")
+        .action(cli_providing_many);
+    let finding_many_cmd = Command::new_with_alias("fm", "fm")
+        .about("finding many keys in dht")
+        .usage("fm <count> <num-of-worker>")
+        .action(cli_find_provider_many);
 
     let dump_providers_cmd = Command::new_with_alias("local-store", "ls")
         .about("dump local-store")
@@ -84,6 +94,14 @@ pub fn dht_cli_commands<'a>() -> Command<'a> {
         .about("dump statistics")
         .usage("stats")
         .action(cli_dump_statistics);
+    let get_no_addr_peer = Command::new_with_alias("noaddr", "na")
+        .about("dump no addr peer")
+        .usage("noaddr")
+        .action(cli_get_not_exist_multiaddr_peer);
+    let dump_ledgers_cmd = Command::new_with_alias("ledgers", "led")
+        .about("dump ledgers")
+        .usage("ledgers")
+        .action(cli_dump_ledgers);
 
     Command::new_with_alias(DHT, "d")
         .about("Kad-DHT")
@@ -96,11 +114,15 @@ pub fn dht_cli_commands<'a>() -> Command<'a> {
         .subcommand(dump_kbucket_cmd)
         .subcommand(dump_messenger_cmd)
         .subcommand(dump_stats_cmd)
+        .subcommand(dump_ledgers_cmd)
         .subcommand(find_peer_cmd)
         .subcommand(get_value_cmd)
         .subcommand(put_value_cmd)
         .subcommand(find_providers_cmd)
         .subcommand(providing_cmd)
+        .subcommand(providing_many_cmd)
+        .subcommand(finding_many_cmd)
+        .subcommand(get_no_addr_peer)
 }
 
 fn handler(app: &App) -> Control {
@@ -171,6 +193,8 @@ fn cli_dump_storage(app: &App, args: &[&str]) -> XcliResult {
 
     task::block_on(async {
         let storage_stat = kad.dump_storage().await.unwrap();
+        let plen = storage_stat.provider.len();
+        let rlen = storage_stat.record.len();
         println!("Providers: ");
         for provider in storage_stat.provider {
             println!("{} {:?} {:?}", provider.provider, provider.time_received, provider.key);
@@ -183,6 +207,7 @@ fn cli_dump_storage(app: &App, args: &[&str]) -> XcliResult {
                 record.key, record.value, record.time_received, record.publisher
             );
         }
+        println!("Total {} providers, {} records", plen, rlen);
     });
 
     Ok(CmdExeCode::Ok)
@@ -229,6 +254,37 @@ fn cli_dump_statistics(app: &App, _args: &[&str]) -> XcliResult {
         println!("Fixed query tx error   : {}", stats.query.fixed_tx_error);
         println!("Kad tx messages        : {:?}", stats.query.message_tx);
         println!("Kad rx messages        : {:?}", stats.message_rx);
+        println!("Total providers records: {}", stats.total_provider_records);
+        println!("Total kv records       : {}", stats.total_kv_records);
+        println!("Task Limiter           : {:?}", stats.task);
+    });
+
+    Ok(CmdExeCode::Ok)
+}
+
+fn cli_dump_ledgers(app: &App, args: &[&str]) -> XcliResult {
+    let mut kad = handler(app);
+
+    let peer = match args.len() {
+        0 => None,
+        1 => Some(PeerId::from_str(args[0]).map_err(|e| XcliError::BadArgument(e.to_string()))?),
+        _ => return Err(XcliError::MismatchArgument(1, args.len())),
+    };
+
+    task::block_on(async {
+        let ledgers = kad.dump_ledgers(peer).await.unwrap();
+        println!("peer                                                     ledger");
+        ledgers.iter().for_each(|(p, l)| {
+            println!(
+                "{:52}  succeed: {} cost: {:?}, failed: {} cost {:?}",
+                p,
+                l.succeed.load(SeqCst),
+                Duration::from_millis(l.succeed_cost.load(SeqCst)).checked_div(l.succeed.load(SeqCst)),
+                l.failed.load(SeqCst),
+                Duration::from_millis(l.failed_cost.load(SeqCst)).checked_div(l.failed.load(SeqCst))
+            )
+        });
+        println!("Total {} peers", ledgers.len());
     });
 
     Ok(CmdExeCode::Ok)
@@ -332,5 +388,100 @@ fn cli_providing(app: &App, args: &[&str]) -> XcliResult {
         println!("Providing: {:?}", r);
     });
 
+    Ok(CmdExeCode::Ok)
+}
+
+fn cli_providing_many(app: &App, args: &[&str]) -> XcliResult {
+    let kad = handler(app);
+
+    if args.len() != 2 {
+        return Err(XcliError::MismatchArgument(2, args.len()));
+    }
+
+    let count_str = args.get(0).unwrap();
+    let count = usize::from_str(count_str).map_err(|e| XcliError::BadArgument(e.to_string()))?;
+    let workers_str = args.get(1).unwrap();
+    let workers = usize::from_str(workers_str).map_err(|e| XcliError::BadArgument(e.to_string()))?;
+
+    task::spawn(async move {
+        let mut tasks = vec![];
+        for w in 0..workers {
+            let mut kad = kad.clone();
+            let task = task::spawn(async move {
+                let started = Instant::now();
+                for i in 0..count {
+                    let key = (w * count + i).to_string().into_bytes();
+                    let _ = kad.provide(key).await;
+
+                    if i % 10 == 1 {
+                        println!("Providing many, w={} c={}, elapsed: {:?}", w, i, started.elapsed());
+                    }
+                }
+                println!("Providing many, w={} many={}, done elapsed: {:?}", w, count, started.elapsed());
+            });
+
+            tasks.push(task);
+        }
+        futures::future::join_all(tasks).await;
+
+        println!("Providing many, worker={} count-per-worker={} job done!", workers, count);
+    });
+
+    Ok(CmdExeCode::Ok)
+}
+
+fn cli_find_provider_many(app: &App, args: &[&str]) -> XcliResult {
+    let kad = handler(app);
+
+    if args.len() != 2 {
+        return Err(XcliError::MismatchArgument(2, args.len()));
+    }
+
+    let count_str = args.get(0).unwrap();
+    let count = usize::from_str(count_str).map_err(|e| XcliError::BadArgument(e.to_string()))?;
+    let workers_str = args.get(1).unwrap();
+    let workers = usize::from_str(workers_str).map_err(|e| XcliError::BadArgument(e.to_string()))?;
+
+    task::spawn(async move {
+        let mut tasks = vec![];
+        for w in 0..workers {
+            let mut kad = kad.clone();
+            let task = task::spawn(async move {
+                let started = Instant::now();
+                for i in 0..count {
+                    let key = (w * count + i).to_string().into_bytes();
+                    let r = kad.find_providers(key, 0).await;
+                    if r.is_err() {
+                        println!("Finding many failed, key={}", w * count + i);
+                    }
+
+                    if i % 10 == 1 {
+                        println!("Finding many, w={} c={}, elapsed: {:?}", w, i, started.elapsed());
+                    }
+                }
+                println!("Finding many, w={} many={}, done elapsed: {:?}", w, count, started.elapsed());
+            });
+
+            tasks.push(task);
+        }
+        futures::future::join_all(tasks).await;
+
+        println!("Finding many, worker={} count-per-worker={} job done!", workers, count);
+    });
+
+    Ok(CmdExeCode::Ok)
+}
+
+fn cli_get_not_exist_multiaddr_peer(app: &App, _args: &[&str]) -> XcliResult {
+    let mut kad = handler(app);
+
+    task::block_on(async {
+        if let Ok(no_addr_peer) = kad.show_no_addr_peer().await {
+            println!("Peer");
+            for id in no_addr_peer {
+                println!("{:?}", id);
+            }
+        }
+    });
     Ok(CmdExeCode::Ok)
 }

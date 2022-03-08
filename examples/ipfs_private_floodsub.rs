@@ -21,7 +21,7 @@
 use log::{error, info};
 #[macro_use]
 extern crate lazy_static;
-use libp2p_pnet::{PnetConfig, PreSharedKey};
+use libp2prs_core::pnet::{PnetConfig, PreSharedKey};
 
 use libp2prs_core::transport::upgrade::TransportUpgrade;
 use libp2prs_core::{multiaddr::protocol::Protocol, transport::protector::ProtectorTransport, Multiaddr, PeerId};

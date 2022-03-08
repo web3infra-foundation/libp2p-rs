@@ -70,6 +70,7 @@
 mod bucket;
 mod entry;
 mod key;
+
 use primitive_types::U256;
 
 pub use entry::*;
@@ -177,7 +178,8 @@ where
     ///
     /// The buckets are ordered by proximity to the `local_key`, i.e. the first
     /// bucket is the closest bucket (containing at most one key).
-    pub fn iter<'a>(&'a mut self) -> impl Iterator<Item = KBucketRef<'a, TKey, TVal>> + 'a {
+    /// pub fn iter<'a>(&'a mut self) -> impl Iterator<Item = KBucketRef<'a, TKey, TVal>> + 'a {
+    pub fn iter(&'_ mut self) -> impl Iterator<Item = KBucketRef<'_, TKey, TVal>> + '_ {
         self.buckets.iter_mut().enumerate().map(move |(i, b)| KBucketRef {
             index: BucketIndex(i),
             bucket: b,
@@ -205,7 +207,7 @@ where
         let d = self.local_key.as_ref().distance(key);
         if let Some(index) = BucketIndex::new(&d) {
             let bucket = &mut self.buckets[index.0];
-            Some(KBucketRef { bucket, index })
+            Some(KBucketRef { index, bucket })
         } else {
             None
         }
