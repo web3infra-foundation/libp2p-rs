@@ -230,11 +230,11 @@ impl<Output: Send> TransportListener for IListener<Output> {
     type Output = Output;
 
     async fn accept(&mut self) -> Result<ListenerEvent<Self::Output>, TransportError> {
-        self.accept().await
+        (**self).accept().await
     }
 
     fn multi_addr(&self) -> Option<&Multiaddr> {
-        self.multi_addr()
+        (**self).multi_addr()
     }
 }
 
@@ -269,19 +269,19 @@ impl<Output: Send> Transport for ITransport<Output> {
     type Output = Output;
 
     fn listen_on(&mut self, addr: Multiaddr) -> Result<IListener<Self::Output>, TransportError> {
-        self.listen_on(addr)
+        (**self).listen_on(addr)
     }
 
     async fn dial(&mut self, addr: Multiaddr) -> Result<Self::Output, TransportError> {
-        self.dial(addr).await
+        (**self).dial(addr).await
     }
 
     fn box_clone(&self) -> ITransport<Self::Output> {
-        self.box_clone()
+        (**self).box_clone()
     }
 
     fn protocols(&self) -> Vec<u32> {
-        self.protocols()
+        (**self).protocols()
     }
 }
 
