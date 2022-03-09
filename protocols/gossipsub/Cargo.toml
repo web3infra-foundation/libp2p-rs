@@ -1,7 +1,7 @@
 [package]
 name = "libp2prs-gossipsub"
 description = "Gossipsub protocol for libp2p-rs"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Netwarps Technologies admin@paradeum.com"]
 repository = "https://github.com/netwarps/libp2p-rs"
 keywords = ["peer-to-peer", "libp2p", "networking"]
@@ -14,9 +14,9 @@ tokio = ["libp2prs-swarm/tokio", "libp2prs-runtime/tokio"]
 
 [dependencies]
 async-trait = "0.1"
-libp2prs-runtime = { path = "../../runtime", version = "0.3.0" }
-libp2prs-core = { path = "../../core", version = "0.3.0" }
-libp2prs-swarm = { path = "../../swarm", version = "0.3.0" }
+libp2prs-runtime = { path = "../../runtime", version = "0.4.0" }
+libp2prs-core = { path = "../../core", version = "0.4.0" }
+libp2prs-swarm = { path = "../../swarm", version = "0.4.0" }
 
 futures = { version = "0.3", features = ["std"], default-features = false }
 xcli = "0.5"
@@ -38,10 +38,10 @@ lazy_static = "1.4"
 
 [dev-dependencies]
 env_logger = "0.8"
-libp2prs-mplex = { path = "../mplex", version = "0.3.0" }
-libp2prs-yamux = { path = "../yamux", version = "0.3.0" }
-libp2prs-secio = { path = "../secio", version = "0.3.0" }
-libp2prs-tcp = { path = "../../transports/tcp", version = "0.3.0", features = ["async-std"] }
+libp2prs-mplex = { path = "../mplex", version = "0.4.0" }
+libp2prs-yamux = { path = "../yamux", version = "0.4.0" }
+libp2prs-secio = { path = "../secio", version = "0.4.0" }
+libp2prs-tcp = { path = "../../transports/tcp", version = "0.4.0", features = ["async-std"] }
 lazy_static = "1.4"
 quickcheck = "0.9"
 hex = "0.4.2"

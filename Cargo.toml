@@ -1,6 +1,6 @@
 [package]
 name = "libp2p-rs"
-version = "0.3.0"
+version = "0.4.0"
 license = "MIT"
 description = "Minimal implementation for a multiplexed p2p network framework"
 authors = ["Netwarps Technologies admin@paradeum.com"]
@@ -85,24 +85,24 @@ yamux = ["libp2prs-yamux"]
 
 
 [dependencies]
-libp2prs-runtime = { path = "runtime", version = "0.3.0", optional = true }
-libp2prs-multiaddr = { path = "multiaddr", version = "0.3.0" }
-libp2prs-core = { path = "core", version = "0.3.0" }
-libp2prs-yamux = { path = "protocols/yamux", version = "0.3.0", optional = true }
-libp2prs-mplex = { path = "protocols/mplex", version = "0.3.0", optional = true }
-libp2prs-secio = { path = "protocols/secio", version = "0.3.0", optional = true }
-libp2prs-plaintext = { path = "protocols/plaintext", version = "0.3.0", optional = true }
-libp2prs-noise = { path = "protocols/noise", version = "0.3.0", optional = true }
-libp2prs-floodsub = { path = "protocols/floodsub", version = "0.3.0", optional = true }
-libp2prs-gossipsub = { path = "protocols/gossipsub", version = "0.3.0", optional = true }
-libp2prs-mdns = { path = "protocols/mdns", version = "0.3.0", optional = true }
-libp2prs-tcp = { path = "transports/tcp", version = "0.3.0", optional = true }
-libp2prs-dns = { path = "transports/dns", version = "0.3.0", optional = true }
-libp2prs-websocket = { path = "transports/websocket", version = "0.3.0", optional = true }
-libp2prs-swarm = { path = "swarm", version = "0.3.0" }
-libp2prs-kad = { path = "protocols/kad", version = "0.3.0", optional = true }
-libp2prs-infoserver = { path="infoserver", version = "0.3.0", optional = true }
-libp2prs-exporter = { path="exporter", version = "0.3.0", optional = true }
+libp2prs-runtime = { path = "runtime", version = "0.4.0", optional = true }
+libp2prs-multiaddr = { path = "multiaddr", version = "0.4.0" }
+libp2prs-core = { path = "core", version = "0.4.0" }
+libp2prs-yamux = { path = "protocols/yamux", version = "0.4.0", optional = true }
+libp2prs-mplex = { path = "protocols/mplex", version = "0.4.0", optional = true }
+libp2prs-secio = { path = "protocols/secio", version = "0.4.0", optional = true }
+libp2prs-plaintext = { path = "protocols/plaintext", version = "0.4.0", optional = true }
+libp2prs-noise = { path = "protocols/noise", version = "0.4.0", optional = true }
+libp2prs-floodsub = { path = "protocols/floodsub", version = "0.4.0", optional = true }
+libp2prs-gossipsub = { path = "protocols/gossipsub", version = "0.4.0", optional = true }
+libp2prs-mdns = { path = "protocols/mdns", version = "0.4.0", optional = true }
+libp2prs-tcp = { path = "transports/tcp", version = "0.4.0", optional = true }
+libp2prs-dns = { path = "transports/dns", version = "0.4.0", optional = true }
+libp2prs-websocket = { path = "transports/websocket", version = "0.4.0", optional = true }
+libp2prs-swarm = { path = "swarm", version = "0.4.0" }
+libp2prs-kad = { path = "protocols/kad", version = "0.4.0", optional = true }
+libp2prs-infoserver = { path="infoserver", version = "0.4.0", optional = true }
+libp2prs-exporter = { path="exporter", version = "0.4.0", optional = true }
 
 async-trait = "0.1"
 log = "0.4"
