@@ -1,6 +1,6 @@
 [package]
 name = "libp2prs-runtime"
-version = "0.3.0"
+version = "0.4.0"
 license = "MIT"
 description = "runtime which support async-std and tokio"
 authors = ["Netwarps Technologies admin@paradeum.com"]

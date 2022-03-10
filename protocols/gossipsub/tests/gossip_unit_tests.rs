@@ -163,7 +163,7 @@ pub fn test_gossip_fanout() {
 pub fn test_gossip_fanout_maintenance() {
     fn prop() -> TestResult {
         let topic: Topic<IdentityHash> = Topic::new("Hello World");
-        let node_list = new_node(10);
+        let node_list = new_node(5);
         let mut subscription_list = vec![];
 
         task::block_on(async {
