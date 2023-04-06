@@ -1225,7 +1225,7 @@ where
         debug!("Peer disconnected: {}", peer_id);
         {
             let topics = match self.peer_topics.get(&peer_id) {
-                Some(topics) => (topics),
+                Some(topics) => topics,
                 None => {
                     if !self.blacklisted_peers.contains(&peer_id) {
                         debug!("Disconnected node, not in connected nodes");
