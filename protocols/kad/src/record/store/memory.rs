@@ -95,7 +95,6 @@ type ProviderIter<'a> = iter::Map<
 >;
 
 impl<'a> RecordStore<'a> for MemoryStore {
-    #[allow()]
     type RecordsIter = RecordsIter<'a>;
     type ProviderIter = ProviderIter<'a>;
 
