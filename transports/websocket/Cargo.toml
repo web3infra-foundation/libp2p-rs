@@ -22,7 +22,7 @@ either = "1.5.3"
 soketto = {version = "0.4.1", features = ["deflate"] }
 url = "2.1"
 webpki = "0.21.3"
-webpki-roots = "0.21"
+webpki-roots = "1.0.10"
 async-trait = "0.1"
 quicksink = "0.1"
 pin-project = "1"
